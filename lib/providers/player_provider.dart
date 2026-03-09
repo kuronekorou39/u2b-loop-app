@@ -42,3 +42,7 @@ final volumeProvider = StreamProvider<double>((ref) {
 final rateProvider = StreamProvider<double>((ref) {
   return ref.watch(playerProvider).stream.rate;
 });
+
+final waveformDataProvider = StateProvider<List<double>?>((ref) => null);
+final waveformLoadingProvider = StateProvider<bool>((ref) => false);
+final waveformErrorProvider = StateProvider<String?>((ref) => null);

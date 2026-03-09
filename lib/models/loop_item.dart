@@ -1,0 +1,78 @@
+import 'package:hive/hive.dart';
+
+class LoopItem {
+  String id;
+  String title;
+  String uri;
+  String sourceType; // 'youtube' or 'local'
+  String? videoId;
+  String? thumbnailUrl;
+  String? thumbnailPath;
+  int pointAMs;
+  int pointBMs;
+  double speed;
+  String? memo;
+  DateTime createdAt;
+  DateTime updatedAt;
+
+  LoopItem({
+    required this.id,
+    required this.title,
+    required this.uri,
+    required this.sourceType,
+    this.videoId,
+    this.thumbnailUrl,
+    this.thumbnailPath,
+    this.pointAMs = 0,
+    this.pointBMs = 0,
+    this.speed = 1.0,
+    this.memo,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
+}
+
+class LoopItemAdapter extends TypeAdapter<LoopItem> {
+  @override
+  final int typeId = 0;
+
+  @override
+  LoopItem read(BinaryReader reader) {
+    final fields = reader.readMap().cast<int, dynamic>();
+    return LoopItem(
+      id: fields[0] as String,
+      title: fields[1] as String,
+      uri: fields[2] as String,
+      sourceType: fields[3] as String,
+      videoId: fields[4] as String?,
+      thumbnailUrl: fields[5] as String?,
+      thumbnailPath: fields[6] as String?,
+      pointAMs: fields[7] as int? ?? 0,
+      pointBMs: fields[8] as int? ?? 0,
+      speed: (fields[9] as num?)?.toDouble() ?? 1.0,
+      memo: fields[10] as String?,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(fields[11] as int),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(fields[12] as int),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LoopItem obj) {
+    writer.writeMap({
+      0: obj.id,
+      1: obj.title,
+      2: obj.uri,
+      3: obj.sourceType,
+      4: obj.videoId,
+      5: obj.thumbnailUrl,
+      6: obj.thumbnailPath,
+      7: obj.pointAMs,
+      8: obj.pointBMs,
+      9: obj.speed,
+      10: obj.memo,
+      11: obj.createdAt.millisecondsSinceEpoch,
+      12: obj.updatedAt.millisecondsSinceEpoch,
+    });
+  }
+}

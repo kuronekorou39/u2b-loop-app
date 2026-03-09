@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/theme_provider.dart';
-import 'screens/home_screen.dart';
+import 'screens/list_screen.dart';
 
 class App extends ConsumerWidget {
   const App({super.key});
@@ -13,7 +13,7 @@ class App extends ConsumerWidget {
     return MaterialApp(
       title: 'U2B Loop',
       theme: isDark ? AppTheme.dark : AppTheme.light,
-      home: const HomeScreen(),
+      home: const ListScreen(),
       debugShowCheckedModeBanner: false,
     );
   }

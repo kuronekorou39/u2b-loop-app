@@ -2,11 +2,11 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/video_source.dart';
 
 class YouTubeService {
-  final _yt = YoutubeExplode();
+  final yt = YoutubeExplode();
 
   Future<VideoSource> getVideoSource(String videoId) async {
-    final video = await _yt.videos.get(videoId);
-    final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+    final video = await yt.videos.get(videoId);
+    final manifest = await yt.videos.streamsClient.getManifest(videoId);
 
     // Prefer muxed streams (audio+video combined)
     final muxed = manifest.muxed.sortByVideoQuality();
@@ -36,5 +36,5 @@ class YouTubeService {
     throw Exception('再生可能なストリームが見つかりません');
   }
 
-  void dispose() => _yt.close();
+  void dispose() => yt.close();
 }

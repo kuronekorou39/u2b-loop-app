@@ -6,9 +6,12 @@ import '../core/utils/url_utils.dart';
 import '../models/video_source.dart';
 import '../providers/loop_provider.dart';
 import '../providers/player_provider.dart';
+import '../services/waveform_service.dart';
 
 class UrlInput extends ConsumerStatefulWidget {
-  const UrlInput({super.key});
+  final bool initialCollapsed;
+
+  const UrlInput({super.key, this.initialCollapsed = false});
 
   @override
   ConsumerState<UrlInput> createState() => _UrlInputState();
@@ -17,6 +20,8 @@ class UrlInput extends ConsumerStatefulWidget {
 class _UrlInputState extends ConsumerState<UrlInput> {
   final _controller = TextEditingController();
   bool _loading = false;
+  late bool _expanded = !widget.initialCollapsed;
+  int _waveformGeneration = 0;
 
   Future<void> _loadYoutube() async {
     final url = _controller.text.trim();
@@ -40,6 +45,8 @@ class _UrlInputState extends ConsumerState<UrlInput> {
       await player.open(Media(source.uri));
       ref.read(videoSourceProvider.notifier).state = source;
       ref.read(loopProvider.notifier).reset();
+      _generateWaveform(source);
+      if (mounted) setState(() => _expanded = false);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -61,12 +68,35 @@ class _UrlInputState extends ConsumerState<UrlInput> {
 
     final player = ref.read(playerProvider);
     await player.open(Media(path));
-    ref.read(videoSourceProvider.notifier).state = VideoSource(
+    final source = VideoSource(
       type: VideoSourceType.local,
       uri: path,
       title: file.name,
     );
+    ref.read(videoSourceProvider.notifier).state = source;
     ref.read(loopProvider.notifier).reset();
+    _generateWaveform(source);
+    if (mounted) setState(() => _expanded = false);
+  }
+
+  Future<void> _generateWaveform(VideoSource source) async {
+    final generation = ++_waveformGeneration;
+    ref.read(waveformDataProvider.notifier).state = null;
+    ref.read(waveformLoadingProvider.notifier).state = true;
+
+    try {
+      final service = WaveformService();
+      final waveform = await service.generateFromUrl(source.uri, 4000);
+
+      if (mounted && generation == _waveformGeneration) {
+        ref.read(waveformDataProvider.notifier).state = waveform;
+      }
+    } catch (_) {
+    } finally {
+      if (mounted && generation == _waveformGeneration) {
+        ref.read(waveformLoadingProvider.notifier).state = false;
+      }
+    }
   }
 
   @override
@@ -77,10 +107,88 @@ class _UrlInputState extends ConsumerState<UrlInput> {
 
   @override
   Widget build(BuildContext context) {
+    final source = ref.watch(videoSourceProvider);
+
+    // Collapsed: show title bar
+    if (!_expanded && source != null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: GestureDetector(
+          onTap: () => setState(() => _expanded = true),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  source.type == VideoSourceType.youtube
+                      ? Icons.play_circle_outline
+                      : Icons.video_file_outlined,
+                  size: 18,
+                  color: Colors.grey,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    source.title,
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Icon(Icons.unfold_more, size: 18, color: Colors.grey),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Expanded: full input UI
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Column(
         children: [
+          // Collapse button (when source is loaded)
+          if (source != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: GestureDetector(
+                onTap: () => setState(() => _expanded = false),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        source.type == VideoSourceType.youtube
+                            ? Icons.play_circle_outline
+                            : Icons.video_file_outlined,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          source.title,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const Icon(Icons.unfold_less,
+                          size: 18, color: Colors.grey),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           Row(
             children: [
               Expanded(

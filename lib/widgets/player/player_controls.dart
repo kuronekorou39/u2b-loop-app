@@ -25,7 +25,8 @@ class PlayerControls extends ConsumerWidget {
             onPressed: hasSource
                 ? () {
                     final pos = player.state.position;
-                    player.seek(pos - const Duration(seconds: 5));
+                    final target = pos - const Duration(seconds: 5);
+                    player.seek(target < Duration.zero ? Duration.zero : target);
                   }
                 : null,
           ),
