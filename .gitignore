@@ -46,3 +46,6 @@ app.*.map.json
 
 # Java heap dumps
 *.hprof
+
+# Claude Code
+.claude/

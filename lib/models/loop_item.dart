@@ -14,6 +14,12 @@ class LoopItem {
   String? memo;
   DateTime createdAt;
   DateTime updatedAt;
+  /// null=取得完了, 'fetching'=取得中, 'error:...'=エラー
+  String? fetchStatus;
+  /// タグID一覧
+  List<String> tagIds;
+  /// 元のYouTube URL（コピー・アクセス用）
+  String? youtubeUrl;
 
   LoopItem({
     required this.id,
@@ -29,8 +35,18 @@ class LoopItem {
     this.memo,
     DateTime? createdAt,
     DateTime? updatedAt,
+    this.fetchStatus,
+    List<String>? tagIds,
+    this.youtubeUrl,
   })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+        updatedAt = updatedAt ?? DateTime.now(),
+        tagIds = tagIds ?? [];
+
+  bool get isFetching => fetchStatus == 'fetching';
+  bool get hasError => fetchStatus != null && fetchStatus!.startsWith('error');
+  bool get isReady => fetchStatus == null;
+  String? get errorMessage =>
+      hasError ? fetchStatus!.substring('error:'.length) : null;
 }
 
 class LoopItemAdapter extends TypeAdapter<LoopItem> {
@@ -54,6 +70,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       memo: fields[10] as String?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(fields[11] as int),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(fields[12] as int),
+      fetchStatus: fields[13] as String?,
+      tagIds: (fields[14] as List?)?.cast<String>() ?? [],
+      youtubeUrl: fields[15] as String?,
     );
   }
 
@@ -73,6 +92,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       10: obj.memo,
       11: obj.createdAt.millisecondsSinceEpoch,
       12: obj.updatedAt.millisecondsSinceEpoch,
+      13: obj.fetchStatus,
+      14: obj.tagIds,
+      15: obj.youtubeUrl,
     });
   }
 }

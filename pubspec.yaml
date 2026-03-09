@@ -1,7 +1,7 @@
 name: u2b_loop_app
 description: "YouTube & Local Video AB Loop Player"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.11.0
@@ -19,6 +19,9 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   path_provider: ^2.1.5
+  url_launcher: ^6.3.2
+  video_thumbnail: ^0.5.6
+  package_info_plus: ^9.0.0
 
 dev_dependencies:
   flutter_test:

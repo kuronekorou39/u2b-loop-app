@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'app.dart';
 import 'models/loop_item.dart';
 import 'models/playlist.dart' as app;
+import 'models/tag.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,8 +17,10 @@ void main() async {
   await Hive.initFlutter();
   Hive.registerAdapter(LoopItemAdapter());
   Hive.registerAdapter(app.PlaylistAdapter());
+  Hive.registerAdapter(TagAdapter());
   await Hive.openBox<LoopItem>('loop_items');
   await Hive.openBox<app.Playlist>('playlists');
+  await Hive.openBox<Tag>('tags');
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
