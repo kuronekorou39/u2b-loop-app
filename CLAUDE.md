@@ -19,6 +19,8 @@ YouTubeとローカル動画のAB区間ループ再生アプリ（Flutter/Androi
 - gitタグ（例: `v1.3.0`）と `pubspec.yaml` の `version:` は常に一致させる
 - `+N` のようなビルド番号は使わない。セマンティックバージョニング（`major.minor.patch`）のみ
 - リリース手順: pubspec.yaml の version 更新 → コミット → タグ作成 → push（タグpushでCI自動ビルド）
+- **重要**: pubspec.yaml の version とタグを必ず同時に更新すること。ズレるとアプリ内アップデートチェックが毎回「更新あり」と誤判定する
+- CI修正などコード変更のみのリリースでも、タグを打つ前に必ず pubspec.yaml の version をタグと一致させる
 
 ## ビルド
 
