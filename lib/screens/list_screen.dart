@@ -10,9 +10,10 @@ import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
-import '../providers/theme_provider.dart';
+
 import 'detail_screen.dart';
 import 'playlist_detail_screen.dart';
+import 'settings_screen.dart';
 
 /// 表示モード: リスト / 2列 / 4列
 enum _ViewMode { list, grid2, grid4 }
@@ -464,7 +465,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final tags = ref.watch(tagsProvider);
     final filterTagIds = ref.watch(tagFilterProvider);
     final playlists = ref.watch(playlistsProvider);
-    final isDark = ref.watch(themeProvider);
+
     final isDataTab = _tabController.index == 0;
 
     // タグフィルター適用
@@ -483,7 +484,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       child: Scaffold(
         appBar: _isSelecting
             ? _buildSelectionAppBar(items)
-            : _buildNormalAppBar(isDataTab, isDark),
+            : _buildNormalAppBar(isDataTab),
         body: Column(
           children: [
             // タグフィルターバー
@@ -531,7 +532,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  PreferredSizeWidget _buildNormalAppBar(bool isDataTab, bool isDark) {
+  PreferredSizeWidget _buildNormalAppBar(bool isDataTab) {
     return AppBar(
       title: const Text(
         'U2B Loop',
@@ -552,11 +553,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
           ),
         ],
         IconButton(
-          icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
-          onPressed: () {
-            ref.read(themeProvider.notifier).state = !isDark;
-          },
-          tooltip: isDark ? 'ライトテーマ' : 'ダークテーマ',
+          icon: const Icon(Icons.settings, size: 22),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+          tooltip: '設定',
         ),
       ],
       bottom: TabBar(

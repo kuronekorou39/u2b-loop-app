@@ -8,6 +8,7 @@ import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import 'detail_screen.dart';
+import 'player_screen.dart';
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   final String playlistId;
@@ -230,6 +231,19 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       appBar: AppBar(
         title: Text(pl.name, style: const TextStyle(fontSize: 16)),
         actions: [
+          if (items.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.play_arrow),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PlayerScreen(
+                    item: items.first,
+                    playlistItems: items,
+                  ),
+                ),
+              ),
+              tooltip: '再生',
+            ),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'rename') _renamePlaylist(pl);

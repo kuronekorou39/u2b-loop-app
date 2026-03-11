@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../models/loop_item.dart';
+import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
 import '../models/tag.dart';
 import '../services/thumbnail_service.dart';
@@ -130,6 +131,14 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       memo: source.memo,
       tagIds: List.from(source.tagIds),
       youtubeUrl: source.youtubeUrl,
+      regions: source.regions
+          .map((r) => LoopRegion(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                name: r.name,
+                pointAMs: r.pointAMs,
+                pointBMs: r.pointBMs,
+              ))
+          .toList(),
     );
     await add(copy);
     return copy;

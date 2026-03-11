@@ -1,9 +1,13 @@
 package com.u2bloop.u2b_loop_app
 
+import android.app.PictureInPictureParams
+import android.content.res.Configuration
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.os.Build
 import android.util.Log
+import android.util.Rational
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -11,18 +15,20 @@ import kotlinx.coroutines.*
 import java.nio.ByteOrder
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.u2bloop/waveform"
+    private val WAVEFORM_CHANNEL = "com.u2bloop/waveform"
+    private val PIP_CHANNEL = "com.u2bloop/pip"
     private val TAG = "WaveformExtractor"
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // 前回の抽出ジョブとMediaExtractorを追跡（キャンセル用）
     private var currentJob: Job? = null
     @Volatile private var currentExtractor: MediaExtractor? = null
+    private var pipChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        // --- Waveform channel ---
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WAVEFORM_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "extractAmplitudes" -> {
@@ -31,10 +37,7 @@ class MainActivity : FlutterActivity() {
                             result.error("INVALID", "URL is null", null)
                             return@setMethodCallHandler
                         }
-
-                        // 前回のジョブをキャンセル + MediaExtractor を強制解放
                         cancelCurrentExtraction()
-
                         currentJob = scope.launch {
                             try {
                                 val amplitudes = extractAudioAmplitudes(url)
@@ -61,12 +64,48 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // --- PiP channel ---
+        pipChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL)
+        pipChannel!!.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "enterPiP" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            val params = PictureInPictureParams.Builder()
+                                .setAspectRatio(Rational(16, 9))
+                                .build()
+                            enterPictureInPictureMode(params)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    } else {
+                        result.success(false)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pipChannel?.invokeMethod("onPiPChanged", isInPictureInPictureMode)
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // ホームボタンを押したとき自動でPiPに入る（再生中の場合）
+        // Flutter側から制御するため、ここでは自動PiPしない
     }
 
     private fun cancelCurrentExtraction() {
         currentJob?.cancel()
         currentJob = null
-        // MediaExtractor を release() すると setDataSource() のブロックが解除される
         try {
             currentExtractor?.release()
         } catch (_: Exception) {}
@@ -82,9 +121,8 @@ class MainActivity : FlutterActivity() {
             extractor.setDataSource(url)
             Log.d(TAG, "setDataSource done, tracks=${extractor.trackCount}")
 
-            yield() // コルーチンキャンセル確認
+            yield()
 
-            // Find audio track
             var audioTrackIndex = -1
             var audioFormat: MediaFormat? = null
             for (i in 0 until extractor.trackCount) {
@@ -116,9 +154,8 @@ class MainActivity : FlutterActivity() {
             val maxAmplitudes = 100000
 
             while (!outputEOS && amplitudes.size < maxAmplitudes) {
-                yield() // コルーチンキャンセル確認
+                yield()
 
-                // Feed compressed audio data to decoder
                 if (!inputEOS) {
                     val inputIndex = codec.dequeueInputBuffer(5000)
                     if (inputIndex >= 0) {
@@ -140,7 +177,6 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                // Read decoded PCM output
                 val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 5000)
                 when {
                     outputIndex >= 0 -> {
@@ -154,7 +190,6 @@ class MainActivity : FlutterActivity() {
                             outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
                             val shortBuffer = outputBuffer.asShortBuffer()
 
-                            // Extract peak amplitude from decoded PCM frame
                             var peak = 0
                             while (shortBuffer.hasRemaining()) {
                                 val sample = Math.abs(shortBuffer.get().toInt())

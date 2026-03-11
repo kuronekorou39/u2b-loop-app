@@ -9,6 +9,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
+import '../models/loop_region.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
@@ -19,11 +20,16 @@ import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/video_player_widget.dart';
 
-/// AB区間専用エディタ。LoopItem を受け取ってプレーヤーを起動し、AB区間を編集する。
+/// AB区間専用エディタ。LoopItem を受け取って AB 区間を編集する。
 class EditorScreen extends ConsumerStatefulWidget {
   final LoopItem item;
+  final int initialRegionIndex;
 
-  const EditorScreen({super.key, required this.item});
+  const EditorScreen({
+    super.key,
+    required this.item,
+    this.initialRegionIndex = 0,
+  });
 
   @override
   ConsumerState<EditorScreen> createState() => _EditorScreenState();
@@ -38,11 +44,21 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   String? _cachedAudioPath;
   String? _loadError;
 
+  // Region management
+  late List<LoopRegion> _regions;
+  int _selectedRegionIdx = 0;
+
   LoopItem get _item => widget.item;
 
   @override
   void initState() {
     super.initState();
+    // Init regions from item
+    final effective = _item.effectiveRegions;
+    _regions = effective.map((r) => r.copyWith()).toList();
+    _selectedRegionIdx =
+        widget.initialRegionIndex.clamp(0, _regions.length.clamp(1, 999) - 1);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
@@ -59,6 +75,100 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       ref.read(playerProvider).stop();
     } catch (_) {}
     super.deactivate();
+  }
+
+  // --- Region sync ---
+
+  void _syncCurrentRegion() {
+    if (_regions.isEmpty) return;
+    final loop = ref.read(loopProvider);
+    _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
+      pointAMs: loop.pointA.inMilliseconds,
+      pointBMs: loop.pointB.inMilliseconds,
+    );
+  }
+
+  void _selectRegion(int index) {
+    if (index == _selectedRegionIdx) return;
+    _syncCurrentRegion();
+    setState(() => _selectedRegionIdx = index);
+    _loadRegionIntoLoop(index);
+  }
+
+  void _loadRegionIntoLoop(int index) {
+    if (index < 0 || index >= _regions.length) return;
+    final r = _regions[index];
+    final notifier = ref.read(loopProvider.notifier);
+    notifier.setPointA(Duration(milliseconds: r.pointAMs));
+    notifier.setPointB(Duration(milliseconds: r.pointBMs));
+  }
+
+  void _addRegion() {
+    _syncCurrentRegion();
+    final position = ref.read(playerProvider).state.position;
+
+    final region = LoopRegion(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: '区間 ${_regions.length + 1}',
+      pointAMs: position.inMilliseconds,
+      pointBMs: 0,
+    );
+    setState(() {
+      _regions.add(region);
+      _selectedRegionIdx = _regions.length - 1;
+    });
+    _loadRegionIntoLoop(_selectedRegionIdx);
+  }
+
+  void _renameRegion(int index) async {
+    final name = await _showRegionNameDialog(_regions[index].name);
+    if (name == null) return;
+    setState(() {
+      _regions[index] = _regions[index].copyWith(name: name);
+    });
+  }
+
+  void _deleteRegion(int index) {
+    if (_regions.length <= 1) return;
+    setState(() {
+      _regions.removeAt(index);
+      if (_selectedRegionIdx >= _regions.length) {
+        _selectedRegionIdx = _regions.length - 1;
+      }
+    });
+    _loadRegionIntoLoop(_selectedRegionIdx);
+  }
+
+  Future<String?> _showRegionNameDialog(String initial) async {
+    final controller = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('区間名'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '区間名を入力',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return (result != null && result.isNotEmpty) ? result : null;
   }
 
   // --- Loading progress ---
@@ -140,7 +250,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     await player.open(Media(source.uri), play: false);
     ref.read(videoSourceProvider.notifier).state = source;
 
-    _restoreAbValues();
+    _restoreValues();
     await _finishLoading(source);
   }
 
@@ -158,17 +268,23 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     await player.open(Media(_item.uri), play: false);
     ref.read(videoSourceProvider.notifier).state = source;
 
-    _restoreAbValues();
+    _restoreValues();
     await _finishLoading(source);
   }
 
-  void _restoreAbValues() {
-    if (_item.pointAMs > 0 || _item.pointBMs > 0) {
-      ref
-          .read(loopProvider.notifier)
+  void _restoreValues() {
+    // Load selected region's AB into loop provider
+    if (_regions.isNotEmpty) {
+      _loadRegionIntoLoop(_selectedRegionIdx);
+      // Enable loop if region has points
+      final r = _regions[_selectedRegionIdx];
+      if (r.pointAMs > 0 || r.pointBMs > 0) {
+        ref.read(loopProvider.notifier).toggleEnabled();
+      }
+    } else if (_item.pointAMs > 0 || _item.pointBMs > 0) {
+      ref.read(loopProvider.notifier)
           .setPointA(Duration(milliseconds: _item.pointAMs));
-      ref
-          .read(loopProvider.notifier)
+      ref.read(loopProvider.notifier)
           .setPointB(Duration(milliseconds: _item.pointBMs));
       ref.read(loopProvider.notifier).toggleEnabled();
     }
@@ -306,7 +422,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       }
     }
 
-    // リトライ
     final ytService = ref.read(youtubeServiceProvider);
     try {
       final manifest = await ytService.yt.videos.streamsClient
@@ -334,15 +449,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final loop = ref.read(loopProvider);
-      final rate = ref.read(playerProvider).state.rate;
+      _syncCurrentRegion();
 
-      _item.pointAMs = loop.pointA.inMilliseconds;
-      _item.pointBMs = loop.pointB.inMilliseconds;
+      final rate = ref.read(playerProvider).state.rate;
+      _item.regions = List.from(_regions);
       _item.speed = rate;
 
-      // YouTube の場合、ストリームURLは一時的なのでuri更新しない
-      // (videoIdから再取得可能)
+      // Update pointA/B from first region for backward compat
+      if (_regions.isNotEmpty) {
+        _item.pointAMs = _regions.first.pointAMs;
+        _item.pointBMs = _regions.first.pointBMs;
+      }
 
       await ref.read(loopItemsProvider.notifier).update(_item);
 
@@ -359,11 +476,18 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   bool get _hasChanges {
-    final loop = ref.read(loopProvider);
+    _syncCurrentRegion();
     final rate = ref.read(playerProvider).state.rate;
-    if (loop.pointA.inMilliseconds != _item.pointAMs) return true;
-    if (loop.pointB.inMilliseconds != _item.pointBMs) return true;
     if (rate != _item.speed) return true;
+
+    // Compare regions
+    final orig = _item.effectiveRegions;
+    if (_regions.length != orig.length) return true;
+    for (var i = 0; i < _regions.length; i++) {
+      if (_regions[i].pointAMs != orig[i].pointAMs) return true;
+      if (_regions[i].pointBMs != orig[i].pointBMs) return true;
+      if (_regions[i].name != orig[i].name) return true;
+    }
     return false;
   }
 
@@ -588,48 +712,223 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   Widget _buildEditorView(double bottomInset) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          const VideoPlayerWidget(),
-          const PlayerControls(),
-          const LoopSeekbar(),
-          const LoopControls(),
-          // AB値プレビュー
-          _buildAbPreview(),
-          SizedBox(height: 24 + bottomInset),
-        ],
+    return Column(
+      children: [
+        const VideoPlayerWidget(),
+        const PlayerControls(),
+        const Expanded(child: LoopSeekbar()),
+        // Region list + AB controls side by side
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Region list (narrower)
+                Expanded(flex: 2, child: _buildRegionList()),
+                const SizedBox(width: 4),
+                // AB controls (wider)
+                const Expanded(flex: 3, child: LoopControls()),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: bottomInset),
+      ],
+    );
+  }
+
+  Widget _buildRegionList() {
+    final loop = ref.watch(loopProvider);
+    final loopNotifier = ref.read(loopProvider.notifier);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header: reset + loop toggle
+            Row(
+              children: [
+                const Text('区間',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey)),
+                const Spacer(),
+                SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: IconButton(
+                    icon: const Icon(Icons.restart_alt, size: 16),
+                    onPressed: hasSource ? () => loopNotifier.reset() : null,
+                    tooltip: 'ABクリア',
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                SizedBox(
+                  height: 24,
+                  child: FilledButton(
+                    onPressed:
+                        hasSource ? () => loopNotifier.toggleEnabled() : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: loop.enabled
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surfaceContainerHighest,
+                      foregroundColor:
+                          loop.enabled ? Colors.black : Colors.grey,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                    ),
+                    child: Text(loop.enabled ? 'Loop ON' : 'Loop',
+                        style: const TextStyle(fontSize: 10)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+
+            // Vertical region list (scrollable)
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  for (var i = 0; i < _regions.length; i++) ...[
+                    _buildRegionTile(i),
+                    if (i < _regions.length - 1)
+                      Divider(
+                          height: 1,
+                          color: theme.dividerColor.withValues(alpha: 0.3)),
+                  ],
+                ],
+              ),
+            ),
+
+            // Add button (compact)
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              height: 28,
+              child: OutlinedButton.icon(
+                onPressed: _addRegion,
+                icon: const Icon(Icons.add, size: 14),
+                label:
+                    const Text('追加', style: TextStyle(fontSize: 11)),
+                style: OutlinedButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  side: BorderSide(color: Colors.grey.shade700),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildAbPreview() {
-    final loop = ref.watch(loopProvider);
-    final a = TimeUtils.format(loop.pointA);
-    final b = TimeUtils.format(loop.pointB);
-    final rate = ref.watch(rateProvider).valueOrNull ?? 1.0;
+  Widget _buildRegionTile(int index) {
+    final region = _regions[index];
+    final isSelected = index == _selectedRegionIdx;
+    final hasAb = region.pointAMs > 0 || region.pointBMs > 0;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
+    return InkWell(
+      onTap: () => _selectRegion(index),
+      onLongPress: () => _showRegionMenu(index),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+        decoration: isSelected
+            ? BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+              )
+            : null,
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.repeat, size: 16, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text('A: $a',
+            // Selected indicator
+            Container(
+              width: 4,
+              height: 24,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Name
+            Expanded(
+              child: Text(
+                region.name,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            // AB time
+            if (hasAb) ...[
+              Text(
+                TimeUtils.formatShort(
+                    Duration(milliseconds: region.pointAMs)),
                 style: const TextStyle(
-                    fontSize: 13, color: Color(0xFFFF6B6B))),
-            const SizedBox(width: 16),
-            Text('B: $b',
+                    fontSize: 11, color: Color(0xFFFF6B6B)),
+              ),
+              const Text(' - ',
+                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+              Text(
+                TimeUtils.formatShort(
+                    Duration(milliseconds: region.pointBMs)),
                 style: const TextStyle(
-                    fontSize: 13, color: Color(0xFF4ECCA3))),
-            if (rate != 1.0) ...[
-              const SizedBox(width: 16),
-              Text('${rate.toStringAsFixed(2)}x',
-                  style: const TextStyle(fontSize: 13, color: Colors.grey)),
-            ],
+                    fontSize: 11, color: Color(0xFF4FC3F7)),
+              ),
+            ] else
+              const Text('未設定',
+                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRegionMenu(int index) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('名前を変更'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _renameRegion(index);
+              },
+            ),
+            if (_regions.length > 1)
+              ListTile(
+                leading:
+                    const Icon(Icons.delete, color: Colors.red),
+                title: const Text('削除',
+                    style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteRegion(index);
+                },
+              ),
           ],
         ),
       ),

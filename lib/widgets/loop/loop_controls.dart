@@ -5,6 +5,7 @@ import '../../core/utils/time_utils.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 
+/// エディタ用 AB 微調整パネル（コンパクト版）
 class LoopControls extends ConsumerWidget {
   const LoopControls({super.key});
 
@@ -15,163 +16,92 @@ class LoopControls extends ConsumerWidget {
     final loop = ref.watch(loopProvider);
     final notifier = ref.read(loopProvider.notifier);
     final hasSource = ref.watch(videoSourceProvider) != null;
-    final theme = Theme.of(context);
+
+    final stepLabel = loop.adjustStep < 1
+        ? '${loop.adjustStep}s'
+        : '${loop.adjustStep.toInt()}s';
 
     return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Loop toggle + set buttons + reset
+            // Step selector (right-aligned)
             Row(
               children: [
-                _ActionButton(
-                  label: 'A',
-                  color: AppTheme.pointAColor,
-                  onPressed: hasSource
-                      ? () => notifier.setPointAToCurrentPosition()
-                      : null,
-                ),
-                const SizedBox(width: 8),
-                _ActionButton(
-                  label: 'B',
-                  color: AppTheme.pointBColor,
-                  onPressed: hasSource
-                      ? () => notifier.setPointBToCurrentPosition()
-                      : null,
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.restart_alt, size: 20),
-                  onPressed: hasSource ? () => notifier.reset() : null,
-                  tooltip: 'リセット',
-                  visualDensity: VisualDensity.compact,
-                ),
+                const Text('AB設定',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey)),
                 const Spacer(),
-                FilledButton.icon(
-                  onPressed: hasSource ? () => notifier.toggleEnabled() : null,
-                  icon: Icon(
-                    loop.enabled ? Icons.repeat_on : Icons.repeat,
-                    size: 18,
+                const Text('Step ',
+                    style: TextStyle(fontSize: 11, color: Colors.grey)),
+                PopupMenuButton<double>(
+                  initialValue: loop.adjustStep,
+                  onSelected: (v) => notifier.setStep(v),
+                  padding: EdgeInsets.zero,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade700),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(stepLabel,
+                            style: const TextStyle(fontSize: 12)),
+                        const Icon(Icons.arrow_drop_down, size: 16),
+                      ],
+                    ),
                   ),
-                  label: Text(loop.enabled ? 'ON' : 'OFF'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: loop.enabled
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.surfaceContainerHighest,
-                    foregroundColor: loop.enabled ? Colors.black : Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    minimumSize: const Size(0, 36),
-                  ),
+                  itemBuilder: (_) => _steps
+                      .map((s) => PopupMenuItem(
+                            value: s,
+                            height: 36,
+                            child: Text(
+                              s < 1 ? '${s}s' : '${s.toInt()}s',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ))
+                      .toList(),
                 ),
               ],
             ),
+            const SizedBox(height: 8),
 
-            if (loop.hasPoints) ...[
-              const SizedBox(height: 12),
+            // Point A row: [A button] time [- step] [+ step]
+            _PointRow(
+              label: 'A',
+              color: AppTheme.pointAColor,
+              time: loop.pointA,
+              stepLabel: stepLabel,
+              onSet: hasSource
+                  ? () => notifier.setPointAToCurrentPosition()
+                  : null,
+              onMinus: () => notifier.adjustPointA(-1),
+              onPlus: () => notifier.adjustPointA(1),
+            ),
+            const SizedBox(height: 6),
 
-              // Point A adjustment
-              _PointRow(
-                label: 'A',
-                color: AppTheme.pointAColor,
-                time: loop.pointA,
-                onMinus: () => notifier.adjustPointA(-1),
-                onPlus: () => notifier.adjustPointA(1),
-              ),
-              const SizedBox(height: 6),
-
-              // Point B adjustment
-              _PointRow(
-                label: 'B',
-                color: AppTheme.pointBColor,
-                time: loop.pointB,
-                onMinus: () => notifier.adjustPointB(-1),
-                onPlus: () => notifier.adjustPointB(1),
-              ),
-              const SizedBox(height: 10),
-
-              // Step selector
-              Row(
-                children: [
-                  const Text('Step:', style: TextStyle(fontSize: 12)),
-                  const SizedBox(width: 8),
-                  ..._steps.map(
-                    (s) => Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: ChoiceChip(
-                        label: Text(
-                          s < 1 ? '${s}s' : '${s.toInt()}s',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        selected: loop.adjustStep == s,
-                        onSelected: (_) => notifier.setStep(s),
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Gap control
-              Row(
-                children: [
-                  const Text('Gap:', style: TextStyle(fontSize: 12)),
-                  Expanded(
-                    child: Slider(
-                      value: loop.gapSeconds,
-                      min: 0,
-                      max: 10,
-                      divisions: 20,
-                      label: '${loop.gapSeconds.toStringAsFixed(1)}s',
-                      onChanged: (v) => notifier.setGap(v),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 36,
-                    child: Text(
-                      '${loop.gapSeconds.toStringAsFixed(1)}s',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            // Point B row: [B button] time [- step] [+ step]
+            _PointRow(
+              label: 'B',
+              color: AppTheme.pointBColor,
+              time: loop.pointB,
+              stepLabel: stepLabel,
+              onSet: hasSource
+                  ? () => notifier.setPointBToCurrentPosition()
+                  : null,
+              onMinus: () => notifier.adjustPointB(-1),
+              onPlus: () => notifier.adjustPointB(1),
+            ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback? onPressed;
-
-  const _ActionButton({
-    required this.label,
-    required this.color,
-    this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 40,
-      height: 36,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          padding: EdgeInsets.zero,
-          side: BorderSide(color: color),
-          foregroundColor: color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        ),
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -181,6 +111,8 @@ class _PointRow extends StatelessWidget {
   final String label;
   final Color color;
   final Duration time;
+  final String stepLabel;
+  final VoidCallback? onSet;
   final VoidCallback onMinus;
   final VoidCallback onPlus;
 
@@ -188,6 +120,8 @@ class _PointRow extends StatelessWidget {
     required this.label,
     required this.color,
     required this.time,
+    required this.stepLabel,
+    this.onSet,
     required this.onMinus,
     required this.onPlus,
   });
@@ -196,58 +130,62 @@ class _PointRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 20,
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
+        // A/B set button (tap to set to current position)
+        SizedBox(
+          width: 34,
+          height: 30,
+          child: OutlinedButton(
+            onPressed: onSet,
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.zero,
+              side: BorderSide(color: color),
+              foregroundColor: color,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6)),
             ),
+            child: Text(label,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ),
         const SizedBox(width: 8),
+        // Time display
         Text(
           TimeUtils.format(time),
-          style: const TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 14,
-          ),
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
         ),
         const Spacer(),
+        // - step
         SizedBox(
-          width: 36,
-          height: 32,
-          child: IconButton(
-            icon: const Icon(Icons.remove, size: 16),
+          height: 28,
+          child: OutlinedButton(
             onPressed: onMinus,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            style: IconButton.styleFrom(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               side: BorderSide(color: Colors.grey.shade700),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
+                  borderRadius: BorderRadius.circular(4)),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+            child: Text('-$stepLabel', style: const TextStyle(fontSize: 11)),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 4),
+        // + step
         SizedBox(
-          width: 36,
-          height: 32,
-          child: IconButton(
-            icon: const Icon(Icons.add, size: 16),
+          height: 28,
+          child: OutlinedButton(
             onPressed: onPlus,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            style: IconButton.styleFrom(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               side: BorderSide(color: Colors.grey.shade700),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
+                  borderRadius: BorderRadius.circular(4)),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+            child: Text('+$stepLabel', style: const TextStyle(fontSize: 11)),
           ),
         ),
       ],

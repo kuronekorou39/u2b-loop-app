@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import 'editor_screen.dart';
+import 'player_screen.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -57,12 +59,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     item.memo = memo.isEmpty ? null : memo;
     await ref.read(loopItemsProvider.notifier).update(item);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('保存しました'), duration: Duration(seconds: 1)),
-      );
-    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   Future<bool> _confirmDiscard() async {
@@ -86,15 +83,41 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return result == true;
   }
 
-  void _openAbEditor(LoopItem item) {
+  void _openPlayer(LoopItem item) {
     if (_hasChanges(item)) _save(item);
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => EditorScreen(item: item)),
+      MaterialPageRoute(builder: (_) => PlayerScreen(item: item)),
+    );
+  }
+
+  void _openAbEditor(LoopItem item, {int regionIndex = 0}) {
+    if (_hasChanges(item)) {
+      // Save without pop
+      final title = _titleController.text.trim();
+      final memo = _memoController.text.trim();
+      if (title.isNotEmpty) {
+        item.title = title;
+        item.memo = memo.isEmpty ? null : memo;
+        ref.read(loopItemsProvider.notifier).update(item);
+      }
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+          builder: (_) =>
+              EditorScreen(item: item, initialRegionIndex: regionIndex)),
     );
   }
 
   Future<void> _duplicateItem(LoopItem item) async {
-    if (_hasChanges(item)) await _save(item);
+    if (_hasChanges(item)) {
+      final title = _titleController.text.trim();
+      final memo = _memoController.text.trim();
+      if (title.isNotEmpty) {
+        item.title = title;
+        item.memo = memo.isEmpty ? null : memo;
+        await ref.read(loopItemsProvider.notifier).update(item);
+      }
+    }
     final copy =
         await ref.read(loopItemsProvider.notifier).duplicate(item);
     if (mounted) {
@@ -102,7 +125,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         const SnackBar(
             content: Text('複製しました'), duration: Duration(seconds: 1)),
       );
-      // 複製先の詳細画面を開く
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => DetailScreen(itemId: copy.id)),
       );
@@ -253,6 +275,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
     final ytUrl = _getYouTubeUrl(item);
     final itemTags = tags.where((t) => item.tagIds.contains(t.id)).toList();
+    final regions = item.effectiveRegions;
 
     return PopScope(
       canPop: false,
@@ -303,6 +326,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               _buildThumbnail(item),
               const SizedBox(height: 16),
 
+              // 再生ボタン
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => _openPlayer(item),
+                  icon: const Icon(Icons.play_arrow, size: 20),
+                  label: const Text('再生'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
               // タイトル
               TextField(
                 controller: _titleController,
@@ -344,24 +381,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               _buildSourceInfo(item),
               const SizedBox(height: 12),
 
-              // AB区間サマリー
-              if (item.pointAMs > 0 || item.pointBMs > 0) ...[
-                _buildAbSummary(item),
+              // AB区間一覧
+              if (regions.isNotEmpty) ...[
+                _buildRegionsList(item, regions),
                 const SizedBox(height: 12),
               ],
 
               // AB区間設定ボタン
               SizedBox(
                 width: double.infinity,
-                child: FilledButton.icon(
+                child: OutlinedButton.icon(
                   onPressed: () => _openAbEditor(item),
                   icon: const Icon(Icons.tune, size: 18),
                   label: Text(
-                    (item.pointAMs > 0 || item.pointBMs > 0)
-                        ? 'AB区間を編集'
-                        : 'AB区間を設定',
+                    regions.isNotEmpty ? 'AB区間を編集' : 'AB区間を設定',
                   ),
-                  style: FilledButton.styleFrom(
+                  style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
@@ -370,6 +405,63 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               const SizedBox(height: 32),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // --- Regions list ---
+
+  Widget _buildRegionsList(LoopItem item, List<dynamic> regions) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.segment, size: 18, color: Colors.grey),
+                SizedBox(width: 8),
+                Text('AB区間',
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < regions.length; i++)
+              InkWell(
+                onTap: () => _openAbEditor(item, regionIndex: i),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        regions[i].name,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${TimeUtils.formatShort(Duration(milliseconds: regions[i].pointAMs))}',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.pointAColor),
+                      ),
+                      const Text(' - ',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(
+                        '${TimeUtils.formatShort(Duration(milliseconds: regions[i].pointBMs))}',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.pointBColor),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right,
+                          size: 16, color: Colors.grey),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -545,34 +637,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       ),
     );
   }
-
-  Widget _buildAbSummary(LoopItem item) {
-    final a = TimeUtils.format(Duration(milliseconds: item.pointAMs));
-    final b = TimeUtils.format(Duration(milliseconds: item.pointBMs));
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            const Icon(Icons.repeat, size: 18, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text('A: $a',
-                style: const TextStyle(
-                    fontSize: 13, color: Color(0xFFFF6B6B))),
-            const SizedBox(width: 12),
-            Text('B: $b',
-                style: const TextStyle(
-                    fontSize: 13, color: Color(0xFF4ECCA3))),
-            if (item.speed != 1.0) ...[
-              const SizedBox(width: 12),
-              Text('${item.speed}x',
-                  style: const TextStyle(fontSize: 13, color: Colors.grey)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ============================================================
@@ -685,7 +749,8 @@ class _ItemTagSheetState extends State<_ItemTagSheet> {
                 onChanged: (_) => _toggle(tag.id),
               ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: OutlinedButton.icon(
                 onPressed: _createNew,
                 icon: const Icon(Icons.add, size: 18),

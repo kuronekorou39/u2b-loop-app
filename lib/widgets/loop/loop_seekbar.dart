@@ -58,17 +58,16 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
         ref.watch(positionProvider).valueOrNull ?? player.state.position;
     var duration =
         ref.watch(durationProvider).valueOrNull ?? Duration.zero;
-    // StreamProvider が emit を逃した場合のフォールバック
     if (duration == Duration.zero) {
       duration = player.state.duration;
     }
     final loop = ref.watch(loopProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
     final waveform = ref.watch(waveformDataProvider);
-    final waveformLoading = ref.watch(waveformLoadingProvider);
+    ref.watch(waveformLoadingProvider);
     final waveformError = ref.watch(waveformErrorProvider);
 
-    // Page-based auto-follow: viewport stays still, jumps when position nears edge
+    // Page-based auto-follow
     ref.listen(positionProvider, (_, next) {
       if (!_autoFollow || _zoomLevel <= 1.0) return;
       final pos = next.valueOrNull;
@@ -79,11 +78,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
       final vpW = 1.0 / _zoomLevel;
       final vs = (_panOffset - vpW / 2).clamp(0.0, max(0.0, 1.0 - vpW));
 
-      // Re-center when position falls outside 5%-85% of viewport
       if (posNorm < vs + vpW * 0.05 || posNorm > vs + vpW * 0.85) {
         final half = vpW / 2;
         setState(() {
-          // Place position at ~20% from left
           _panOffset =
               (posNorm + vpW * 0.3).clamp(half, max(half, 1.0 - half));
         });
@@ -91,10 +88,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     });
 
     final vpWidth = 1.0 / _zoomLevel;
-    final viewStart =
-        (_panOffset - vpWidth / 2).clamp(0.0, max(0.0, 1.0 - vpWidth))
-        as double;
-    final viewEnd = (viewStart + vpWidth).clamp(0.0, 1.0) as double;
+    final double viewStart =
+        (_panOffset - vpWidth / 2).clamp(0.0, max(0.0, 1.0 - vpWidth)).toDouble();
+    final double viewEnd = (viewStart + vpWidth).clamp(0.0, 1.0).toDouble();
     final isZoomed = _zoomLevel > 1.05;
 
     return Padding(
@@ -166,7 +162,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                                   normToDuration(screenXToNorm(
                                       details.localPosition.dx)));
                             } else {
-                              // Relative seek: 1/3 of seekbar width = full viewport range
                               final deltaNorm = (dx / width) * 3.0;
                               final totalMs =
                                   duration.inMilliseconds.toDouble();
@@ -296,18 +291,24 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
               ),
             ),
 
-          // --- Zoom controls ---
-          if (hasSource)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+          // --- Zoom controls + time display (combined row) ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: Row(
+              children: [
+                // Current time (left)
+                Text(
+                  TimeUtils.format(position),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const Spacer(),
+                // Zoom controls (center)
+                if (hasSource) ...[
                   SizedBox(
-                    width: 32,
-                    height: 32,
+                    width: 28,
+                    height: 28,
                     child: IconButton(
-                      icon: const Icon(Icons.remove, size: 18),
+                      icon: const Icon(Icons.remove, size: 16),
                       onPressed: _zoomLevel > 1.05 ? _zoomOut : null,
                       padding: EdgeInsets.zero,
                       style: IconButton.styleFrom(
@@ -315,17 +316,17 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             .colorScheme
                             .surfaceContainerHighest,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
                     child: Text(
                       '${_zoomLevel.toStringAsFixed(_zoomLevel >= 10 ? 0 : 1)}x',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: isZoomed
                             ? Theme.of(context).colorScheme.primary
                             : Colors.grey,
@@ -333,10 +334,10 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     ),
                   ),
                   SizedBox(
-                    width: 32,
-                    height: 32,
+                    width: 28,
+                    height: 28,
                     child: IconButton(
-                      icon: const Icon(Icons.add, size: 18),
+                      icon: const Icon(Icons.add, size: 16),
                       onPressed: _zoomLevel < 128.0 ? _zoomIn : null,
                       padding: EdgeInsets.zero,
                       style: IconButton.styleFrom(
@@ -344,29 +345,29 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             .colorScheme
                             .surfaceContainerHighest,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                       ),
                     ),
                   ),
                   if (isZoomed && !_autoFollow) ...[
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 6),
                     GestureDetector(
                       onTap: () => setState(() => _autoFollow = true),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: Theme.of(context)
                               .colorScheme
                               .primary
                               .withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           '追従',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10,
                             color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
@@ -374,19 +375,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     ),
                   ],
                 ],
-              ),
-            ),
-
-          // --- Time display ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  TimeUtils.format(position),
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+                const Spacer(),
+                // Total duration (right)
                 Text(
                   TimeUtils.format(duration),
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
@@ -441,7 +431,6 @@ class _WaveformSeekbarPainter extends CustomPainter {
     );
 
     if (totalMs == 0 || vpWidth <= 0) {
-      // duration 未解決でも最低限のトラックを表示
       _drawMinimalTrack(canvas, size, 0, isDark);
       return;
     }
@@ -463,7 +452,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
       _drawMinimalTrack(canvas, size, posX, isDark);
     }
 
-    // AB region highlight
+    // AB region highlight (subtle blue tint)
     if (hasLoop) {
       final clipAX = aX.clamp(0.0, size.width);
       final clipBX = bX.clamp(0.0, size.width);
@@ -518,9 +507,12 @@ class _WaveformSeekbarPainter extends CustomPainter {
     final midY = size.height / 2;
     final maxBarH = size.height * 0.42;
 
-    // Visible bar range
     final startIdx = max(0, (viewStart * barCount).floor() - 1);
     final endIdx = min(barCount, (viewEnd * barCount).ceil() + 1);
+
+    // Waveform uses accent green color (not B color)
+    const waveColorDark = Color(0xFF4ECCA3);
+    const waveColorLight = Color(0xFF00A86B);
 
     for (var i = startIdx; i < endIdx; i++) {
       final normPos = i / barCount;
@@ -537,16 +529,16 @@ class _WaveformSeekbarPainter extends CustomPainter {
       Color color;
       if (hasLoop && x >= aX && x <= bX) {
         color = isDark
-            ? const Color(0xFF4ECCA3).withValues(alpha: 0.85)
-            : const Color(0xFF00A86B).withValues(alpha: 0.85);
+            ? waveColorDark.withValues(alpha: 0.85)
+            : waveColorLight.withValues(alpha: 0.85);
       } else if (x <= posX) {
         color = isDark
-            ? const Color(0xFF4ECCA3).withValues(alpha: 0.5)
-            : const Color(0xFF00A86B).withValues(alpha: 0.5);
+            ? waveColorDark.withValues(alpha: 0.5)
+            : waveColorLight.withValues(alpha: 0.5);
       } else {
         color = isDark
-            ? const Color(0xFF4ECCA3).withValues(alpha: 0.25)
-            : const Color(0xFF00A86B).withValues(alpha: 0.25);
+            ? waveColorDark.withValues(alpha: 0.25)
+            : waveColorLight.withValues(alpha: 0.25);
       }
 
       final gapW = barW * 0.8;
@@ -575,7 +567,6 @@ class _WaveformSeekbarPainter extends CustomPainter {
     final midY = size.height / 2;
     const trackH = 6.0;
 
-    // 背景トラック（太めで視認性UP）
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTRB(0, midY - trackH / 2, size.width, midY + trackH / 2),
@@ -587,7 +578,6 @@ class _WaveformSeekbarPainter extends CustomPainter {
             : Colors.grey.shade400,
     );
 
-    // 再生済み部分
     if (posX > 0) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
@@ -700,7 +690,7 @@ class _MinimapPainter extends CustomPainter {
     double toX(Duration d) =>
         (d.inMilliseconds / totalMs).clamp(0.0, 1.0) * size.width;
 
-    // Waveform (downsampled for minimap)
+    // Minimap waveform (accent green)
     if (waveform != null && waveform!.isNotEmpty) {
       final data = waveform!;
       final midY = size.height / 2;

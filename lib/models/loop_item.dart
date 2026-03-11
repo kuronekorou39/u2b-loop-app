@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import 'loop_region.dart';
 
 class LoopItem {
   String id;
@@ -14,12 +15,18 @@ class LoopItem {
   String? memo;
   DateTime createdAt;
   DateTime updatedAt;
+
   /// null=取得完了, 'fetching'=取得中, 'error:...'=エラー
   String? fetchStatus;
+
   /// タグID一覧
   List<String> tagIds;
+
   /// 元のYouTube URL（コピー・アクセス用）
   String? youtubeUrl;
+
+  /// 複数AB区間
+  List<LoopRegion> regions;
 
   LoopItem({
     required this.id,
@@ -38,15 +45,33 @@ class LoopItem {
     this.fetchStatus,
     List<String>? tagIds,
     this.youtubeUrl,
+    List<LoopRegion>? regions,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
-        tagIds = tagIds ?? [];
+        tagIds = tagIds ?? [],
+        regions = regions ?? [];
 
   bool get isFetching => fetchStatus == 'fetching';
   bool get hasError => fetchStatus != null && fetchStatus!.startsWith('error');
   bool get isReady => fetchStatus == null;
   String? get errorMessage =>
       hasError ? fetchStatus!.substring('error:'.length) : null;
+
+  /// regions が空なら pointA/B から自動生成した1件を返す
+  List<LoopRegion> get effectiveRegions {
+    if (regions.isNotEmpty) return regions;
+    if (pointAMs > 0 || pointBMs > 0) {
+      return [
+        LoopRegion(
+          id: 'default',
+          name: 'デフォルト',
+          pointAMs: pointAMs,
+          pointBMs: pointBMs,
+        )
+      ];
+    }
+    return [];
+  }
 }
 
 class LoopItemAdapter extends TypeAdapter<LoopItem> {
@@ -73,6 +98,10 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       fetchStatus: fields[13] as String?,
       tagIds: (fields[14] as List?)?.cast<String>() ?? [],
       youtubeUrl: fields[15] as String?,
+      regions: (fields[16] as List?)
+              ?.map((m) => LoopRegion.fromMap((m as Map).cast<String, dynamic>()))
+              .toList() ??
+          [],
     );
   }
 
@@ -95,6 +124,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       13: obj.fetchStatus,
       14: obj.tagIds,
       15: obj.youtubeUrl,
+      16: obj.regions.map((r) => r.toMap()).toList(),
     });
   }
 }
