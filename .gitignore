@@ -47,5 +47,10 @@ app.*.map.json
 # Java heap dumps
 *.hprof
 
+# Keystore
+*.jks
+*.keystore
+key.properties
+
 # Claude Code
 .claude/
