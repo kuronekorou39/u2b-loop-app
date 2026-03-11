@@ -98,9 +98,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
       child: Column(
         children: [
           // --- Main waveform ---
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
+          SizedBox(
               height: 80,
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -233,15 +231,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 },
               ),
             ),
-          ),
 
           // --- Mini-map ---
           if (hasSource)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
+              child: SizedBox(
                   height: 24,
                   width: double.infinity,
                   child: LayoutBuilder(
@@ -289,7 +284,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                   ),
                 ),
               ),
-            ),
 
           // --- Zoom controls + time display (combined row) ---
           Padding(
@@ -721,11 +715,35 @@ class _MinimapPainter extends CustomPainter {
       }
     }
 
-    // AB region
-    if (loopEnabled && pointB > Duration.zero) {
+    // AB region highlight
+    if (pointB > Duration.zero) {
       canvas.drawRect(
         Rect.fromLTRB(toX(pointA), 0, toX(pointB), size.height),
         Paint()..color = AppTheme.pointBColor.withValues(alpha: 0.15),
+      );
+    }
+
+    // A marker line (always show if set)
+    if (pointA > Duration.zero || pointB > Duration.zero) {
+      final aX = toX(pointA);
+      canvas.drawLine(
+        Offset(aX, 0),
+        Offset(aX, size.height),
+        Paint()
+          ..color = AppTheme.pointAColor
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    // B marker line (always show if set)
+    if (pointB > Duration.zero) {
+      final bX = toX(pointB);
+      canvas.drawLine(
+        Offset(bX, 0),
+        Offset(bX, size.height),
+        Paint()
+          ..color = AppTheme.pointBColor
+          ..strokeWidth = 1.5,
       );
     }
 
