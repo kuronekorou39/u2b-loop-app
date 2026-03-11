@@ -98,14 +98,13 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
       child: Column(
         children: [
           // --- Main waveform ---
-          Expanded(
-            child: ClipRRect(
+          ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: SizedBox.expand(
+            child: SizedBox(
+              height: 80,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.maxWidth;
-                  final height = constraints.maxHeight;
 
                   double screenXToNorm(double x) =>
                       viewStart + (x / width) * vpWidth;
@@ -194,7 +193,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     child: Stack(
                       children: [
                         CustomPaint(
-                          size: Size(width, height),
+                          size: Size(width, 80),
                           painter: _WaveformSeekbarPainter(
                             position: position,
                             duration: duration,
@@ -234,7 +233,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 },
               ),
             ),
-          ),
           ),
 
           // --- Mini-map ---

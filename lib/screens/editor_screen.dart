@@ -716,11 +716,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       children: [
         const VideoPlayerWidget(),
         const PlayerControls(),
-        const Expanded(child: LoopSeekbar()),
+        const LoopSeekbar(),
         // Region list + AB controls side by side
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: IntrinsicHeight(
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
