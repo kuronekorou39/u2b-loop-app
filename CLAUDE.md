@@ -14,6 +14,12 @@ YouTubeとローカル動画のAB区間ループ再生アプリ（Flutter/Androi
 - UIのカラーはWebアプリ版に揃える（ダーク: bg=#1A1A2E, accent=#4ECCA3/#E94560）
 - AB地点の色: A=#FF6B6B（赤系）, B=#4ECCA3（緑系）
 
+## バージョン管理
+
+- gitタグ（例: `v1.3.0`）と `pubspec.yaml` の `version:` は常に一致させる
+- `+N` のようなビルド番号は使わない。セマンティックバージョニング（`major.minor.patch`）のみ
+- リリース手順: pubspec.yaml の version 更新 → コミット → タグ作成 → push（タグpushでCI自動ビルド）
+
 ## ビルド
 
 - Gradleメモリ設定: `-Xmx4G -XX:+UseSerialGC`（Windowsの仮想メモリ断片化対策）
