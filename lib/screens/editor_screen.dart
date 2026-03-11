@@ -745,6 +745,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final theme = Theme.of(context);
     final canAdd = _regions.length < _maxRegions;
 
+    // Sync current region values from loop provider in real-time
+    if (_regions.isNotEmpty) {
+      _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
+        pointAMs: loop.pointA.inMilliseconds,
+        pointBMs: loop.pointB.inMilliseconds,
+      );
+    }
+
     final stepLabel = loop.adjustStep < 1
         ? '${loop.adjustStep}s'
         : '${loop.adjustStep.toInt()}s';
@@ -753,149 +761,170 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(8),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: 区間 + 追加ボタン + Step selector
-            Row(
-              children: [
-                const Text('AB設定',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey)),
-                const Spacer(),
-                const Text('Step ',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
-                PopupMenuButton<double>(
-                  initialValue: loop.adjustStep,
-                  onSelected: (v) => loopNotifier.setStep(v),
-                  padding: EdgeInsets.zero,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade700),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+            // Left: Region list (vertical)
+            SizedBox(
+              width: 120,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('区間',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey)),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
                       children: [
-                        Text(stepLabel,
-                            style: const TextStyle(fontSize: 12)),
-                        const Icon(Icons.arrow_drop_down, size: 16),
+                        for (var i = 0; i < _regions.length; i++) ...[
+                          _buildRegionTile(i),
+                          if (i < _regions.length - 1)
+                            Divider(
+                                height: 1,
+                                color: theme.dividerColor
+                                    .withValues(alpha: 0.3)),
+                        ],
                       ],
                     ),
                   ),
-                  itemBuilder: (_) => LoopControls.steps
-                      .map((s) => PopupMenuItem(
-                            value: s,
-                            height: 36,
-                            child: Text(
-                              s < 1 ? '${s}s' : '${s.toInt()}s',
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ))
-                      .toList(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-
-            // Region list (horizontal scroll)
-            SizedBox(
-              height: 48,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (var i = 0; i < _regions.length; i++)
-                    _buildRegionChip(i),
-                  // Add button
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: ActionChip(
-                      avatar: const Icon(Icons.add, size: 14),
-                      label: Text(
-                          canAdd ? '追加' : '上限',
-                          style: const TextStyle(fontSize: 11)),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 28,
+                    child: OutlinedButton.icon(
                       onPressed: canAdd ? _addRegion : null,
-                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.add, size: 14),
+                      label: Text(canAdd ? '追加' : '上限',
+                          style: const TextStyle(fontSize: 11)),
+                      style: OutlinedButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        side: BorderSide(color: Colors.grey.shade700),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 6),
-
-            // Point A row
-            LoopControls.buildPointRow(
-              label: 'A',
-              color: AppTheme.pointAColor,
-              time: loop.pointA,
-              stepLabel: stepLabel,
-              onSet: hasSource
-                  ? () => loopNotifier.setPointAToCurrentPosition()
-                  : null,
-              onMinus: () => loopNotifier.adjustPointA(-1),
-              onPlus: () => loopNotifier.adjustPointA(1),
-            ),
-            const SizedBox(height: 6),
-
-            // Point B row
-            LoopControls.buildPointRow(
-              label: 'B',
-              color: AppTheme.pointBColor,
-              time: loop.pointB,
-              stepLabel: stepLabel,
-              onSet: hasSource
-                  ? () => loopNotifier.setPointBToCurrentPosition()
-                  : null,
-              onMinus: () => loopNotifier.adjustPointB(-1),
-              onPlus: () => loopNotifier.adjustPointB(1),
-            ),
-            const SizedBox(height: 8),
-
-            // Loop toggle + Reset (below AB times)
-            Row(
-              children: [
-                SizedBox(
-                  height: 28,
-                  child: FilledButton.icon(
-                    onPressed:
-                        hasSource ? () => loopNotifier.toggleEnabled() : null,
-                    icon: Icon(
-                      loop.enabled ? Icons.repeat_on : Icons.repeat,
-                      size: 16,
-                    ),
-                    label: Text(loop.enabled ? 'Loop ON' : 'Loop OFF',
-                        style: const TextStyle(fontSize: 11)),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: loop.enabled
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.surfaceContainerHighest,
-                      foregroundColor:
-                          loop.enabled ? Colors.black : Colors.grey,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      minimumSize: Size.zero,
-                    ),
+            const SizedBox(width: 8),
+            // Right: AB controls
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Point A row
+                  LoopControls.buildPointRow(
+                    label: 'A',
+                    color: AppTheme.pointAColor,
+                    time: loop.pointA,
+                    stepLabel: stepLabel,
+                    onSet: hasSource
+                        ? () => loopNotifier.setPointAToCurrentPosition()
+                        : null,
+                    onMinus: () => loopNotifier.adjustPointA(-1),
+                    onPlus: () => loopNotifier.adjustPointA(1),
                   ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 28,
-                  child: OutlinedButton.icon(
-                    onPressed: hasSource ? () => loopNotifier.reset() : null,
-                    icon: const Icon(Icons.restart_alt, size: 14),
-                    label: const Text('クリア',
-                        style: TextStyle(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: Size.zero,
-                      side: BorderSide(color: Colors.grey.shade700),
-                    ),
+                  const SizedBox(height: 6),
+
+                  // Point B row
+                  LoopControls.buildPointRow(
+                    label: 'B',
+                    color: AppTheme.pointBColor,
+                    time: loop.pointB,
+                    stepLabel: stepLabel,
+                    onSet: hasSource
+                        ? () => loopNotifier.setPointBToCurrentPosition()
+                        : null,
+                    onMinus: () => loopNotifier.adjustPointB(-1),
+                    onPlus: () => loopNotifier.adjustPointB(1),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+
+                  // Loop toggle + Clear + Step selector
+                  Row(
+                    children: [
+                      SizedBox(
+                        height: 28,
+                        child: FilledButton.icon(
+                          onPressed: hasSource
+                              ? () => loopNotifier.toggleEnabled()
+                              : null,
+                          icon: Icon(
+                            loop.enabled ? Icons.repeat_on : Icons.repeat,
+                            size: 16,
+                          ),
+                          label: Text(
+                              loop.enabled ? 'Loop ON' : 'Loop OFF',
+                              style: const TextStyle(fontSize: 11)),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: loop.enabled
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.surfaceContainerHighest,
+                            foregroundColor:
+                                loop.enabled ? Colors.black : Colors.grey,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 10),
+                            minimumSize: Size.zero,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        height: 28,
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              hasSource ? () => loopNotifier.reset() : null,
+                          icon: const Icon(Icons.restart_alt, size: 14),
+                          label: const Text('クリア',
+                              style: TextStyle(fontSize: 11)),
+                          style: OutlinedButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: Size.zero,
+                            side: BorderSide(color: Colors.grey.shade700),
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Step selector
+                      PopupMenuButton<double>(
+                        initialValue: loop.adjustStep,
+                        onSelected: (v) => loopNotifier.setStep(v),
+                        padding: EdgeInsets.zero,
+                        child: Container(
+                          height: 28,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade700),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(stepLabel,
+                                  style: const TextStyle(fontSize: 11)),
+                              const Icon(Icons.arrow_drop_down, size: 16),
+                            ],
+                          ),
+                        ),
+                        itemBuilder: (_) => LoopControls.steps
+                            .map((s) => PopupMenuItem(
+                                  value: s,
+                                  height: 36,
+                                  child: Text(
+                                    s < 1 ? '${s}s' : '${s.toInt()}s',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ))
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -903,66 +932,63 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
-  Widget _buildRegionChip(int index) {
+  Widget _buildRegionTile(int index) {
     final region = _regions[index];
     final isSelected = index == _selectedRegionIdx;
     final hasAb = region.pointAMs > 0 || region.pointBMs > 0;
-    final theme = Theme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: GestureDetector(
-        onTap: () => _selectRegion(index),
-        onLongPress: () => _showRegionMenu(index),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? theme.colorScheme.primary.withValues(alpha: 0.15)
-                : theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(8),
-            border: isSelected
-                ? Border.all(color: theme.colorScheme.primary, width: 1.5)
-                : null,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                region.name,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: () => _selectRegion(index),
+      onLongPress: () => _showRegionMenu(index),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        decoration: isSelected
+            ? BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+              )
+            : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              region.name,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
-              if (hasAb)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      TimeUtils.formatShort(
-                          Duration(milliseconds: region.pointAMs)),
-                      style: const TextStyle(
-                          fontSize: 10, color: Color(0xFFFF6B6B)),
-                    ),
-                    const Text(' - ',
-                        style: TextStyle(fontSize: 10, color: Colors.grey)),
-                    Text(
-                      TimeUtils.formatShort(
-                          Duration(milliseconds: region.pointBMs)),
-                      style: const TextStyle(
-                          fontSize: 10, color: Color(0xFF4ECCA3)),
-                    ),
-                  ],
-                )
-              else
-                const Text('未設定',
-                    style: TextStyle(fontSize: 10, color: Colors.grey)),
-            ],
-          ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 1),
+            if (hasAb)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    TimeUtils.formatShort(
+                        Duration(milliseconds: region.pointAMs)),
+                    style: TextStyle(
+                        fontSize: 10, color: AppTheme.pointAColor),
+                  ),
+                  const Text(' - ',
+                      style: TextStyle(fontSize: 10, color: Colors.grey)),
+                  Text(
+                    TimeUtils.formatShort(
+                        Duration(milliseconds: region.pointBMs)),
+                    style: TextStyle(
+                        fontSize: 10, color: AppTheme.pointBColor),
+                  ),
+                ],
+              )
+            else
+              const Text('未設定',
+                  style: TextStyle(fontSize: 10, color: Colors.grey)),
+          ],
         ),
       ),
     );
