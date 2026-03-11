@@ -16,6 +16,7 @@ class LoopControls extends ConsumerWidget {
     final loop = ref.watch(loopProvider);
     final notifier = ref.read(loopProvider.notifier);
     final hasSource = ref.watch(videoSourceProvider) != null;
+    final theme = Theme.of(context);
 
     final stepLabel = loop.adjustStep < 1
         ? '${loop.adjustStep}s'
@@ -28,7 +29,7 @@ class LoopControls extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Step selector (right-aligned)
+            // Header: AB設定 + Loop toggle + Reset + Step selector
             Row(
               children: [
                 const Text('AB設定',
@@ -36,6 +37,39 @@ class LoopControls extends ConsumerWidget {
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: Colors.grey)),
+                const SizedBox(width: 6),
+                // Loop toggle
+                SizedBox(
+                  height: 24,
+                  child: FilledButton(
+                    onPressed:
+                        hasSource ? () => notifier.toggleEnabled() : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: loop.enabled
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surfaceContainerHighest,
+                      foregroundColor:
+                          loop.enabled ? Colors.black : Colors.grey,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                    ),
+                    child: Text(loop.enabled ? 'Loop ON' : 'Loop',
+                        style: const TextStyle(fontSize: 10)),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // Reset button
+                SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: IconButton(
+                    icon: const Icon(Icons.restart_alt, size: 16),
+                    onPressed: hasSource ? () => notifier.reset() : null,
+                    tooltip: 'ABクリア',
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
                 const Spacer(),
                 const Text('Step ',
                     style: TextStyle(fontSize: 11, color: Colors.grey)),

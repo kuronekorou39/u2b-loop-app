@@ -103,15 +103,22 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     notifier.setPointB(Duration(milliseconds: r.pointBMs));
   }
 
+  static const _maxRegions = 10;
+
   void _addRegion() {
+    if (_regions.length >= _maxRegions) return;
     _syncCurrentRegion();
-    final position = ref.read(playerProvider).state.position;
+    final player = ref.read(playerProvider);
+    final position = player.state.position;
+    final duration = player.state.duration;
+    final bMs = (position.inMilliseconds + 60000)
+        .clamp(0, duration.inMilliseconds);
 
     final region = LoopRegion(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       name: '区間 ${_regions.length + 1}',
       pointAMs: position.inMilliseconds,
-      pointBMs: 0,
+      pointBMs: bMs,
     );
     setState(() {
       _regions.add(region);
@@ -148,8 +155,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: 20,
           decoration: const InputDecoration(
-            hintText: '区間名を入力',
+            hintText: '区間名を入力（最大20文字）',
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -739,10 +747,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   Widget _buildRegionList() {
-    final loop = ref.watch(loopProvider);
-    final loopNotifier = ref.read(loopProvider.notifier);
-    final hasSource = ref.watch(videoSourceProvider) != null;
     final theme = Theme.of(context);
+    final canAdd = _regions.length < _maxRegions;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -751,47 +757,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: reset + loop toggle
-            Row(
-              children: [
-                const Text('区間',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey)),
-                const Spacer(),
-                SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: IconButton(
-                    icon: const Icon(Icons.restart_alt, size: 16),
-                    onPressed: hasSource ? () => loopNotifier.reset() : null,
-                    tooltip: 'ABクリア',
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                SizedBox(
-                  height: 24,
-                  child: FilledButton(
-                    onPressed:
-                        hasSource ? () => loopNotifier.toggleEnabled() : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: loop.enabled
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.surfaceContainerHighest,
-                      foregroundColor:
-                          loop.enabled ? Colors.black : Colors.grey,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: Size.zero,
-                    ),
-                    child: Text(loop.enabled ? 'Loop ON' : 'Loop',
-                        style: const TextStyle(fontSize: 10)),
-                  ),
-                ),
-              ],
-            ),
+            // Header
+            const Text('区間',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey)),
             const SizedBox(height: 4),
 
             // Vertical region list (scrollable)
@@ -816,10 +787,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               width: double.infinity,
               height: 28,
               child: OutlinedButton.icon(
-                onPressed: _addRegion,
+                onPressed: canAdd ? _addRegion : null,
                 icon: const Icon(Icons.add, size: 14),
-                label:
-                    const Text('追加', style: TextStyle(fontSize: 11)),
+                label: Text(
+                    canAdd ? '追加' : '上限($_maxRegions)',
+                    style: const TextStyle(fontSize: 11)),
                 style: OutlinedButton.styleFrom(
                   padding: EdgeInsets.zero,
                   side: BorderSide(color: Colors.grey.shade700),
