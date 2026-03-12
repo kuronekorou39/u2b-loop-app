@@ -38,7 +38,6 @@ class HomeScreen extends ConsumerWidget {
             VideoPlayerWidget(),
             PlayerControls(),
             LoopSeekbar(),
-            LoopControls(),
             SizedBox(height: 24),
           ],
         ),

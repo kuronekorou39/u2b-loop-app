@@ -122,16 +122,16 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     const hitRadius = 24.0;
                     final totalMs = duration.inMilliseconds.toDouble();
 
-                    if (loop.pointB > Duration.zero) {
+                    if (loop.hasB) {
                       final bSX =
-                          normToScreenX(loop.pointB.inMilliseconds / totalMs);
+                          normToScreenX(loop.pointB!.inMilliseconds / totalMs);
                       if ((screenX - bSX).abs() < hitRadius) {
                         return _DragTarget.pointB;
                       }
                     }
-                    if (loop.pointA > Duration.zero || loop.enabled) {
+                    if (loop.hasA) {
                       final aSX =
-                          normToScreenX(loop.pointA.inMilliseconds / totalMs);
+                          normToScreenX(loop.pointA!.inMilliseconds / totalMs);
                       if ((screenX - aSX).abs() < hitRadius) {
                         return _DragTarget.pointA;
                       }
@@ -391,8 +391,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
 class _WaveformSeekbarPainter extends CustomPainter {
   final Duration position;
   final Duration duration;
-  final Duration pointA;
-  final Duration pointB;
+  final Duration? pointA;
+  final Duration? pointB;
   final bool loopEnabled;
   final List<double>? waveform;
   final Brightness brightness;
@@ -435,19 +435,21 @@ class _WaveformSeekbarPainter extends CustomPainter {
     }
 
     final posX = toX(position);
-    final hasLoop = loopEnabled && pointB > Duration.zero;
-    final aX = hasLoop ? toX(pointA) : 0.0;
-    final bX = hasLoop ? toX(pointB) : 0.0;
+    final hasA = pointA != null;
+    final hasB = pointB != null;
+    final hasBoth = hasA && hasB;
+    final aX = hasA ? toX(pointA!) : 0.0;
+    final bX = hasB ? toX(pointB!) : 0.0;
 
     // Waveform or minimal track
     if (waveform != null && waveform!.isNotEmpty) {
-      _drawWaveform(canvas, size, posX, hasLoop, aX, bX, isDark);
+      _drawWaveform(canvas, size, posX, isDark);
     } else {
       _drawMinimalTrack(canvas, size, posX, isDark);
     }
 
     // AB region highlight (subtle blue tint)
-    if (hasLoop) {
+    if (hasBoth) {
       final clipAX = aX.clamp(0.0, size.width);
       final clipBX = bX.clamp(0.0, size.width);
       if (clipBX > clipAX) {
@@ -469,17 +471,21 @@ class _WaveformSeekbarPainter extends CustomPainter {
       );
     }
 
+    // Determine if A and B overlap (same position)
+    final abOverlap = hasBoth && (aX - bX).abs() < 2.0;
+
     // A marker
-    if (pointA > Duration.zero || loopEnabled) {
-      final mx = toX(pointA);
+    if (hasA) {
+      final mx = toX(pointA!);
       if (mx >= -20 && mx <= size.width + 20) {
-        _drawMarkerLine(canvas, size, mx, 'A', AppTheme.pointAColor);
+        _drawMarkerLine(canvas, size, mx, 'A', AppTheme.pointAColor,
+            labelAtBottom: abOverlap);
       }
     }
 
     // B marker
-    if (pointB > Duration.zero) {
-      final mx = toX(pointB);
+    if (hasB) {
+      final mx = toX(pointB!);
       if (mx >= -20 && mx <= size.width + 20) {
         _drawMarkerLine(canvas, size, mx, 'B', AppTheme.pointBColor);
       }
@@ -490,9 +496,6 @@ class _WaveformSeekbarPainter extends CustomPainter {
     Canvas canvas,
     Size size,
     double posX,
-    bool hasLoop,
-    double aX,
-    double bX,
     bool isDark,
   ) {
     final data = waveform!;
@@ -520,20 +523,11 @@ class _WaveformSeekbarPainter extends CustomPainter {
 
       final h = max(data[i] * maxBarH, 1.0);
 
-      Color color;
-      if (hasLoop && x >= aX && x <= bX) {
-        color = isDark
-            ? waveColorDark.withValues(alpha: 0.85)
-            : waveColorLight.withValues(alpha: 0.85);
-      } else if (x <= posX) {
-        color = isDark
-            ? waveColorDark.withValues(alpha: 0.5)
-            : waveColorLight.withValues(alpha: 0.5);
-      } else {
-        color = isDark
-            ? waveColorDark.withValues(alpha: 0.25)
-            : waveColorLight.withValues(alpha: 0.25);
-      }
+      // Alpha based on position only: before = 0.5, after = 0.25
+      final alpha = x <= posX ? 0.5 : 0.25;
+      final color = isDark
+          ? waveColorDark.withValues(alpha: alpha)
+          : waveColorLight.withValues(alpha: alpha);
 
       final gapW = barW * 0.8;
       final gapX = x + barW * 0.1;
@@ -592,8 +586,9 @@ class _WaveformSeekbarPainter extends CustomPainter {
     Size size,
     double x,
     String label,
-    Color color,
-  ) {
+    Color color, {
+    bool labelAtBottom = false,
+  }) {
     canvas.drawLine(
       Offset(x, 0),
       Offset(x, size.height),
@@ -617,15 +612,16 @@ class _WaveformSeekbarPainter extends CustomPainter {
     final labelW = tp.width + 8;
     final labelH = tp.height + 4;
     final labelX = (x - labelW / 2).clamp(0.0, size.width - labelW);
+    final labelY = labelAtBottom ? size.height - labelH - 2 : 2.0;
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(labelX, 2, labelW, labelH),
+        Rect.fromLTWH(labelX, labelY, labelW, labelH),
         const Radius.circular(3),
       ),
       Paint()..color = color,
     );
-    tp.paint(canvas, Offset(labelX + 4, 4));
+    tp.paint(canvas, Offset(labelX + 4, labelY + 2));
   }
 
   @override
@@ -650,8 +646,8 @@ class _MinimapPainter extends CustomPainter {
   final double viewEnd;
   final Duration position;
   final Duration duration;
-  final Duration pointA;
-  final Duration pointB;
+  final Duration? pointA;
+  final Duration? pointB;
   final bool loopEnabled;
   final Brightness brightness;
 
@@ -715,17 +711,17 @@ class _MinimapPainter extends CustomPainter {
       }
     }
 
-    // AB region highlight
-    if (pointB > Duration.zero) {
+    // AB region highlight (show when both are set, regardless of loopEnabled)
+    if (pointA != null && pointB != null) {
       canvas.drawRect(
-        Rect.fromLTRB(toX(pointA), 0, toX(pointB), size.height),
+        Rect.fromLTRB(toX(pointA!), 0, toX(pointB!), size.height),
         Paint()..color = AppTheme.pointBColor.withValues(alpha: 0.15),
       );
     }
 
-    // A marker line (always show if set)
-    if (pointA > Duration.zero || pointB > Duration.zero) {
-      final aX = toX(pointA);
+    // A marker line (show when set)
+    if (pointA != null) {
+      final aX = toX(pointA!);
       canvas.drawLine(
         Offset(aX, 0),
         Offset(aX, size.height),
@@ -735,9 +731,9 @@ class _MinimapPainter extends CustomPainter {
       );
     }
 
-    // B marker line (always show if set)
-    if (pointB > Duration.zero) {
-      final bX = toX(pointB);
+    // B marker line (show when set)
+    if (pointB != null) {
+      final bX = toX(pointB!);
       canvas.drawLine(
         Offset(bX, 0),
         Offset(bX, size.height),

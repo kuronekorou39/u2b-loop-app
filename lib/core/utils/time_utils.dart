@@ -1,4 +1,12 @@
 class TimeUtils {
+  static const nullTime = '--:--.---';
+  static const nullTimeShort = '--:--';
+
+  /// Format duration as M:SS.mmm (nullable)
+  static String formatNullable(Duration? d) => d == null ? nullTime : format(d);
+  static String formatShortNullable(Duration? d) =>
+      d == null ? nullTimeShort : formatShort(d);
+
   /// Format duration as M:SS.mmm
   static String format(Duration d) {
     final total = d.inMilliseconds.clamp(0, d.inMilliseconds);

@@ -247,9 +247,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _loadRegion(LoopRegion region) {
     final notifier = ref.read(loopProvider.notifier);
-    notifier.setPointA(Duration(milliseconds: region.pointAMs));
-    notifier.setPointB(Duration(milliseconds: region.pointBMs));
-    if (!ref.read(loopProvider).enabled) {
+    notifier.setPointA(region.pointAMs != null
+        ? Duration(milliseconds: region.pointAMs!)
+        : null);
+    notifier.setPointB(region.pointBMs != null
+        ? Duration(milliseconds: region.pointBMs!)
+        : null);
+    if (!ref.read(loopProvider).enabled && region.hasA && region.hasB) {
       notifier.toggleEnabled();
     }
   }
@@ -260,9 +264,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() => _activeRegionIdx = index);
     _loadRegion(regions[index]);
     // Seek to region start
-    ref
-        .read(playerProvider)
-        .seek(Duration(milliseconds: regions[index].pointAMs));
+    if (regions[index].pointAMs != null) {
+      ref
+          .read(playerProvider)
+          .seek(Duration(milliseconds: regions[index].pointAMs!));
+    }
   }
 
   void _clearRegion() {
@@ -599,7 +605,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 final isActive = ri == _activeRegionIdx;
                 return ChoiceChip(
                   label: Text(
-                    '${region.name} (${TimeUtils.formatShort(Duration(milliseconds: region.pointAMs))})',
+                    '${region.name} (${region.pointAMs != null ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!)) : '--:--'})',
                     style: const TextStyle(fontSize: 12),
                   ),
                   selected: isActive,
@@ -649,14 +655,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 const Spacer(),
                 if (loop.hasPoints) ...[
                   Text(
-                    TimeUtils.formatShort(loop.pointA),
+                    TimeUtils.formatShortNullable(loop.pointA),
                     style: const TextStyle(
                         fontSize: 12, color: AppTheme.pointAColor),
                   ),
                   const Text(' - ',
                       style: TextStyle(fontSize: 12, color: Colors.grey)),
                   Text(
-                    TimeUtils.formatShort(loop.pointB),
+                    TimeUtils.formatShortNullable(loop.pointB),
                     style: const TextStyle(
                         fontSize: 12, color: AppTheme.pointBColor),
                   ),

@@ -84,8 +84,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     if (_regions.isEmpty) return;
     final loop = ref.read(loopProvider);
     _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
-      pointAMs: loop.pointA.inMilliseconds,
-      pointBMs: loop.pointB.inMilliseconds,
+      pointAMs: () => loop.pointA?.inMilliseconds,
+      pointBMs: () => loop.pointB?.inMilliseconds,
     );
   }
 
@@ -100,8 +100,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     if (index < 0 || index >= _regions.length) return;
     final r = _regions[index];
     final notifier = ref.read(loopProvider.notifier);
-    notifier.setPointA(Duration(milliseconds: r.pointAMs));
-    notifier.setPointB(Duration(milliseconds: r.pointBMs));
+    notifier.setPointA(r.pointAMs != null
+        ? Duration(milliseconds: r.pointAMs!)
+        : null);
+    notifier.setPointB(r.pointBMs != null
+        ? Duration(milliseconds: r.pointBMs!)
+        : null);
   }
 
   static const _maxRegions = 10;
@@ -111,15 +115,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _syncCurrentRegion();
     final player = ref.read(playerProvider);
     final position = player.state.position;
-    final duration = player.state.duration;
-    final bMs = (position.inMilliseconds + 60000)
-        .clamp(0, duration.inMilliseconds);
 
     final region = LoopRegion(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       name: '区間 ${_regions.length + 1}',
       pointAMs: position.inMilliseconds,
-      pointBMs: bMs,
+      pointBMs: null,
     );
     setState(() {
       _regions.add(region);
@@ -285,9 +286,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // Load selected region's AB into loop provider
     if (_regions.isNotEmpty) {
       _loadRegionIntoLoop(_selectedRegionIdx);
-      // Enable loop if region has points
+      // Enable loop if region has both points
       final r = _regions[_selectedRegionIdx];
-      if (r.pointAMs > 0 || r.pointBMs > 0) {
+      if (r.hasA && r.hasB) {
         ref.read(loopProvider.notifier).toggleEnabled();
       }
     } else if (_item.pointAMs > 0 || _item.pointBMs > 0) {
@@ -466,8 +467,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
       // Update pointA/B from first region for backward compat
       if (_regions.isNotEmpty) {
-        _item.pointAMs = _regions.first.pointAMs;
-        _item.pointBMs = _regions.first.pointBMs;
+        _item.pointAMs = _regions.first.pointAMs ?? 0;
+        _item.pointBMs = _regions.first.pointBMs ?? 0;
       }
 
       await ref.read(loopItemsProvider.notifier).update(_item);
@@ -748,8 +749,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // Sync current region values from loop provider in real-time
     if (_regions.isNotEmpty) {
       _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
-        pointAMs: loop.pointA.inMilliseconds,
-        pointBMs: loop.pointB.inMilliseconds,
+        pointAMs: () => loop.pointA?.inMilliseconds,
+        pointBMs: () => loop.pointB?.inMilliseconds,
       );
     }
 
@@ -931,7 +932,20 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   Widget _buildRegionTile(int index) {
     final region = _regions[index];
     final isSelected = index == _selectedRegionIdx;
-    final hasAb = region.pointAMs > 0 || region.pointBMs > 0;
+    final theme = Theme.of(context);
+
+    String timeText;
+    if (region.hasA || region.hasB) {
+      final aStr = region.hasA
+          ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!))
+          : '--:--';
+      final bStr = region.hasB
+          ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!))
+          : '--:--';
+      timeText = '$aStr - $bStr';
+    } else {
+      timeText = '未設定';
+    }
 
     return InkWell(
       onTap: () => _selectRegion(index),
@@ -939,15 +953,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       borderRadius: BorderRadius.circular(6),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
-        decoration: isSelected
-            ? BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(6),
-              )
-            : null,
+        decoration: BoxDecoration(
+          color: isSelected
+              ? theme.colorScheme.primary.withValues(alpha: 0.15)
+              : null,
+          borderRadius: BorderRadius.circular(6),
+          border: isSelected
+              ? Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                  width: 1)
+              : null,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -956,34 +972,23 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected
+                    ? theme.colorScheme.primary
+                    : null,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 1),
-            if (hasAb)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    TimeUtils.formatShort(
-                        Duration(milliseconds: region.pointAMs)),
-                    style: TextStyle(
-                        fontSize: 10, color: AppTheme.pointAColor),
-                  ),
-                  const Text(' - ',
-                      style: TextStyle(fontSize: 10, color: Colors.grey)),
-                  Text(
-                    TimeUtils.formatShort(
-                        Duration(milliseconds: region.pointBMs)),
-                    style: TextStyle(
-                        fontSize: 10, color: AppTheme.pointBColor),
-                  ),
-                ],
-              )
-            else
-              const Text('未設定',
-                  style: TextStyle(fontSize: 10, color: Colors.grey)),
+            Text(
+              timeText,
+              style: TextStyle(
+                fontSize: 10,
+                color: (region.hasA || region.hasB)
+                    ? Colors.grey.shade400
+                    : Colors.grey.shade600,
+              ),
+            ),
           ],
         ),
       ),

@@ -11,7 +11,7 @@ class LoopControls {
   static Widget buildPointRow({
     required String label,
     required Color color,
-    required Duration time,
+    required Duration? time,
     required String stepLabel,
     VoidCallback? onSet,
     required VoidCallback onMinus,
@@ -40,7 +40,7 @@ class LoopControls {
         const SizedBox(width: 8),
         // Time display
         Text(
-          TimeUtils.format(time),
+          TimeUtils.formatNullable(time),
           style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
         ),
         const Spacer(),
