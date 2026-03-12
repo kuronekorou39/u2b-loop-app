@@ -729,7 +729,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         // Unified region + AB controls panel
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
             child: _buildUnifiedPanel(),
           ),
         ),
@@ -762,7 +762,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Left: Region list (vertical)
             SizedBox(
@@ -770,12 +770,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('区間',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey)),
-                  const SizedBox(height: 4),
                   Expanded(
                     child: ListView(
                       padding: EdgeInsets.zero,
@@ -809,7 +803,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            // Separator
+            VerticalDivider(
+              width: 16,
+              thickness: 1,
+              color: theme.dividerColor.withValues(alpha: 0.3),
+            ),
             // Right: AB controls
             Expanded(
               child: Column(
@@ -871,24 +870,21 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        height: 28,
-                        child: OutlinedButton.icon(
-                          onPressed:
-                              hasSource ? () => loopNotifier.reset() : null,
-                          icon: const Icon(Icons.restart_alt, size: 14),
-                          label: const Text('クリア',
-                              style: TextStyle(fontSize: 11)),
-                          style: OutlinedButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 8),
-                            minimumSize: Size.zero,
-                            side: BorderSide(color: Colors.grey.shade700),
-                          ),
-                        ),
-                      ),
                       const Spacer(),
+                      // Clear (text button style)
+                      TextButton(
+                        onPressed:
+                            hasSource ? () => loopNotifier.reset() : null,
+                        style: TextButton.styleFrom(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          foregroundColor: Colors.grey,
+                        ),
+                        child: const Text('クリア',
+                            style: TextStyle(fontSize: 11)),
+                      ),
                       // Step selector
                       PopupMenuButton<double>(
                         initialValue: loop.adjustStep,
