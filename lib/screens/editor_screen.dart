@@ -815,7 +815,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Loop toggle + Step selector (top row)
+                  // Loop toggle + duration display (top row)
                   Row(
                     children: [
                       SizedBox(
@@ -844,38 +844,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         ),
                       ),
                       const Spacer(),
-                      // Step selector
-                      PopupMenuButton<double>(
-                        initialValue: loop.adjustStep,
-                        onSelected: (v) => loopNotifier.setStep(v),
-                        padding: EdgeInsets.zero,
-                        child: Container(
-                          height: 28,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade700),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(stepLabel,
-                                  style: const TextStyle(fontSize: 11)),
-                              const Icon(Icons.arrow_drop_down, size: 16),
-                            ],
-                          ),
+                      if (loop.hasBothPoints)
+                        Text(
+                          '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade500),
                         ),
-                        itemBuilder: (_) => LoopControls.steps
-                            .map((s) => PopupMenuItem(
-                                  value: s,
-                                  height: 36,
-                                  child: Text(
-                                    s < 1 ? '${s}s' : '${s.toInt()}s',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ))
-                            .toList(),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -938,17 +912,48 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                     onMinus: () => loopNotifier.adjustPointB(-1),
                     onPlus: () => loopNotifier.adjustPointB(1),
                   ),
+                  const SizedBox(height: 6),
 
-                  // Duration display (when both A and B are set)
-                  if (loop.hasBothPoints)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '区間: ${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade500),
-                      ),
-                    ),
+                  // Step selector (inline chips)
+                  Row(
+                    children: LoopControls.steps.map((s) {
+                      final isSelected = loop.adjustStep == s;
+                      final label = s < 1 ? '${s}s' : '${s.toInt()}s';
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: GestureDetector(
+                          onTap: () => loopNotifier.setStep(s),
+                          child: Container(
+                            height: 24,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? theme.colorScheme.primary
+                                      .withValues(alpha: 0.2)
+                                  : Colors.transparent,
+                              border: Border.all(
+                                color: isSelected
+                                    ? theme.colorScheme.primary
+                                    : Colors.grey.shade700,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isSelected
+                                    ? theme.colorScheme.primary
+                                    : Colors.grey,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
 
                   const Spacer(),
 
