@@ -64,8 +64,8 @@ class LoopItem {
       LoopRegion(
         id: 'default',
         name: '区間 1',
-        pointAMs: pointAMs,
-        pointBMs: pointBMs,
+        pointAMs: pointAMs > 0 ? pointAMs : null,
+        pointBMs: pointBMs > 0 ? pointBMs : null,
       )
     ];
   }

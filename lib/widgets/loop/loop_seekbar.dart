@@ -73,7 +73,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     ref.watch(waveformLoadingProvider);
     final waveformError = ref.watch(waveformErrorProvider);
 
-    // Page-based auto-follow
+    // Auto-follow: keep position near 30% from left edge of viewport
     ref.listen(positionProvider, (_, next) {
       if (!_autoFollow || _zoomLevel <= 1.0) return;
       final pos = next.valueOrNull;
@@ -82,13 +82,16 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
 
       final posNorm = pos.inMilliseconds / dur.inMilliseconds;
       final vpW = 1.0 / _zoomLevel;
-      final vs = (_panOffset - vpW / 2).clamp(0.0, max(0.0, 1.0 - vpW));
-
-      if (posNorm < vs + vpW * 0.05 || posNorm > vs + vpW * 0.85) {
-        final half = vpW / 2;
+      final half = vpW / 2;
+      // Target: position at 30% from left edge
+      final targetPan =
+          (posNorm + vpW * 0.2).clamp(half, max(half, 1.0 - half)).toDouble();
+      // Only update if position drifts outside 10%~80% of viewport
+      final vs = (_panOffset - half).clamp(0.0, max(0.0, 1.0 - vpW)).toDouble();
+      final relPos = (posNorm - vs) / vpW;
+      if (relPos < 0.10 || relPos > 0.80) {
         setState(() {
-          _panOffset =
-              (posNorm + vpW * 0.3).clamp(half, max(half, 1.0 - half));
+          _panOffset = targetPan;
         });
       }
     });

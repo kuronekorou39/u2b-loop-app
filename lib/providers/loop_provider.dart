@@ -36,6 +36,9 @@ class LoopNotifier extends StateNotifier<LoopState> {
     final position = player.state.position;
     final a = state.pointA ?? Duration.zero;
 
+    // A >= B の場合はループ不可（逆転・同一地点）
+    if (a >= b) return;
+
     if (position >= b) {
       if (state.gapSeconds > 0) {
         state = state.copyWith(isInGap: true);

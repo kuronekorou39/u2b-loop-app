@@ -243,7 +243,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     }
 
     if (!mounted) return;
-    await _setProgress(0.50, '波形用データを取得中...');
+    await _setProgress(0.50, '音声データを取得中...');
     await _tryDownloadAudio(manifest, ytService);
 
     final source = VideoSource(
@@ -549,8 +549,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
-            if (!_loading && _loadError == null) _buildSaveButton(),
             if (!_loading && _loadError == null) _buildWaveformAction(),
+            if (!_loading && _loadError == null) _buildSaveButton(),
           ],
         ),
         body: _loading
@@ -914,45 +914,46 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                   ),
                   const SizedBox(height: 6),
 
-                  // Step selector (inline chips)
+                  // Step selector (inline chips, right-aligned)
                   Row(
-                    children: LoopControls.steps.map((s) {
-                      final isSelected = loop.adjustStep == s;
-                      final label = s < 1 ? '${s}s' : '${s.toInt()}s';
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: GestureDetector(
-                          onTap: () => loopNotifier.setStep(s),
-                          child: Container(
-                            height: 24,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? theme.colorScheme.primary
-                                      .withValues(alpha: 0.2)
-                                  : Colors.transparent,
-                              border: Border.all(
+                    children: [
+                      Text('Step',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600)),
+                      const SizedBox(width: 6),
+                      ...LoopControls.steps.map((s) {
+                        final isSelected = loop.adjustStep == s;
+                        final label = s < 1 ? '${s}s' : '${s.toInt()}s';
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 3),
+                          child: GestureDetector(
+                            onTap: () => loopNotifier.setStep(s),
+                            child: Container(
+                              height: 22,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6),
+                              decoration: BoxDecoration(
                                 color: isSelected
-                                    ? theme.colorScheme.primary
-                                    : Colors.grey.shade700,
+                                    ? Colors.grey.shade800
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(11),
                               ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isSelected
-                                    ? theme.colorScheme.primary
-                                    : Colors.grey,
+                              alignment: Alignment.center,
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isSelected
+                                      ? Colors.grey.shade300
+                                      : Colors.grey.shade600,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    }).toList(),
+                        );
+                      }),
+                    ],
                   ),
 
                   const Spacer(),

@@ -6,6 +6,7 @@ class PlayerControls extends ConsumerWidget {
   const PlayerControls({super.key});
 
   static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+  static const _seekSteps = [1, 5, 10, 30];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -20,15 +21,32 @@ class PlayerControls extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(
-            icon: const Icon(Icons.replay_5),
-            onPressed: hasSource
-                ? () {
-                    final pos = player.state.position;
-                    final target = pos - const Duration(seconds: 5);
-                    player.seek(target < Duration.zero ? Duration.zero : target);
-                  }
-                : null,
+          // Rewind (popup for step selection)
+          PopupMenuButton<int>(
+            onSelected: (sec) {
+              final pos = player.state.position;
+              final target = pos - Duration(seconds: sec);
+              player.seek(target < Duration.zero ? Duration.zero : target);
+            },
+            enabled: hasSource,
+            itemBuilder: (_) => _seekSteps
+                .map((s) => PopupMenuItem(
+                      value: s,
+                      height: 36,
+                      child: Text('-${s}s', style: const TextStyle(fontSize: 13)),
+                    ))
+                .toList(),
+            child: IconButton(
+              icon: const Icon(Icons.replay_5),
+              onPressed: hasSource
+                  ? () {
+                      final pos = player.state.position;
+                      final target = pos - const Duration(seconds: 5);
+                      player
+                          .seek(target < Duration.zero ? Duration.zero : target);
+                    }
+                  : null,
+            ),
           ),
           IconButton(
             icon: Icon(
@@ -38,20 +56,83 @@ class PlayerControls extends ConsumerWidget {
             onPressed: hasSource ? () => player.playOrPause() : null,
             color: Theme.of(context).colorScheme.primary,
           ),
-          IconButton(
-            icon: const Icon(Icons.forward_5),
-            onPressed: hasSource
-                ? () {
-                    final pos = player.state.position;
-                    player.seek(pos + const Duration(seconds: 5));
-                  }
-                : null,
+          // Forward (popup for step selection)
+          PopupMenuButton<int>(
+            onSelected: (sec) {
+              final pos = player.state.position;
+              player.seek(pos + Duration(seconds: sec));
+            },
+            enabled: hasSource,
+            itemBuilder: (_) => _seekSteps
+                .map((s) => PopupMenuItem(
+                      value: s,
+                      height: 36,
+                      child: Text('+${s}s', style: const TextStyle(fontSize: 13)),
+                    ))
+                .toList(),
+            child: IconButton(
+              icon: const Icon(Icons.forward_5),
+              onPressed: hasSource
+                  ? () {
+                      final pos = player.state.position;
+                      player.seek(pos + const Duration(seconds: 5));
+                    }
+                  : null,
+            ),
           ),
-          IconButton(
-            icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
-            onPressed: hasSource
-                ? () => player.setVolume(volume > 0 ? 0.0 : 100.0)
-                : null,
+          // Volume (popup slider)
+          PopupMenuButton<double>(
+            onSelected: (_) {},
+            enabled: hasSource,
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                enabled: false,
+                child: StatefulBuilder(
+                  builder: (context, setLocalState) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            final newVol = volume > 0 ? 0.0 : 100.0;
+                            player.setVolume(newVol);
+                          },
+                          child: Icon(
+                            volume > 0 ? Icons.volume_up : Icons.volume_off,
+                            size: 20,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 120,
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 7),
+                            ),
+                            child: Slider(
+                              value: volume.clamp(0, 100),
+                              min: 0,
+                              max: 100,
+                              onChanged: (v) {
+                                player.setVolume(v);
+                                setLocalState(() {});
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+            child: IconButton(
+              icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
+              onPressed: hasSource
+                  ? () => player.setVolume(volume > 0 ? 0.0 : 100.0)
+                  : null,
+            ),
           ),
           PopupMenuButton<double>(
             initialValue: rate,

@@ -16,6 +16,7 @@ class App extends ConsumerWidget {
       theme: isDark ? AppTheme.dark : AppTheme.light,
       home: const _Home(),
       debugShowCheckedModeBanner: false,
+      locale: const Locale('ja', 'JP'),
     );
   }
 }
