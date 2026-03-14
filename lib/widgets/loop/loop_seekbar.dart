@@ -25,6 +25,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   bool _autoFollow = true;
   double _lastDragX = 0;
 
+  // Relative drag for AB markers (offset between finger and marker)
+  double _dragOffset = 0;
+  // Smooth position drag (accumulate deltas ourselves)
+  double _dragStartPositionMs = 0;
+  double _dragAccumulatedDeltaMs = 0;
+
   double get _vpWidth => 1.0 / _zoomLevel;
 
   void _clampPan() {
@@ -145,36 +151,68 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             _activeDrag =
                                 hitTest(details.localPosition.dx);
                             _lastDragX = details.localPosition.dx;
+
+                            final totalMs =
+                                duration.inMilliseconds.toDouble();
+                            if (_activeDrag == _DragTarget.pointA &&
+                                loop.hasA &&
+                                totalMs > 0) {
+                              // Record offset so marker doesn't jump to finger
+                              final aSX = normToScreenX(
+                                  loop.pointA!.inMilliseconds / totalMs);
+                              _dragOffset =
+                                  aSX - details.localPosition.dx;
+                            } else if (_activeDrag == _DragTarget.pointB &&
+                                loop.hasB &&
+                                totalMs > 0) {
+                              final bSX = normToScreenX(
+                                  loop.pointB!.inMilliseconds / totalMs);
+                              _dragOffset =
+                                  bSX - details.localPosition.dx;
+                            } else {
+                              _dragOffset = 0;
+                              // Snapshot current position; accumulate deltas ourselves
+                              _dragStartPositionMs = ref
+                                  .read(playerProvider)
+                                  .state
+                                  .position
+                                  .inMilliseconds
+                                  .toDouble();
+                              _dragAccumulatedDeltaMs = 0;
+                            }
                           }
                         : null,
                     onHorizontalDragUpdate: hasSource
                         ? (details) {
-                            final dx =
-                                details.localPosition.dx - _lastDragX;
                             if (_activeDrag == _DragTarget.pointA) {
+                              // Relative drag: apply offset so marker stays under original grab point
                               ref.read(loopProvider.notifier).setPointA(
                                   normToDuration(screenXToNorm(
-                                      details.localPosition.dx)));
+                                      details.localPosition.dx +
+                                          _dragOffset)));
                             } else if (_activeDrag == _DragTarget.pointB) {
                               ref.read(loopProvider.notifier).setPointB(
                                   normToDuration(screenXToNorm(
-                                      details.localPosition.dx)));
+                                      details.localPosition.dx +
+                                          _dragOffset)));
                             } else {
-                              final deltaNorm = (dx / width) * 3.0;
+                              // Smooth position drag: 1:1 mapping, accumulated deltas
+                              final dx =
+                                  details.localPosition.dx - _lastDragX;
                               final totalMs =
                                   duration.inMilliseconds.toDouble();
                               if (totalMs > 0) {
-                                final curMs = ref
-                                    .read(playerProvider)
-                                    .state
-                                    .position
-                                    .inMilliseconds;
-                                final newMs =
-                                    (curMs + deltaNorm * totalMs).round();
-                                final clamped = newMs.clamp(
-                                    0, duration.inMilliseconds);
+                                // Convert screen px delta to ms delta
+                                final deltaNorm =
+                                    (dx / width) * vpWidth;
+                                _dragAccumulatedDeltaMs +=
+                                    deltaNorm * totalMs;
+                                final newMs = (_dragStartPositionMs +
+                                        _dragAccumulatedDeltaMs)
+                                    .round()
+                                    .clamp(0, duration.inMilliseconds);
                                 ref.read(playerProvider).seek(
-                                    Duration(milliseconds: clamped));
+                                    Duration(milliseconds: newMs));
                               }
                             }
                             _lastDragX = details.localPosition.dx;
