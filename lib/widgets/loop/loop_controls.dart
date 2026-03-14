@@ -14,6 +14,7 @@ class LoopControls {
     required Duration? time,
     required String stepLabel,
     VoidCallback? onSet,
+    VoidCallback? onTimeTap,
     required VoidCallback onMinus,
     required VoidCallback onPlus,
   }) {
@@ -21,8 +22,8 @@ class LoopControls {
       children: [
         // A/B set button
         SizedBox(
-          width: 34,
-          height: 30,
+          width: 36,
+          height: 36,
           child: OutlinedButton(
             onPressed: onSet,
             style: OutlinedButton.styleFrom(
@@ -38,10 +39,18 @@ class LoopControls {
           ),
         ),
         const SizedBox(width: 8),
-        // Time display
-        Text(
-          TimeUtils.formatNullable(time),
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        // Time display (tappable to seek)
+        GestureDetector(
+          onTap: onTimeTap,
+          child: Text(
+            TimeUtils.formatNullable(time),
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 13,
+              decoration: time != null ? TextDecoration.underline : null,
+              decorationColor: color.withValues(alpha: 0.5),
+            ),
+          ),
         ),
         const Spacer(),
         // - step

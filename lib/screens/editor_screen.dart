@@ -815,35 +815,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Point A row
-                  LoopControls.buildPointRow(
-                    label: 'A',
-                    color: AppTheme.pointAColor,
-                    time: loop.pointA,
-                    stepLabel: stepLabel,
-                    onSet: hasSource
-                        ? () => loopNotifier.setPointAToCurrentPosition()
-                        : null,
-                    onMinus: () => loopNotifier.adjustPointA(-1),
-                    onPlus: () => loopNotifier.adjustPointA(1),
-                  ),
-                  const SizedBox(height: 6),
-
-                  // Point B row
-                  LoopControls.buildPointRow(
-                    label: 'B',
-                    color: AppTheme.pointBColor,
-                    time: loop.pointB,
-                    stepLabel: stepLabel,
-                    onSet: hasSource
-                        ? () => loopNotifier.setPointBToCurrentPosition()
-                        : null,
-                    onMinus: () => loopNotifier.adjustPointB(-1),
-                    onPlus: () => loopNotifier.adjustPointB(1),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Loop toggle + Clear + Step selector
+                  // Loop toggle + Step selector (top row)
                   Row(
                     children: [
                       SizedBox(
@@ -872,20 +844,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         ),
                       ),
                       const Spacer(),
-                      // Clear (text button style)
-                      TextButton(
-                        onPressed:
-                            hasSource ? () => loopNotifier.reset() : null,
-                        style: TextButton.styleFrom(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          foregroundColor: Colors.grey,
-                        ),
-                        child: const Text('クリア',
-                            style: TextStyle(fontSize: 11)),
-                      ),
                       // Step selector
                       PopupMenuButton<double>(
                         initialValue: loop.adjustStep,
@@ -920,6 +878,97 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 6),
+
+                  // Point A row
+                  LoopControls.buildPointRow(
+                    label: 'A',
+                    color: AppTheme.pointAColor,
+                    time: loop.pointA,
+                    stepLabel: stepLabel,
+                    onSet: hasSource
+                        ? () => loopNotifier.setPointAToCurrentPosition()
+                        : null,
+                    onTimeTap: loop.hasA
+                        ? () => ref.read(playerProvider).seek(loop.pointA!)
+                        : null,
+                    onMinus: () => loopNotifier.adjustPointA(-1),
+                    onPlus: () => loopNotifier.adjustPointA(1),
+                  ),
+
+                  // Swap button (shown when A > B)
+                  if (loop.hasBothPoints &&
+                      loop.pointA!.compareTo(loop.pointB!) > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: SizedBox(
+                        height: 24,
+                        child: TextButton.icon(
+                          onPressed: () => loopNotifier.swapPoints(),
+                          icon: Icon(Icons.swap_vert,
+                              size: 14, color: Colors.amber.shade300),
+                          label: Text('A⇔B 入れ替え',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.amber.shade300)),
+                          style: TextButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(height: 6),
+
+                  // Point B row
+                  LoopControls.buildPointRow(
+                    label: 'B',
+                    color: AppTheme.pointBColor,
+                    time: loop.pointB,
+                    stepLabel: stepLabel,
+                    onSet: hasSource
+                        ? () => loopNotifier.setPointBToCurrentPosition()
+                        : null,
+                    onTimeTap: loop.hasB
+                        ? () => ref.read(playerProvider).seek(loop.pointB!)
+                        : null,
+                    onMinus: () => loopNotifier.adjustPointB(-1),
+                    onPlus: () => loopNotifier.adjustPointB(1),
+                  ),
+
+                  // Duration display (when both A and B are set)
+                  if (loop.hasBothPoints)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '区間: ${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey.shade500),
+                      ),
+                    ),
+
+                  const Spacer(),
+
+                  // Clear button (bottom)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed:
+                          hasSource ? () => loopNotifier.reset() : null,
+                      style: TextButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor: Colors.grey,
+                      ),
+                      child: const Text('クリア',
+                          style: TextStyle(fontSize: 11)),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -943,6 +992,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!))
           : '--:--';
       timeText = '$aStr - $bStr';
+      if (region.hasA && region.hasB) {
+        final durationSec =
+            (region.pointBMs! - region.pointAMs!).abs() / 1000;
+        timeText += ' (${durationSec.toStringAsFixed(1)}s)';
+      }
     } else {
       timeText = '未設定';
     }

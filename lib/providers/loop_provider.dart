@@ -93,6 +93,13 @@ class LoopNotifier extends StateNotifier<LoopState> {
     state = state.copyWith(pointB: () => newB);
   }
 
+  void swapPoints() {
+    state = state.copyWith(
+      pointA: () => state.pointB,
+      pointB: () => state.pointA,
+    );
+  }
+
   void reset() {
     final step = state.adjustStep;
     state = LoopState(adjustStep: step);
