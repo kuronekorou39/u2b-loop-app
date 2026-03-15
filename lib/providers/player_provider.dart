@@ -43,6 +43,11 @@ final rateProvider = StreamProvider<double>((ref) {
   return ref.watch(playerProvider).stream.rate;
 });
 
+final seekStepProvider = StateProvider<int>((ref) => 5);
+final flipHorizontalProvider = StateProvider<bool>((ref) => false);
+final flipVerticalProvider = StateProvider<bool>((ref) => false);
+final previousVolumeProvider = StateProvider<double>((ref) => 100.0);
+
 final waveformDataProvider = StateProvider<List<double>?>((ref) => null);
 final waveformLoadingProvider = StateProvider<bool>((ref) => false);
 final waveformErrorProvider = StateProvider<String?>((ref) => null);

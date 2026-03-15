@@ -489,15 +489,24 @@ class _WaveformSeekbarPainter extends CustomPainter {
       _drawMinimalTrack(canvas, size, posX, isDark);
     }
 
-    // AB region highlight (subtle blue tint)
+    // AB region highlight
     if (hasBoth) {
       final clipAX = aX.clamp(0.0, size.width);
       final clipBX = bX.clamp(0.0, size.width);
       if (clipBX > clipAX) {
+        // Fill
         canvas.drawRect(
           Rect.fromLTRB(clipAX, 0, clipBX, size.height),
-          Paint()..color = AppTheme.pointBColor.withValues(alpha: 0.08),
+          Paint()..color = AppTheme.pointBColor.withValues(alpha: 0.15),
         );
+        // Top/bottom border lines
+        final borderPaint = Paint()
+          ..color = AppTheme.pointBColor.withValues(alpha: 0.35)
+          ..strokeWidth = 1;
+        canvas.drawLine(
+            Offset(clipAX, 0), Offset(clipBX, 0), borderPaint);
+        canvas.drawLine(Offset(clipAX, size.height),
+            Offset(clipBX, size.height), borderPaint);
       }
     }
 

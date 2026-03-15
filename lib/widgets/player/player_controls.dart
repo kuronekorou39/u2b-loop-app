@@ -9,8 +9,22 @@ class PlayerControls extends ConsumerWidget {
   static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
   static const _seekSteps = [1, 5, 10, 30];
 
-  void _showSeekMenu(
-      BuildContext context, Offset position, Player player, bool rewind) async {
+  static const _rewindIcons = <int, IconData>{
+    1: Icons.replay,
+    5: Icons.replay_5,
+    10: Icons.replay_10,
+    30: Icons.replay_30,
+  };
+  static const _forwardIcons = <int, IconData>{
+    1: Icons.forward,
+    5: Icons.forward_5,
+    10: Icons.forward_10,
+    30: Icons.forward_30,
+  };
+
+  void _showStepMenu(
+      BuildContext context, Offset position, WidgetRef ref) async {
+    final currentStep = ref.read(seekStepProvider);
     final result = await showMenu<int>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -19,28 +33,30 @@ class PlayerControls extends ConsumerWidget {
           .map((s) => PopupMenuItem(
                 value: s,
                 height: 36,
-                child: Text('${rewind ? "-" : "+"}${s}s',
-                    style: const TextStyle(fontSize: 13)),
+                child: Text(
+                  '${s}s',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: s == currentStep ? FontWeight.bold : null,
+                    color: s == currentStep
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                ),
               ))
           .toList(),
     );
     if (result != null) {
-      final pos = player.state.position;
-      if (rewind) {
-        final target = pos - Duration(seconds: result);
-        player.seek(target < Duration.zero ? Duration.zero : target);
-      } else {
-        player.seek(pos + Duration(seconds: result));
-      }
+      ref.read(seekStepProvider.notifier).state = result;
     }
   }
 
   void _showVolumeMenu(
-      BuildContext context, Offset position, Player player) async {
+      BuildContext context, Offset position, Player player, WidgetRef ref) async {
     await showDialog(
       context: context,
       barrierColor: Colors.transparent,
-      builder: (ctx) => _VolumeDialog(player: player, anchor: position),
+      builder: (ctx) => _VolumeDialog(player: player, anchor: position, ref: ref),
     );
   }
 
@@ -51,24 +67,25 @@ class PlayerControls extends ConsumerWidget {
     final rate = ref.watch(rateProvider).valueOrNull ?? 1.0;
     final player = ref.read(playerProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
+    final seekStep = ref.watch(seekStepProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Rewind: tap=5s, long press=choose
+          // Rewind: tap=seek, long press=set step
           GestureDetector(
             onLongPressStart: hasSource
-                ? (details) => _showSeekMenu(
-                    context, details.globalPosition, player, true)
+                ? (details) =>
+                    _showStepMenu(context, details.globalPosition, ref)
                 : null,
             child: IconButton(
-              icon: const Icon(Icons.replay_5),
+              icon: Icon(_rewindIcons[seekStep] ?? Icons.replay_5),
               onPressed: hasSource
                   ? () {
                       final pos = player.state.position;
-                      final target = pos - const Duration(seconds: 5);
+                      final target = pos - Duration(seconds: seekStep);
                       player.seek(
                           target < Duration.zero ? Duration.zero : target);
                     }
@@ -83,32 +100,63 @@ class PlayerControls extends ConsumerWidget {
             onPressed: hasSource ? () => player.playOrPause() : null,
             color: Theme.of(context).colorScheme.primary,
           ),
-          // Forward: tap=5s, long press=choose
+          // Forward: tap=seek, long press=set step
           GestureDetector(
             onLongPressStart: hasSource
-                ? (details) => _showSeekMenu(
-                    context, details.globalPosition, player, false)
+                ? (details) =>
+                    _showStepMenu(context, details.globalPosition, ref)
                 : null,
             child: IconButton(
-              icon: const Icon(Icons.forward_5),
+              icon: Icon(_forwardIcons[seekStep] ?? Icons.forward_5),
               onPressed: hasSource
                   ? () {
                       final pos = player.state.position;
-                      player.seek(pos + const Duration(seconds: 5));
+                      player.seek(pos + Duration(seconds: seekStep));
                     }
                   : null,
             ),
           ),
-          // Volume: tap=mute toggle, long press=slider
+          // Volume: tap=mute toggle (with memory), long press=slider
           GestureDetector(
             onLongPressStart: hasSource
-                ? (details) =>
-                    _showVolumeMenu(context, details.globalPosition, player)
+                ? (details) => _showVolumeMenu(
+                    context, details.globalPosition, player, ref)
                 : null,
             child: IconButton(
-              icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
+                  if (volume < 100)
+                    Positioned(
+                      right: -6,
+                      bottom: -8,
+                      child: Text(
+                        '${volume.round()}',
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                          color: volume > 0
+                              ? Colors.grey.shade400
+                              : Colors.red.shade300,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               onPressed: hasSource
-                  ? () => player.setVolume(volume > 0 ? 0.0 : 100.0)
+                  ? () {
+                      if (volume > 0) {
+                        // Mute: save current volume
+                        ref.read(previousVolumeProvider.notifier).state =
+                            volume;
+                        player.setVolume(0);
+                      } else {
+                        // Unmute: restore previous volume
+                        final prev = ref.read(previousVolumeProvider);
+                        player.setVolume(prev > 0 ? prev : 100.0);
+                      }
+                    }
                   : null,
             ),
           ),
@@ -160,7 +208,9 @@ class PlayerControls extends ConsumerWidget {
 class _VolumeDialog extends StatefulWidget {
   final Player player;
   final Offset anchor;
-  const _VolumeDialog({required this.player, required this.anchor});
+  final WidgetRef ref;
+  const _VolumeDialog(
+      {required this.player, required this.anchor, required this.ref});
 
   @override
   State<_VolumeDialog> createState() => _VolumeDialogState();
@@ -179,26 +229,37 @@ class _VolumeDialogState extends State<_VolumeDialog> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Tap anywhere to dismiss
         Positioned.fill(
           child: GestureDetector(onTap: () => Navigator.pop(context)),
         ),
         Positioned(
-          left: (widget.anchor.dx - 100).clamp(8.0, MediaQuery.of(context).size.width - 208),
+          left: (widget.anchor.dx - 100)
+              .clamp(8.0, MediaQuery.of(context).size.width - 208),
           top: widget.anchor.dy - 60,
           child: Material(
             elevation: 8,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   GestureDetector(
                     onTap: () {
-                      final newVol = _volume > 0 ? 0.0 : 100.0;
-                      widget.player.setVolume(newVol);
-                      setState(() => _volume = newVol);
+                      if (_volume > 0) {
+                        widget.ref
+                            .read(previousVolumeProvider.notifier)
+                            .state = _volume;
+                        widget.player.setVolume(0);
+                        setState(() => _volume = 0);
+                      } else {
+                        final prev =
+                            widget.ref.read(previousVolumeProvider);
+                        final restored = prev > 0 ? prev : 100.0;
+                        widget.player.setVolume(restored);
+                        setState(() => _volume = restored);
+                      }
                     },
                     child: Icon(
                       _volume > 0 ? Icons.volume_up : Icons.volume_off,
@@ -210,8 +271,8 @@ class _VolumeDialogState extends State<_VolumeDialog> {
                     child: SliderTheme(
                       data: SliderTheme.of(context).copyWith(
                         trackHeight: 3,
-                        thumbShape:
-                            const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7),
                       ),
                       child: Slider(
                         value: _volume.clamp(0, 100),

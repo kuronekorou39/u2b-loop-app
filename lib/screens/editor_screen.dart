@@ -916,17 +916,20 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
                   // Step selector (inline chips, right-aligned)
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Text('Step',
                           style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade600)),
-                      const SizedBox(width: 6),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 0.5,
+                              color: Colors.grey.shade500)),
+                      const SizedBox(width: 5),
                       ...LoopControls.steps.map((s) {
                         final isSelected = loop.adjustStep == s;
                         final label = s < 1 ? '${s}s' : '${s.toInt()}s';
                         return Padding(
-                          padding: const EdgeInsets.only(right: 3),
+                          padding: const EdgeInsets.only(left: 3),
                           child: GestureDetector(
                             onTap: () => loopNotifier.setStep(s),
                             child: Container(
@@ -943,7 +946,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                               child: Text(
                                 label,
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
                                   color: isSelected
                                       ? Colors.grey.shade300
                                       : Colors.grey.shade600,
