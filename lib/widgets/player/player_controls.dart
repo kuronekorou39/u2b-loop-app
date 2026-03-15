@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
 import '../../providers/player_provider.dart';
 
 class PlayerControls extends ConsumerWidget {
@@ -7,6 +8,41 @@ class PlayerControls extends ConsumerWidget {
 
   static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
   static const _seekSteps = [1, 5, 10, 30];
+
+  void _showSeekMenu(
+      BuildContext context, Offset position, Player player, bool rewind) async {
+    final result = await showMenu<int>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+          position.dx - 40, position.dy - 160, position.dx + 40, position.dy),
+      items: _seekSteps
+          .map((s) => PopupMenuItem(
+                value: s,
+                height: 36,
+                child: Text('${rewind ? "-" : "+"}${s}s',
+                    style: const TextStyle(fontSize: 13)),
+              ))
+          .toList(),
+    );
+    if (result != null) {
+      final pos = player.state.position;
+      if (rewind) {
+        final target = pos - Duration(seconds: result);
+        player.seek(target < Duration.zero ? Duration.zero : target);
+      } else {
+        player.seek(pos + Duration(seconds: result));
+      }
+    }
+  }
+
+  void _showVolumeMenu(
+      BuildContext context, Offset position, Player player) async {
+    await showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (ctx) => _VolumeDialog(player: player, anchor: position),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,29 +57,20 @@ class PlayerControls extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Rewind (popup for step selection)
-          PopupMenuButton<int>(
-            onSelected: (sec) {
-              final pos = player.state.position;
-              final target = pos - Duration(seconds: sec);
-              player.seek(target < Duration.zero ? Duration.zero : target);
-            },
-            enabled: hasSource,
-            itemBuilder: (_) => _seekSteps
-                .map((s) => PopupMenuItem(
-                      value: s,
-                      height: 36,
-                      child: Text('-${s}s', style: const TextStyle(fontSize: 13)),
-                    ))
-                .toList(),
+          // Rewind: tap=5s, long press=choose
+          GestureDetector(
+            onLongPressStart: hasSource
+                ? (details) => _showSeekMenu(
+                    context, details.globalPosition, player, true)
+                : null,
             child: IconButton(
               icon: const Icon(Icons.replay_5),
               onPressed: hasSource
                   ? () {
                       final pos = player.state.position;
                       final target = pos - const Duration(seconds: 5);
-                      player
-                          .seek(target < Duration.zero ? Duration.zero : target);
+                      player.seek(
+                          target < Duration.zero ? Duration.zero : target);
                     }
                   : null,
             ),
@@ -56,20 +83,12 @@ class PlayerControls extends ConsumerWidget {
             onPressed: hasSource ? () => player.playOrPause() : null,
             color: Theme.of(context).colorScheme.primary,
           ),
-          // Forward (popup for step selection)
-          PopupMenuButton<int>(
-            onSelected: (sec) {
-              final pos = player.state.position;
-              player.seek(pos + Duration(seconds: sec));
-            },
-            enabled: hasSource,
-            itemBuilder: (_) => _seekSteps
-                .map((s) => PopupMenuItem(
-                      value: s,
-                      height: 36,
-                      child: Text('+${s}s', style: const TextStyle(fontSize: 13)),
-                    ))
-                .toList(),
+          // Forward: tap=5s, long press=choose
+          GestureDetector(
+            onLongPressStart: hasSource
+                ? (details) => _showSeekMenu(
+                    context, details.globalPosition, player, false)
+                : null,
             child: IconButton(
               icon: const Icon(Icons.forward_5),
               onPressed: hasSource
@@ -80,53 +99,12 @@ class PlayerControls extends ConsumerWidget {
                   : null,
             ),
           ),
-          // Volume (popup slider)
-          PopupMenuButton<double>(
-            onSelected: (_) {},
-            enabled: hasSource,
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                enabled: false,
-                child: StatefulBuilder(
-                  builder: (context, setLocalState) {
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            final newVol = volume > 0 ? 0.0 : 100.0;
-                            player.setVolume(newVol);
-                          },
-                          child: Icon(
-                            volume > 0 ? Icons.volume_up : Icons.volume_off,
-                            size: 20,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 120,
-                          child: SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 3,
-                              thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 7),
-                            ),
-                            child: Slider(
-                              value: volume.clamp(0, 100),
-                              min: 0,
-                              max: 100,
-                              onChanged: (v) {
-                                player.setVolume(v);
-                                setLocalState(() {});
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
+          // Volume: tap=mute toggle, long press=slider
+          GestureDetector(
+            onLongPressStart: hasSource
+                ? (details) =>
+                    _showVolumeMenu(context, details.globalPosition, player)
+                : null,
             child: IconButton(
               icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
               onPressed: hasSource
@@ -174,6 +152,86 @@ class PlayerControls extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Volume slider dialog shown near the anchor position
+class _VolumeDialog extends StatefulWidget {
+  final Player player;
+  final Offset anchor;
+  const _VolumeDialog({required this.player, required this.anchor});
+
+  @override
+  State<_VolumeDialog> createState() => _VolumeDialogState();
+}
+
+class _VolumeDialogState extends State<_VolumeDialog> {
+  late double _volume;
+
+  @override
+  void initState() {
+    super.initState();
+    _volume = widget.player.state.volume;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Tap anywhere to dismiss
+        Positioned.fill(
+          child: GestureDetector(onTap: () => Navigator.pop(context)),
+        ),
+        Positioned(
+          left: (widget.anchor.dx - 100).clamp(8.0, MediaQuery.of(context).size.width - 208),
+          top: widget.anchor.dy - 60,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      final newVol = _volume > 0 ? 0.0 : 100.0;
+                      widget.player.setVolume(newVol);
+                      setState(() => _volume = newVol);
+                    },
+                    child: Icon(
+                      _volume > 0 ? Icons.volume_up : Icons.volume_off,
+                      size: 20,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 140,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        thumbShape:
+                            const RoundSliderThumbShape(enabledThumbRadius: 7),
+                      ),
+                      child: Slider(
+                        value: _volume.clamp(0, 100),
+                        min: 0,
+                        max: 100,
+                        onChanged: (v) {
+                          widget.player.setVolume(v);
+                          setState(() => _volume = v);
+                        },
+                      ),
+                    ),
+                  ),
+                  Text('${_volume.round()}%',
+                      style: const TextStyle(fontSize: 11)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
