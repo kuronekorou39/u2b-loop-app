@@ -443,14 +443,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       ),
                       const Spacer(),
                       Text(
-                        '${TimeUtils.formatShort(Duration(milliseconds: regions[i].pointAMs))}',
+                        regions[i].hasA
+                            ? TimeUtils.formatShort(Duration(milliseconds: regions[i].pointAMs!))
+                            : '--:--',
                         style: const TextStyle(
                             fontSize: 12, color: AppTheme.pointAColor),
                       ),
                       const Text(' - ',
                           style: TextStyle(fontSize: 12, color: Colors.grey)),
                       Text(
-                        '${TimeUtils.formatShort(Duration(milliseconds: regions[i].pointBMs))}',
+                        regions[i].hasB
+                            ? TimeUtils.formatShort(Duration(milliseconds: regions[i].pointBMs!))
+                            : '--:--',
                         style: const TextStyle(
                             fontSize: 12, color: AppTheme.pointBColor),
                       ),
