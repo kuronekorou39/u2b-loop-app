@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
@@ -734,7 +735,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             child: _buildUnifiedPanel(),
           ),
         ),
-        SizedBox(height: bottomInset),
+        SizedBox(height: max(bottomInset, 16)),
       ],
     );
   }
