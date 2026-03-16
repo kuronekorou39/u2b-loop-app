@@ -731,11 +731,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         // Unified region + AB controls panel
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            padding: EdgeInsets.fromLTRB(8, 8, 8, max(bottomInset, 24)),
             child: _buildUnifiedPanel(),
           ),
         ),
-        SizedBox(height: max(bottomInset, 16)),
       ],
     );
   }

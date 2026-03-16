@@ -377,9 +377,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 const SizedBox(height: 12),
               ],
 
-              // ソース情報
-              _buildSourceInfo(item),
-              const SizedBox(height: 12),
+              // ソース情報 (hide videoId for YouTube)
+              if (item.sourceType != 'youtube')
+                _buildSourceInfo(item),
+              if (item.sourceType != 'youtube')
+                const SizedBox(height: 12),
 
               // AB区間一覧
               if (regions.isNotEmpty) ...[
@@ -414,59 +416,51 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   Widget _buildRegionsList(LoopItem item, List<dynamic> regions) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.segment, size: 18, color: Colors.grey),
-                SizedBox(width: 8),
-                Text('AB区間',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            for (var i = 0; i < regions.length; i++)
-              InkWell(
-                onTap: () => _openAbEditor(item, regionIndex: i),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        regions[i].name,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      const Spacer(),
-                      Text(
-                        regions[i].hasA
-                            ? TimeUtils.formatShort(Duration(milliseconds: regions[i].pointAMs!))
-                            : '--:--',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppTheme.pointAColor),
-                      ),
-                      const Text(' - ',
-                          style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      Text(
-                        regions[i].hasB
-                            ? TimeUtils.formatShort(Duration(milliseconds: regions[i].pointBMs!))
-                            : '--:--',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppTheme.pointBColor),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.chevron_right,
-                          size: 16, color: Colors.grey),
-                    ],
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        leading: const Icon(Icons.segment, size: 18, color: Colors.grey),
+        title: Text('AB区間 (${regions.length})',
+            style: const TextStyle(fontSize: 13, color: Colors.grey)),
+        initiallyExpanded: false,
+        dense: true,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+        childrenPadding:
+            const EdgeInsets.only(left: 12, right: 12, bottom: 8),
+        children: [
+          for (var i = 0; i < regions.length; i++)
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+              child: Row(
+                children: [
+                  Text(
+                    regions[i].name,
+                    style: const TextStyle(fontSize: 13),
                   ),
-                ),
+                  const Spacer(),
+                  Text(
+                    regions[i].hasA
+                        ? TimeUtils.formatShort(Duration(
+                            milliseconds: regions[i].pointAMs!))
+                        : '--:--',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.pointAColor),
+                  ),
+                  const Text(' - ',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(
+                    regions[i].hasB
+                        ? TimeUtils.formatShort(Duration(
+                            milliseconds: regions[i].pointBMs!))
+                        : '--:--',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.pointBColor),
+                  ),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
