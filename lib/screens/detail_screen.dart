@@ -343,25 +343,31 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // タイトル
               TextField(
                 controller: _titleController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'タイトル',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  labelStyle: TextStyle(color: Colors.grey[500]),
+                  floatingLabelStyle:
+                      const TextStyle(color: AppTheme.accentGreen),
                 ),
-                style: const TextStyle(fontSize: 14),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 12),
 
               // 備考
               TextField(
                 controller: _memoController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: '備考',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  labelStyle: TextStyle(color: Colors.grey[600]),
+                  floatingLabelStyle: TextStyle(color: Colors.grey[400]),
                   hintText: '練習メモなど',
+                  hintStyle: TextStyle(color: Colors.grey[700], fontSize: 13),
                 ),
-                style: const TextStyle(fontSize: 14),
+                style: TextStyle(fontSize: 13, color: Colors.grey[400]),
                 maxLines: 4,
                 minLines: 1,
               ),
@@ -404,7 +410,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 ),
               ),
 
-              const SizedBox(height: 32),
+              SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 48),
             ],
           ),
         ),
@@ -423,6 +429,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             style: const TextStyle(fontSize: 13, color: Colors.grey)),
         initiallyExpanded: false,
         dense: true,
+        shape: const Border(),
+        collapsedShape: const Border(),
         tilePadding: const EdgeInsets.symmetric(horizontal: 12),
         childrenPadding:
             const EdgeInsets.only(left: 12, right: 12, bottom: 8),
@@ -468,63 +476,32 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // --- タグセクション ---
 
   Widget _buildTagSection(LoopItem item, List<Tag> itemTags) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.label_outline, size: 18, color: Colors.grey),
-                const SizedBox(width: 8),
-                const Text('タグ',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
-                const Spacer(),
-                SizedBox(
-                  height: 28,
-                  child: TextButton(
-                    onPressed: () => _showTagPicker(item),
-                    style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8)),
-                    child:
-                        const Text('編集', style: TextStyle(fontSize: 12)),
-                  ),
-                ),
-              ],
-            ),
-            if (itemTags.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: itemTags
-                      .map((t) => Chip(
-                            label: Text(t.name,
-                                style: const TextStyle(fontSize: 12)),
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            deleteIcon: const Icon(Icons.close, size: 14),
-                            onDeleted: () {
-                              ref
-                                  .read(loopItemsProvider.notifier)
-                                  .removeTagFromItems([item.id], t.id);
-                            },
-                          ))
-                      .toList(),
-                ),
-              )
-            else
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text('タグなし',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-              ),
-          ],
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        ...itemTags.map((t) => Chip(
+              label: Text(t.name, style: const TextStyle(fontSize: 12)),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              deleteIcon: const Icon(Icons.close, size: 14),
+              onDeleted: () {
+                ref
+                    .read(loopItemsProvider.notifier)
+                    .removeTagFromItems([item.id], t.id);
+              },
+            )),
+        ActionChip(
+          avatar: const Icon(Icons.add, size: 16),
+          label: Text(
+            itemTags.isEmpty ? 'タグ追加' : '追加',
+            style: const TextStyle(fontSize: 12),
+          ),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onPressed: () => _showTagPicker(item),
         ),
-      ),
+      ],
     );
   }
 
