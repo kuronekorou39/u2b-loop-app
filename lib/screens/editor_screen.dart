@@ -731,7 +731,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         // Unified region + AB controls panel
         Expanded(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(8, 8, 8, max(bottomInset, 24)),
+            padding: EdgeInsets.fromLTRB(8, 4, 8, max(bottomInset + 16, 40)),
             child: _buildUnifiedPanel(),
           ),
         ),
@@ -761,7 +761,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
