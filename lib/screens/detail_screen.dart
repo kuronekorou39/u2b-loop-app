@@ -349,7 +349,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   border: const OutlineInputBorder(),
                   labelStyle: TextStyle(color: Colors.grey[500]),
                   floatingLabelStyle:
-                      const TextStyle(color: AppTheme.accentGreen),
+                      const TextStyle(color: Color(0xFF4ECCA3)),
                 ),
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
               ),
