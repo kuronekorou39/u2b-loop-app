@@ -18,6 +18,8 @@ import 'settings_screen.dart';
 /// 表示モード: リスト / 2列 / 4列
 enum _ViewMode { list, grid2, grid4 }
 
+enum _SortMode { updatedDesc, updatedAsc, titleAsc, titleDesc, createdDesc }
+
 class ListScreen extends ConsumerStatefulWidget {
   const ListScreen({super.key});
 
@@ -34,6 +36,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
   final Set<String> _selectedIds = {};
   bool get _isSelecting => _selectedIds.isNotEmpty;
 
+  String _searchQuery = '';
+  _SortMode _sortMode = _SortMode.updatedDesc;
+  final _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +49,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   @override
   void dispose() {
+    _searchController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -341,6 +348,64 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   );
                 },
               ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('新規作成して追加'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final controller = TextEditingController();
+                final name = await showDialog<String>(
+                  context: context,
+                  builder: (dlgCtx) => AlertDialog(
+                    title: const Text('プレイリスト作成'),
+                    content: TextField(
+                      controller: controller,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: 'プレイリスト名',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (v) => Navigator.pop(dlgCtx, v.trim()),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dlgCtx),
+                        child: const Text('キャンセル'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.pop(dlgCtx, controller.text.trim()),
+                        child: const Text('作成'),
+                      ),
+                    ],
+                  ),
+                );
+                controller.dispose();
+                if (name != null && name.isNotEmpty) {
+                  final pl = Playlist(
+                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                    name: name,
+                  );
+                  await ref.read(playlistsProvider.notifier).add(pl);
+                  final ids = _selectedIds.toList();
+                  await ref
+                      .read(playlistsProvider.notifier)
+                      .addItems(pl.id, ids);
+                  _clearSelection();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content:
+                            Text('${ids.length}件を「${pl.name}」に追加しました'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -468,13 +533,36 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
     final isDataTab = _tabController.index == 0;
 
-    // タグフィルター適用
-    final items = filterTagIds.isEmpty
+    // 検索フィルター
+    var filtered = filterTagIds.isEmpty
         ? allItems
         : allItems
             .where(
                 (i) => filterTagIds.every((tid) => i.tagIds.contains(tid)))
             .toList();
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      filtered = filtered
+          .where((i) =>
+              i.title.toLowerCase().contains(q) ||
+              (i.memo ?? '').toLowerCase().contains(q))
+          .toList();
+    }
+
+    // ソート
+    final items = List<LoopItem>.from(filtered);
+    switch (_sortMode) {
+      case _SortMode.updatedDesc:
+        items.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      case _SortMode.updatedAsc:
+        items.sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
+      case _SortMode.titleAsc:
+        items.sort((a, b) => a.title.compareTo(b.title));
+      case _SortMode.titleDesc:
+        items.sort((a, b) => b.title.compareTo(a.title));
+      case _SortMode.createdDesc:
+        items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
 
     return PopScope(
       canPop: !_isSelecting,
@@ -487,6 +575,65 @@ class _ListScreenState extends ConsumerState<ListScreen>
             : _buildNormalAppBar(isDataTab),
         body: Column(
           children: [
+            // 検索・ソートバー
+            if (isDataTab && !_isSelecting)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 36,
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: '検索...',
+                            hintStyle: const TextStyle(fontSize: 13),
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? GestureDetector(
+                                    onTap: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                    child: const Icon(Icons.close, size: 18),
+                                  )
+                                : null,
+                            isDense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 0),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade700),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade700),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 13),
+                          onChanged: (v) => setState(() => _searchQuery = v),
+                        ),
+                      ),
+                    ),
+                    PopupMenuButton<_SortMode>(
+                      icon: const Icon(Icons.sort, size: 22),
+                      tooltip: '並び替え',
+                      onSelected: (mode) =>
+                          setState(() => _sortMode = mode),
+                      itemBuilder: (_) => [
+                        _sortMenuItem(_SortMode.updatedDesc, '更新日（新→古）'),
+                        _sortMenuItem(_SortMode.updatedAsc, '更新日（古→新）'),
+                        _sortMenuItem(_SortMode.createdDesc, '作成日（新→古）'),
+                        _sortMenuItem(_SortMode.titleAsc, 'タイトル（A→Z）'),
+                        _sortMenuItem(_SortMode.titleDesc, 'タイトル（Z→A）'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             // タグフィルターバー
             if (isDataTab && tags.isNotEmpty && !_isSelecting)
               _buildTagFilterBar(tags, filterTagIds),
@@ -603,6 +750,22 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
+  PopupMenuEntry<_SortMode> _sortMenuItem(_SortMode mode, String label) {
+    return PopupMenuItem(
+      value: mode,
+      child: Row(
+        children: [
+          if (_sortMode == mode)
+            const Icon(Icons.check, size: 18)
+          else
+            const SizedBox(width: 18),
+          const SizedBox(width: 8),
+          Text(label, style: const TextStyle(fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
   // === タグフィルターバー ===
 
   Widget _buildTagFilterBar(List<Tag> tags, Set<String> filterTagIds) {
@@ -656,7 +819,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     return switch (_viewMode) {
       _ViewMode.list => _buildListView(items, tags),
       _ViewMode.grid2 => _buildGridView(items, tags, 2, 16 / 14),
-      _ViewMode.grid4 => _buildGridView(items, tags, 4, 1.0),
+      _ViewMode.grid4 => _buildGridView(items, tags, 4, 16 / 11),
     };
   }
 
@@ -715,14 +878,25 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             style: const TextStyle(
                                 fontSize: 11, fontWeight: FontWeight.bold),
                           ),
-                          if (item.isReady &&
-                              (item.pointAMs > 0 || item.pointBMs > 0))
-                            Text(
-                              'A ${TimeUtils.formatShort(Duration(milliseconds: item.pointAMs))} '
-                              '- B ${TimeUtils.formatShort(Duration(milliseconds: item.pointBMs))}',
-                              style: const TextStyle(
-                                  fontSize: 9, color: Colors.grey),
-                            ),
+                          if (item.isReady) ...[
+                            if (_buildRegionInfoText(item) != null)
+                              Text(
+                                _buildRegionInfoText(item)!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 9, color: Colors.grey),
+                              ),
+                            if (item.memo != null && item.memo!.isNotEmpty)
+                              Text(
+                                item.memo!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.grey.shade600),
+                              ),
+                          ],
                           if (item.tagIds.isNotEmpty)
                             _buildTagChips(item, tags, tiny: true),
                         ],
@@ -893,6 +1067,36 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
   }
 
+  String? _buildRegionInfoText(LoopItem item) {
+    final regions = item.effectiveRegions;
+    final first = regions.firstOrNull;
+    if (first == null || !first.hasPoints) return null;
+
+    final parts = <String>[];
+
+    // Show custom region name if not default
+    if (first.name != '区間 1' && regions.length > 1) {
+      parts.add(first.name);
+    }
+
+    // A-B times
+    final aStr = first.hasA
+        ? TimeUtils.formatShort(Duration(milliseconds: first.pointAMs!))
+        : '--:--';
+    final bStr = first.hasB
+        ? TimeUtils.formatShort(Duration(milliseconds: first.pointBMs!))
+        : '--:--';
+    parts.add('A $aStr - B $bStr');
+
+    // Additional regions count
+    if (regions.length > 1) {
+      final others = regions.length - 1;
+      parts.add('他$others件');
+    }
+
+    return parts.join('  ');
+  }
+
   Widget? _buildSubtitle(LoopItem item, List<Tag> tags) {
     if (item.isFetching) {
       return const Text('情報を取得中...',
@@ -905,11 +1109,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
     final parts = <Widget>[];
     final info = <String>[];
-    if (item.pointAMs > 0 || item.pointBMs > 0) {
-      info.add(
-          'A ${TimeUtils.formatShort(Duration(milliseconds: item.pointAMs))} '
-          '- B ${TimeUtils.formatShort(Duration(milliseconds: item.pointBMs))}');
-    }
+    final regionInfo = _buildRegionInfoText(item);
+    if (regionInfo != null) info.add(regionInfo);
     if (item.speed != 1.0) info.add('${item.speed}x');
     if (item.memo != null && item.memo!.isNotEmpty) info.add(item.memo!);
     if (info.isNotEmpty) {

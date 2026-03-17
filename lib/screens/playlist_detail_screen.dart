@@ -133,22 +133,19 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     final readyItems = allItems.where((i) => i.isReady).toList();
     final existing = Set<String>.from(pl.itemIds);
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.4,
-        expand: false,
-        builder: (ctx, scrollController) => _ItemPickerSheet(
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _ItemPickerPage(
           items: readyItems,
           existingIds: existing,
-          scrollController: scrollController,
           onAdd: (ids) {
-            ref
-                .read(playlistsProvider.notifier)
-                .addItems(pl.id, ids);
+            ref.read(playlistsProvider.notifier).addItems(pl.id, ids);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${ids.length}件を追加しました'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
           },
         ),
       ),
@@ -418,28 +415,27 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 }
 
 // ============================================================
-// 一覧から選択シート
+// 一覧から選択ページ
 // ============================================================
 
-class _ItemPickerSheet extends StatefulWidget {
+class _ItemPickerPage extends StatefulWidget {
   final List<LoopItem> items;
   final Set<String> existingIds;
-  final ScrollController scrollController;
   final void Function(List<String> ids) onAdd;
 
-  const _ItemPickerSheet({
+  const _ItemPickerPage({
     required this.items,
     required this.existingIds,
-    required this.scrollController,
     required this.onAdd,
   });
 
   @override
-  State<_ItemPickerSheet> createState() => _ItemPickerSheetState();
+  State<_ItemPickerPage> createState() => _ItemPickerPageState();
 }
 
-class _ItemPickerSheetState extends State<_ItemPickerSheet> {
+class _ItemPickerPageState extends State<_ItemPickerPage> {
   late Set<String> _selected;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -449,67 +445,140 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-          child: Row(
-            children: [
-              const Text('曲を選択',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              FilledButton(
-                onPressed: _selected.isEmpty
-                    ? null
-                    : () {
-                        widget.onAdd(_selected.toList());
-                        Navigator.pop(context);
-                      },
-                child: Text('追加 (${_selected.length})'),
-              ),
-            ],
+    var items = widget.items;
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      items = items.where((i) => i.title.toLowerCase().contains(q)).toList();
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('曲を選択', style: TextStyle(fontSize: 16)),
+        actions: [
+          FilledButton(
+            onPressed: _selected.isEmpty
+                ? null
+                : () {
+                    widget.onAdd(_selected.toList());
+                    Navigator.pop(context);
+                  },
+            child: Text('追加 (${_selected.length})'),
           ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            controller: widget.scrollController,
-            itemCount: widget.items.length,
-            itemBuilder: (context, i) {
-              final item = widget.items[i];
-              final alreadyIn = widget.existingIds.contains(item.id);
-              final selected = _selected.contains(item.id);
-              return CheckboxListTile(
-                value: alreadyIn || selected,
-                onChanged: alreadyIn
-                    ? null
-                    : (_) {
-                        setState(() {
-                          if (selected) {
-                            _selected.remove(item.id);
-                          } else {
-                            _selected.add(item.id);
-                          }
-                        });
-                      },
-                title: Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: alreadyIn ? Colors.grey : null,
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: SizedBox(
+              height: 36,
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: '検索...',
+                  hintStyle: const TextStyle(fontSize: 13),
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide(color: Colors.grey.shade700),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide(color: Colors.grey.shade700),
                   ),
                 ),
-                subtitle: alreadyIn
-                    ? const Text('追加済み',
-                        style: TextStyle(fontSize: 11, color: Colors.grey))
-                    : null,
-              );
-            },
+                style: const TextStyle(fontSize: 13),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+            ),
           ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: items.length,
+              itemBuilder: (context, i) {
+                final item = items[i];
+                final alreadyIn = widget.existingIds.contains(item.id);
+                final selected = _selected.contains(item.id);
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      width: 64,
+                      height: 36,
+                      child: _buildThumbnail(item),
+                    ),
+                  ),
+                  title: Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: alreadyIn ? Colors.grey : null,
+                    ),
+                  ),
+                  subtitle: alreadyIn
+                      ? const Text('追加済み',
+                          style: TextStyle(fontSize: 11, color: Colors.grey))
+                      : null,
+                  trailing: Checkbox(
+                    value: alreadyIn || selected,
+                    onChanged: alreadyIn
+                        ? null
+                        : (_) {
+                            setState(() {
+                              if (selected) {
+                                _selected.remove(item.id);
+                              } else {
+                                _selected.add(item.id);
+                              }
+                            });
+                          },
+                  ),
+                  onTap: alreadyIn
+                      ? null
+                      : () {
+                          setState(() {
+                            if (selected) {
+                              _selected.remove(item.id);
+                            } else {
+                              _selected.add(item.id);
+                            }
+                          });
+                        },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThumbnail(LoopItem item) {
+    if (item.thumbnailPath != null) {
+      final file = File(item.thumbnailPath!);
+      return Image.file(file, fit: BoxFit.cover, errorBuilder: (_, __, ___) {
+        return Container(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: const Icon(Icons.play_circle_outline,
+              color: Colors.grey, size: 18),
+        );
+      });
+    }
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          item.sourceType == 'youtube'
+              ? Icons.play_circle_outline
+              : Icons.video_file_outlined,
+          color: Colors.grey,
+          size: 18,
         ),
-      ],
+      ),
     );
   }
 }
