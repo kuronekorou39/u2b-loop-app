@@ -248,12 +248,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
   }
 
-  void _addVideos(List<yte.Video> videos, String playlistTitle) {
-    final notifier = ref.read(loopItemsProvider.notifier);
-    for (final v in videos) {
-      final url = 'https://youtu.be/${v.id.value}';
-      notifier.addYouTubeAndFetch(v.id.value, url);
-    }
+  Future<void> _addVideos(List<yte.Video> videos, String playlistTitle) async {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -261,6 +256,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
           duration: const Duration(seconds: 3),
         ),
       );
+    }
+    final notifier = ref.read(loopItemsProvider.notifier);
+    for (final v in videos) {
+      final url = 'https://youtu.be/${v.id.value}';
+      await notifier.addYouTubeAndFetch(v.id.value, url);
     }
   }
 

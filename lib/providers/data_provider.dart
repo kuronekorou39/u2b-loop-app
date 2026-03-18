@@ -17,6 +17,9 @@ final loopItemsProvider =
 
 class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   final Box<LoopItem> _box;
+  int _idCounter = 0;
+
+  String _generateId() => '${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
   LoopItemsNotifier(this._box)
       : super(_box.values.toList()
@@ -46,7 +49,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   /// YouTube動画を即座にリストに追加し、バックグラウンドで情報を取得
   Future<void> addYouTubeAndFetch(String videoId, String originalUrl) async {
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = _generateId();
     final item = LoopItem(
       id: id,
       title: videoId,
@@ -90,7 +93,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   }
 
   Future<void> addLocalFile(String path, String fileName) async {
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = _generateId();
     final item = LoopItem(
       id: id,
       title: fileName,
@@ -116,7 +119,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   /// アイテムを複製（新IDで同じ内容のコピーを作成）
   Future<LoopItem> duplicate(LoopItem source) async {
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = _generateId();
     final copy = LoopItem(
       id: id,
       title: '${source.title} (コピー)',
