@@ -1002,7 +1002,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget _buildItemsView(List<LoopItem> items, List<Tag> tags) {
     return switch (_viewMode) {
       _ViewMode.list => _buildListView(items, tags),
-      _ViewMode.grid2 => _buildGridView(items, tags, 2, 16 / 14),
+      _ViewMode.grid2 => _buildGridView(items, tags, 2, 16 / 12),
       _ViewMode.grid4 => _buildGridView(items, tags, 4, 16 / 11),
     };
   }
