@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yte;
 
 import '../core/utils/time_utils.dart';
 import '../core/utils/url_utils.dart';
@@ -62,6 +63,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
     void doAdd(BuildContext dialogCtx) {
       final url = urlController.text.trim();
       if (url.isEmpty) return;
+
+      // プレイリストURL判定
+      final playlistId = UrlUtils.extractPlaylistId(url);
+      if (playlistId != null) {
+        Navigator.pop(dialogCtx);
+        _importPlaylist(playlistId);
+        return;
+      }
+
       final videoId = UrlUtils.extractVideoId(url);
       if (videoId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -90,7 +100,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               controller: urlController,
               autofocus: true,
               decoration: const InputDecoration(
-                hintText: 'YouTube URLを入力',
+                hintText: 'YouTube URL / プレイリストURL',
                 prefixIcon: Icon(Icons.link, size: 18),
                 isDense: true,
                 border: OutlineInputBorder(),
@@ -159,6 +169,180 @@ class _ListScreenState extends ConsumerState<ListScreen>
             content: Text('追加しました'), duration: Duration(seconds: 2)),
       );
     }
+  }
+
+  // --- YouTubeプレイリストインポート ---
+
+  Future<void> _importPlaylist(String playlistId) async {
+    // 取得中ダイアログ表示
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Text('プレイリスト情報を取得中...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final yt = yte.YoutubeExplode();
+      try {
+        // プレイリスト情報取得
+        final playlist = await yt.playlists.get(playlistId);
+        final videos = <yte.Video>[];
+        await for (final v in yt.playlists.getVideos(playlistId)) {
+          videos.add(v);
+        }
+
+        if (!mounted) return;
+        Navigator.pop(context); // 取得中ダイアログを閉じる
+
+        if (videos.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('プレイリストに動画がありません')),
+          );
+          return;
+        }
+
+        // 既存アイテムとの重複チェック
+        final existingItems = ref.read(loopItemsProvider);
+        final existingVideoIds =
+            existingItems.map((i) => i.videoId).whereType<String>().toSet();
+        final duplicates =
+            videos.where((v) => existingVideoIds.contains(v.id.value)).toList();
+        final newVideos =
+            videos.where((v) => !existingVideoIds.contains(v.id.value)).toList();
+
+        if (duplicates.isEmpty) {
+          // 重複なし: 全件追加
+          _addVideos(videos, playlist.title);
+        } else {
+          // 重複あり: 確認ダイアログ
+          await _showDuplicateDialog(
+            playlistTitle: playlist.title,
+            allVideos: videos,
+            newVideos: newVideos,
+            duplicates: duplicates,
+          );
+        }
+      } finally {
+        yt.close();
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // 取得中ダイアログを閉じる
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('取得失敗: $e')),
+        );
+      }
+    }
+  }
+
+  void _addVideos(List<yte.Video> videos, String playlistTitle) {
+    final notifier = ref.read(loopItemsProvider.notifier);
+    for (final v in videos) {
+      final url = 'https://youtu.be/${v.id.value}';
+      notifier.addYouTubeAndFetch(v.id.value, url);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('「$playlistTitle」から${videos.length}件を追加中...'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showDuplicateDialog({
+    required String playlistTitle,
+    required List<yte.Video> allVideos,
+    required List<yte.Video> newVideos,
+    required List<yte.Video> duplicates,
+  }) async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$playlistTitle (${allVideos.length}件)',
+            style: const TextStyle(fontSize: 15)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${duplicates.length}件が既に登録されています。',
+              style: const TextStyle(fontSize: 13),
+            ),
+            if (newVideos.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '新規: ${newVideos.length}件',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cancel'),
+            child: const Text('キャンセル'),
+          ),
+          if (newVideos.isNotEmpty)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'skip'),
+              child: Text('新規のみ追加 (${newVideos.length}件)'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'all'),
+            child: Text('すべて追加 (${allVideos.length}件)'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'select'),
+            child: const Text('個別に選択'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || result == null || result == 'cancel') return;
+
+    if (result == 'skip') {
+      _addVideos(newVideos, playlistTitle);
+    } else if (result == 'all') {
+      _addVideos(allVideos, playlistTitle);
+    } else if (result == 'select') {
+      _showVideoSelectPage(allVideos, duplicates, playlistTitle);
+    }
+  }
+
+  void _showVideoSelectPage(
+    List<yte.Video> allVideos,
+    List<yte.Video> duplicates,
+    String playlistTitle,
+  ) {
+    final duplicateIds = duplicates.map((v) => v.id.value).toSet();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _PlaylistVideoSelectPage(
+          videos: allVideos,
+          duplicateIds: duplicateIds,
+          playlistTitle: playlistTitle,
+          onConfirm: (selected) {
+            _addVideos(selected, playlistTitle);
+          },
+        ),
+      ),
+    );
   }
 
   // --- アイテム操作 ---
@@ -1571,6 +1755,157 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// YouTubeプレイリスト動画選択ページ
+// ============================================================
+
+class _PlaylistVideoSelectPage extends StatefulWidget {
+  final List<yte.Video> videos;
+  final Set<String> duplicateIds;
+  final String playlistTitle;
+  final void Function(List<yte.Video> selected) onConfirm;
+
+  const _PlaylistVideoSelectPage({
+    required this.videos,
+    required this.duplicateIds,
+    required this.playlistTitle,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_PlaylistVideoSelectPage> createState() =>
+      _PlaylistVideoSelectPageState();
+}
+
+class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
+  late Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    // デフォルトで新規のものを全選択
+    _selected = widget.videos
+        .where((v) => !widget.duplicateIds.contains(v.id.value))
+        .map((v) => v.id.value)
+        .toSet();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedCount = _selected.length;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.playlistTitle,
+            style: const TextStyle(fontSize: 14),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
+        actions: [
+          FilledButton(
+            onPressed: selectedCount == 0
+                ? null
+                : () {
+                    final selected = widget.videos
+                        .where((v) => _selected.contains(v.id.value))
+                        .toList();
+                    widget.onConfirm(selected);
+                    Navigator.pop(context);
+                  },
+            child: Text('追加 ($selectedCount)'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Column(
+        children: [
+          // 一括選択バー
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                Text('${widget.videos.length}件中 $selectedCount件選択',
+                    style:
+                        const TextStyle(fontSize: 12, color: Colors.grey)),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _selected =
+                        widget.videos.map((v) => v.id.value).toSet();
+                  }),
+                  child: const Text('すべて選択', style: TextStyle(fontSize: 12)),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _selected.clear()),
+                  child: const Text('すべて解除', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: widget.videos.length,
+              itemBuilder: (context, i) {
+                final video = widget.videos[i];
+                final id = video.id.value;
+                final isDuplicate = widget.duplicateIds.contains(id);
+                final isSelected = _selected.contains(id);
+
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      width: 64,
+                      height: 36,
+                      child: Image.network(
+                        video.thumbnails.lowResUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          child: const Icon(Icons.play_circle_outline,
+                              color: Colors.grey, size: 18),
+                        ),
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    video.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  subtitle: isDuplicate
+                      ? const Text('登録済み',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.orange))
+                      : null,
+                  trailing: Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => setState(() {
+                      if (isSelected) {
+                        _selected.remove(id);
+                      } else {
+                        _selected.add(id);
+                      }
+                    }),
+                  ),
+                  onTap: () => setState(() {
+                    if (isSelected) {
+                      _selected.remove(id);
+                    } else {
+                      _selected.add(id);
+                    }
+                  }),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
