@@ -232,20 +232,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
       ),
     );
 
-    // ミックスリスト検出
-    if (playlistId.startsWith('RD')) {
-      if (mounted) {
-        Navigator.pop(context); // 取得中ダイアログを閉じる
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ミックスリストは取得できません（YouTube側の制限）'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-      return;
-    }
-
     try {
       final yt = yte.YoutubeExplode();
       try {
@@ -261,7 +247,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
         if (videos.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('プレイリストに動画がありません')),
+            SnackBar(
+              content: Text(playlistId.startsWith('RD')
+                  ? 'ミックスリストの取得に失敗しました（YouTube側の制限の可能性）'
+                  : 'プレイリストに動画がありません'),
+              duration: const Duration(seconds: 3),
+            ),
           );
           return;
         }
