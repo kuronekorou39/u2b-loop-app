@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class AppTheme {
   static const pointAColor = Color(0xFFFF6B6B);
   static const pointBColor = Color(0xFF4FC3F7);
+  static const accentGreen = Color(0xFF4ECCA3);
 
   static ThemeData get dark {
     const bg = Color(0xFF1A1A2E);

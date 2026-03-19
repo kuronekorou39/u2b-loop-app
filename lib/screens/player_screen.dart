@@ -13,9 +13,12 @@ import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 import '../models/loop_state.dart';
+import '../models/playlist_mode.dart' as pl;
+import '../models/playlist_track.dart';
 import '../models/video_source.dart';
 import '../providers/loop_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/playlist_player_provider.dart';
 import '../services/waveform_service.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
@@ -48,24 +51,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _loadError;
   String? _cachedAudioPath;
 
-  int _currentIndex = 0;
   int _activeRegionIdx = -1;
   bool _isInPiP = false;
 
   LoopItem get _currentItem {
-    if (widget.playlistItems != null) {
-      return widget.playlistItems![_currentIndex];
+    if (_isPlaylist) {
+      final track = ref.read(playlistPlayerProvider).currentTrack;
+      if (track != null) return track.item;
     }
     return widget.item;
   }
 
-  List<LoopItem> get _items => widget.playlistItems ?? [widget.item];
   bool get _isPlaylist => widget.playlistItems != null;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
 
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPChanged') {
@@ -79,6 +80,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ref.read(waveformDataProvider.notifier).state = null;
       ref.read(waveformLoadingProvider.notifier).state = false;
       ref.read(waveformErrorProvider.notifier).state = null;
+
+      // Initialize playlist provider if in playlist mode
+      if (_isPlaylist) {
+        ref.read(playlistPlayerProvider.notifier).loadPlaylist(
+              widget.playlistItems!,
+              initialItemIndex: widget.initialIndex,
+            );
+      }
+
       _loadItem();
     });
   }
@@ -87,9 +97,100 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void deactivate() {
     try {
       ref.read(playerProvider).stop();
+      ref.read(loopProvider.notifier).onBPointReached = null;
+      ref.read(loopProvider.notifier).onTrackEnd = null;
+      if (_isPlaylist) ref.read(playlistPlayerProvider.notifier).clear();
     } catch (_) {}
     _pipChannel.setMethodCallHandler(null);
     super.deactivate();
+  }
+
+  // --- Playlist callbacks ---
+
+  void _setupPlaylistCallbacks() {
+    final loopNotifier = ref.read(loopProvider.notifier);
+
+    if (!_isPlaylist) {
+      loopNotifier.onBPointReached = null;
+      loopNotifier.onTrackEnd = null;
+      return;
+    }
+
+    loopNotifier.onBPointReached = () {
+      final plState = ref.read(playlistPlayerProvider);
+      if (plState.repeatMode == pl.RepeatMode.single) {
+        return false; // Normal AB loop
+      }
+      // Auto-advance to next track
+      _advanceToNext();
+      return true;
+    };
+
+    loopNotifier.onTrackEnd = () {
+      if (_isPlaylist) _advanceToNext();
+    };
+  }
+
+  void _advanceToNext() {
+    final notifier = ref.read(playlistPlayerProvider.notifier);
+    final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
+    final changed = notifier.next();
+    if (!changed) {
+      // Single repeat - seek back to start of current track
+      final track = ref.read(playlistPlayerProvider).currentTrack;
+      if (track != null) {
+        final a = track.startMs;
+        ref.read(playerProvider).seek(Duration(milliseconds: a ?? 0));
+      }
+      return;
+    }
+    _switchToCurrentTrack(oldTrack);
+  }
+
+  void _advanceToPrev() {
+    final notifier = ref.read(playlistPlayerProvider.notifier);
+    final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
+    final changed = notifier.prev();
+    if (!changed) return;
+    _switchToCurrentTrack(oldTrack);
+  }
+
+  void _switchToCurrentTrack(PlaylistTrack? oldTrack) {
+    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
+    if (newTrack == null) return;
+
+    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
+      // Same LoopItem - just seek and update loop points
+      _loadTrackRegion(newTrack);
+    } else {
+      // Different LoopItem - full reload
+      _loadItem();
+    }
+  }
+
+  void _loadTrackRegion(PlaylistTrack track) {
+    final notifier = ref.read(loopProvider.notifier);
+    if (track.hasRegion) {
+      notifier.setPointA(
+          track.startMs != null ? Duration(milliseconds: track.startMs!) : null);
+      notifier.setPointB(
+          track.endMs != null ? Duration(milliseconds: track.endMs!) : null);
+      if (!ref.read(loopProvider).enabled) notifier.toggleEnabled();
+    } else {
+      notifier.reset();
+    }
+    if (track.startMs != null) {
+      ref.read(playerProvider).seek(Duration(milliseconds: track.startMs!));
+    }
+    _setupPlaylistCallbacks();
+    if (mounted) setState(() {});
+  }
+
+  void _jumpToTrack(int trackIndex) {
+    final notifier = ref.read(playlistPlayerProvider.notifier);
+    final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
+    notifier.jumpTo(trackIndex);
+    _switchToCurrentTrack(oldTrack);
   }
 
   // --- Loading ---
@@ -220,7 +321,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     // Setup regions / AB
-    _setupRegions(item);
+    if (_isPlaylist) {
+      final track = ref.read(playlistPlayerProvider).currentTrack;
+      if (track != null) {
+        _loadTrackRegion(track);
+      }
+    } else {
+      _setupRegions(item);
+    }
+
+    // Setup playlist callbacks
+    _setupPlaylistCallbacks();
 
     if (!mounted) return;
     await _setProgress(1.0, '読み込み完了！');
@@ -275,22 +386,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() => _activeRegionIdx = -1);
     final notifier = ref.read(loopProvider.notifier);
     notifier.reset();
-  }
-
-  // --- Playlist navigation ---
-
-  void _nextItem() {
-    if (_currentIndex < _items.length - 1) {
-      _currentIndex++;
-      _loadItem();
-    }
-  }
-
-  void _prevItem() {
-    if (_currentIndex > 0) {
-      _currentIndex--;
-      _loadItem();
-    }
   }
 
   // --- PiP ---
@@ -417,6 +512,150 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return null;
   }
 
+  // --- Track list bottom sheet ---
+
+  void _showTrackList() {
+    final plState = ref.read(playlistPlayerProvider);
+    if (plState.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final state = ref.read(playlistPlayerProvider);
+            final currentIdx = state.currentTrackIndex;
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.3,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (ctx, scrollController) {
+                return Column(
+                  children: [
+                    // Handle bar
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[600],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Text(
+                            'トラック一覧',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${state.enabledCount}/${state.trackCount} 有効',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        itemCount: state.tracks.length,
+                        itemBuilder: (ctx, i) {
+                          final track = state.tracks[i];
+                          final isCurrent = i == currentIdx;
+
+                          return ListTile(
+                            dense: true,
+                            leading: Checkbox(
+                              value: track.enabled,
+                              onChanged: (_) {
+                                ref
+                                    .read(playlistPlayerProvider.notifier)
+                                    .toggleTrackEnabled(i);
+                                setSheetState(() {});
+                              },
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            title: Text(
+                              track.displayName,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isCurrent
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: isCurrent
+                                    ? AppTheme.accentGreen
+                                    : track.enabled
+                                        ? null
+                                        : Colors.grey,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: track.hasRegion
+                                ? Text(
+                                    '${track.startMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.startMs!)) : '--:--'}'
+                                    ' - '
+                                    '${track.endMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.endMs!)) : '--:--'}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isCurrent
+                                          ? AppTheme.accentGreen
+                                              .withValues(alpha: 0.7)
+                                          : Colors.grey,
+                                    ),
+                                  )
+                                : null,
+                            trailing: isCurrent
+                                ? const Icon(Icons.play_arrow,
+                                    color: AppTheme.accentGreen, size: 20)
+                                : Text(
+                                    '${i + 1}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                            onTap: () {
+                              Navigator.of(ctx).pop();
+                              _jumpToTrack(i);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   // --- Build ---
 
   @override
@@ -424,10 +663,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isInPiP) return _buildPiPView();
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
 
+    // Watch playlist provider for reactivity
+    final plState = _isPlaylist ? ref.watch(playlistPlayerProvider) : null;
+    final displayTitle = _isPlaylist
+        ? (plState?.currentTrack?.displayName ?? _currentItem.title)
+        : _currentItem.title;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _currentItem.title,
+          displayTitle,
           style: const TextStyle(fontSize: 14),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -555,14 +800,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           const PlayerControls(),
           const LoopSeekbar(),
 
-          // Region selector
-          if (regions.isNotEmpty) _buildRegionSelector(regions),
+          // Region selector (non-playlist mode only)
+          if (!_isPlaylist && regions.isNotEmpty) _buildRegionSelector(regions),
 
           // Loop & Gap controls
           _buildLoopControls(loop),
 
-          // Playlist navigation
-          if (_isPlaylist) _buildPlaylistNav(),
+          // Playlist controls
+          if (_isPlaylist) _buildPlaylistControls(),
 
           SizedBox(height: 24 + bottomInset),
         ],
@@ -702,40 +947,124 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  Widget _buildPlaylistNav() {
+  Widget _buildPlaylistControls() {
+    final plState = ref.watch(playlistPlayerProvider);
+    final currentTrack = plState.currentTrack;
+    final currentIdx = plState.currentTrackIndex;
+
+    // Repeat mode icon
+    IconData repeatIcon;
+    Color? repeatColor;
+    switch (plState.repeatMode) {
+      case pl.RepeatMode.none:
+        repeatIcon = Icons.repeat;
+        repeatColor = Colors.grey;
+      case pl.RepeatMode.all:
+        repeatIcon = Icons.repeat;
+        repeatColor = AppTheme.accentGreen;
+      case pl.RepeatMode.single:
+        repeatIcon = Icons.repeat_one;
+        repeatColor = AppTheme.accentGreen;
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
           children: [
-            IconButton(
-              icon: const Icon(Icons.skip_previous, size: 28),
-              onPressed: _currentIndex > 0 ? _prevItem : null,
+            // Controls row: shuffle, prev, track info, next, repeat
+            Row(
+              children: [
+                // Shuffle
+                IconButton(
+                  icon: Icon(
+                    Icons.shuffle,
+                    size: 22,
+                    color: plState.shuffle
+                        ? AppTheme.accentGreen
+                        : Colors.grey,
+                  ),
+                  onPressed: () => ref
+                      .read(playlistPlayerProvider.notifier)
+                      .toggleShuffle(),
+                  tooltip: 'シャッフル',
+                  visualDensity: VisualDensity.compact,
+                ),
+                // Prev
+                IconButton(
+                  icon: const Icon(Icons.skip_previous, size: 28),
+                  onPressed: plState.hasPrev ? _advanceToPrev : null,
+                  visualDensity: VisualDensity.compact,
+                ),
+                // Track info
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _showTrackList,
+                    child: Column(
+                      children: [
+                        Text(
+                          currentIdx != null
+                              ? '${currentIdx + 1} / ${plState.trackCount}'
+                              : '- / ${plState.trackCount}',
+                          style: const TextStyle(fontSize: 13),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (currentTrack != null)
+                          Text(
+                            currentTrack.displayName,
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.grey),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Next
+                IconButton(
+                  icon: const Icon(Icons.skip_next, size: 28),
+                  onPressed: plState.hasNext ? _advanceToNext : null,
+                  visualDensity: VisualDensity.compact,
+                ),
+                // Repeat mode
+                IconButton(
+                  icon: Icon(repeatIcon, size: 22, color: repeatColor),
+                  onPressed: () => ref
+                      .read(playlistPlayerProvider.notifier)
+                      .cycleRepeatMode(),
+                  tooltip: switch (plState.repeatMode) {
+                    pl.RepeatMode.none => 'リピートなし',
+                    pl.RepeatMode.all => '全曲リピート',
+                    pl.RepeatMode.single => '1曲リピート',
+                  },
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
             ),
-            Expanded(
-              child: Column(
-                children: [
-                  Text(
-                    '${_currentIndex + 1} / ${_items.length}',
-                    style: const TextStyle(fontSize: 13),
-                    textAlign: TextAlign.center,
-                  ),
-                  Text(
-                    _currentItem.title,
-                    style:
-                        const TextStyle(fontSize: 11, color: Colors.grey),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+            // Track list button
+            InkWell(
+              onTap: _showTrackList,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.queue_music, size: 16, color: Colors.grey[500]),
+                    const SizedBox(width: 4),
+                    Text(
+                      'トラック一覧を表示',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.skip_next, size: 28),
-              onPressed:
-                  _currentIndex < _items.length - 1 ? _nextItem : null,
             ),
           ],
         ),
