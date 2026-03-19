@@ -60,19 +60,57 @@ class _ListScreenState extends ConsumerState<ListScreen>
   void _showAddDialog() {
     final urlController = TextEditingController();
 
-    void doAdd(BuildContext dialogCtx) {
+    void doAdd(BuildContext dialogCtx) async {
       final url = urlController.text.trim();
       if (url.isEmpty) return;
 
-      // プレイリストURL判定
+      final videoId = UrlUtils.extractVideoId(url);
       final playlistId = UrlUtils.extractPlaylistId(url);
-      if (playlistId != null) {
+
+      // プレイリストURLのみ（動画IDなし）→ プレイリストインポート
+      if (videoId == null && playlistId != null) {
         Navigator.pop(dialogCtx);
         _importPlaylist(playlistId);
         return;
       }
 
-      final videoId = UrlUtils.extractVideoId(url);
+      // 動画ID + プレイリストID → 選択肢を提示
+      if (videoId != null && playlistId != null) {
+        Navigator.pop(dialogCtx);
+        final choice = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('どちらを追加しますか？',
+                style: TextStyle(fontSize: 15)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'video'),
+                child: const Text('この動画のみ'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'playlist'),
+                child: const Text('プレイリスト全体'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted || choice == null) return;
+        if (choice == 'playlist') {
+          _importPlaylist(playlistId);
+        } else {
+          ref
+              .read(loopItemsProvider.notifier)
+              .addYouTubeAndFetch(videoId, url);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('追加しました（情報を取得中...）'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
       if (videoId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('無効なYouTube URLです')),
@@ -193,6 +231,20 @@ class _ListScreenState extends ConsumerState<ListScreen>
         ),
       ),
     );
+
+    // ミックスリスト検出
+    if (playlistId.startsWith('RD')) {
+      if (mounted) {
+        Navigator.pop(context); // 取得中ダイアログを閉じる
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ミックスリストは取得できません（YouTube側の制限）'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
 
     try {
       final yt = yte.YoutubeExplode();
