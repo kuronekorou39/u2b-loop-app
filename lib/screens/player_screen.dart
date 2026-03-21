@@ -54,6 +54,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int _activeRegionIdx = -1;
   bool _isInPiP = false;
 
+  // Preload state
+  int? _preloadedTrackIndex;
+  bool _isPreloading = false;
+  Timer? _preloadCheckTimer;
+
   LoopItem get _currentItem {
     if (_isPlaylist) {
       final track = ref.read(playlistPlayerProvider).currentTrack;
@@ -75,6 +80,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
       ref.read(waveformDataProvider.notifier).state = null;
@@ -95,11 +101,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   void deactivate() {
+    _preloadCheckTimer?.cancel();
     try {
-      ref.read(playerProvider).stop();
+      ref.read(playerAProvider).stop();
+      ref.read(playerBProvider).stop();
       ref.read(loopProvider.notifier).onBPointReached = null;
       ref.read(loopProvider.notifier).onTrackEnd = null;
       if (_isPlaylist) ref.read(playlistPlayerProvider.notifier).clear();
+      ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
     } catch (_) {}
     _pipChannel.setMethodCallHandler(null);
     super.deactivate();
@@ -134,17 +143,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _advanceToNext() {
     final notifier = ref.read(playlistPlayerProvider.notifier);
     final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
+
+    // Check preload BEFORE advancing (next() changes state)
+    final plState = ref.read(playlistPlayerProvider);
+    final nextIdx = plState.peekNextTrackIndex();
+    final isPreloaded =
+        _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
+
     final changed = notifier.next();
     if (!changed) {
       // Single repeat - seek back to start of current track
       final track = ref.read(playlistPlayerProvider).currentTrack;
       if (track != null) {
-        final a = track.startMs;
-        ref.read(playerProvider).seek(Duration(milliseconds: a ?? 0));
+        ref.read(playerProvider).seek(Duration(milliseconds: track.startMs ?? 0));
       }
       return;
     }
-    _switchToCurrentTrack(oldTrack);
+
+    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
+    if (newTrack == null) return;
+
+    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
+      // Same item - just seek to new region
+      _preloadedTrackIndex = null;
+      _loadTrackRegion(newTrack);
+      _startPreloadMonitor();
+    } else if (isPreloaded) {
+      // Different item, preloaded - swap players!
+      _swapToPreloaded(newTrack);
+      _loadTrackRegion(newTrack);
+      _startPreloadMonitor();
+    } else {
+      // Different item, not preloaded - full reload
+      _preloadedTrackIndex = null;
+      _preloadCheckTimer?.cancel();
+      _loadItem();
+    }
   }
 
   void _advanceToPrev() {
@@ -152,6 +186,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
     final changed = notifier.prev();
     if (!changed) return;
+    // Clear preload since we're going backwards
+    _preloadedTrackIndex = null;
+    _preloadCheckTimer?.cancel();
     _switchToCurrentTrack(oldTrack);
   }
 
@@ -159,11 +196,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final newTrack = ref.read(playlistPlayerProvider).currentTrack;
     if (newTrack == null) return;
 
+    _preloadedTrackIndex = null;
     if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
       // Same LoopItem - just seek and update loop points
       _loadTrackRegion(newTrack);
+      _startPreloadMonitor();
     } else {
       // Different LoopItem - full reload
+      _preloadCheckTimer?.cancel();
       _loadItem();
     }
   }
@@ -193,6 +233,164 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _switchToCurrentTrack(oldTrack);
   }
 
+  // --- Preload ---
+
+  void _startPreloadMonitor() {
+    _preloadCheckTimer?.cancel();
+    _preloadedTrackIndex = null;
+    _isPreloading = false;
+
+    if (!_isPlaylist) return;
+
+    _preloadCheckTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _checkPreload(),
+    );
+  }
+
+  void _checkPreload() {
+    if (!mounted || !_isPlaylist) return;
+    if (_isPreloading || _preloadedTrackIndex != null) return;
+
+    final player = ref.read(playerProvider);
+    final position = player.state.position;
+    final duration = player.state.duration;
+
+    if (duration <= Duration.zero) return;
+
+    final remaining = duration - position;
+    final thresholdSec = duration.inSeconds > 120 ? 30 : 10;
+
+    if (remaining.inSeconds <= thresholdSec) {
+      _preloadNextTrack();
+    }
+  }
+
+  Future<void> _preloadNextTrack() async {
+    if (_isPreloading) return;
+    _isPreloading = true;
+
+    try {
+      final plState = ref.read(playlistPlayerProvider);
+      final nextIdx = plState.peekNextTrackIndex();
+      if (nextIdx == null) {
+        _isPreloading = false;
+        return;
+      }
+
+      final nextTrack = plState.tracks[nextIdx];
+
+      // Same item → seek only at advance time, no preload needed
+      final currentTrack = plState.currentTrack;
+      if (currentTrack != null && nextTrack.isSameItem(currentTrack)) {
+        _isPreloading = false;
+        return;
+      }
+
+      final preloadPlayer = ref.read(preloadPlayerProvider);
+
+      if (nextTrack.item.sourceType == 'youtube') {
+        final ytService = ref.read(youtubeServiceProvider);
+        final manifest = await ytService.yt.videos.streamsClient
+            .getManifest(nextTrack.item.videoId!);
+
+        if (!mounted) return;
+
+        final muxed = manifest.muxed.sortByVideoQuality();
+        String streamUrl;
+        if (muxed.isNotEmpty) {
+          streamUrl = muxed.last.url.toString();
+        } else {
+          final videoOnly = manifest.videoOnly.sortByVideoQuality();
+          if (videoOnly.isEmpty) return;
+          streamUrl = videoOnly.last.url.toString();
+        }
+
+        await preloadPlayer.open(Media(streamUrl), play: false);
+      } else {
+        await preloadPlayer.open(Media(nextTrack.item.uri), play: false);
+      }
+
+      if (!mounted) return;
+
+      // Wait for metadata (duration) by briefly playing
+      if (preloadPlayer.state.duration == Duration.zero) {
+        await preloadPlayer.setVolume(0);
+        await preloadPlayer.play();
+        for (var i = 0;
+            i < 30 && preloadPlayer.state.duration == Duration.zero && mounted;
+            i++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        if (!mounted) return;
+        await preloadPlayer.pause();
+        // Restore volume to match active player
+        await preloadPlayer.setVolume(ref.read(playerProvider).state.volume);
+      }
+
+      // Seek to start position
+      if (nextTrack.startMs != null) {
+        await preloadPlayer.seek(Duration(milliseconds: nextTrack.startMs!));
+      } else {
+        await preloadPlayer.seek(Duration.zero);
+      }
+
+      // Set speed
+      if (nextTrack.item.speed != 1.0) {
+        await preloadPlayer.setRate(nextTrack.item.speed);
+      }
+
+      if (!mounted) return;
+      _preloadedTrackIndex = nextIdx;
+    } catch (_) {
+      _preloadedTrackIndex = null;
+    } finally {
+      _isPreloading = false;
+    }
+  }
+
+  void _swapToPreloaded(PlaylistTrack newTrack) {
+    // Save reference to old player before swap
+    final oldPlayer = ref.read(playerProvider);
+
+    // Update video source (before swap so UI has it ready)
+    final item = newTrack.item;
+    ref.read(videoSourceProvider.notifier).state = VideoSource(
+      type: item.sourceType == 'youtube'
+          ? VideoSourceType.youtube
+          : VideoSourceType.local,
+      uri: item.uri,
+      title: item.title,
+      videoId: item.videoId,
+      thumbnailUrl: item.thumbnailUrl,
+    );
+
+    // Swap active slot
+    final currentSlot = ref.read(activeSlotProvider);
+    ref.read(activeSlotProvider.notifier).state =
+        currentSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
+
+    // Stop old player (now the preload player)
+    oldPlayer.stop();
+
+    // Play new active player
+    ref.read(playerProvider).play();
+
+    // Reset waveform
+    ref.read(waveformDataProvider.notifier).state = null;
+    ref.read(waveformErrorProvider.notifier).state = null;
+
+    _preloadedTrackIndex = null;
+
+    // Generate waveform for local files
+    final source = ref.read(videoSourceProvider);
+    if (source != null && source.type == VideoSourceType.local) {
+      _generateWaveform(source);
+    }
+
+    if (mounted) setState(() => _loading = false);
+  }
+
   // --- Loading ---
 
   Future<void> _setProgress(double progress, String status) async {
@@ -218,6 +416,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _lastStepTime = DateTime.now();
       _activeRegionIdx = -1;
     });
+
+    // Stop preload player to free resources
+    try {
+      ref.read(preloadPlayerProvider).stop();
+    } catch (_) {}
 
     // Reset player state
     ref.read(videoSourceProvider.notifier).state = null;
@@ -341,6 +544,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // Auto-play
     player.play();
+
+    // Start preload monitor for playlist mode
+    _startPreloadMonitor();
 
     // Waveform
     if (source.type == VideoSourceType.local || _cachedAudioPath != null) {

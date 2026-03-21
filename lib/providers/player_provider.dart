@@ -10,15 +10,55 @@ final youtubeServiceProvider = Provider<YouTubeService>((ref) {
   return service;
 });
 
-final playerProvider = Provider<Player>((ref) {
+// --- Dual Player System ---
+
+enum ActiveSlot { a, b }
+
+final activeSlotProvider = StateProvider<ActiveSlot>((ref) => ActiveSlot.a);
+
+final playerAProvider = Provider<Player>((ref) {
   final player = Player();
   ref.onDispose(player.dispose);
   return player;
 });
 
+final playerBProvider = Provider<Player>((ref) {
+  final player = Player();
+  ref.onDispose(player.dispose);
+  return player;
+});
+
+final controllerAProvider = Provider<VideoController>((ref) {
+  return VideoController(ref.watch(playerAProvider));
+});
+
+final controllerBProvider = Provider<VideoController>((ref) {
+  return VideoController(ref.watch(playerBProvider));
+});
+
+// --- Compatibility Layer (active player) ---
+
+final playerProvider = Provider<Player>((ref) {
+  final slot = ref.watch(activeSlotProvider);
+  return slot == ActiveSlot.a
+      ? ref.read(playerAProvider)
+      : ref.read(playerBProvider);
+});
+
 final videoControllerProvider = Provider<VideoController>((ref) {
-  final player = ref.watch(playerProvider);
-  return VideoController(player);
+  final slot = ref.watch(activeSlotProvider);
+  return slot == ActiveSlot.a
+      ? ref.read(controllerAProvider)
+      : ref.read(controllerBProvider);
+});
+
+// --- Preload (inactive) player ---
+
+final preloadPlayerProvider = Provider<Player>((ref) {
+  final slot = ref.watch(activeSlotProvider);
+  return slot == ActiveSlot.a
+      ? ref.read(playerBProvider)
+      : ref.read(playerAProvider);
 });
 
 final videoSourceProvider = StateProvider<VideoSource?>((ref) => null);

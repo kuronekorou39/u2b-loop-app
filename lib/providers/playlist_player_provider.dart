@@ -42,6 +42,12 @@ class PlaylistPlayerState {
 
   /// 次のトラックを覗き見（プリロード用）
   PlaylistTrack? peekNext() {
+    final idx = peekNextTrackIndex();
+    return idx != null ? tracks[idx] : null;
+  }
+
+  /// 次のトラックのインデックスを返す（プリロード判定用）
+  int? peekNextTrackIndex() {
     final enabledIndices = _enabledOrderIndices;
     if (enabledIndices.isEmpty) return null;
 
@@ -49,10 +55,10 @@ class PlaylistPlayerState {
     if (currentPos < 0) return null;
 
     if (currentPos + 1 < enabledIndices.length) {
-      return tracks[playOrder[enabledIndices[currentPos + 1]]];
+      return playOrder[enabledIndices[currentPos + 1]];
     }
     if (repeatMode == RepeatMode.all && enabledIndices.isNotEmpty) {
-      return tracks[playOrder[enabledIndices.first]];
+      return playOrder[enabledIndices.first];
     }
     return null;
   }
