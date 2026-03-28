@@ -20,6 +20,7 @@ import '../providers/loop_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
 import '../services/waveform_service.dart';
+import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/video_player_widget.dart';
@@ -57,6 +58,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isInPiP = false;
   bool _compactSeekbar = false;
   bool _showPlaylistPanel = false;
+  bool _editMode = false;
+  double _editStep = 0.1;
 
   // Preload state
   int? _preloadedTrackIndex;
@@ -1007,11 +1010,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 setState(() => _compactSeekbar = !_compactSeekbar),
           ),
 
-          // Region selector (non-playlist mode only)
+          // Region selector + Loop controls (single mode only)
           if (!_isPlaylist && regions.isNotEmpty) _buildRegionSelector(regions),
-
-          // Loop & Gap controls
-          _buildLoopControls(loop),
+          if (!_isPlaylist) _buildLoopControls(loop),
 
           // Playlist controls
           if (_isPlaylist) _buildPlaylistControls(),
@@ -1036,53 +1037,98 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildRegionSelector(List<LoopRegion> regions) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(left: 4, bottom: 4),
-            child: Text('区間',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
-          ),
-          SizedBox(
-            height: 36,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: regions.length + 1, // +1 for "all" / off
-              separatorBuilder: (_, __) => const SizedBox(width: 6),
-              itemBuilder: (ctx, i) {
-                if (i == 0) {
-                  // "Full" - no loop region
-                  return ChoiceChip(
-                    label: const Text('全体',
-                        style: TextStyle(fontSize: 12)),
-                    selected: _activeRegionIdx == -1,
-                    onSelected: (_) => _clearRegion(),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize:
-                        MaterialTapTargetSize.shrinkWrap,
-                  );
-                }
-                final ri = i - 1;
-                final region = regions[ri];
-                final isActive = ri == _activeRegionIdx;
-                return ChoiceChip(
-                  label: Text(
-                    '${region.name} (${region.pointAMs != null ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!)) : '--:--'})',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  selected: isActive,
-                  onSelected: (_) => _selectRegion(ri),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize:
-                      MaterialTapTargetSize.shrinkWrap,
-                );
-              },
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Text('区間',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
             ),
-          ),
-        ],
+            // 全体（ループなし）
+            _buildRegionTile(
+              name: '全体',
+              isActive: _activeRegionIdx == -1,
+              onTap: _clearRegion,
+            ),
+            // 各区間
+            for (var i = 0; i < regions.length; i++)
+              _buildRegionTile(
+                name: regions[i].name,
+                isActive: i == _activeRegionIdx,
+                pointAMs: regions[i].pointAMs,
+                pointBMs: regions[i].pointBMs,
+                onTap: () => _selectRegion(i),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRegionTile({
+    required String name,
+    required bool isActive,
+    int? pointAMs,
+    int? pointBMs,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: isActive
+            ? BoxDecoration(
+                color: AppTheme.accentGreen.withValues(alpha: 0.08),
+              )
+            : null,
+        child: Row(
+          children: [
+            Icon(
+              isActive
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_off,
+              size: 18,
+              color: isActive ? AppTheme.accentGreen : Colors.grey,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                name,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight:
+                      isActive ? FontWeight.bold : FontWeight.normal,
+                  color: isActive ? AppTheme.accentGreen : null,
+                ),
+              ),
+            ),
+            if (pointAMs != null || pointBMs != null) ...[
+              Text(
+                pointAMs != null
+                    ? TimeUtils.formatShort(
+                        Duration(milliseconds: pointAMs))
+                    : '--:--',
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.pointAColor),
+              ),
+              const Text(' - ',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+              Text(
+                pointBMs != null
+                    ? TimeUtils.formatShort(
+                        Duration(milliseconds: pointBMs))
+                    : '--:--',
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.pointBColor),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1091,13 +1137,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final notifier = ref.read(loopProvider.notifier);
     final theme = Theme.of(context);
 
+    String stepLabel(double s) {
+      if (s >= 1.0) return '${s.toStringAsFixed(0)}s';
+      return '${s}s';
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // Loop toggle + current AB display
+            // Loop toggle + AB time + edit button
             Row(
               children: [
                 FilledButton.icon(
@@ -1132,6 +1183,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         fontSize: 12, color: AppTheme.pointBColor),
                   ),
                 ],
+                // Edit mode toggle (subtle)
+                const SizedBox(width: 4),
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: IconButton(
+                    icon: Icon(
+                      _editMode ? Icons.edit_off : Icons.edit,
+                      size: 14,
+                      color: _editMode
+                          ? AppTheme.accentGreen
+                          : Colors.grey[600],
+                    ),
+                    onPressed: () =>
+                        setState(() => _editMode = !_editMode),
+                    padding: EdgeInsets.zero,
+                    tooltip: _editMode ? '編集モード終了' : 'AB区間を編集',
+                  ),
+                ),
               ],
             ),
             // Gap slider
@@ -1140,14 +1210,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               Row(
                 children: [
                   const Text('Gap:',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey)),
                   Expanded(
                     child: Slider(
                       value: loop.gapSeconds,
                       min: 0,
                       max: 10,
                       divisions: 20,
-                      label: '${loop.gapSeconds.toStringAsFixed(1)}s',
+                      label:
+                          '${loop.gapSeconds.toStringAsFixed(1)}s',
                       onChanged: (v) => notifier.setGap(v),
                     ),
                   ),
@@ -1158,6 +1230,88 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       style: const TextStyle(fontSize: 12),
                     ),
                   ),
+                ],
+              ),
+            ],
+            // Edit mode: A/B point editing
+            if (_editMode) ...[
+              const Divider(height: 16),
+              LoopControls.buildPointRow(
+                label: 'A',
+                color: AppTheme.pointAColor,
+                time: loop.pointA,
+                stepLabel: stepLabel(_editStep),
+                onSet: () => notifier
+                    .setPointA(ref.read(playerProvider).state.position),
+                onTimeTap: loop.hasA
+                    ? () =>
+                        ref.read(playerProvider).seek(loop.pointA!)
+                    : null,
+                onMinus: () {
+                  if (loop.hasA) {
+                    notifier.setPointA(loop.pointA! -
+                        Duration(
+                            milliseconds:
+                                (_editStep * 1000).round()));
+                  }
+                },
+                onPlus: () {
+                  if (loop.hasA) {
+                    notifier.setPointA(loop.pointA! +
+                        Duration(
+                            milliseconds:
+                                (_editStep * 1000).round()));
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              LoopControls.buildPointRow(
+                label: 'B',
+                color: AppTheme.pointBColor,
+                time: loop.pointB,
+                stepLabel: stepLabel(_editStep),
+                onSet: () => notifier
+                    .setPointB(ref.read(playerProvider).state.position),
+                onTimeTap: loop.hasB
+                    ? () =>
+                        ref.read(playerProvider).seek(loop.pointB!)
+                    : null,
+                onMinus: () {
+                  if (loop.hasB) {
+                    notifier.setPointB(loop.pointB! -
+                        Duration(
+                            milliseconds:
+                                (_editStep * 1000).round()));
+                  }
+                },
+                onPlus: () {
+                  if (loop.hasB) {
+                    notifier.setPointB(loop.pointB! +
+                        Duration(
+                            milliseconds:
+                                (_editStep * 1000).round()));
+                  }
+                },
+              ),
+              // Step selector
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (final s in LoopControls.steps)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: ChoiceChip(
+                        label: Text(stepLabel(s),
+                            style: const TextStyle(fontSize: 10)),
+                        selected: _editStep == s,
+                        onSelected: (_) =>
+                            setState(() => _editStep = s),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
                 ],
               ),
             ],
