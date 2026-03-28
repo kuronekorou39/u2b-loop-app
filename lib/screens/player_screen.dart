@@ -29,12 +29,14 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final LoopItem item;
   final List<LoopItem>? playlistItems;
   final int initialIndex;
+  final Map<String, List<String>>? regionSelections;
 
   const PlayerScreen({
     super.key,
     required this.item,
     this.playlistItems,
     this.initialIndex = 0,
+    this.regionSelections,
   });
 
   @override
@@ -53,6 +55,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   int _activeRegionIdx = -1;
   bool _isInPiP = false;
+  bool _compactSeekbar = false;
+  bool _showPlaylistPanel = false;
 
   // Preload state
   int? _preloadedTrackIndex;
@@ -72,6 +76,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _compactSeekbar = widget.playlistItems != null;
 
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPChanged') {
@@ -92,6 +97,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ref.read(playlistPlayerProvider.notifier).loadPlaylist(
               widget.playlistItems!,
               initialItemIndex: widget.initialIndex,
+              regionSelections: widget.regionSelections,
             );
       }
 
@@ -269,6 +275,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _preloadNextTrack() async {
     if (_isPreloading) return;
     _isPreloading = true;
+    if (mounted) setState(() {});
 
     try {
       final plState = ref.read(playlistPlayerProvider);
@@ -342,10 +349,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       if (!mounted) return;
       _preloadedTrackIndex = nextIdx;
+      if (mounted) setState(() {});
     } catch (_) {
       _preloadedTrackIndex = null;
     } finally {
       _isPreloading = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -382,9 +391,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _preloadedTrackIndex = null;
 
-    // Generate waveform for local files
+    // Generate waveform for new track
     final source = ref.read(videoSourceProvider);
-    if (source != null && source.type == VideoSourceType.local) {
+    if (source != null) {
       _generateWaveform(source);
     }
 
@@ -718,147 +727,135 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return null;
   }
 
-  // --- Track list bottom sheet ---
+  // --- Playlist panel (inline) ---
 
-  void _showTrackList() {
-    final plState = ref.read(playlistPlayerProvider);
-    if (plState.isEmpty) return;
+  Widget _buildPlaylistPanel(double bottomInset) {
+    final plState = ref.watch(playlistPlayerProvider);
+    final currentIdx = plState.currentTrackIndex;
+    final nextIdx = plState.peekNextTrackIndex();
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.30,
       ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final state = ref.read(playlistPlayerProvider);
-            final currentIdx = state.currentTrackIndex;
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade800, width: 0.5),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Row(
+              children: [
+                const Icon(Icons.queue_music, size: 16, color: Colors.grey),
+                const SizedBox(width: 6),
+                Text(
+                  'トラック一覧',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${plState.enabledCount}/${plState.trackCount} 有効',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _showPlaylistPanel = false),
+                  child: const Icon(Icons.keyboard_arrow_down,
+                      size: 20, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Track list
+          Flexible(
+            child: ListView.builder(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              itemCount: plState.tracks.length,
+              itemBuilder: (ctx, i) {
+                final track = plState.tracks[i];
+                final isCurrent = i == currentIdx;
 
-            return DraggableScrollableSheet(
-              initialChildSize: 0.6,
-              minChildSize: 0.3,
-              maxChildSize: 0.9,
-              expand: false,
-              builder: (ctx, scrollController) {
-                return Column(
-                  children: [
-                    // Handle bar
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 4),
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[600],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      child: Row(
-                        children: [
-                          Text(
-                            'トラック一覧',
+                // Status indicator
+                Widget statusWidget;
+                if (isCurrent) {
+                  statusWidget = const Icon(Icons.play_arrow,
+                      color: AppTheme.accentGreen, size: 16);
+                } else if (_isPreloading && nextIdx == i) {
+                  statusWidget = const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.orange),
+                  );
+                } else if (_preloadedTrackIndex == i) {
+                  statusWidget = const Icon(Icons.check_circle_outline,
+                      color: AppTheme.accentGreen, size: 16);
+                } else {
+                  statusWidget = Text(
+                    '${i + 1}',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  );
+                }
+
+                return InkWell(
+                  onTap: () => _jumpToTrack(i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 24, child: statusWidget),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            track.displayName,
                             style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '${state.enabledCount}/${state.trackCount} 有効',
-                            style: const TextStyle(
                               fontSize: 12,
-                              color: Colors.grey,
+                              fontWeight: isCurrent
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: isCurrent
+                                  ? AppTheme.accentGreen
+                                  : track.enabled
+                                      ? null
+                                      : Colors.grey,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (track.hasRegion)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Text(
+                              '${track.startMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.startMs!)) : '--:--'}'
+                              ' - '
+                              '${track.endMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.endMs!)) : '--:--'}',
+                              style: const TextStyle(
+                                  fontSize: 10, color: Colors.grey),
                             ),
                           ),
-                        ],
-                      ),
+                      ],
                     ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: ListView.builder(
-                        controller: scrollController,
-                        itemCount: state.tracks.length,
-                        itemBuilder: (ctx, i) {
-                          final track = state.tracks[i];
-                          final isCurrent = i == currentIdx;
-
-                          return ListTile(
-                            dense: true,
-                            leading: Checkbox(
-                              value: track.enabled,
-                              onChanged: (_) {
-                                ref
-                                    .read(playlistPlayerProvider.notifier)
-                                    .toggleTrackEnabled(i);
-                                setSheetState(() {});
-                              },
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            title: Text(
-                              track.displayName,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: isCurrent
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: isCurrent
-                                    ? AppTheme.accentGreen
-                                    : track.enabled
-                                        ? null
-                                        : Colors.grey,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: track.hasRegion
-                                ? Text(
-                                    '${track.startMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.startMs!)) : '--:--'}'
-                                    ' - '
-                                    '${track.endMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.endMs!)) : '--:--'}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: isCurrent
-                                          ? AppTheme.accentGreen
-                                              .withValues(alpha: 0.7)
-                                          : Colors.grey,
-                                    ),
-                                  )
-                                : null,
-                            trailing: isCurrent
-                                ? const Icon(Icons.play_arrow,
-                                    color: AppTheme.accentGreen, size: 20)
-                                : Text(
-                                    '${i + 1}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                            onTap: () {
-                              Navigator.of(ctx).pop();
-                              _jumpToTrack(i);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                  ),
                 );
               },
-            );
-          },
-        );
-      },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -999,12 +996,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final regions = _currentItem.effectiveRegions;
     final loop = ref.watch(loopProvider);
 
-    return SingleChildScrollView(
+    final scrollContent = SingleChildScrollView(
       child: Column(
         children: [
           const VideoPlayerWidget(),
           const PlayerControls(),
-          const LoopSeekbar(),
+          LoopSeekbar(
+            compact: _compactSeekbar,
+            onToggleCompact: () =>
+                setState(() => _compactSeekbar = !_compactSeekbar),
+          ),
 
           // Region selector (non-playlist mode only)
           if (!_isPlaylist && regions.isNotEmpty) _buildRegionSelector(regions),
@@ -1015,10 +1016,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           // Playlist controls
           if (_isPlaylist) _buildPlaylistControls(),
 
-          SizedBox(height: 24 + bottomInset),
+          SizedBox(
+              height:
+                  (_isPlaylist && _showPlaylistPanel) ? 8 : 24 + bottomInset),
         ],
       ),
     );
+
+    if (_isPlaylist && _showPlaylistPanel) {
+      return Column(
+        children: [
+          Expanded(child: scrollContent),
+          _buildPlaylistPanel(bottomInset),
+        ],
+      );
+    }
+
+    return scrollContent;
   }
 
   Widget _buildRegionSelector(List<LoopRegion> regions) {
@@ -1206,7 +1220,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Track info
                 Expanded(
                   child: GestureDetector(
-                    onTap: _showTrackList,
+                    onTap: () => setState(
+                        () => _showPlaylistPanel = !_showPlaylistPanel),
                     child: Column(
                       children: [
                         Text(
@@ -1252,17 +1267,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ),
             // Track list button
             InkWell(
-              onTap: _showTrackList,
+              onTap: () => setState(
+                  () => _showPlaylistPanel = !_showPlaylistPanel),
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.queue_music, size: 16, color: Colors.grey[500]),
+                    Icon(
+                      _showPlaylistPanel
+                          ? Icons.keyboard_arrow_down
+                          : Icons.queue_music,
+                      size: 16,
+                      color: Colors.grey[500],
+                    ),
                     const SizedBox(width: 4),
                     Text(
-                      'トラック一覧を表示',
+                      _showPlaylistPanel
+                          ? 'トラック一覧を閉じる'
+                          : 'トラック一覧を表示',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey[500],

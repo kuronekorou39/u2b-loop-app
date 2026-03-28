@@ -114,13 +114,17 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
   final _random = Random();
 
   /// プレイリストのアイテムからトラックリストを生成
-  void loadPlaylist(List<LoopItem> items, {int initialItemIndex = 0}) {
+  /// [regionSelections]: itemId → 選択されたregionIdリスト（空 or 未指定 = 全区間）
+  void loadPlaylist(List<LoopItem> items,
+      {int initialItemIndex = 0,
+      Map<String, List<String>>? regionSelections}) {
     final tracks = <PlaylistTrack>[];
     int initialTrackIndex = 0;
 
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
       final regions = item.effectiveRegions;
+      final selectedIds = regionSelections?[item.id];
 
       if (regions.length <= 1 && !regions.first.hasPoints) {
         // 区間なし: アイテム全体が1トラック
@@ -130,9 +134,14 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
           itemIndex: i,
         ));
       } else {
-        // 区間あり: 各リージョンが1トラック
+        // 区間あり: 選択された区間のみ（未指定なら全区間）
         if (i == initialItemIndex) initialTrackIndex = tracks.length;
         for (var r = 0; r < regions.length; r++) {
+          if (selectedIds != null &&
+              selectedIds.isNotEmpty &&
+              !selectedIds.contains(regions[r].id)) {
+            continue; // この区間は選択されていない
+          }
           tracks.add(PlaylistTrack(
             item: item,
             region: regions[r],

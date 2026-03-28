@@ -36,6 +36,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   Widget build(BuildContext context) {
     final source = ref.watch(videoSourceProvider);
     final controller = ref.watch(videoControllerProvider);
+    final slot = ref.watch(activeSlotProvider);
     final flipH = ref.watch(flipHorizontalProvider);
     final flipV = ref.watch(flipVerticalProvider);
 
@@ -52,6 +53,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       );
     } else {
       videoWidget = Video(
+        key: ValueKey(slot),
         controller: controller,
         controls: NoVideoControls,
       );

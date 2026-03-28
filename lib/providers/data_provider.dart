@@ -270,11 +270,19 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     _refresh();
   }
 
-  Future<void> addItems(String playlistId, List<String> itemIds) async {
+  Future<void> addItems(String playlistId, List<String> itemIds,
+      {Map<String, List<String>>? regions}) async {
     final pl = _box.get(playlistId);
     if (pl == null) return;
     for (final id in itemIds) {
       if (!pl.itemIds.contains(id)) pl.itemIds.add(id);
+    }
+    if (regions != null) {
+      for (final entry in regions.entries) {
+        if (entry.value.isNotEmpty) {
+          pl.regionSelections[entry.key] = entry.value;
+        }
+      }
     }
     await _box.put(playlistId, pl);
     _refresh();
@@ -284,6 +292,20 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     final pl = _box.get(playlistId);
     if (pl == null) return;
     pl.itemIds.remove(itemId);
+    pl.regionSelections.remove(itemId);
+    await _box.put(playlistId, pl);
+    _refresh();
+  }
+
+  Future<void> updateRegionSelection(
+      String playlistId, String itemId, List<String> regionIds) async {
+    final pl = _box.get(playlistId);
+    if (pl == null) return;
+    if (regionIds.isEmpty) {
+      pl.regionSelections.remove(itemId);
+    } else {
+      pl.regionSelections[itemId] = regionIds;
+    }
     await _box.put(playlistId, pl);
     _refresh();
   }

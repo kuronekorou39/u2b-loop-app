@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/loop_state.dart';
 import '../../core/utils/time_utils.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
@@ -10,7 +11,14 @@ import '../../providers/player_provider.dart';
 enum _DragTarget { position, pointA, pointB }
 
 class LoopSeekbar extends ConsumerStatefulWidget {
-  const LoopSeekbar({super.key});
+  final bool compact;
+  final VoidCallback? onToggleCompact;
+
+  const LoopSeekbar({
+    super.key,
+    this.compact = false,
+    this.onToggleCompact,
+  });
 
   @override
   ConsumerState<LoopSeekbar> createState() => _LoopSeekbarState();
@@ -62,10 +70,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final player = ref.watch(playerProvider);
     var position =
         ref.watch(positionProvider).valueOrNull ?? player.state.position;
-    var duration =
-        ref.watch(durationProvider).valueOrNull ?? Duration.zero;
+    // durationProvider はプレーヤースワップ後に旧値をキャッシュするため
+    // player.state.duration を優先（ストリームは rebuild トリガーとして使用）
+    final durationStream = ref.watch(durationProvider).valueOrNull;
+    var duration = player.state.duration;
     if (duration == Duration.zero) {
-      duration = player.state.duration;
+      duration = durationStream ?? Duration.zero;
     }
     final loop = ref.watch(loopProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
@@ -101,6 +111,10 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
         (_panOffset - vpWidth / 2).clamp(0.0, max(0.0, 1.0 - vpWidth)).toDouble();
     final double viewEnd = (viewStart + vpWidth).clamp(0.0, 1.0).toDouble();
     final isZoomed = _zoomLevel > 1.05;
+
+    if (widget.compact) {
+      return _buildCompactMode(context, position, duration, loop, hasSource);
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -416,6 +430,20 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                   TimeUtils.format(duration),
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
+                // Compact toggle
+                if (widget.onToggleCompact != null) ...[
+                  const SizedBox(width: 4),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: IconButton(
+                      icon: const Icon(Icons.unfold_less, size: 16),
+                      onPressed: widget.onToggleCompact,
+                      padding: EdgeInsets.zero,
+                      tooltip: 'コンパクト表示',
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -423,6 +451,184 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
       ),
     );
   }
+
+  Widget _buildCompactMode(BuildContext context, Duration position,
+      Duration duration, LoopState loop, bool hasSource) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: Row(
+        children: [
+          Text(
+            TimeUtils.format(position),
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SizedBox(
+              height: 32,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  return GestureDetector(
+                    onTapUp: hasSource
+                        ? (details) {
+                            final norm = details.localPosition.dx / width;
+                            final ms =
+                                (norm.clamp(0.0, 1.0) *
+                                        duration.inMilliseconds)
+                                    .round();
+                            ref
+                                .read(playerProvider)
+                                .seek(Duration(milliseconds: ms));
+                          }
+                        : null,
+                    onHorizontalDragUpdate: hasSource
+                        ? (details) {
+                            final norm = details.localPosition.dx / width;
+                            final ms =
+                                (norm.clamp(0.0, 1.0) *
+                                        duration.inMilliseconds)
+                                    .round();
+                            ref
+                                .read(playerProvider)
+                                .seek(Duration(milliseconds: ms));
+                          }
+                        : null,
+                    child: CustomPaint(
+                      size: Size(width, 32),
+                      painter: _CompactSeekbarPainter(
+                        position: position,
+                        duration: duration,
+                        pointA: loop.pointA,
+                        pointB: loop.pointB,
+                        loopEnabled: loop.enabled,
+                        brightness: Theme.of(context).brightness,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            TimeUtils.format(duration),
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: IconButton(
+              icon: const Icon(Icons.unfold_more, size: 16),
+              onPressed: widget.onToggleCompact,
+              padding: EdgeInsets.zero,
+              tooltip: '波形表示',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Compact seekbar painter
+// =============================================================================
+
+class _CompactSeekbarPainter extends CustomPainter {
+  final Duration position;
+  final Duration duration;
+  final Duration? pointA;
+  final Duration? pointB;
+  final bool loopEnabled;
+  final Brightness brightness;
+
+  _CompactSeekbarPainter({
+    required this.position,
+    required this.duration,
+    this.pointA,
+    this.pointB,
+    required this.loopEnabled,
+    required this.brightness,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final isDark = brightness == Brightness.dark;
+    final totalMs = duration.inMilliseconds;
+    final cy = size.height / 2;
+    const barH = 4.0;
+    const r = Radius.circular(2);
+
+    // Background
+    canvas.drawRRect(
+      RRect.fromLTRBAndCorners(0, cy - barH / 2, size.width, cy + barH / 2,
+          topLeft: r, topRight: r, bottomLeft: r, bottomRight: r),
+      Paint()
+        ..color = isDark ? const Color(0xFF2A2A3E) : const Color(0xFFD0D0D0),
+    );
+
+    if (totalMs <= 0) return;
+
+    double toX(Duration d) =>
+        (d.inMilliseconds / totalMs).clamp(0.0, 1.0) * size.width;
+
+    // AB region
+    if (loopEnabled && pointA != null && pointB != null) {
+      final aX = toX(pointA!);
+      final bX = toX(pointB!);
+      canvas.drawRect(
+        Rect.fromLTRB(aX, cy - barH / 2, bX, cy + barH / 2),
+        Paint()..color = const Color(0xFF4ECCA3).withValues(alpha: 0.3),
+      );
+    }
+
+    // Progress
+    final posX = toX(position);
+    if (posX > 0) {
+      canvas.drawRRect(
+        RRect.fromLTRBAndCorners(0, cy - barH / 2, posX, cy + barH / 2,
+            topLeft: r, bottomLeft: r),
+        Paint()..color = const Color(0xFF4ECCA3),
+      );
+    }
+
+    // A marker
+    if (pointA != null) {
+      final aX = toX(pointA!);
+      canvas.drawLine(
+        Offset(aX, cy - 6),
+        Offset(aX, cy + 6),
+        Paint()
+          ..color = const Color(0xFFFF6B6B)
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    // B marker
+    if (pointB != null) {
+      final bX = toX(pointB!);
+      canvas.drawLine(
+        Offset(bX, cy - 6),
+        Offset(bX, cy + 6),
+        Paint()
+          ..color = const Color(0xFF4ECCA3)
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    // Position dot
+    canvas.drawCircle(Offset(posX, cy), 5, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CompactSeekbarPainter old) =>
+      position != old.position ||
+      duration != old.duration ||
+      pointA != old.pointA ||
+      pointB != old.pointB ||
+      loopEnabled != old.loopEnabled;
 }
 
 // =============================================================================
