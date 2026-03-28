@@ -60,6 +60,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _showPlaylistPanel = false;
   bool _editMode = false;
   double _editStep = 0.1;
+  int? _preloadingTargetIndex;
 
   // Preload state
   int? _preloadedTrackIndex;
@@ -235,11 +236,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (mounted) setState(() {});
   }
 
-  void _jumpToTrack(int trackIndex) {
-    final notifier = ref.read(playlistPlayerProvider.notifier);
-    final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
-    notifier.jumpTo(trackIndex);
-    _switchToCurrentTrack(oldTrack);
+  /// パネルからのトラック選択：プリロード済みなら即切替、未準備なら裏読み込み開始
+  void _requestTrack(int trackIndex) {
+    final plState = ref.read(playlistPlayerProvider);
+    final currentIdx = plState.currentTrackIndex;
+
+    // 再生中のトラック
+    if (trackIndex == currentIdx) return;
+
+    // プリロード済み → 即スワップ
+    if (_preloadedTrackIndex == trackIndex) {
+      final notifier = ref.read(playlistPlayerProvider.notifier);
+      notifier.jumpTo(trackIndex);
+      final newTrack = ref.read(playlistPlayerProvider).currentTrack;
+      if (newTrack != null) {
+        _swapToPreloaded(newTrack);
+        _loadTrackRegion(newTrack);
+        _setupPlaylistCallbacks();
+        _startPreloadMonitor();
+      }
+      return;
+    }
+
+    // 同じアイテム（異なるリージョン）→ 直接ジャンプ
+    final targetTrack = plState.tracks[trackIndex];
+    final currentTrack = plState.currentTrack;
+    if (currentTrack != null && targetTrack.isSameItem(currentTrack)) {
+      final notifier = ref.read(playlistPlayerProvider.notifier);
+      notifier.jumpTo(trackIndex);
+      _loadTrackRegion(
+          ref.read(playlistPlayerProvider).currentTrack!);
+      return;
+    }
+
+    // 未準備 → 裏で読み込み開始
+    _preloadNextTrack(trackIndex);
   }
 
   // --- Preload ---
@@ -275,18 +306,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  Future<void> _preloadNextTrack() async {
+  Future<void> _preloadNextTrack([int? overrideIndex]) async {
     if (_isPreloading) return;
     _isPreloading = true;
-    if (mounted) setState(() {});
 
     try {
       final plState = ref.read(playlistPlayerProvider);
-      final nextIdx = plState.peekNextTrackIndex();
+      final int? nextIdx;
+      if (overrideIndex != null) {
+        nextIdx = overrideIndex;
+        _preloadedTrackIndex = null;
+      } else {
+        nextIdx = plState.peekNextTrackIndex();
+      }
       if (nextIdx == null) {
         _isPreloading = false;
         return;
       }
+
+      _preloadingTargetIndex = nextIdx;
+      if (mounted) setState(() {});
 
       final nextTrack = plState.tracks[nextIdx];
 
@@ -357,6 +396,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _preloadedTrackIndex = null;
     } finally {
       _isPreloading = false;
+      _preloadingTargetIndex = null;
       if (mounted) setState(() {});
     }
   }
@@ -735,7 +775,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Widget _buildPlaylistPanel(double bottomInset) {
     final plState = ref.watch(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
-    final nextIdx = plState.peekNextTrackIndex();
 
     return Container(
       constraints: BoxConstraints(
@@ -794,7 +833,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 if (isCurrent) {
                   statusWidget = const Icon(Icons.play_arrow,
                       color: AppTheme.accentGreen, size: 16);
-                } else if (_isPreloading && nextIdx == i) {
+                } else if (_isPreloading &&
+                    _preloadingTargetIndex == i) {
                   statusWidget = const SizedBox(
                     width: 14,
                     height: 14,
@@ -807,13 +847,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 } else {
                   statusWidget = Text(
                     '${i + 1}',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.grey),
                     textAlign: TextAlign.center,
                   );
                 }
 
                 return InkWell(
-                  onTap: () => _jumpToTrack(i),
+                  onTap: () => _requestTrack(i),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),
@@ -1018,8 +1059,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           if (_isPlaylist) _buildPlaylistControls(),
 
           SizedBox(
-              height:
-                  (_isPlaylist && _showPlaylistPanel) ? 8 : 24 + bottomInset),
+              height: (_isPlaylist && _showPlaylistPanel)
+                  ? 8
+                  : _isPlaylist
+                      ? bottomInset
+                      : 24 + bottomInset),
         ],
       ),
     );
@@ -1037,33 +1081,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildRegionSelector(List<LoopRegion> regions) {
+    final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 4, 12, 0),
-              child: Text('区間',
-                  style: TextStyle(fontSize: 12, color: Colors.grey)),
-            ),
             // 全体（ループなし）
             _buildRegionTile(
               name: '全体',
               isActive: _activeRegionIdx == -1,
               onTap: _clearRegion,
+              theme: theme,
             ),
+            if (regions.isNotEmpty)
+              Divider(
+                  height: 1,
+                  color: theme.dividerColor.withValues(alpha: 0.3)),
             // 各区間
-            for (var i = 0; i < regions.length; i++)
+            for (var i = 0; i < regions.length; i++) ...[
               _buildRegionTile(
                 name: regions[i].name,
                 isActive: i == _activeRegionIdx,
                 pointAMs: regions[i].pointAMs,
                 pointBMs: regions[i].pointBMs,
                 onTap: () => _selectRegion(i),
+                theme: theme,
               ),
+              if (i < regions.length - 1)
+                Divider(
+                    height: 1,
+                    color: theme.dividerColor.withValues(alpha: 0.3)),
+            ],
           ],
         ),
       ),
@@ -1076,57 +1127,72 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     int? pointAMs,
     int? pointBMs,
     required VoidCallback onTap,
+    required ThemeData theme,
   }) {
+    // Time text (editor style: "00:10 - 00:45 (5.0s)")
+    String? timeText;
+    if (pointAMs != null || pointBMs != null) {
+      final aStr = pointAMs != null
+          ? TimeUtils.formatShort(Duration(milliseconds: pointAMs))
+          : '--:--';
+      final bStr = pointBMs != null
+          ? TimeUtils.formatShort(Duration(milliseconds: pointBMs))
+          : '--:--';
+      timeText = '$aStr - $bStr';
+      if (pointAMs != null && pointBMs != null) {
+        final durationSec = (pointBMs - pointAMs).abs() / 1000;
+        timeText = '$timeText (${durationSec.toStringAsFixed(1)}s)';
+      }
+    }
+
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: isActive
-            ? BoxDecoration(
-                color: AppTheme.accentGreen.withValues(alpha: 0.08),
-              )
-            : null,
-        child: Row(
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        decoration: BoxDecoration(
+          color: isActive
+              ? theme.colorScheme.primary.withValues(alpha: 0.15)
+              : null,
+          borderRadius: BorderRadius.circular(6),
+          border: isActive
+              ? Border.all(
+                  color:
+                      theme.colorScheme.primary.withValues(alpha: 0.5),
+                  width: 1)
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              isActive
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_off,
-              size: 18,
-              color: isActive ? AppTheme.accentGreen : Colors.grey,
+            Text(
+              name,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight:
+                    isActive ? FontWeight.bold : FontWeight.normal,
+                color: isActive ? theme.colorScheme.primary : null,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                name,
+            if (timeText != null) ...[
+              const SizedBox(height: 1),
+              Text(
+                timeText,
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight:
-                      isActive ? FontWeight.bold : FontWeight.normal,
-                  color: isActive ? AppTheme.accentGreen : null,
+                  fontSize: 10,
+                  color: Colors.grey.shade400,
                 ),
               ),
-            ),
-            if (pointAMs != null || pointBMs != null) ...[
+            ] else
               Text(
-                pointAMs != null
-                    ? TimeUtils.formatShort(
-                        Duration(milliseconds: pointAMs))
-                    : '--:--',
-                style: const TextStyle(
-                    fontSize: 12, color: AppTheme.pointAColor),
+                '未設定',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey.shade600,
+                ),
               ),
-              const Text(' - ',
-                  style: TextStyle(fontSize: 12, color: Colors.grey)),
-              Text(
-                pointBMs != null
-                    ? TimeUtils.formatShort(
-                        Duration(milliseconds: pointBMs))
-                    : '--:--',
-                style: const TextStyle(
-                    fontSize: 12, color: AppTheme.pointBColor),
-              ),
-            ],
           ],
         ),
       ),
