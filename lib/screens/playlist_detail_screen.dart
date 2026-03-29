@@ -244,6 +244,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     regionSelections: pl.regionSelections.isNotEmpty
                         ? pl.regionSelections
                         : null,
+                    disabledItemIds: pl.disabledItemIds.isNotEmpty
+                        ? pl.disabledItemIds
+                        : null,
                   ),
                 ),
               ),
@@ -305,6 +308,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 final item = items[i];
                 final itemTags =
                     tags.where((t) => item.tagIds.contains(t.id)).toList();
+                final isDisabled = pl.disabledItemIds.contains(item.id);
                 return Dismissible(
                   key: ValueKey('${pl.id}_${item.id}_$i'),
                   direction: DismissDirection.endToStart,
@@ -316,36 +320,66 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         const Icon(Icons.delete, color: Colors.white),
                   ),
                   onDismissed: (_) => _removeItem(pl, item.id),
-                  child: ListTile(
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: SizedBox(
-                        width: 64,
-                        height: 36,
-                        child: _buildThumbnail(item),
+                  child: Opacity(
+                    opacity: isDisabled ? 0.4 : 1.0,
+                    child: ListTile(
+                      leading: GestureDetector(
+                        onTap: () => ref
+                            .read(playlistsProvider.notifier)
+                            .toggleItemEnabled(pl.id, item.id),
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: SizedBox(
+                                width: 64,
+                                height: 36,
+                                child: _buildThumbnail(item),
+                              ),
+                            ),
+                            if (isDisabled)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius:
+                                        BorderRadius.circular(4),
+                                  ),
+                                  child: const Icon(Icons.block,
+                                      color: Colors.white54, size: 20),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
+                      title: Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          decoration: isDisabled
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                      subtitle: _buildSubtitle(item, itemTags, pl),
+                      trailing: ReorderableDragStartListener(
+                        index: i,
+                        child: const Icon(Icons.drag_handle,
+                            color: Colors.grey),
+                      ),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  DetailScreen(itemId: item.id)),
+                        );
+                      },
+                      onLongPress: _hasItemRegions(item)
+                          ? () => _showRegionEditSheet(pl, item)
+                          : null,
                     ),
-                    title: Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    subtitle: _buildSubtitle(item, itemTags, pl),
-                    trailing: ReorderableDragStartListener(
-                      index: i,
-                      child: const Icon(Icons.drag_handle, color: Colors.grey),
-                    ),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                DetailScreen(itemId: item.id)),
-                      );
-                    },
-                    onLongPress: _hasItemRegions(item)
-                        ? () => _showRegionEditSheet(pl, item)
-                        : null,
                   ),
                 );
               },
@@ -370,7 +404,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     if (_hasItemRegions(item)) {
       final allRegions = item.effectiveRegions;
       final sel = pl.regionSelections[item.id];
-      if (sel != null && sel.isNotEmpty) {
+      if (sel != null && sel.isEmpty) {
+        parts.add('0/${allRegions.length} 区間（スキップ）');
+      } else if (sel != null && sel.isNotEmpty) {
         parts.add('${sel.length}/${allRegions.length} 区間');
       } else {
         parts.add('${allRegions.length} 区間');
@@ -487,10 +523,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       if (v == true) {
                         selected.add(region.id);
                       } else {
-                        // 最低1つは残す
-                        if (selected.length > 1) {
-                          selected.remove(region.id);
-                        }
+                        selected.remove(region.id);
                       }
                     });
                   },

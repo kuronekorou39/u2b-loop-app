@@ -7,8 +7,12 @@ class Playlist {
   DateTime createdAt;
 
   /// アイテムごとの区間選択: itemId → 選択されたregionIdリスト
-  /// マップに存在しない or 空リスト → 全区間を含める（後方互換）
+  /// マップに存在しない → 全区間を含める（後方互換）
+  /// 空リスト → 0区間選択（そのアイテムはスキップ）
   Map<String, List<String>> regionSelections;
+
+  /// 無効化されたアイテムのIDセット（再生時にスキップ）
+  Set<String> disabledItemIds;
 
   Playlist({
     required this.id,
@@ -16,9 +20,11 @@ class Playlist {
     List<String>? itemIds,
     DateTime? createdAt,
     Map<String, List<String>>? regionSelections,
+    Set<String>? disabledItemIds,
   })  : itemIds = itemIds ?? [],
         createdAt = createdAt ?? DateTime.now(),
-        regionSelections = regionSelections ?? {};
+        regionSelections = regionSelections ?? {},
+        disabledItemIds = disabledItemIds ?? {};
 }
 
 class PlaylistAdapter extends TypeAdapter<Playlist> {
@@ -36,12 +42,19 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       regionSel = raw.map((k, v) => MapEntry(k, (v as List).cast<String>()));
     }
 
+    // field 5: disabledItemIds (後方互換: 旧データにはない)
+    Set<String>? disabled;
+    if (fields.containsKey(5) && fields[5] != null) {
+      disabled = (fields[5] as List).cast<String>().toSet();
+    }
+
     return Playlist(
       id: fields[0] as String,
       name: fields[1] as String,
       itemIds: (fields[2] as List?)?.cast<String>() ?? [],
       createdAt: DateTime.fromMillisecondsSinceEpoch(fields[3] as int),
       regionSelections: regionSel,
+      disabledItemIds: disabled,
     );
   }
 
@@ -53,6 +66,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       2: obj.itemIds,
       3: obj.createdAt.millisecondsSinceEpoch,
       4: obj.regionSelections.isNotEmpty ? obj.regionSelections : null,
+      5: obj.disabledItemIds.isNotEmpty ? obj.disabledItemIds.toList() : null,
     });
   }
 }

@@ -114,17 +114,30 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
   final _random = Random();
 
   /// プレイリストのアイテムからトラックリストを生成
-  /// [regionSelections]: itemId → 選択されたregionIdリスト（空 or 未指定 = 全区間）
+  /// [regionSelections]: itemId → 選択されたregionIdリスト
+  ///   マップに存在しない → 全区間を含める
+  ///   空リスト → 0区間（スキップ）
+  /// [disabledItemIds]: 無効化されたアイテム（スキップ）
   void loadPlaylist(List<LoopItem> items,
       {int initialItemIndex = 0,
-      Map<String, List<String>>? regionSelections}) {
+      Map<String, List<String>>? regionSelections,
+      Set<String>? disabledItemIds}) {
     final tracks = <PlaylistTrack>[];
     int initialTrackIndex = 0;
 
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
+
+      // 無効化されたアイテムはスキップ
+      if (disabledItemIds != null && disabledItemIds.contains(item.id)) {
+        continue;
+      }
+
       final regions = item.effectiveRegions;
       final selectedIds = regionSelections?[item.id];
+
+      // 明示的に0区間が選択されている場合はスキップ
+      if (selectedIds != null && selectedIds.isEmpty) continue;
 
       if (regions.length <= 1 && !regions.first.hasPoints) {
         // 区間なし: アイテム全体が1トラック
@@ -138,7 +151,6 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
         if (i == initialItemIndex) initialTrackIndex = tracks.length;
         for (var r = 0; r < regions.length; r++) {
           if (selectedIds != null &&
-              selectedIds.isNotEmpty &&
               !selectedIds.contains(regions[r].id)) {
             continue; // この区間は選択されていない
           }

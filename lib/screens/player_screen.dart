@@ -31,6 +31,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final List<LoopItem>? playlistItems;
   final int initialIndex;
   final Map<String, List<String>>? regionSelections;
+  final Set<String>? disabledItemIds;
 
   const PlayerScreen({
     super.key,
@@ -38,6 +39,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.playlistItems,
     this.initialIndex = 0,
     this.regionSelections,
+    this.disabledItemIds,
   });
 
   @override
@@ -102,6 +104,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               widget.playlistItems!,
               initialItemIndex: widget.initialIndex,
               regionSelections: widget.regionSelections,
+              disabledItemIds: widget.disabledItemIds,
             );
       }
 

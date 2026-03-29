@@ -301,10 +301,19 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
       String playlistId, String itemId, List<String> regionIds) async {
     final pl = _box.get(playlistId);
     if (pl == null) return;
-    if (regionIds.isEmpty) {
-      pl.regionSelections.remove(itemId);
+    // 空リスト = 0区間選択（スキップ）として保存
+    pl.regionSelections[itemId] = regionIds;
+    await _box.put(playlistId, pl);
+    _refresh();
+  }
+
+  Future<void> toggleItemEnabled(String playlistId, String itemId) async {
+    final pl = _box.get(playlistId);
+    if (pl == null) return;
+    if (pl.disabledItemIds.contains(itemId)) {
+      pl.disabledItemIds.remove(itemId);
     } else {
-      pl.regionSelections[itemId] = regionIds;
+      pl.disabledItemIds.add(itemId);
     }
     await _box.put(playlistId, pl);
     _refresh();
