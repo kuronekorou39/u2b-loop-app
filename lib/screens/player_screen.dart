@@ -1049,6 +1049,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             compact: _compactSeekbar,
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
+            allowMarkerDrag: !_isPlaylist && _editMode,
           ),
 
           // Region + Loop controls (single mode only, editor-style 2-panel)

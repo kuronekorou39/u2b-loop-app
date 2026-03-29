@@ -13,11 +13,13 @@ enum _DragTarget { position, pointA, pointB }
 class LoopSeekbar extends ConsumerStatefulWidget {
   final bool compact;
   final VoidCallback? onToggleCompact;
+  final bool allowMarkerDrag;
 
   const LoopSeekbar({
     super.key,
     this.compact = false,
     this.onToggleCompact,
+    this.allowMarkerDrag = true,
   });
 
   @override
@@ -139,7 +141,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                               .round());
 
                   _DragTarget hitTest(double screenX) {
-                    if (duration.inMilliseconds == 0) {
+                    if (duration.inMilliseconds == 0 ||
+                        !widget.allowMarkerDrag) {
                       return _DragTarget.position;
                     }
                     const hitRadius = 24.0;
