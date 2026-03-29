@@ -201,12 +201,17 @@ class MainActivity : FlutterActivity() {
                             outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
                             val shortBuffer = outputBuffer.asShortBuffer()
 
-                            var peak = 0
+                            var sumSquares = 0L
+                            var count = 0
                             while (shortBuffer.hasRemaining()) {
-                                val sample = Math.abs(shortBuffer.get().toInt())
-                                if (sample > peak) peak = sample
+                                val sample = shortBuffer.get().toLong()
+                                sumSquares += sample * sample
+                                count++
                             }
-                            amplitudes.add(peak)
+                            val rms = if (count > 0)
+                                Math.sqrt(sumSquares.toDouble() / count).toInt()
+                            else 0
+                            amplitudes.add(rms)
                         }
                         codec.releaseOutputBuffer(outputIndex, false)
                     }

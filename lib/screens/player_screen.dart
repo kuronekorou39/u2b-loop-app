@@ -1199,7 +1199,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 SizedBox(
                   width: 120,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildRegionTile(
                         name: '全体',
@@ -1289,7 +1289,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           height: 24,
                           child: IconButton(
                             icon: Icon(
-                              _editMode ? Icons.edit_off : Icons.edit,
+                              _editMode ? Icons.check : Icons.edit,
                               size: 13,
                               color: _editMode
                                   ? AppTheme.accentGreen
@@ -1457,8 +1457,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           'B', AppTheme.pointBColor, loop.pointB),
                     ],
 
-                    // Gap slider (when loop enabled)
-                    if (loop.enabled) ...[
+                    // Gap slider (when loop enabled, non-edit mode only)
+                    if (loop.enabled && !_editMode) ...[
                       const SizedBox(height: 4),
                       Row(
                         children: [
@@ -1583,10 +1583,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       children: [
         Container(
           width: 36,
-          height: 28,
+          height: 36,
           decoration: BoxDecoration(
-            border: Border.all(
-                color: color.withValues(alpha: 0.5), width: 1.5),
+            border: Border.all(color: color),
             borderRadius: BorderRadius.circular(6),
           ),
           alignment: Alignment.center,
