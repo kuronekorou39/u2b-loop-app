@@ -1051,9 +1051,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 setState(() => _compactSeekbar = !_compactSeekbar),
           ),
 
-          // Region selector + Loop controls (single mode only)
-          if (!_isPlaylist && regions.isNotEmpty) _buildRegionSelector(regions),
-          if (!_isPlaylist) _buildLoopControls(loop),
+          // Region + Loop controls (single mode only, editor-style 2-panel)
+          if (!_isPlaylist) _buildRegionAndLoopPanel(regions, loop),
 
           // Playlist controls
           if (_isPlaylist) _buildPlaylistControls(),
@@ -1080,42 +1079,331 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return scrollContent;
   }
 
-  Widget _buildRegionSelector(List<LoopRegion> regions) {
+  // --- Region + Loop panel (editor-style 2-panel layout) ---
+
+  Widget _buildRegionAndLoopPanel(
+      List<LoopRegion> regions, LoopState loop) {
+    final notifier = ref.read(loopProvider.notifier);
     final theme = Theme.of(context);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+
+    String stepLabel(double s) =>
+        s < 1 ? '${s}s' : '${s.toInt()}s';
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 全体（ループなし）
-            _buildRegionTile(
-              name: '全体',
-              isActive: _activeRegionIdx == -1,
-              onTap: _clearRegion,
-              theme: theme,
-            ),
-            if (regions.isNotEmpty)
-              Divider(
-                  height: 1,
-                  color: theme.dividerColor.withValues(alpha: 0.3)),
-            // 各区間
-            for (var i = 0; i < regions.length; i++) ...[
-              _buildRegionTile(
-                name: regions[i].name,
-                isActive: i == _activeRegionIdx,
-                pointAMs: regions[i].pointAMs,
-                pointBMs: regions[i].pointBMs,
-                onTap: () => _selectRegion(i),
-                theme: theme,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // === Left: Region list ===
+              if (regions.isNotEmpty) ...[
+                SizedBox(
+                  width: 120,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildRegionTile(
+                        name: '全体',
+                        isActive: _activeRegionIdx == -1,
+                        onTap: _clearRegion,
+                        theme: theme,
+                      ),
+                      Divider(
+                          height: 1,
+                          color: theme.dividerColor
+                              .withValues(alpha: 0.3)),
+                      for (var i = 0; i < regions.length; i++) ...[
+                        _buildRegionTile(
+                          name: regions[i].name,
+                          isActive: i == _activeRegionIdx,
+                          pointAMs: regions[i].pointAMs,
+                          pointBMs: regions[i].pointBMs,
+                          onTap: () => _selectRegion(i),
+                          theme: theme,
+                        ),
+                        if (i < regions.length - 1)
+                          Divider(
+                              height: 1,
+                              color: theme.dividerColor
+                                  .withValues(alpha: 0.3)),
+                      ],
+                    ],
+                  ),
+                ),
+                VerticalDivider(
+                  width: 16,
+                  thickness: 1,
+                  color: theme.dividerColor.withValues(alpha: 0.3),
+                ),
+              ],
+
+              // === Right: Loop controls ===
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Loop toggle + duration
+                    Row(
+                      children: [
+                        SizedBox(
+                          height: 28,
+                          child: FilledButton.icon(
+                            onPressed: hasSource
+                                ? () => notifier.toggleEnabled()
+                                : null,
+                            icon: Icon(
+                              loop.enabled
+                                  ? Icons.repeat_on
+                                  : Icons.repeat,
+                              size: 16,
+                            ),
+                            label: Text(
+                              loop.enabled ? 'Loop ON' : 'Loop OFF',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: loop.enabled
+                                  ? theme.colorScheme.primary
+                                  : theme
+                                      .colorScheme.surfaceContainerHighest,
+                              foregroundColor: loop.enabled
+                                  ? Colors.black
+                                  : Colors.grey,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10),
+                              minimumSize: Size.zero,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (loop.hasBothPoints)
+                          Text(
+                            '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500),
+                          ),
+                        // Edit toggle (subtle)
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: IconButton(
+                            icon: Icon(
+                              _editMode ? Icons.edit_off : Icons.edit,
+                              size: 13,
+                              color: _editMode
+                                  ? AppTheme.accentGreen
+                                  : Colors.grey[600],
+                            ),
+                            onPressed: () =>
+                                setState(() => _editMode = !_editMode),
+                            padding: EdgeInsets.zero,
+                            tooltip:
+                                _editMode ? '編集モード終了' : 'AB区間を編集',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+
+                    // --- Edit mode: full A/B controls ---
+                    if (_editMode) ...[
+                      LoopControls.buildPointRow(
+                        label: 'A',
+                        color: AppTheme.pointAColor,
+                        time: loop.pointA,
+                        stepLabel: stepLabel(_editStep),
+                        onSet: hasSource
+                            ? () => notifier.setPointA(
+                                ref.read(playerProvider).state.position)
+                            : null,
+                        onTimeTap: loop.hasA
+                            ? () => ref
+                                .read(playerProvider)
+                                .seek(loop.pointA!)
+                            : null,
+                        onMinus: () {
+                          if (loop.hasA) {
+                            notifier.setPointA(loop.pointA! -
+                                Duration(
+                                    milliseconds:
+                                        (_editStep * 1000).round()));
+                          }
+                        },
+                        onPlus: () {
+                          if (loop.hasA) {
+                            notifier.setPointA(loop.pointA! +
+                                Duration(
+                                    milliseconds:
+                                        (_editStep * 1000).round()));
+                          }
+                        },
+                      ),
+                      // Swap button (A > B)
+                      if (loop.hasBothPoints &&
+                          loop.pointA!.compareTo(loop.pointB!) > 0)
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 2),
+                          child: SizedBox(
+                            height: 24,
+                            child: TextButton.icon(
+                              onPressed: () => notifier.swapPoints(),
+                              icon: Icon(Icons.swap_vert,
+                                  size: 14,
+                                  color: Colors.amber.shade300),
+                              label: Text('A⇔B 入れ替え',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.amber.shade300)),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6),
+                                minimumSize: Size.zero,
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox(height: 6),
+                      LoopControls.buildPointRow(
+                        label: 'B',
+                        color: AppTheme.pointBColor,
+                        time: loop.pointB,
+                        stepLabel: stepLabel(_editStep),
+                        onSet: hasSource
+                            ? () => notifier.setPointB(
+                                ref.read(playerProvider).state.position)
+                            : null,
+                        onTimeTap: loop.hasB
+                            ? () => ref
+                                .read(playerProvider)
+                                .seek(loop.pointB!)
+                            : null,
+                        onMinus: () {
+                          if (loop.hasB) {
+                            notifier.setPointB(loop.pointB! -
+                                Duration(
+                                    milliseconds:
+                                        (_editStep * 1000).round()));
+                          }
+                        },
+                        onPlus: () {
+                          if (loop.hasB) {
+                            notifier.setPointB(loop.pointB! +
+                                Duration(
+                                    milliseconds:
+                                        (_editStep * 1000).round()));
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      // Step selector (editor-style)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text('Step',
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0.5,
+                                  color: Colors.grey.shade500)),
+                          const SizedBox(width: 5),
+                          ...LoopControls.steps.map((s) {
+                            final isSelected = _editStep == s;
+                            final label = stepLabel(s);
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 3),
+                              child: GestureDetector(
+                                onTap: () =>
+                                    setState(() => _editStep = s),
+                                child: Container(
+                                  height: 22,
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 6),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? Colors.grey.shade800
+                                        : Colors.transparent,
+                                    borderRadius:
+                                        BorderRadius.circular(11),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontFamily: 'monospace',
+                                      color: isSelected
+                                          ? Colors.grey.shade300
+                                          : Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ] else ...[
+                      // --- Non-edit: read-only A/B display ---
+                      _buildPointDisplay(
+                          'A', AppTheme.pointAColor, loop.pointA),
+                      const SizedBox(height: 6),
+                      _buildPointDisplay(
+                          'B', AppTheme.pointBColor, loop.pointB),
+                    ],
+
+                    // Gap slider (when loop enabled)
+                    if (loop.enabled) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Text('Gap:',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey)),
+                          Expanded(
+                            child: SliderTheme(
+                              data: const SliderThemeData(
+                                trackHeight: 2,
+                                thumbShape: RoundSliderThumbShape(
+                                    enabledThumbRadius: 6),
+                                overlayShape:
+                                    RoundSliderOverlayShape(
+                                        overlayRadius: 12),
+                              ),
+                              child: Slider(
+                                value: loop.gapSeconds,
+                                min: 0,
+                                max: 10,
+                                divisions: 20,
+                                onChanged: (v) =>
+                                    notifier.setGap(v),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 30,
+                            child: Text(
+                              '${loop.gapSeconds.toStringAsFixed(1)}s',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              if (i < regions.length - 1)
-                Divider(
-                    height: 1,
-                    color: theme.dividerColor.withValues(alpha: 0.3)),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1129,8 +1417,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     required VoidCallback onTap,
     required ThemeData theme,
   }) {
-    // Time text (editor style: "00:10 - 00:45 (5.0s)")
-    String? timeText;
+    String timeText;
     if (pointAMs != null || pointBMs != null) {
       final aStr = pointAMs != null
           ? TimeUtils.formatShort(Duration(milliseconds: pointAMs))
@@ -1141,8 +1428,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       timeText = '$aStr - $bStr';
       if (pointAMs != null && pointBMs != null) {
         final durationSec = (pointBMs - pointAMs).abs() / 1000;
-        timeText = '$timeText (${durationSec.toStringAsFixed(1)}s)';
+        timeText += ' (${durationSec.toStringAsFixed(1)}s)';
       }
+    } else {
+      timeText = '未設定';
     }
 
     return InkWell(
@@ -1157,8 +1446,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           borderRadius: BorderRadius.circular(6),
           border: isActive
               ? Border.all(
-                  color:
-                      theme.colorScheme.primary.withValues(alpha: 0.5),
+                  color: theme.colorScheme.primary
+                      .withValues(alpha: 0.5),
                   width: 1)
               : null,
         ),
@@ -1176,214 +1465,58 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            if (timeText != null) ...[
-              const SizedBox(height: 1),
-              Text(
-                timeText,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey.shade400,
-                ),
+            const SizedBox(height: 1),
+            Text(
+              timeText,
+              style: TextStyle(
+                fontSize: 10,
+                color: (pointAMs != null || pointBMs != null)
+                    ? Colors.grey.shade400
+                    : Colors.grey.shade600,
               ),
-            ] else
-              Text(
-                '未設定',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey.shade600,
-                ),
-              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLoopControls(LoopState loop) {
-    final notifier = ref.read(loopProvider.notifier);
-    final theme = Theme.of(context);
-
-    String stepLabel(double s) {
-      if (s >= 1.0) return '${s.toStringAsFixed(0)}s';
-      return '${s}s';
-    }
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            // Loop toggle + AB time + edit button
-            Row(
-              children: [
-                FilledButton.icon(
-                  onPressed: () => notifier.toggleEnabled(),
-                  icon: Icon(
-                    loop.enabled ? Icons.repeat_on : Icons.repeat,
-                    size: 18,
-                  ),
-                  label: Text(loop.enabled ? 'ループ ON' : 'ループ OFF'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: loop.enabled
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.surfaceContainerHighest,
-                    foregroundColor:
-                        loop.enabled ? Colors.black : Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    minimumSize: const Size(0, 36),
-                  ),
-                ),
-                const Spacer(),
-                if (loop.hasPoints) ...[
-                  Text(
-                    TimeUtils.formatShortNullable(loop.pointA),
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.pointAColor),
-                  ),
-                  const Text(' - ',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  Text(
-                    TimeUtils.formatShortNullable(loop.pointB),
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.pointBColor),
-                  ),
-                ],
-                // Edit mode toggle (subtle)
-                const SizedBox(width: 4),
-                SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: IconButton(
-                    icon: Icon(
-                      _editMode ? Icons.edit_off : Icons.edit,
-                      size: 14,
-                      color: _editMode
-                          ? AppTheme.accentGreen
-                          : Colors.grey[600],
-                    ),
-                    onPressed: () =>
-                        setState(() => _editMode = !_editMode),
-                    padding: EdgeInsets.zero,
-                    tooltip: _editMode ? '編集モード終了' : 'AB区間を編集',
-                  ),
-                ),
-              ],
-            ),
-            // Gap slider
-            if (loop.enabled) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Text('Gap:',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey)),
-                  Expanded(
-                    child: Slider(
-                      value: loop.gapSeconds,
-                      min: 0,
-                      max: 10,
-                      divisions: 20,
-                      label:
-                          '${loop.gapSeconds.toStringAsFixed(1)}s',
-                      onChanged: (v) => notifier.setGap(v),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 36,
-                    child: Text(
-                      '${loop.gapSeconds.toStringAsFixed(1)}s',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            // Edit mode: A/B point editing
-            if (_editMode) ...[
-              const Divider(height: 16),
-              LoopControls.buildPointRow(
-                label: 'A',
-                color: AppTheme.pointAColor,
-                time: loop.pointA,
-                stepLabel: stepLabel(_editStep),
-                onSet: () => notifier
-                    .setPointA(ref.read(playerProvider).state.position),
-                onTimeTap: loop.hasA
-                    ? () =>
-                        ref.read(playerProvider).seek(loop.pointA!)
-                    : null,
-                onMinus: () {
-                  if (loop.hasA) {
-                    notifier.setPointA(loop.pointA! -
-                        Duration(
-                            milliseconds:
-                                (_editStep * 1000).round()));
-                  }
-                },
-                onPlus: () {
-                  if (loop.hasA) {
-                    notifier.setPointA(loop.pointA! +
-                        Duration(
-                            milliseconds:
-                                (_editStep * 1000).round()));
-                  }
-                },
-              ),
-              const SizedBox(height: 8),
-              LoopControls.buildPointRow(
-                label: 'B',
-                color: AppTheme.pointBColor,
-                time: loop.pointB,
-                stepLabel: stepLabel(_editStep),
-                onSet: () => notifier
-                    .setPointB(ref.read(playerProvider).state.position),
-                onTimeTap: loop.hasB
-                    ? () =>
-                        ref.read(playerProvider).seek(loop.pointB!)
-                    : null,
-                onMinus: () {
-                  if (loop.hasB) {
-                    notifier.setPointB(loop.pointB! -
-                        Duration(
-                            milliseconds:
-                                (_editStep * 1000).round()));
-                  }
-                },
-                onPlus: () {
-                  if (loop.hasB) {
-                    notifier.setPointB(loop.pointB! +
-                        Duration(
-                            milliseconds:
-                                (_editStep * 1000).round()));
-                  }
-                },
-              ),
-              // Step selector
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  for (final s in LoopControls.steps)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: ChoiceChip(
-                        label: Text(stepLabel(s),
-                            style: const TextStyle(fontSize: 10)),
-                        selected: _editStep == s,
-                        onSelected: (_) =>
-                            setState(() => _editStep = s),
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ],
+  Widget _buildPointDisplay(
+      String label, Color color, Duration? time) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 28,
+          decoration: BoxDecoration(
+            border: Border.all(
+                color: color.withValues(alpha: 0.5), width: 1.5),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          alignment: Alignment.center,
+          child: Text(label,
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: color)),
         ),
-      ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: time != null
+              ? () => ref.read(playerProvider).seek(time)
+              : null,
+          child: Text(
+            TimeUtils.formatNullable(time),
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 13,
+              decoration:
+                  time != null ? TextDecoration.underline : null,
+              decorationColor: color.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
