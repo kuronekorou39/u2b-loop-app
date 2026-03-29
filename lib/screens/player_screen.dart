@@ -1444,12 +1444,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ? theme.colorScheme.primary.withValues(alpha: 0.15)
               : null,
           borderRadius: BorderRadius.circular(6),
-          border: isActive
-              ? Border.all(
-                  color: theme.colorScheme.primary
-                      .withValues(alpha: 0.5),
-                  width: 1)
-              : null,
+          border: Border.all(
+            color: isActive
+                ? theme.colorScheme.primary.withValues(alpha: 0.5)
+                : Colors.transparent,
+            width: 1,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
