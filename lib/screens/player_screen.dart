@@ -68,6 +68,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int? _preloadedTrackIndex;
   bool _isPreloading = false;
   Timer? _preloadCheckTimer;
+  int _preloadGeneration = 0; // レース条件防止用の世代カウンタ
+
+  // Waveform cache: itemId → waveform data
+  final Map<String, List<double>> _waveformCache = {};
 
   LoopItem get _currentItem {
     if (_isPlaylist) {
@@ -194,7 +198,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _startPreloadMonitor();
     } else {
       // Different item, not preloaded - full reload
-      _preloadedTrackIndex = null;
+      _cancelPreload();
       _preloadCheckTimer?.cancel();
       _loadItem();
     }
@@ -205,8 +209,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
     final changed = notifier.prev();
     if (!changed) return;
-    // Clear preload since we're going backwards
-    _preloadedTrackIndex = null;
+    _cancelPreload();
     _preloadCheckTimer?.cancel();
     _switchToCurrentTrack(oldTrack);
   }
@@ -215,7 +218,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final newTrack = ref.read(playlistPlayerProvider).currentTrack;
     if (newTrack == null) return;
 
-    _preloadedTrackIndex = null;
+    _cancelPreload();
     if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
       // Same LoopItem - just seek and update loop points
       _loadTrackRegion(newTrack);
@@ -278,16 +281,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // 未準備 → 裏で読み込み開始
+    // 未準備 → 既存プリロードをキャンセルして裏で読み込み開始
+    _cancelPreload();
     _preloadNextTrack(trackIndex);
   }
 
   // --- Preload ---
 
+  void _cancelPreload() {
+    _preloadGeneration++; // 実行中のプリロードを無効化
+    _preloadedTrackIndex = null;
+    _preloadingTargetIndex = null;
+    _isPreloading = false;
+  }
+
   void _startPreloadMonitor() {
     _preloadCheckTimer?.cancel();
-    _preloadedTrackIndex = null;
-    _isPreloading = false;
+    _cancelPreload();
 
     if (!_isPlaylist) return;
 
@@ -318,6 +328,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _preloadNextTrack([int? overrideIndex]) async {
     if (_isPreloading) return;
     _isPreloading = true;
+    final gen = ++_preloadGeneration; // この世代のプリロード
+
+    bool isStale() => !mounted || gen != _preloadGeneration;
 
     try {
       final plState = ref.read(playlistPlayerProvider);
@@ -346,13 +359,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       final preloadPlayer = ref.read(preloadPlayerProvider);
+      StreamManifest? manifest;
 
       if (nextTrack.item.sourceType == 'youtube') {
         final ytService = ref.read(youtubeServiceProvider);
-        final manifest = await ytService.yt.videos.streamsClient
+        manifest = await ytService.yt.videos.streamsClient
             .getManifest(nextTrack.item.videoId!);
 
-        if (!mounted) return;
+        if (isStale()) return;
 
         final muxed = manifest.muxed.sortByVideoQuality();
         String streamUrl;
@@ -369,20 +383,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         await preloadPlayer.open(Media(nextTrack.item.uri), play: false);
       }
 
-      if (!mounted) return;
+      if (isStale()) return;
 
       // Wait for metadata (duration) by briefly playing
       if (preloadPlayer.state.duration == Duration.zero) {
         await preloadPlayer.setVolume(0);
         await preloadPlayer.play();
         for (var i = 0;
-            i < 30 && preloadPlayer.state.duration == Duration.zero && mounted;
+            i < 30 &&
+                preloadPlayer.state.duration == Duration.zero &&
+                !isStale();
             i++) {
           await Future.delayed(const Duration(milliseconds: 100));
         }
-        if (!mounted) return;
+        if (isStale()) return;
         await preloadPlayer.pause();
-        // Restore volume to match active player
         await preloadPlayer.setVolume(ref.read(playerProvider).state.volume);
       }
 
@@ -398,19 +413,87 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         await preloadPlayer.setRate(nextTrack.item.speed);
       }
 
-      if (!mounted) return;
+      if (isStale()) return;
       _preloadedTrackIndex = nextIdx;
       if (mounted) setState(() {});
+
+      // --- 波形の先行読み込み（並行） ---
+      final itemId = nextTrack.item.id;
+      if (!_waveformCache.containsKey(itemId)) {
+        _preloadWaveform(nextTrack, manifest, gen);
+      }
     } catch (_) {
-      _preloadedTrackIndex = null;
+      if (gen == _preloadGeneration) _preloadedTrackIndex = null;
     } finally {
-      _isPreloading = false;
-      _preloadingTargetIndex = null;
+      if (gen == _preloadGeneration) {
+        _isPreloading = false;
+        _preloadingTargetIndex = null;
+      }
       if (mounted) setState(() {});
     }
   }
 
+  /// 波形を先行生成してキャッシュに保存（fire-and-forget）
+  Future<void> _preloadWaveform(
+      PlaylistTrack track, StreamManifest? manifest, int gen) async {
+    try {
+      final item = track.item;
+      final service = WaveformService();
+      List<double>? waveform;
+
+      if (item.sourceType != 'youtube') {
+        waveform = await service.generateForLocalFile(item.uri, 4000);
+      } else if (manifest != null) {
+        // YouTube: 音声をダウンロードして波形生成
+        final muxed = manifest.muxed.sortByVideoQuality();
+        if (muxed.isNotEmpty) {
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File(
+              '${tempDir.path}/u2b_waveform_preload_${item.id}.tmp');
+          final ytService = ref.read(youtubeServiceProvider);
+          final dataStream =
+              ytService.yt.videos.streamsClient.get(muxed.first);
+          final sink = tempFile.openWrite();
+          var bytes = 0;
+          final sub = dataStream.listen((chunk) {
+            sink.add(chunk);
+            bytes += chunk.length;
+          });
+          try {
+            await sub.asFuture<void>().timeout(const Duration(seconds: 15));
+          } on TimeoutException {
+            // pass
+          } finally {
+            try { await sub.cancel().timeout(const Duration(seconds: 2)); } catch (_) {}
+            try { await sink.flush().timeout(const Duration(seconds: 2)); } catch (_) {}
+            try { await sink.close().timeout(const Duration(seconds: 2)); } catch (_) {}
+          }
+          if (gen != _preloadGeneration) {
+            try { await tempFile.delete(); } catch (_) {}
+            return;
+          }
+          if (bytes > 100000) {
+            try {
+              waveform = await service.generateFromUrl(tempFile.path, 4000);
+            } finally {
+              try { await tempFile.delete(); } catch (_) {}
+            }
+          }
+        }
+      }
+
+      if (waveform != null && waveform.isNotEmpty && gen == _preloadGeneration) {
+        _waveformCache[item.id] = waveform;
+      }
+    } catch (_) {
+      // 波形プリロード失敗は無視（再生時に再試行される）
+    }
+  }
+
   void _swapToPreloaded(PlaylistTrack newTrack) {
+    // 実行中のプリロードを無効化（スワップ後にプレーヤーを触らせない）
+    _cancelPreload();
+
     // Save reference to old player before swap
     final oldPlayer = ref.read(playerProvider);
 
@@ -437,16 +520,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // Play new active player
     ref.read(playerProvider).play();
 
-    // Reset waveform
-    ref.read(waveformDataProvider.notifier).state = null;
-    ref.read(waveformErrorProvider.notifier).state = null;
-
-    _preloadedTrackIndex = null;
-
-    // Generate waveform for new track
-    final source = ref.read(videoSourceProvider);
-    if (source != null) {
-      _generateWaveform(source);
+    // Apply cached waveform or generate fresh
+    final cachedWaveform = _waveformCache.remove(item.id);
+    if (cachedWaveform != null) {
+      ref.read(waveformDataProvider.notifier).state = cachedWaveform;
+      ref.read(waveformErrorProvider.notifier).state = null;
+      ref.read(waveformLoadingProvider.notifier).state = false;
+    } else {
+      ref.read(waveformDataProvider.notifier).state = null;
+      ref.read(waveformErrorProvider.notifier).state = null;
+      final source = ref.read(videoSourceProvider);
+      if (source != null) {
+        _generateWaveform(source);
+      }
     }
 
     if (mounted) setState(() => _loading = false);
