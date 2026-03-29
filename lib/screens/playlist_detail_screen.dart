@@ -409,13 +409,28 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       ));
     }
     if (_hasItemRegions(item)) {
-      widgets.add(Text('長押しで区間選択',
-          style: TextStyle(
-              fontSize: 10,
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
-                  .withValues(alpha: 0.3))));
+      widgets.add(
+        GestureDetector(
+          onTap: () => _showRegionEditSheet(pl, item),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.tune, size: 12,
+                    color: Theme.of(context).colorScheme.primary
+                        .withValues(alpha: 0.6)),
+                const SizedBox(width: 3),
+                Text('区間を選択',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.primary
+                            .withValues(alpha: 0.6))),
+              ],
+            ),
+          ),
+        ),
+      );
     }
     if (widgets.isEmpty) return null;
     return Column(

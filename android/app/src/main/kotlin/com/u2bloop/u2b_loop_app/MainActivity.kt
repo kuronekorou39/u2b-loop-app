@@ -23,6 +23,7 @@ class MainActivity : FlutterActivity() {
     private var currentJob: Job? = null
     @Volatile private var currentExtractor: MediaExtractor? = null
     private var pipChannel: MethodChannel? = null
+    private var autoPipEnabled = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -84,6 +85,10 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "setAutoPiP" -> {
+                    autoPipEnabled = call.argument<Boolean>("enabled") ?: false
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -99,8 +104,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // ホームボタンを押したとき自動でPiPに入る（再生中の場合）
-        // Flutter側から制御するため、ここでは自動PiPしない
+        if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build()
+                enterPictureInPictureMode(params)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun cancelCurrentExtraction() {

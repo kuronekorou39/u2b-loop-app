@@ -106,12 +106,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       _loadItem();
+      // 自動PiPを有効化
+      _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
     });
   }
 
   @override
   void deactivate() {
     _preloadCheckTimer?.cancel();
+    // 自動PiPを無効化
+    try {
+      _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
+    } catch (_) {}
     try {
       ref.read(playerAProvider).stop();
       ref.read(playerBProvider).stop();
