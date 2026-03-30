@@ -772,6 +772,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (regions.isNotEmpty) {
       item.pointAMs = regions.first.pointAMs ?? 0;
       item.pointBMs = regions.first.pointBMs ?? 0;
+    } else {
+      item.pointAMs = 0;
+      item.pointBMs = 0;
     }
     await ref.read(loopItemsProvider.notifier).update(item);
   }
@@ -1381,29 +1384,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             width: 1,
                           ),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Text(
-                                '全体',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: _activeRegionIdx == -1
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: _activeRegionIdx == -1
-                                      ? theme.colorScheme.primary
-                                      : null,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '全体',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: _activeRegionIdx == -1
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      color: _activeRegionIdx == -1
+                                          ? theme.colorScheme.primary
+                                          : null,
+                                    ),
+                                  ),
                                 ),
+                                if (regions.length < _maxRegions)
+                                  GestureDetector(
+                                    onTap: _addRegion,
+                                    child: Icon(
+                                        Icons.add_circle_outline,
+                                        size: 16,
+                                        color: Colors.grey.shade500),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              'デフォルト',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey.shade600,
                               ),
                             ),
-                            if (regions.length < _maxRegions)
-                              GestureDetector(
-                                onTap: _addRegion,
-                                child: Icon(Icons.add_circle_outline,
-                                    size: 16,
-                                    color: Colors.grey.shade500),
-                              ),
                           ],
                         ),
                       ),
@@ -1655,6 +1672,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           }),
                         ],
                       ),
+                    ] else if (_activeRegionIdx == -1) ...[
+                      // --- 全体: AB区間設定ボタン ---
+                      if (regions.length < _maxRegions)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 8),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 32,
+                            child: OutlinedButton.icon(
+                              onPressed: _addRegion,
+                              icon: Icon(Icons.add, size: 14,
+                                  color: Colors.grey.shade400),
+                              label: Text('AB区間を設定する',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade400)),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(
+                                    color: Colors.grey.shade700),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(6)),
+                              ),
+                            ),
+                          ),
+                        ),
                     ] else ...[
                       // --- Non-edit: read-only A/B display ---
                       _buildPointDisplay(

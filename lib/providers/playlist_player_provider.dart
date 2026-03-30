@@ -139,7 +139,7 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
       // 明示的に0区間が選択されている場合はスキップ
       if (selectedIds != null && selectedIds.isEmpty) continue;
 
-      if (regions.length <= 1 && !regions.first.hasPoints) {
+      if (regions.isEmpty || (regions.length == 1 && !regions.first.hasPoints)) {
         // 区間なし: アイテム全体が1トラック
         if (i == initialItemIndex) initialTrackIndex = tracks.length;
         tracks.add(PlaylistTrack(

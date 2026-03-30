@@ -55,11 +55,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   @override
   void initState() {
     super.initState();
-    // Init regions from item
+    // Init regions from item (エディタは最低1区間で開始)
     final effective = _item.effectiveRegions;
     _regions = effective.map((r) => r.copyWith()).toList();
+    if (_regions.isEmpty) {
+      _regions.add(LoopRegion(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: '区間 1',
+      ));
+    }
     _selectedRegionIdx =
-        widget.initialRegionIndex.clamp(0, _regions.length.clamp(1, 999) - 1);
+        widget.initialRegionIndex.clamp(0, _regions.length - 1);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(videoSourceProvider.notifier).state = null;
