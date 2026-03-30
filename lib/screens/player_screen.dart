@@ -16,6 +16,7 @@ import '../models/loop_state.dart';
 import '../models/playlist_mode.dart' as pl;
 import '../models/playlist_track.dart';
 import '../models/video_source.dart';
+import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
@@ -725,6 +726,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _selectRegion(int index) {
     final regions = _currentItem.effectiveRegions;
     if (index < 0 || index >= regions.length) return;
+    _syncRegionFromLoop(); // 切替前に保存
     setState(() => _activeRegionIdx = index);
     _loadRegion(regions[index]);
     // Seek to region start
@@ -736,9 +738,167 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _clearRegion() {
-    setState(() => _activeRegionIdx = -1);
+    _syncRegionFromLoop(); // 切替前に保存
+    setState(() {
+      _activeRegionIdx = -1;
+      _editMode = false;
+    });
     final notifier = ref.read(loopProvider.notifier);
     notifier.reset();
+  }
+
+  // --- Region editing (single mode) ---
+
+  static const _maxRegions = 10;
+
+  /// 現在のループ状態を選択中の区間に同期
+  void _syncRegionFromLoop() {
+    if (_isPlaylist || _activeRegionIdx < 0) return;
+    final regions = _currentItem.effectiveRegions;
+    if (_activeRegionIdx >= regions.length) return;
+    final loop = ref.read(loopProvider);
+    regions[_activeRegionIdx] = regions[_activeRegionIdx].copyWith(
+      pointAMs: () => loop.pointA?.inMilliseconds,
+      pointBMs: () => loop.pointB?.inMilliseconds,
+    );
+  }
+
+  /// 区間の変更をLoopItemに保存
+  Future<void> _saveRegions() async {
+    if (_isPlaylist) return;
+    final item = _currentItem;
+    final regions = item.effectiveRegions;
+    item.regions = List.from(regions);
+    if (regions.isNotEmpty) {
+      item.pointAMs = regions.first.pointAMs ?? 0;
+      item.pointBMs = regions.first.pointBMs ?? 0;
+    }
+    await ref.read(loopItemsProvider.notifier).update(item);
+  }
+
+  void _addRegion() {
+    if (_isPlaylist) return;
+    final regions = _currentItem.effectiveRegions;
+    if (regions.length >= _maxRegions) return;
+
+    _syncRegionFromLoop();
+    final position = ref.read(playerProvider).state.position;
+    final region = LoopRegion(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: '区間 ${regions.length + 1}',
+      pointAMs: position.inMilliseconds,
+      pointBMs: null,
+    );
+    regions.add(region);
+    _currentItem.regions = List.from(regions);
+
+    setState(() {
+      _activeRegionIdx = regions.length - 1;
+      _editMode = true;
+    });
+    _loadRegion(region);
+    _saveRegions();
+  }
+
+  void _renameRegion(int index) async {
+    final regions = _currentItem.effectiveRegions;
+    if (index < 0 || index >= regions.length) return;
+    final name = await _showRegionNameDialog(regions[index].name);
+    if (name == null) return;
+    setState(() {
+      regions[index] = regions[index].copyWith(name: name);
+      _currentItem.regions = List.from(regions);
+    });
+    _saveRegions();
+  }
+
+  void _deleteRegion(int index) {
+    final regions = _currentItem.effectiveRegions;
+    if (index < 0 || index >= regions.length) return;
+    setState(() {
+      regions.removeAt(index);
+      _currentItem.regions = List.from(regions);
+      if (_activeRegionIdx >= regions.length) {
+        _activeRegionIdx = regions.isEmpty ? -1 : regions.length - 1;
+      }
+      if (regions.isEmpty) _editMode = false;
+    });
+    if (_activeRegionIdx >= 0) {
+      _loadRegion(regions[_activeRegionIdx]);
+    } else {
+      ref.read(loopProvider.notifier).reset();
+    }
+    _saveRegions();
+  }
+
+  Future<String?> _showRegionNameDialog(String initial) async {
+    final controller = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('区間名'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          decoration: const InputDecoration(
+            hintText: '区間名を入力（最大20文字）',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return (result != null && result.isNotEmpty) ? result : null;
+  }
+
+  void _showRegionMenu(int index) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('リネーム'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _renameRegion(index);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('削除',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteRegion(index);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 編集モード終了時にAB値を保存
+  void _finishEdit() {
+    _syncRegionFromLoop();
+    _saveRegions();
+    setState(() => _editMode = false);
   }
 
   // --- PiP ---
@@ -1195,46 +1355,88 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // === Left: Region list ===
-              if (regions.isNotEmpty) ...[
-                SizedBox(
-                  width: 120,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildRegionTile(
-                        name: '全体',
-                        isActive: _activeRegionIdx == -1,
-                        onTap: _clearRegion,
-                        theme: theme,
+              SizedBox(
+                width: 120,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 「全体」+ 区間追加ボタン
+                    InkWell(
+                      onTap: _clearRegion,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 5, horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: _activeRegionIdx == -1
+                              ? theme.colorScheme.primary
+                                  .withValues(alpha: 0.15)
+                              : null,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: _activeRegionIdx == -1
+                                ? theme.colorScheme.primary
+                                    .withValues(alpha: 0.5)
+                                : Colors.transparent,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '全体',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: _activeRegionIdx == -1
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: _activeRegionIdx == -1
+                                      ? theme.colorScheme.primary
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            if (regions.length < _maxRegions)
+                              GestureDetector(
+                                onTap: _addRegion,
+                                child: Icon(Icons.add_circle_outline,
+                                    size: 16,
+                                    color: Colors.grey.shade500),
+                              ),
+                          ],
+                        ),
                       ),
+                    ),
+                    if (regions.isNotEmpty)
                       Divider(
                           height: 1,
                           color: theme.dividerColor
                               .withValues(alpha: 0.3)),
-                      for (var i = 0; i < regions.length; i++) ...[
-                        _buildRegionTile(
-                          name: regions[i].name,
-                          isActive: i == _activeRegionIdx,
-                          pointAMs: regions[i].pointAMs,
-                          pointBMs: regions[i].pointBMs,
-                          onTap: () => _selectRegion(i),
-                          theme: theme,
-                        ),
-                        if (i < regions.length - 1)
-                          Divider(
-                              height: 1,
-                              color: theme.dividerColor
-                                  .withValues(alpha: 0.3)),
-                      ],
+                    for (var i = 0; i < regions.length; i++) ...[
+                      _buildRegionTile(
+                        name: regions[i].name,
+                        isActive: i == _activeRegionIdx,
+                        pointAMs: regions[i].pointAMs,
+                        pointBMs: regions[i].pointBMs,
+                        onTap: () => _selectRegion(i),
+                        onLongPress: () => _showRegionMenu(i),
+                        theme: theme,
+                      ),
+                      if (i < regions.length - 1)
+                        Divider(
+                            height: 1,
+                            color: theme.dividerColor
+                                .withValues(alpha: 0.3)),
                     ],
-                  ),
+                  ],
                 ),
-                VerticalDivider(
-                  width: 16,
-                  thickness: 1,
-                  color: theme.dividerColor.withValues(alpha: 0.3),
-                ),
-              ],
+              ),
+              VerticalDivider(
+                width: 16,
+                thickness: 1,
+                color: theme.dividerColor.withValues(alpha: 0.3),
+              ),
 
               // === Right: Loop controls ===
               Expanded(
@@ -1282,26 +1484,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                 fontSize: 12,
                                 color: Colors.grey.shade500),
                           ),
-                        // Edit toggle (subtle)
-                        const SizedBox(width: 4),
-                        SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: IconButton(
-                            icon: Icon(
-                              _editMode ? Icons.check : Icons.edit,
-                              size: 13,
-                              color: _editMode
-                                  ? AppTheme.accentGreen
-                                  : Colors.grey[600],
+                        // Edit toggle (hidden when 全体 selected)
+                        if (_activeRegionIdx >= 0) ...[
+                          const SizedBox(width: 4),
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: IconButton(
+                              icon: Icon(
+                                _editMode ? Icons.check : Icons.edit,
+                                size: 13,
+                                color: _editMode
+                                    ? AppTheme.accentGreen
+                                    : Colors.grey[600],
+                              ),
+                              onPressed: _editMode
+                                  ? _finishEdit
+                                  : () => setState(
+                                      () => _editMode = true),
+                              padding: EdgeInsets.zero,
+                              tooltip: _editMode
+                                  ? '編集完了'
+                                  : 'AB区間を編集',
                             ),
-                            onPressed: () =>
-                                setState(() => _editMode = !_editMode),
-                            padding: EdgeInsets.zero,
-                            tooltip:
-                                _editMode ? '編集モード終了' : 'AB区間を編集',
                           ),
-                        ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -1511,6 +1718,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     int? pointAMs,
     int? pointBMs,
     required VoidCallback onTap,
+    VoidCallback? onLongPress,
     required ThemeData theme,
   }) {
     String timeText;
@@ -1532,6 +1740,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(6),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
