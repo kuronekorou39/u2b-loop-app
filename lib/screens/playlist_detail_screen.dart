@@ -391,25 +391,29 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
+  /// 「全体」を表す特殊ID（区間選択で全体再生を選ぶ用）
+  static const _fullTrackId = '__full__';
+
   bool _hasItemRegions(LoopItem item) {
     final regions = item.effectiveRegions;
-    return regions.length > 1 ||
-        (regions.length == 1 && regions.first.hasPoints);
+    return regions.isNotEmpty;
   }
 
   Widget? _buildSubtitle(LoopItem item, List<Tag> itemTags, Playlist pl) {
     final parts = <String>[];
 
-    // 区間選択情報
+    // 区間選択情報（「全体」も1区間としてカウント）
     if (_hasItemRegions(item)) {
       final allRegions = item.effectiveRegions;
+      final totalCount = allRegions.length + 1; // +1 for 全体
       final sel = pl.regionSelections[item.id];
       if (sel != null && sel.isEmpty) {
-        parts.add('0/${allRegions.length} 区間（スキップ）');
+        parts.add('0/$totalCount 区間（スキップ）');
       } else if (sel != null && sel.isNotEmpty) {
-        parts.add('${sel.length}/${allRegions.length} 区間');
+        parts.add('${sel.length}/$totalCount 区間');
       } else {
-        parts.add('${allRegions.length} 区間');
+        // 未設定 = 全区間（全体は含まない）
+        parts.add('${allRegions.length}/$totalCount 区間');
       }
     } else if (item.pointAMs > 0 || item.pointBMs > 0) {
       parts.add('AB設定あり');
@@ -479,7 +483,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   void _showRegionEditSheet(Playlist pl, LoopItem item) {
     final regions = item.effectiveRegions;
     final currentSel = pl.regionSelections[item.id];
-    // 未設定なら全区間選択状態
+    // 未設定なら全区間選択状態（全体は含まない）
     final selected = currentSel != null && currentSel.isNotEmpty
         ? Set<String>.from(currentSel)
         : regions.map((r) => r.id).toSet();
@@ -515,6 +519,27 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   ],
                 ),
               ),
+              // 「全体」オプション
+              CheckboxListTile(
+                value: selected.contains(_fullTrackId),
+                onChanged: (v) {
+                  setSheetState(() {
+                    if (v == true) {
+                      selected.add(_fullTrackId);
+                    } else {
+                      selected.remove(_fullTrackId);
+                    }
+                  });
+                },
+                title: const Text('全体',
+                    style: TextStyle(fontSize: 14)),
+                subtitle: const Text('区間を使わず全体を再生',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              const Divider(height: 1),
+              // 各区間
               for (final region in regions)
                 CheckboxListTile(
                   value: selected.contains(region.id),
@@ -607,9 +632,10 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
 
   int get _selectedCount => _selections.length;
 
-  bool _hasMultipleRegions(LoopItem item) {
-    final regions = item.effectiveRegions;
-    return regions.length > 1 || (regions.length == 1 && regions.first.hasPoints);
+  static const _fullTrackId = _PlaylistDetailScreenState._fullTrackId;
+
+  bool _hasRegions(LoopItem item) {
+    return item.effectiveRegions.isNotEmpty;
   }
 
   void _toggleItem(LoopItem item) {
@@ -618,8 +644,8 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
         _selections.remove(item.id);
         _expanded.remove(item.id);
       } else {
-        if (_hasMultipleRegions(item)) {
-          // 区間付き: 全区間を選択して展開
+        if (_hasRegions(item)) {
+          // 区間付き: 全区間を選択して展開（全体は含まない）
           _selections[item.id] = item.effectiveRegions.map((r) => r.id).toSet();
           _expanded.add(item.id);
         } else {
@@ -629,19 +655,19 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
     });
   }
 
-  void _toggleRegion(LoopItem item, LoopRegion region) {
+  void _toggleRegion(LoopItem item, String regionId) {
     setState(() {
       final sel = _selections[item.id];
       if (sel == null) return;
-      if (sel.contains(region.id)) {
-        sel.remove(region.id);
+      if (sel.contains(regionId)) {
+        sel.remove(regionId);
         // 全区間が外されたらアイテム自体を解除
         if (sel.isEmpty) {
           _selections.remove(item.id);
           _expanded.remove(item.id);
         }
       } else {
-        sel.add(region.id);
+        sel.add(regionId);
       }
     });
   }
@@ -721,7 +747,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
   Widget _buildItemTile(LoopItem item) {
     final alreadyIn = widget.existingIds.contains(item.id);
     final isSelected = _selections.containsKey(item.id);
-    final hasRegions = _hasMultipleRegions(item);
+    final hasRegions = _hasRegions(item);
     final isExpanded = _expanded.contains(item.id);
     final regions = item.effectiveRegions;
     final selectedRegions = _selections[item.id];
@@ -765,7 +791,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                   style: TextStyle(fontSize: 11, color: Colors.grey))
               : hasRegions
                   ? Text(
-                      '${regions.length} 区間',
+                      '${regions.length + 1} 区間（全体含む）',
                       style:
                           const TextStyle(fontSize: 11, color: Colors.grey),
                     )
@@ -799,8 +825,30 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
           ),
           onTap: alreadyIn ? null : () => _toggleItem(item),
         ),
-        // Region sub-list
-        if (isExpanded && hasRegions && !alreadyIn)
+        // Region sub-list (with 全体 option)
+        if (isExpanded && hasRegions && !alreadyIn) ...[
+          // 「全体」オプション
+          Padding(
+            padding: const EdgeInsets.only(left: 80),
+            child: ListTile(
+              dense: true,
+              visualDensity: const VisualDensity(vertical: -3),
+              title: const Text('全体',
+                  style: TextStyle(fontSize: 13)),
+              subtitle: const Text('区間を使わず全体を再生',
+                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+              trailing: Checkbox(
+                value: selectedRegions?.contains(_fullTrackId) ?? false,
+                onChanged: isSelected
+                    ? (_) => _toggleRegion(item, _fullTrackId)
+                    : null,
+                visualDensity: VisualDensity.compact,
+              ),
+              onTap: isSelected
+                  ? () => _toggleRegion(item, _fullTrackId)
+                  : null,
+            ),
+          ),
           ...regions.map((region) {
             final regionSelected =
                 selectedRegions?.contains(region.id) ?? false;
@@ -822,16 +870,17 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                 trailing: Checkbox(
                   value: regionSelected,
                   onChanged: isSelected
-                      ? (_) => _toggleRegion(item, region)
+                      ? (_) => _toggleRegion(item, region.id)
                       : null,
                   visualDensity: VisualDensity.compact,
                 ),
                 onTap: isSelected
-                    ? () => _toggleRegion(item, region)
+                    ? () => _toggleRegion(item, region.id)
                     : null,
               ),
             );
           }),
+        ],
       ],
     );
   }

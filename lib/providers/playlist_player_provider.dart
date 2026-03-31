@@ -139,13 +139,24 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
       // 明示的に0区間が選択されている場合はスキップ
       if (selectedIds != null && selectedIds.isEmpty) continue;
 
-      if (regions.isEmpty || (regions.length == 1 && !regions.first.hasPoints)) {
-        // 区間なし: アイテム全体が1トラック
+      // 「全体」が選択されている場合、全体再生トラックを追加
+      if (selectedIds != null && selectedIds.contains('__full__')) {
         if (i == initialItemIndex) initialTrackIndex = tracks.length;
         tracks.add(PlaylistTrack(
           item: item,
           itemIndex: i,
         ));
+      }
+
+      if (regions.isEmpty || (regions.length == 1 && !regions.first.hasPoints)) {
+        // 区間なし: アイテム全体が1トラック（全体が未選択の場合のみ）
+        if (selectedIds == null || !selectedIds.contains('__full__')) {
+          if (i == initialItemIndex) initialTrackIndex = tracks.length;
+          tracks.add(PlaylistTrack(
+            item: item,
+            itemIndex: i,
+          ));
+        }
       } else {
         // 区間あり: 選択された区間のみ（未指定なら全区間）
         if (i == initialItemIndex) initialTrackIndex = tracks.length;
