@@ -1054,8 +1054,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Widget _buildGridView(
       List<LoopItem> items, List<Tag> tags, int cols, double ratio) {
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return GridView.builder(
-      padding: const EdgeInsets.all(6),
+      padding: EdgeInsets.fromLTRB(6, 6, 6, 6 + bottomPad),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: cols,
         childAspectRatio: ratio,
@@ -1194,8 +1195,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // === List view ===
 
   Widget _buildListView(List<LoopItem> items, List<Tag> tags) {
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.only(top: 4, bottom: 4 + bottomPad),
       itemCount: items.length,
       itemBuilder: (context, i) => _buildListTile(items[i], tags),
     );
@@ -1400,8 +1402,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Widget _buildPlaylistList(List<Playlist> playlists) {
     final items = ref.watch(loopItemsProvider);
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.only(top: 4, bottom: 4 + bottomPad),
       itemCount: playlists.length,
       itemBuilder: (context, i) {
         final pl = playlists[i];

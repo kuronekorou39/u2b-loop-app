@@ -309,8 +309,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: Stack(
         children: [
           ListView(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: EdgeInsets.fromLTRB(16, 8, 16,
+                8 + MediaQuery.of(context).viewPadding.bottom),
             children: [
               // ── 外観 ──
               _sectionHeader('外観'),

@@ -296,7 +296,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               ),
             )
           : ReorderableListView.builder(
-              padding: const EdgeInsets.only(bottom: 80),
+              padding: EdgeInsets.only(
+                  bottom: 80 + MediaQuery.of(context).viewPadding.bottom),
               itemCount: items.length,
               onReorder: (oldIdx, newIdx) {
                 if (newIdx > oldIdx) newIdx--;
