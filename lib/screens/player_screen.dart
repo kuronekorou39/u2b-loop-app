@@ -127,8 +127,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       _loadItem();
-      // 自動PiPを有効化
+      // 自動PiPを有効化 + 現在の再生状態を送信
       _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
+      _updatePiPPlayState();
     });
   }
 
@@ -920,6 +921,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // --- PiP ---
 
   void _enterPiP() async {
+    _updatePiPPlayState(); // PiP突入前に再生状態を同期
     try {
       await _pipChannel.invokeMethod('enterPiP');
     } catch (_) {}
