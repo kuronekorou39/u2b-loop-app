@@ -804,13 +804,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
         if (!didPop && _isSelecting) _clearSelection();
       },
       child: Scaffold(
-        appBar: _isSelecting
-            ? _buildSelectionAppBar(items)
-            : _buildNormalAppBar(isDataTab),
+        appBar: _buildNormalAppBar(isDataTab),
         body: Column(
           children: [
             // 検索・ソートバー
-            if (isDataTab && !_isSelecting)
+            if (isDataTab)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
                 child: Row(
@@ -869,8 +867,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 ),
               ),
             // タグフィルターバー
-            if (isDataTab && tags.isNotEmpty && !_isSelecting)
+            if (isDataTab && tags.isNotEmpty)
               _buildTagFilterBar(tags, filterTagIds),
+            // 選択アクションバー
+            if (_isSelecting)
+              _buildSelectionBar(items),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -951,40 +952,55 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  PreferredSizeWidget _buildSelectionAppBar(List<LoopItem> items) {
-    return AppBar(
-      leading: IconButton(
-        icon: const Icon(Icons.close),
-        onPressed: _clearSelection,
+  Widget _buildSelectionBar(List<LoopItem> items) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .primaryContainer
+            .withValues(alpha: 0.3),
       ),
-      title: Text('${_selectedIds.length} 件選択',
-          style: const TextStyle(fontSize: 16)),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.playlist_add),
-          onPressed: _showAddToPlaylistSheet,
-          tooltip: 'プレイリストに追加',
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _clearSelection,
+            child: const Icon(Icons.close, size: 20),
+          ),
+          const SizedBox(width: 8),
+          Text('${_selectedIds.length} 件選択',
+              style:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          _selectionAction(
+              Icons.playlist_add, 'PL追加', _showAddToPlaylistSheet),
+          _selectionAction(
+              Icons.label_outline, 'タグ', _showBulkTagSheet),
+          _selectionAction(
+              Icons.select_all, '全選択', () => _selectAll(items)),
+          _selectionAction(
+              Icons.delete_outline, '削除', _deleteSelected,
+              color: Colors.red),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectionAction(
+      IconData icon, String label, VoidCallback onTap,
+      {Color? color}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            Text(label,
+                style: TextStyle(fontSize: 9, color: color ?? Colors.grey)),
+          ],
         ),
-        IconButton(
-          icon: const Icon(Icons.label_outline),
-          onPressed: _showBulkTagSheet,
-          tooltip: 'タグ',
-        ),
-        IconButton(
-          icon: const Icon(Icons.select_all),
-          onPressed: () => _selectAll(items),
-          tooltip: 'すべて選択',
-        ),
-        IconButton(
-          icon: const Icon(Icons.delete_outline),
-          onPressed: _selectedIds.isNotEmpty ? _deleteSelected : null,
-          tooltip: '削除',
-        ),
-      ],
-      // TabBarと同じ高さを確保してヘッダのガタつきを防止
-      bottom: const PreferredSize(
-        preferredSize: Size.fromHeight(46),
-        child: SizedBox.shrink(),
       ),
     );
   }
