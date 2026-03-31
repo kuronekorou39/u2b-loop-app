@@ -92,10 +92,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPChanged') {
         if (mounted) setState(() => _isInPiP = call.arguments as bool);
+      } else if (call.method == 'onPiPAction' &&
+          call.arguments == 'playPause') {
+        final player = ref.read(playerProvider);
+        await player.playOrPause();
+        _updatePiPPlayState();
       }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // PiPの再生/一時停止ボタンを同期
+      ref.listen(playingProvider, (_, next) {
+        final playing = next.valueOrNull ?? false;
+        try {
+          _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
+        } catch (_) {}
+      });
+
       ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
@@ -909,6 +922,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _enterPiP() async {
     try {
       await _pipChannel.invokeMethod('enterPiP');
+    } catch (_) {}
+  }
+
+  void _updatePiPPlayState() {
+    try {
+      final playing = ref.read(playerProvider).state.playing;
+      _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
     } catch (_) {}
   }
 

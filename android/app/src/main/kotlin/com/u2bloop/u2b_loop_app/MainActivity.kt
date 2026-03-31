@@ -1,7 +1,14 @@
 package com.u2bloop.u2b_loop_app
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
+import android.graphics.drawable.Icon
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -18,15 +25,53 @@ class MainActivity : FlutterActivity() {
     private val WAVEFORM_CHANNEL = "com.u2bloop/waveform"
     private val PIP_CHANNEL = "com.u2bloop/pip"
     private val TAG = "WaveformExtractor"
+    private val ACTION_PLAY_PAUSE = "com.u2bloop.PIP_PLAY_PAUSE"
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var currentJob: Job? = null
     @Volatile private var currentExtractor: MediaExtractor? = null
     private var pipChannel: MethodChannel? = null
     private var autoPipEnabled = false
+    private var isPlaying = false
+    private var pipReceiver: BroadcastReceiver? = null
+
+    private fun buildPipParams(): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = PendingIntent.getBroadcast(
+                this, 0,
+                Intent(ACTION_PLAY_PAUSE).setPackage(packageName),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            val icon = if (isPlaying)
+                Icon.createWithResource(this, android.R.drawable.ic_media_pause)
+            else
+                Icon.createWithResource(this, android.R.drawable.ic_media_play)
+            val title = if (isPlaying) "一時停止" else "再生"
+            builder.setActions(listOf(RemoteAction(icon, title, title, intent)))
+        }
+
+        return builder.build()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // --- PiP BroadcastReceiver ---
+        pipReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == ACTION_PLAY_PAUSE) {
+                    pipChannel?.invokeMethod("onPiPAction", "playPause")
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, IntentFilter(ACTION_PLAY_PAUSE), Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipReceiver, IntentFilter(ACTION_PLAY_PAUSE))
+        }
 
         // --- Waveform channel ---
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WAVEFORM_CHANNEL)
@@ -73,10 +118,7 @@ class MainActivity : FlutterActivity() {
                 "enterPiP" -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         try {
-                            val params = PictureInPictureParams.Builder()
-                                .setAspectRatio(Rational(16, 9))
-                                .build()
-                            enterPictureInPictureMode(params)
+                            enterPictureInPictureMode(buildPipParams())
                             result.success(true)
                         } catch (e: Exception) {
                             result.success(false)
@@ -87,6 +129,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "setAutoPiP" -> {
                     autoPipEnabled = call.argument<Boolean>("enabled") ?: false
+                    result.success(true)
+                }
+                "updatePiPPlayState" -> {
+                    isPlaying = call.argument<Boolean>("playing") ?: false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                        isInPictureInPictureMode) {
+                        setPictureInPictureParams(buildPipParams())
+                    }
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -106,10 +156,7 @@ class MainActivity : FlutterActivity() {
         super.onUserLeaveHint()
         if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build()
-                enterPictureInPictureMode(params)
+                enterPictureInPictureMode(buildPipParams())
             } catch (_: Exception) {}
         }
     }
@@ -235,6 +282,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(pipReceiver) } catch (_: Exception) {}
         cancelCurrentExtraction()
         scope.cancel()
         super.onDestroy()
