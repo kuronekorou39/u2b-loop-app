@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yte;
 
+import '../core/constants.dart';
 import '../core/utils/time_utils.dart';
 import '../core/utils/url_utils.dart';
 import '../models/loop_item.dart';
@@ -137,11 +138,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
             TextField(
               controller: urlController,
               autofocus: true,
+              maxLength: AppLimits.urlMaxLength,
               decoration: const InputDecoration(
                 hintText: 'YouTube URL / プレイリストURL',
+                hintStyle: kHintStyle,
                 prefixIcon: Icon(Icons.link, size: 18),
                 isDense: true,
                 border: OutlineInputBorder(),
+                counterText: '',
               ),
               style: const TextStyle(fontSize: 13),
               maxLines: 3,
@@ -589,10 +593,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     content: TextField(
                       controller: controller,
                       autofocus: true,
+                      maxLength: AppLimits.playlistNameMaxLength,
                       decoration: const InputDecoration(
                         hintText: 'プレイリスト名',
+                        hintStyle: kHintStyle,
                         isDense: true,
                         border: OutlineInputBorder(),
+                        counterText: '',
                       ),
                       onSubmitted: (v) => Navigator.pop(dlgCtx, v.trim()),
                     ),
@@ -1546,10 +1553,13 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
+            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
@@ -1682,9 +1692,13 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
+            hintText: 'タグ名',
+            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
@@ -1721,10 +1735,13 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
+            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
@@ -115,7 +116,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         : null);
   }
 
-  static const _maxRegions = 10;
+  static const _maxRegions = AppLimits.maxRegions;
 
   void _addRegion() {
     if (_regions.length >= _maxRegions) return;
@@ -164,11 +165,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         content: TextField(
           controller: controller,
           autofocus: true,
-          maxLength: 20,
+          maxLength: AppLimits.regionNameMaxLength,
           decoration: const InputDecoration(
-            hintText: '区間名を入力（最大20文字）',
+            hintText: '区間名を入力',
+            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
@@ -557,7 +560,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           ),
           actions: [
             if (!_loading && _loadError == null) _buildWaveformAction(),
-            if (!_loading && _loadError == null) _buildSaveButton(),
+            if (!_loading && _loadError == null && _hasChanges)
+              _buildSaveButton(),
           ],
         ),
         body: _loading

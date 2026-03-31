@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
@@ -293,11 +294,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         appBar: AppBar(
           title: const Text('詳細', style: TextStyle(fontSize: 16)),
           actions: [
-            TextButton.icon(
-              onPressed: () => _save(item),
-              icon: const Icon(Icons.save, size: 18),
-              label: const Text('保存'),
-            ),
+            if (_hasChanges(item))
+              TextButton.icon(
+                onPressed: () => _save(item),
+                icon: const Icon(Icons.save, size: 18),
+                label: const Text('保存'),
+              ),
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'duplicate') _duplicateItem(item);
@@ -343,6 +345,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // タイトル
               TextField(
                 controller: _titleController,
+                maxLength: AppLimits.titleMaxLength,
                 decoration: InputDecoration(
                   labelText: 'タイトル',
                   isDense: true,
@@ -350,6 +353,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   labelStyle: TextStyle(color: Colors.grey[500]),
                   floatingLabelStyle:
                       const TextStyle(color: Color(0xFF4ECCA3)),
+                  counterText: '',
                 ),
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
               ),
@@ -358,6 +362,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // 備考
               TextField(
                 controller: _memoController,
+                maxLength: AppLimits.memoMaxLength,
                 decoration: InputDecoration(
                   labelText: '備考',
                   isDense: true,
@@ -366,6 +371,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   floatingLabelStyle: TextStyle(color: Colors.grey[400]),
                   hintText: '練習メモなど',
                   hintStyle: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  counterText: '',
                 ),
                 style: TextStyle(fontSize: 13, color: Colors.grey[400]),
                 maxLines: 4,
@@ -436,41 +442,230 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             const EdgeInsets.only(left: 12, right: 12, bottom: 8),
         children: [
           for (var i = 0; i < regions.length; i++)
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-              child: Row(
-                children: [
-                  Text(
-                    regions[i].name,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  const Spacer(),
-                  Text(
-                    regions[i].hasA
-                        ? TimeUtils.formatShort(Duration(
-                            milliseconds: regions[i].pointAMs!))
-                        : '--:--',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.pointAColor),
-                  ),
-                  const Text(' - ',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey)),
-                  Text(
-                    regions[i].hasB
-                        ? TimeUtils.formatShort(Duration(
-                            milliseconds: regions[i].pointBMs!))
-                        : '--:--',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.pointBColor),
-                  ),
-                ],
+            InkWell(
+              onLongPress: () => _showRegionEditMenu(item, i),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                child: Row(
+                  children: [
+                    Text(
+                      regions[i].name,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    const Spacer(),
+                    Text(
+                      regions[i].hasA
+                          ? TimeUtils.formatShort(Duration(
+                              milliseconds: regions[i].pointAMs!))
+                          : '--:--',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.pointAColor),
+                    ),
+                    const Text(' - ',
+                        style:
+                            TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(
+                      regions[i].hasB
+                          ? TimeUtils.formatShort(Duration(
+                              milliseconds: regions[i].pointBMs!))
+                          : '--:--',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.pointBColor),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.more_vert, size: 14,
+                        color: Colors.grey[700]),
+                  ],
+                ),
               ),
             ),
         ],
       ),
     );
+  }
+
+  void _showRegionEditMenu(LoopItem item, int index) {
+    final region = item.effectiveRegions[index];
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('名前を変更'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _renameRegion(item, index);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer),
+              title: Text(
+                'A: ${region.hasA ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!)) : "--:--"}'
+                '  B: ${region.hasB ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!)) : "--:--"}',
+              ),
+              subtitle: const Text('AB時間を編集'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _editRegionTimes(item, index);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('削除',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteRegion(item, index);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _renameRegion(LoopItem item, int index) async {
+    final regions = item.effectiveRegions;
+    final controller = TextEditingController(text: regions[index].name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('区間名'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: AppLimits.regionNameMaxLength,
+          decoration: const InputDecoration(
+            hintText: '区間名を入力',
+            hintStyle: kHintStyle,
+            isDense: true,
+            border: OutlineInputBorder(),
+            counterText: '',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+
+    regions[index] = regions[index].copyWith(name: name);
+    item.regions = List.from(regions);
+    if (regions.isNotEmpty) {
+      item.pointAMs = regions.first.pointAMs ?? 0;
+      item.pointBMs = regions.first.pointBMs ?? 0;
+    }
+    await ref.read(loopItemsProvider.notifier).update(item);
+    if (mounted) setState(() {});
+  }
+
+  void _editRegionTimes(LoopItem item, int index) async {
+    final regions = item.effectiveRegions;
+    final region = regions[index];
+    final aController = TextEditingController(
+        text: region.hasA ? (region.pointAMs! / 1000).toStringAsFixed(1) : '');
+    final bController = TextEditingController(
+        text: region.hasB ? (region.pointBMs! / 1000).toStringAsFixed(1) : '');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${region.name} のAB時間'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: aController,
+              decoration: const InputDecoration(
+                labelText: 'A (秒)',
+                labelStyle: kHintStyle,
+                hintText: '例: 10.5',
+                hintStyle: kHintStyle,
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: bController,
+              decoration: const InputDecoration(
+                labelText: 'B (秒)',
+                labelStyle: kHintStyle,
+                hintText: '例: 45.0',
+                hintStyle: kHintStyle,
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    aController.dispose();
+    bController.dispose();
+    if (result != true) return;
+
+    final aText = aController.text.trim();
+    final bText = bController.text.trim();
+    final aMs = aText.isNotEmpty ? (double.tryParse(aText)! * 1000).round() : null;
+    final bMs = bText.isNotEmpty ? (double.tryParse(bText)! * 1000).round() : null;
+
+    regions[index] = regions[index].copyWith(
+      pointAMs: () => aMs,
+      pointBMs: () => bMs,
+    );
+    item.regions = List.from(regions);
+    if (regions.isNotEmpty) {
+      item.pointAMs = regions.first.pointAMs ?? 0;
+      item.pointBMs = regions.first.pointBMs ?? 0;
+    }
+    await ref.read(loopItemsProvider.notifier).update(item);
+    if (mounted) setState(() {});
+  }
+
+  void _deleteRegion(LoopItem item, int index) async {
+    final regions = item.effectiveRegions;
+    regions.removeAt(index);
+    item.regions = List.from(regions);
+    if (regions.isNotEmpty) {
+      item.pointAMs = regions.first.pointAMs ?? 0;
+      item.pointBMs = regions.first.pointBMs ?? 0;
+    } else {
+      item.pointAMs = 0;
+      item.pointBMs = 0;
+    }
+    await ref.read(loopItemsProvider.notifier).update(item);
+    if (mounted) setState(() {});
   }
 
   // --- タグセクション ---

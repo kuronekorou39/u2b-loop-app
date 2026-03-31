@@ -8,6 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
@@ -763,7 +764,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // --- Region editing (single mode) ---
 
-  static const _maxRegions = 10;
+  static const _maxRegions = AppLimits.maxRegions;
 
   /// 現在のループ状態を選択中の区間に同期
   void _syncRegionFromLoop() {
@@ -857,11 +858,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         content: TextField(
           controller: controller,
           autofocus: true,
-          maxLength: 20,
+          maxLength: AppLimits.regionNameMaxLength,
           decoration: const InputDecoration(
-            hintText: '区間名を入力（最大20文字）',
+            hintText: '区間名を入力',
+            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
