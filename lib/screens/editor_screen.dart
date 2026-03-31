@@ -234,8 +234,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   Future<void> _loadYouTube() async {
     await _setProgress(0.15, 'ストリーム情報を解析中...');
     final ytService = ref.read(youtubeServiceProvider);
-    final manifest = await ytService.yt.videos.streamsClient
-        .getManifest(_item.videoId!);
+    final manifest =
+        await ytService.getManifestWithFallback(_item.videoId!);
 
     if (!mounted) return;
     await _setProgress(0.35, '最適な品質を選択中...');
@@ -441,8 +441,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
     final ytService = ref.read(youtubeServiceProvider);
     try {
-      final manifest = await ytService.yt.videos.streamsClient
-          .getManifest(source.videoId!)
+      final manifest = await ytService
+          .getManifestWithFallback(source.videoId!)
           .timeout(const Duration(seconds: 10));
       await _tryDownloadAudio(manifest, ytService);
     } catch (_) {}

@@ -364,17 +364,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       if (nextTrack.item.sourceType == 'youtube') {
         final ytService = ref.read(youtubeServiceProvider);
-        manifest = await ytService.yt.videos.streamsClient
-            .getManifest(nextTrack.item.videoId!);
+        manifest = await ytService.getManifestWithFallback(
+            nextTrack.item.videoId!);
 
         if (isStale()) return;
 
-        final muxed = manifest.muxed.sortByVideoQuality();
+        final muxed = manifest!.muxed.sortByVideoQuality();
         String streamUrl;
         if (muxed.isNotEmpty) {
           streamUrl = muxed.last.url.toString();
         } else {
-          final videoOnly = manifest.videoOnly.sortByVideoQuality();
+          final videoOnly = manifest!.videoOnly.sortByVideoQuality();
           if (videoOnly.isEmpty) return;
           streamUrl = videoOnly.last.url.toString();
         }
@@ -596,7 +596,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _setProgress(0.15, 'ストリーム情報を解析中...');
     final ytService = ref.read(youtubeServiceProvider);
     final manifest =
-        await ytService.yt.videos.streamsClient.getManifest(item.videoId!);
+        await ytService.getManifestWithFallback(item.videoId!);
 
     if (!mounted) return;
     await _setProgress(0.35, '最適な品質を選択中...');
@@ -1008,8 +1008,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final ytService = ref.read(youtubeServiceProvider);
     try {
-      final manifest = await ytService.yt.videos.streamsClient
-          .getManifest(source.videoId!)
+      final manifest = await ytService
+          .getManifestWithFallback(source.videoId!)
           .timeout(const Duration(seconds: 10));
       await _tryDownloadAudio(manifest, ytService);
     } catch (_) {}
