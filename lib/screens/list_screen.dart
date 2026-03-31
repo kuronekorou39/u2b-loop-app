@@ -944,7 +944,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       bottom: TabBar(
         controller: _tabController,
         tabs: const [
-          Tab(text: 'すべて'),
+          Tab(text: '曲リスト'),
           Tab(text: 'プレイリスト'),
         ],
       ),
@@ -981,6 +981,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
           tooltip: '削除',
         ),
       ],
+      // TabBarと同じ高さを確保してヘッダのガタつきを防止
+      bottom: const PreferredSize(
+        preferredSize: Size.fromHeight(46),
+        child: SizedBox.shrink(),
+      ),
     );
   }
 

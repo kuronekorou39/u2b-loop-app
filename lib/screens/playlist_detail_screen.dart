@@ -234,23 +234,31 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         title: Text(pl.name, style: const TextStyle(fontSize: 16)),
         actions: [
           if (items.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.play_arrow),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PlayerScreen(
-                    item: items.first,
-                    playlistItems: items,
-                    regionSelections: pl.regionSelections.isNotEmpty
-                        ? pl.regionSelections
-                        : null,
-                    disabledItemIds: pl.disabledItemIds.isNotEmpty
-                        ? pl.disabledItemIds
-                        : null,
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PlayerScreen(
+                      item: items.first,
+                      playlistItems: items,
+                      regionSelections: pl.regionSelections.isNotEmpty
+                          ? pl.regionSelections
+                          : null,
+                      disabledItemIds: pl.disabledItemIds.isNotEmpty
+                          ? pl.disabledItemIds
+                          : null,
+                    ),
                   ),
                 ),
+                icon: const Icon(Icons.play_arrow, size: 20),
+                label: const Text('再生', style: TextStyle(fontSize: 13)),
+                style: FilledButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(0, 36),
+                ),
               ),
-              tooltip: '再生',
             ),
           PopupMenuButton<String>(
             onSelected: (v) {
