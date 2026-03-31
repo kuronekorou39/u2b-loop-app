@@ -1,6 +1,27 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/video_source.dart';
 
+/// Androidクライアント + contentCheckOk/racyCheckOk
+/// TVクライアントはBot判定されやすいため、Androidベースで警告回避
+const _androidContentCheck = YoutubeApiClient({
+  'context': {
+    'client': {
+      'clientName': 'ANDROID',
+      'clientVersion': '20.10.38',
+      'androidSdkVersion': 30,
+      'userAgent':
+          'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+      'hl': 'en',
+      'timeZone': 'UTC',
+      'utcOffsetMinutes': 0,
+      'osName': 'Android',
+      'osVersion': '11',
+    },
+  },
+  'contentCheckOk': true,
+  'racyCheckOk': true,
+}, 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
+
 class YouTubeService {
   final yt = YoutubeExplode();
 
@@ -9,10 +30,11 @@ class YouTubeService {
     try {
       return await yt.videos.streamsClient.getManifest(videoId);
     } on VideoUnplayableException {
-      // コンテンツ警告等で再生不可の場合、contentCheckOk付きのTVクライアントで再試行
+      // コンテンツ警告等で再生不可の場合、contentCheckOk付きで再試行
+      // TVクライアントはBot判定されやすいため、Android+contentCheckOkを使用
       return await yt.videos.streamsClient.getManifest(
         videoId,
-        ytClients: [YoutubeApiClient.tv],
+        ytClients: [_androidContentCheck, YoutubeApiClient.tv],
       );
     }
   }
