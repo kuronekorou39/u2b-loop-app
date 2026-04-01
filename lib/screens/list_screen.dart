@@ -45,7 +45,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() => setState(() {}));
   }
 
@@ -766,6 +766,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final playlists = ref.watch(playlistsProvider);
 
     final isDataTab = _tabController.index == 0;
+    final isPlaylistTab = _tabController.index == 1;
 
     // 検索フィルター
     var filtered = filterTagIds.isEmpty
@@ -890,6 +891,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       ? _buildEmpty(
                           Icons.playlist_play, 'プレイリストがありません', '＋ ボタンで新規作成')
                       : _buildPlaylistList(playlists),
+                  _buildTagManagerTab(tags, allItems),
                 ],
               ),
             ),
@@ -897,16 +899,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
         ),
         floatingActionButton: _isSelecting
             ? null
-            : isDataTab
+            : _tabController.index == 0
                 ? FloatingActionButton(
                     onPressed: _showAddDialog,
                     child: const Icon(Icons.add),
                   )
-                : FloatingActionButton.extended(
-                    onPressed: _createPlaylist,
-                    icon: const Icon(Icons.playlist_add),
-                    label: const Text('作成'),
-                  ),
+                : _tabController.index == 1
+                    ? FloatingActionButton.extended(
+                        onPressed: _createPlaylist,
+                        icon: const Icon(Icons.playlist_add),
+                        label: const Text('作成'),
+                      )
+                    : null,
       ),
     );
   }
@@ -920,11 +924,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
       centerTitle: false,
       actions: [
         if (isDataTab) ...[
-          IconButton(
-            icon: const Icon(Icons.label_outline, size: 22),
-            onPressed: _showTagManager,
-            tooltip: 'タグ管理',
-          ),
           IconButton(
             icon: Icon(_viewModeIcon),
             onPressed: _cycleViewMode,
@@ -949,6 +948,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               tabs: const [
                 Tab(text: '曲リスト'),
                 Tab(text: 'プレイリスト'),
+                Tab(text: 'タグ管理'),
               ],
             ),
     );
@@ -988,7 +988,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     return GestureDetector(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1420,6 +1420,155 @@ class _ListScreenState extends ConsumerState<ListScreen>
               ),
       ),
     );
+  }
+
+  // === Tag Manager Tab ===
+
+  Widget _buildTagManagerTab(List<Tag> tags, List<LoopItem> allItems) {
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+
+    if (tags.isEmpty) {
+      return _buildEmpty(Icons.label_outline, 'タグがありません', '曲の詳細画面からタグを作成');
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.only(top: 4, bottom: 4 + bottomPad),
+      itemCount: tags.length + 1, // +1 for add button
+      itemBuilder: (context, i) {
+        if (i == tags.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: OutlinedButton.icon(
+              onPressed: () => _createTagFromTab(),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('タグを作成'),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.grey.shade700),
+              ),
+            ),
+          );
+        }
+
+        final tag = tags[i];
+        final count =
+            allItems.where((item) => item.tagIds.contains(tag.id)).length;
+
+        return ListTile(
+          leading: const Icon(Icons.label_outline, size: 20),
+          title: Text(tag.name, style: const TextStyle(fontSize: 14)),
+          trailing: Text('$count 曲',
+              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          onTap: () {
+            // 曲リストタブに移動してこのタグでフィルター
+            ref.read(tagFilterProvider.notifier).state = {tag.id};
+            _tabController.animateTo(0);
+          },
+          onLongPress: () => _showTagMenu(tag),
+        );
+      },
+    );
+  }
+
+  void _createTagFromTab() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('タグを作成'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: AppLimits.tagNameMaxLength,
+          decoration: const InputDecoration(
+            hintText: 'タグ名',
+            hintStyle: kHintStyle,
+            isDense: true,
+            border: OutlineInputBorder(),
+            counterText: '',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('作成'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+    ref.read(tagsProvider.notifier).create(name);
+  }
+
+  void _showTagMenu(Tag tag) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('リネーム'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _renameTagFromTab(tag);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('削除',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                ref.read(tagsProvider.notifier).delete(tag.id);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _renameTagFromTab(Tag tag) async {
+    final controller = TextEditingController(text: tag.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('タグ名変更'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: AppLimits.tagNameMaxLength,
+          decoration: const InputDecoration(
+            hintText: 'タグ名',
+            hintStyle: kHintStyle,
+            isDense: true,
+            border: OutlineInputBorder(),
+            counterText: '',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+    ref.read(tagsProvider.notifier).rename(tag.id, name);
   }
 
   // === Playlist ===
