@@ -804,7 +804,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
         if (!didPop && _isSelecting) _clearSelection();
       },
       child: Scaffold(
-        appBar: _buildNormalAppBar(isDataTab),
+        appBar: _buildNormalAppBar(isDataTab, items),
         body: Column(
           children: [
             // 検索・ソートバー
@@ -869,9 +869,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
             // タグフィルターバー
             if (isDataTab && tags.isNotEmpty)
               _buildTagFilterBar(tags, filterTagIds),
-            // 選択アクションバー
-            if (_isSelecting)
-              _buildSelectionBar(items),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -914,7 +911,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  PreferredSizeWidget _buildNormalAppBar(bool isDataTab) {
+  PreferredSizeWidget _buildNormalAppBar(bool isDataTab, List<LoopItem> items) {
     return AppBar(
       title: const Text(
         'U2B Loop',
@@ -942,30 +939,29 @@ class _ListScreenState extends ConsumerState<ListScreen>
           tooltip: '設定',
         ),
       ],
-      bottom: TabBar(
-        controller: _tabController,
-        tabs: const [
-          Tab(text: '曲リスト'),
-          Tab(text: 'プレイリスト'),
-        ],
-      ),
+      bottom: _isSelecting
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(46),
+              child: _buildSelectionBar(items),
+            )
+          : TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: '曲リスト'),
+                Tab(text: 'プレイリスト'),
+              ],
+            ),
     );
   }
 
   Widget _buildSelectionBar(List<LoopItem> items) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .primaryContainer
-            .withValues(alpha: 0.3),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
         children: [
           GestureDetector(
             onTap: _clearSelection,
-            child: const Icon(Icons.close, size: 20),
+            child: const Icon(Icons.close, size: 20, color: Colors.white),
           ),
           const SizedBox(width: 8),
           Text('${_selectedIds.length} 件選択',
