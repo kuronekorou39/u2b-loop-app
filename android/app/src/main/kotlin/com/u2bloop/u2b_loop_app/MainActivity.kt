@@ -207,8 +207,28 @@ class MainActivity : FlutterActivity() {
 
         val extractor = MediaExtractor()
         try {
-            extractor.setDataSource(inputUri)
+            // content:// URI と通常のファイルパス両方に対応
+            if (inputUri.startsWith("content://") || inputUri.startsWith("file://")) {
+                extractor.setDataSource(applicationContext, android.net.Uri.parse(inputUri), null)
+            } else if (inputUri.startsWith("/")) {
+                // 通常のファイルパス → まずFileDescriptorで試行（権限問題を回避）
+                try {
+                    val fd = java.io.FileInputStream(inputUri).fd
+                    extractor.setDataSource(fd)
+                } catch (_: Exception) {
+                    extractor.setDataSource(inputUri)
+                }
+            } else {
+                // URL (http/https等)
+                extractor.setDataSource(inputUri)
+            }
             yield()
+
+            Log.d("Export", "Track count: ${extractor.trackCount}, URI: ${inputUri.take(100)}")
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                Log.d("Export", "Track $i: ${format.getString(MediaFormat.KEY_MIME)}")
+            }
 
             val muxer = MediaMuxer(outputFile.absolutePath,
                 MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -221,13 +241,17 @@ class MainActivity : FlutterActivity() {
                 val format = extractor.getTrackFormat(i)
                 val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
                 if (audioOnly && !mime.startsWith("audio/")) continue
-                val muxTrack = muxer.addTrack(format)
-                trackMap[i] = muxTrack
+                try {
+                    val muxTrack = muxer.addTrack(format)
+                    trackMap[i] = muxTrack
+                } catch (e: Exception) {
+                    Log.w("Export", "Skipping track $i ($mime): ${e.message}")
+                }
             }
 
             if (trackMap.isEmpty()) {
                 muxer.release()
-                throw Exception("No suitable tracks found")
+                throw Exception("書き出し可能なトラックが見つかりません (${extractor.trackCount} tracks found)")
             }
 
             muxer.start()
