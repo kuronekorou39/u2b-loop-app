@@ -207,9 +207,27 @@ class MainActivity : FlutterActivity() {
 
         val extractor = MediaExtractor()
         try {
-            // 波形抽出と同じアプローチでsetDataSource
+            // setDataSource: content URI / ファイルパス / URL
             if (inputUri.startsWith("content://")) {
                 extractor.setDataSource(applicationContext, android.net.Uri.parse(inputUri), null)
+            } else if (inputUri.startsWith("/") || inputUri.startsWith("file://")) {
+                val path = if (inputUri.startsWith("file://"))
+                    inputUri.removePrefix("file://") else inputUri
+                val file = java.io.File(path)
+                if (!file.exists()) {
+                    throw Exception(
+                        "ファイルが見つかりません\n" +
+                        "${file.name}\n" +
+                        "キャッシュが削除された可能性があります。動画を再登録してください"
+                    )
+                }
+                // FileInputStreamで確実にアクセス
+                val fis = java.io.FileInputStream(file)
+                try {
+                    extractor.setDataSource(fis.fd)
+                } finally {
+                    fis.close()
+                }
             } else {
                 extractor.setDataSource(inputUri)
             }
@@ -219,9 +237,9 @@ class MainActivity : FlutterActivity() {
 
             if (extractor.trackCount == 0) {
                 throw Exception(
-                    "ファイルを読み取れませんでした\n" +
-                    "URI: ${inputUri.take(80)}\n" +
-                    "この形式はMediaExtractorに非対応の可能性があります"
+                    "この動画形式はMediaExtractorで読み取れません\n" +
+                    "ファイル名: ${inputUri.substringAfterLast("/")}\n" +
+                    "VP9/AV1等のコーデックは書き出し非対応です"
                 )
             }
 
