@@ -65,7 +65,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _fetchYouTubeInfo(item);
   }
 
-  Future<void> _fetchYouTubeInfo(LoopItem item) async {
+  Future<void> _fetchYouTubeInfo(LoopItem item, {int retry = 0}) async {
     final yt = YoutubeExplode();
     try {
       final video = await yt.videos.get(item.videoId!);
@@ -77,6 +77,18 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       if (thumbPath != null) item.thumbnailPath = thumbPath;
 
       item.fetchStatus = null;
+      await update(item);
+    } on RequestLimitExceededException {
+      // レート制限: 最大3回リトライ（待機時間を増やす）
+      if (retry < 3) {
+        final waitSec = (retry + 1) * 10; // 10s, 20s, 30s
+        item.fetchStatus = 'fetching';
+        await update(item);
+        await Future.delayed(Duration(seconds: waitSec));
+        yt.close();
+        return _fetchYouTubeInfo(item, retry: retry + 1);
+      }
+      item.fetchStatus = 'error:レート制限。しばらく待ってからリトライしてください';
       await update(item);
     } catch (e) {
       item.fetchStatus =

@@ -308,9 +308,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
 
     final notifier = ref.read(loopItemsProvider.notifier);
-    for (final v in videos) {
+    var rateLimited = false;
+    for (var i = 0; i < videos.length; i++) {
+      final v = videos[i];
       final url = 'https://youtu.be/${v.id.value}';
       await notifier.addYouTubeAndFetch(v.id.value, url, tagId: tagId);
+      // レート制限対策: リクエスト間にディレイ
+      if (i < videos.length - 1) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
     }
   }
 
@@ -1096,11 +1102,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         children: [
-          // 「タグなし」フィルター
+          // 「タグなし」フィルター（通常タグと区別するためアイコン+スタイル変更）
           Padding(
             padding: const EdgeInsets.only(right: 6),
             child: FilterChip(
-              label: const Text('タグなし', style: TextStyle(fontSize: 12)),
+              avatar: Icon(Icons.label_off, size: 14,
+                  color: filterTagIds.contains(untaggedId)
+                      ? null : Colors.grey[500]),
+              label: const Text('未分類', style: TextStyle(fontSize: 12)),
               selected: filterTagIds.contains(untaggedId),
               onSelected: (selected) {
                 ref.read(tagFilterProvider.notifier).update((s) {
