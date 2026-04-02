@@ -1526,7 +1526,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(ctx);
+                ref.read(tagFilterProvider.notifier).update(
+                    (s) => s..remove(tag.id));
                 ref.read(tagsProvider.notifier).delete(tag.id);
+                ref.read(loopItemsProvider.notifier).removeTagFromAll(tag.id);
               },
             ),
           ],
