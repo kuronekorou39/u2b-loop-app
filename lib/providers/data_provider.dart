@@ -48,7 +48,8 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   }
 
   /// YouTube動画を即座にリストに追加し、バックグラウンドで情報を取得
-  Future<void> addYouTubeAndFetch(String videoId, String originalUrl) async {
+  Future<void> addYouTubeAndFetch(String videoId, String originalUrl,
+      {String? tagId}) async {
     final id = _generateId();
     final item = LoopItem(
       id: id,
@@ -58,6 +59,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       videoId: videoId,
       youtubeUrl: originalUrl,
       fetchStatus: 'fetching',
+      tagIds: tagId != null ? [tagId] : null,
     );
     await add(item);
     _fetchYouTubeInfo(item);

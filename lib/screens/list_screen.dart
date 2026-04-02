@@ -296,19 +296,81 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   Future<void> _addVideos(List<yte.Video> videos, String playlistTitle) async {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('「$playlistTitle」から${videos.length}件を追加中...'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
+    // タグを選択/作成するダイアログ
+    final tagId = await _showImportTagDialog(playlistTitle);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('「$playlistTitle」から${videos.length}件を追加中...'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
     final notifier = ref.read(loopItemsProvider.notifier);
     for (final v in videos) {
       final url = 'https://youtu.be/${v.id.value}';
-      await notifier.addYouTubeAndFetch(v.id.value, url);
+      await notifier.addYouTubeAndFetch(v.id.value, url, tagId: tagId);
     }
+  }
+
+  /// インポート時にタグを付与するか選択するダイアログ
+  Future<String?> _showImportTagDialog(String playlistTitle) async {
+    final tags = ref.read(tagsProvider);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('タグを付与', style: TextStyle(fontSize: 15)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('追加する曲に共通のタグを付けますか？',
+                style: TextStyle(fontSize: 13, color: Colors.grey[400])),
+            const SizedBox(height: 12),
+            // 既存タグ
+            if (tags.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final tag in tags)
+                    ActionChip(
+                      label: Text(tag.name,
+                          style: const TextStyle(fontSize: 12)),
+                      onPressed: () => Navigator.pop(ctx, tag.id),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize:
+                          MaterialTapTargetSize.shrinkWrap,
+                    ),
+                ],
+              ),
+            const SizedBox(height: 8),
+            // プレイリスト名で新規作成
+            OutlinedButton.icon(
+              onPressed: () async {
+                final tag = await ref
+                    .read(tagsProvider.notifier)
+                    .create(playlistTitle);
+                if (ctx.mounted) Navigator.pop(ctx, tag.id);
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: Text('「$playlistTitle」タグを作成',
+                  style: const TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.grey.shade700),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('スキップ'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showDuplicateDialog({
@@ -769,12 +831,19 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final isPlaylistTab = _tabController.index == 1;
 
     // 検索フィルター
+    const untaggedId = '__untagged__';
+    final hasUntaggedFilter = filterTagIds.contains(untaggedId);
+    final tagOnlyFilter =
+        filterTagIds.where((id) => id != untaggedId).toSet();
     var filtered = filterTagIds.isEmpty
         ? allItems
-        : allItems
-            .where(
-                (i) => filterTagIds.every((tid) => i.tagIds.contains(tid)))
-            .toList();
+        : allItems.where((i) {
+            if (hasUntaggedFilter && i.tagIds.isEmpty) return true;
+            if (tagOnlyFilter.isNotEmpty) {
+              return tagOnlyFilter.every((tid) => i.tagIds.contains(tid));
+            }
+            return false;
+          }).toList();
     if (_searchQuery.isNotEmpty) {
       final q = _searchQuery.toLowerCase();
       filtered = filtered
@@ -1020,12 +1089,34 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // === タグフィルターバー ===
 
   Widget _buildTagFilterBar(List<Tag> tags, Set<String> filterTagIds) {
+    const untaggedId = '__untagged__';
     return SizedBox(
       height: 40,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         children: [
+          // 「タグなし」フィルター
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: FilterChip(
+              label: const Text('タグなし', style: TextStyle(fontSize: 12)),
+              selected: filterTagIds.contains(untaggedId),
+              onSelected: (selected) {
+                ref.read(tagFilterProvider.notifier).update((s) {
+                  final next = Set<String>.from(s);
+                  if (selected) {
+                    next.add(untaggedId);
+                  } else {
+                    next.remove(untaggedId);
+                  }
+                  return next;
+                });
+              },
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
           for (final tag in tags)
             Padding(
               padding: const EdgeInsets.only(right: 6),
