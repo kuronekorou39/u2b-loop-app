@@ -207,19 +207,10 @@ class MainActivity : FlutterActivity() {
 
         val extractor = MediaExtractor()
         try {
-            // content:// URI と通常のファイルパス両方に対応
-            if (inputUri.startsWith("content://") || inputUri.startsWith("file://")) {
+            // 波形抽出と同じアプローチでsetDataSource
+            if (inputUri.startsWith("content://")) {
                 extractor.setDataSource(applicationContext, android.net.Uri.parse(inputUri), null)
-            } else if (inputUri.startsWith("/")) {
-                // 通常のファイルパス → まずFileDescriptorで試行（権限問題を回避）
-                try {
-                    val fd = java.io.FileInputStream(inputUri).fd
-                    extractor.setDataSource(fd)
-                } catch (_: Exception) {
-                    extractor.setDataSource(inputUri)
-                }
             } else {
-                // URL (http/https等)
                 extractor.setDataSource(inputUri)
             }
             yield()

@@ -560,13 +560,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     if (source == null) return;
 
     // Get input URI
-    String inputUri;
-    if (source.type == VideoSourceType.local) {
-      inputUri = source.uri;
-    } else {
-      // YouTube: need stream URL (use the currently loaded media)
-      inputUri = source.uri;
-    }
+    // ローカルファイルはアイテムの元URIを使用（source.uriはプレーヤー用）
+    final inputUri = source.type == VideoSourceType.local
+        ? _item.uri
+        : source.uri;
 
     final startMs = loop.pointA!.inMilliseconds;
     final endMs = loop.pointB!.inMilliseconds;
