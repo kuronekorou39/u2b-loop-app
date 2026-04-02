@@ -236,6 +236,7 @@ class MainActivity : FlutterActivity() {
             val trackMap = mutableMapOf<Int, Int>()
             val startUs = startMs * 1000L
             val endUs = endMs * 1000L
+            val skippedMimes = mutableListOf<String>()
 
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
@@ -246,12 +247,20 @@ class MainActivity : FlutterActivity() {
                     trackMap[i] = muxTrack
                 } catch (e: Exception) {
                     Log.w("Export", "Skipping track $i ($mime): ${e.message}")
+                    skippedMimes.add(mime)
                 }
             }
 
             if (trackMap.isEmpty()) {
                 muxer.release()
-                throw Exception("書き出し可能なトラックが見つかりません (${extractor.trackCount} tracks found)")
+                val allMimes = (0 until extractor.trackCount).map {
+                    extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) ?: "?"
+                }
+                throw Exception(
+                    "この動画形式は書き出しに対応していません\n" +
+                    "トラック: ${allMimes.joinToString(", ")}\n" +
+                    "MP4互換のコーデック(H.264/AAC)が必要です"
+                )
             }
 
             muxer.start()
