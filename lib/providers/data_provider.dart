@@ -65,6 +65,37 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _fetchYouTubeInfo(item);
   }
 
+  /// プレイリスト取り込み時: 既に取得済みの動画情報を使って追加（再取得不要）
+  Future<void> addYouTubeWithInfo({
+    required String videoId,
+    required String title,
+    required String originalUrl,
+    String? thumbnailUrl,
+    String? tagId,
+  }) async {
+    // 既に登録済みならスキップ
+    if (_box.values.any((i) => i.videoId == videoId)) return;
+
+    final id = _generateId();
+    String? thumbPath;
+    if (thumbnailUrl != null) {
+      thumbPath = await ThumbnailService().save(id, thumbnailUrl);
+    }
+    final item = LoopItem(
+      id: id,
+      title: title,
+      uri: '',
+      sourceType: 'youtube',
+      videoId: videoId,
+      youtubeUrl: originalUrl,
+      thumbnailUrl: thumbnailUrl,
+      thumbnailPath: thumbPath,
+      fetchStatus: null, // 取得完了状態
+      tagIds: tagId != null ? [tagId] : null,
+    );
+    await add(item);
+  }
+
   Future<void> _fetchYouTubeInfo(LoopItem item, {int retry = 0}) async {
     final yt = YoutubeExplode();
     try {

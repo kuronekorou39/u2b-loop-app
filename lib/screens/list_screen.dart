@@ -308,15 +308,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
 
     final notifier = ref.read(loopItemsProvider.notifier);
-    var rateLimited = false;
-    for (var i = 0; i < videos.length; i++) {
-      final v = videos[i];
-      final url = 'https://youtu.be/${v.id.value}';
-      await notifier.addYouTubeAndFetch(v.id.value, url, tagId: tagId);
-      // レート制限対策: リクエスト間にディレイ
-      if (i < videos.length - 1) {
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
+    for (final v in videos) {
+      await notifier.addYouTubeWithInfo(
+        videoId: v.id.value,
+        title: v.title,
+        originalUrl: 'https://youtu.be/${v.id.value}',
+        thumbnailUrl: v.thumbnails.highResUrl,
+        tagId: tagId,
+      );
     }
   }
 
