@@ -216,6 +216,15 @@ class MainActivity : FlutterActivity() {
             yield()
 
             Log.d("Export", "Track count: ${extractor.trackCount}, URI: ${inputUri.take(100)}")
+
+            if (extractor.trackCount == 0) {
+                throw Exception(
+                    "ファイルを読み取れませんでした\n" +
+                    "URI: ${inputUri.take(80)}\n" +
+                    "この形式はMediaExtractorに非対応の可能性があります"
+                )
+            }
+
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
                 Log.d("Export", "Track $i: ${format.getString(MediaFormat.KEY_MIME)}")
