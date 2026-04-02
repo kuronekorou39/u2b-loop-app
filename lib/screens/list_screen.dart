@@ -239,11 +239,16 @@ class _ListScreenState extends ConsumerState<ListScreen>
     try {
       final yt = yte.YoutubeExplode();
       try {
-        // プレイリスト情報取得
+        // プレイリスト情報取得（プログレッシブディレイでレート制限を回避）
         final playlist = await yt.playlists.get(playlistId);
         final videos = <yte.Video>[];
         await for (final v in yt.playlists.getVideos(playlistId)) {
           videos.add(v);
+          // 件数に応じてディレイを増やす: 20件ごとに休憩、件数が多いほど長く
+          if (videos.length % 20 == 0) {
+            final delaySec = (videos.length ~/ 20); // 20件=1s, 40件=2s, 60件=3s...
+            await Future.delayed(Duration(seconds: delaySec.clamp(1, 5)));
+          }
         }
 
         if (!mounted) return;
