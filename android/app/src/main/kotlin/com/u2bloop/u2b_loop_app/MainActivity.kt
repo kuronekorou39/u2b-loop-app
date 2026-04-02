@@ -12,6 +12,7 @@ import android.graphics.drawable.Icon
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.os.Build
 import android.util.Log
 import android.util.Rational
@@ -24,6 +25,7 @@ import java.nio.ByteOrder
 class MainActivity : FlutterActivity() {
     private val WAVEFORM_CHANNEL = "com.u2bloop/waveform"
     private val PIP_CHANNEL = "com.u2bloop/pip"
+    private val EXPORT_CHANNEL = "com.u2bloop/export"
     private val TAG = "WaveformExtractor"
     private val ACTION_PLAY_PAUSE = "com.u2bloop.PIP_PLAY_PAUSE"
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -142,6 +144,40 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // --- Export channel ---
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, EXPORT_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "exportRegion" -> {
+                        val inputUri = call.argument<String>("inputUri")
+                        val startMs = call.argument<Int>("startMs")
+                        val endMs = call.argument<Int>("endMs")
+                        val audioOnly = call.argument<Boolean>("audioOnly") ?: false
+                        val title = call.argument<String>("title") ?: "export"
+
+                        if (inputUri == null || startMs == null || endMs == null) {
+                            result.error("INVALID", "Missing parameters", null)
+                            return@setMethodCallHandler
+                        }
+
+                        scope.launch {
+                            try {
+                                val outputPath = trimMedia(inputUri, startMs.toLong(), endMs.toLong(), audioOnly, title)
+                                withContext(Dispatchers.Main) {
+                                    result.success(mapOf("success" to true, "outputPath" to outputPath))
+                                }
+                            } catch (e: Exception) {
+                                Log.e("Export", "Export failed: ${e.message}")
+                                withContext(Dispatchers.Main) {
+                                    result.success(mapOf("success" to false, "error" to (e.message ?: "Unknown error")))
+                                }
+                            }
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun onPictureInPictureModeChanged(
@@ -159,6 +195,77 @@ class MainActivity : FlutterActivity() {
                 enterPictureInPictureMode(buildPipParams())
             } catch (_: Exception) {}
         }
+    }
+
+    private suspend fun trimMedia(
+        inputUri: String, startMs: Long, endMs: Long,
+        audioOnly: Boolean, title: String
+    ): String {
+        val safeTitle = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(50)
+        val ext = if (audioOnly) "m4a" else "mp4"
+        val outputFile = java.io.File(cacheDir, "export_${safeTitle}_${System.currentTimeMillis()}.$ext")
+
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(inputUri)
+            yield()
+
+            val muxer = MediaMuxer(outputFile.absolutePath,
+                MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+            val trackMap = mutableMapOf<Int, Int>()
+            val startUs = startMs * 1000L
+            val endUs = endMs * 1000L
+
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (audioOnly && !mime.startsWith("audio/")) continue
+                val muxTrack = muxer.addTrack(format)
+                trackMap[i] = muxTrack
+            }
+
+            if (trackMap.isEmpty()) {
+                muxer.release()
+                throw Exception("No suitable tracks found")
+            }
+
+            muxer.start()
+
+            val buffer = java.nio.ByteBuffer.allocate(1024 * 1024) // 1MB
+            val bufferInfo = MediaCodec.BufferInfo()
+
+            for ((srcTrack, dstTrack) in trackMap) {
+                extractor.selectTrack(srcTrack)
+                extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+
+                while (true) {
+                    yield()
+                    val sampleSize = extractor.readSampleData(buffer, 0)
+                    if (sampleSize < 0) break
+
+                    val sampleTime = extractor.sampleTime
+                    if (sampleTime > endUs) break
+
+                    if (sampleTime >= startUs) {
+                        bufferInfo.offset = 0
+                        bufferInfo.size = sampleSize
+                        bufferInfo.presentationTimeUs = sampleTime - startUs
+                        bufferInfo.flags = extractor.sampleFlags
+                        muxer.writeSampleData(dstTrack, buffer, bufferInfo)
+                    }
+                    extractor.advance()
+                }
+                extractor.unselectTrack(srcTrack)
+            }
+
+            muxer.stop()
+            muxer.release()
+        } finally {
+            extractor.release()
+        }
+
+        return outputFile.absolutePath
     }
 
     private fun cancelCurrentExtraction() {
