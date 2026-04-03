@@ -244,11 +244,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
         final videos = <yte.Video>[];
         await for (final v in yt.playlists.getVideos(playlistId)) {
           videos.add(v);
-          // 件数に応じてディレイを増やす: 20件ごとに休憩、件数が多いほど長く
-          if (videos.length % 20 == 0) {
-            final delaySec = (videos.length ~/ 20); // 20件=1s, 40件=2s, 60件=3s...
-            await Future.delayed(Duration(seconds: delaySec.clamp(1, 5)));
-          }
+          // プログレッシブディレイ: 件数が増えるほど間隔を広げる
+          final count = videos.length;
+          final delayMs = 300 + (count ~/ 10) * 200; // 300ms〜最大2.3s
+          await Future.delayed(Duration(milliseconds: delayMs.clamp(300, 3000)));
         }
 
         if (!mounted) return;
