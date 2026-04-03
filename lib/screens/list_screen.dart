@@ -215,43 +215,82 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   // --- YouTubeプレイリストインポート ---
 
+  bool _importCancelled = false;
+
   Future<void> _importPlaylist(String playlistId) async {
-    // 取得中ダイアログ表示
     if (!mounted) return;
+    _importCancelled = false;
+
+    // 進捗付きダイアログ（キャンセル可能）
+    final countNotifier = ValueNotifier<int>(0);
+    final statusNotifier = ValueNotifier<String>('プレイリスト情報を取得中...');
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
+      builder: (_) => AlertDialog(
+        content: ValueListenableBuilder<String>(
+          valueListenable: statusNotifier,
+          builder: (_, status, __) => ValueListenableBuilder<int>(
+            valueListenable: countNotifier,
+            builder: (_, count, __) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(child: Text(status, style: const TextStyle(fontSize: 14))),
+                  ],
+                ),
+                if (count > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('$count 件取得済み',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ),
+              ],
             ),
-            SizedBox(width: 16),
-            Text('プレイリスト情報を取得中...'),
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _importCancelled = true;
+              Navigator.pop(context);
+            },
+            child: const Text('キャンセル'),
+          ),
+        ],
       ),
     );
 
     try {
       final yt = yte.YoutubeExplode();
       try {
-        // プレイリスト情報取得（プログレッシブディレイでレート制限を回避）
+        statusNotifier.value = 'プレイリスト情報を取得中...';
         final playlist = await yt.playlists.get(playlistId);
+        if (_importCancelled) return;
+
+        statusNotifier.value = '「${playlist.title}」の動画を取得中...';
         final videos = <yte.Video>[];
         await for (final v in yt.playlists.getVideos(playlistId)) {
+          if (_importCancelled) break;
           videos.add(v);
-          // プログレッシブディレイ: 件数が増えるほど間隔を広げる
-          final count = videos.length;
-          final delayMs = 300 + (count ~/ 10) * 200; // 300ms〜最大2.3s
-          await Future.delayed(Duration(milliseconds: delayMs.clamp(300, 3000)));
+          countNotifier.value = videos.length;
+
+          // 100件ごとに5秒休憩（APIページ境界付近）
+          if (videos.length % 100 == 0) {
+            statusNotifier.value = '${videos.length}件取得済み、少し待機中...';
+            await Future.delayed(const Duration(seconds: 5));
+          }
         }
 
-        if (!mounted) return;
-        Navigator.pop(context); // 取得中ダイアログを閉じる
+        if (_importCancelled || !mounted) return;
+        Navigator.pop(context);
 
         if (videos.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -275,10 +314,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
             videos.where((v) => !existingVideoIds.contains(v.id.value)).toList();
 
         if (duplicates.isEmpty) {
-          // 重複なし: 全件追加
           _addVideos(videos, playlist.title);
         } else {
-          // 重複あり: 確認ダイアログ
           await _showDuplicateDialog(
             playlistTitle: playlist.title,
             allVideos: videos,
@@ -288,10 +325,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
         }
       } finally {
         yt.close();
+        countNotifier.dispose();
+        statusNotifier.dispose();
       }
     } catch (e) {
+      if (_importCancelled) return;
       if (mounted) {
-        Navigator.pop(context); // 取得中ダイアログを閉じる
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('取得失敗: $e')),
         );
