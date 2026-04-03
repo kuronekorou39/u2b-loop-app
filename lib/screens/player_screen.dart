@@ -1060,9 +1060,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final currentIdx = plState.currentTrackIndex;
 
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.30,
-      ),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
         border: Border(
@@ -1323,7 +1320,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final regions = _currentItem.effectiveRegions;
     final loop = ref.watch(loopProvider);
 
-    final scrollContent = SingleChildScrollView(
+    // プレイリスト+パネル表示: 固定レイアウト（スクロール不要）
+    if (_isPlaylist && _showPlaylistPanel) {
+      return Column(
+        children: [
+          // 上部: 動画+コントロール（固定）
+          const VideoPlayerWidget(),
+          const PlayerControls(),
+          LoopSeekbar(
+            compact: _compactSeekbar,
+            onToggleCompact: () =>
+                setState(() => _compactSeekbar = !_compactSeekbar),
+            allowMarkerDrag: false,
+          ),
+          _buildPlaylistControls(),
+          // 下部: トラック一覧（残りスペースを使用）
+          Expanded(child: _buildPlaylistPanel(bottomInset)),
+        ],
+      );
+    }
+
+    // 通常: スクロール可能レイアウト
+    return SingleChildScrollView(
       child: Column(
         children: [
           const VideoPlayerWidget(),
@@ -1335,32 +1353,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             allowMarkerDrag: !_isPlaylist && _editMode,
           ),
 
-          // Region + Loop controls (single mode only, editor-style 2-panel)
+          // Region + Loop controls (single mode only)
           if (!_isPlaylist) _buildRegionAndLoopPanel(regions, loop),
 
           // Playlist controls
           if (_isPlaylist) _buildPlaylistControls(),
 
-          SizedBox(
-              height: (_isPlaylist && _showPlaylistPanel)
-                  ? 8
-                  : _isPlaylist
-                      ? bottomInset
-                      : 24 + bottomInset),
+          SizedBox(height: _isPlaylist ? bottomInset : 24 + bottomInset),
         ],
       ),
     );
-
-    if (_isPlaylist && _showPlaylistPanel) {
-      return Column(
-        children: [
-          Expanded(child: scrollContent),
-          _buildPlaylistPanel(bottomInset),
-        ],
-      );
-    }
-
-    return scrollContent;
   }
 
   // --- Region + Loop panel (editor-style 2-panel layout) ---
