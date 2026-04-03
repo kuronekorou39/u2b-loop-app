@@ -24,5 +24,7 @@ YouTubeとローカル動画のAB区間ループ再生アプリ（Flutter/Androi
 
 ## ビルド
 
+- **ローカルビルド（`flutter build` 等）は実行しない** — CI/CDで自動ビルドされるため不要
+- コード変更後の確認は `flutter analyze` 程度に留める
 - Gradleメモリ設定: `-Xmx4G -XX:+UseSerialGC`（Windowsの仮想メモリ断片化対策）
 - APK出力先: `build/app/outputs/flutter-apk/app-release.apk`

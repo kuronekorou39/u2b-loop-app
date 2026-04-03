@@ -248,6 +248,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       disabledItemIds: pl.disabledItemIds.isNotEmpty
                           ? pl.disabledItemIds
                           : null,
+                      playlistName: pl.name,
+                      playlistId: pl.id,
                     ),
                   ),
                 ),

@@ -288,6 +288,37 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
     state = state.copyWith(tracks: List.from(state.tracks));
   }
 
+  /// トラックをプレイリストから削除し、playOrderを再構築
+  /// 現在再生中のトラックは削除不可（falseを返す）
+  bool removeTrack(int trackIndex) {
+    if (trackIndex < 0 || trackIndex >= state.tracks.length) return false;
+    if (state.currentTrackIndex == trackIndex) return false;
+
+    final newTracks = List<PlaylistTrack>.from(state.tracks)
+      ..removeAt(trackIndex);
+
+    // playOrderのインデックスを再マッピング
+    final currentTrackIdx = state.currentTrackIndex;
+    final newOrder = <int>[];
+    int newOrderIndex = 0;
+    for (var i = 0; i < state.playOrder.length; i++) {
+      final old = state.playOrder[i];
+      if (old == trackIndex) continue;
+      final adjusted = old > trackIndex ? old - 1 : old;
+      newOrder.add(adjusted);
+      if (state.playOrder[i] == currentTrackIdx) {
+        newOrderIndex = newOrder.length - 1;
+      }
+    }
+
+    state = state.copyWith(
+      tracks: newTracks,
+      playOrder: newOrder,
+      currentOrderIndex: newOrderIndex,
+    );
+    return true;
+  }
+
   void clear() {
     state = const PlaylistPlayerState();
   }

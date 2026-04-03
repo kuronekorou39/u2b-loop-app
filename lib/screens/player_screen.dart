@@ -22,6 +22,7 @@ import '../providers/loop_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
 import '../services/waveform_service.dart';
+import '../widgets/item_tag_sheet.dart';
 import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
@@ -34,6 +35,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final int initialIndex;
   final Map<String, List<String>>? regionSelections;
   final Set<String>? disabledItemIds;
+  final String? playlistName;
+  final String? playlistId;
 
   const PlayerScreen({
     super.key,
@@ -42,6 +45,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.initialIndex = 0,
     this.regionSelections,
     this.disabledItemIds,
+    this.playlistName,
+    this.playlistId,
   });
 
   @override
@@ -62,6 +67,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isInPiP = false;
   bool _compactSeekbar = false;
   bool _showPlaylistPanel = false;
+  bool _hideVideo = false;
   bool _editMode = false;
   double _editStep = 0.1;
   int? _preloadingTargetIndex;
@@ -1053,6 +1059,112 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return null;
   }
 
+  // --- Track context menu ---
+
+  void _showTrackMenu(int trackIndex, PlaylistTrack track) {
+    final isCurrent =
+        ref.read(playlistPlayerProvider).currentTrackIndex == trackIndex;
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                track.displayName,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.bold),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Divider(height: 1),
+            if (!isCurrent)
+              ListTile(
+                leading: const Icon(Icons.play_arrow),
+                title: const Text('この曲にスキップ'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _requestTrack(trackIndex);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.label_outline),
+              title: const Text('タグを編集'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showTrackTagEditor(track);
+              },
+            ),
+            if (!isCurrent && widget.playlistId != null)
+              ListTile(
+                leading:
+                    const Icon(Icons.playlist_remove, color: Colors.redAccent),
+                title: const Text('プレイリストから削除',
+                    style: TextStyle(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _removeTrackFromPlaylist(trackIndex, track);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showTrackTagEditor(PlaylistTrack track) {
+    final tags = ref.read(tagsProvider);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => ItemTagSheet(
+        tags: tags,
+        item: track.item,
+        onToggle: (tagId, add) async {
+          if (add) {
+            await ref
+                .read(loopItemsProvider.notifier)
+                .addTagToItems([track.item.id], tagId);
+          } else {
+            await ref
+                .read(loopItemsProvider.notifier)
+                .removeTagFromItems([track.item.id], tagId);
+          }
+        },
+        onCreateAndAdd: (name) async {
+          final tag = await ref.read(tagsProvider.notifier).create(name);
+          await ref
+              .read(loopItemsProvider.notifier)
+              .addTagToItems([track.item.id], tag.id);
+          return tag;
+        },
+      ),
+    );
+  }
+
+  void _removeTrackFromPlaylist(int trackIndex, PlaylistTrack track) async {
+    final removed = ref
+        .read(playlistPlayerProvider.notifier)
+        .removeTrack(trackIndex);
+    if (removed && widget.playlistId != null) {
+      await ref
+          .read(playlistsProvider.notifier)
+          .removeItem(widget.playlistId!, track.item.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('「${track.item.title}」を削除しました'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   // --- Playlist panel (inline) ---
 
   Widget _buildPlaylistPanel(double bottomInset) {
@@ -1069,36 +1181,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Row(
-              children: [
-                const Icon(Icons.queue_music, size: 16, color: Colors.grey),
-                const SizedBox(width: 6),
-                Text(
-                  'トラック一覧',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${plState.enabledCount}/${plState.trackCount} 有効',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => setState(() => _showPlaylistPanel = false),
-                  child: const Icon(Icons.keyboard_arrow_down,
-                      size: 20, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
           // Track list
           Flexible(
             child: ListView.builder(
@@ -1135,6 +1217,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
                 return InkWell(
                   onTap: () => _requestTrack(i),
+                  onLongPress: () => _showTrackMenu(i, track),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),
@@ -1198,13 +1281,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          displayTitle,
-          style: const TextStyle(fontSize: 14),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_isPlaylist && widget.playlistName != null)
+              Text(
+                widget.playlistName!,
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            Text(
+              displayTitle,
+              style: const TextStyle(fontSize: 14),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
         actions: [
+          if (_isPlaylist)
+            IconButton(
+              icon: Icon(
+                _hideVideo ? Icons.videocam_off : Icons.videocam,
+                size: 20,
+                color: _hideVideo ? Colors.grey : null,
+              ),
+              onPressed: () => setState(() => _hideVideo = !_hideVideo),
+              tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
+            ),
           IconButton(
             icon: const Icon(Icons.picture_in_picture_alt, size: 22),
             onPressed: _enterPiP,
@@ -1324,8 +1429,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isPlaylist && _showPlaylistPanel) {
       return Column(
         children: [
-          // 上部: 動画+コントロール（固定）
-          const VideoPlayerWidget(),
+          if (!_hideVideo) const VideoPlayerWidget(),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,
@@ -1334,7 +1438,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             allowMarkerDrag: false,
           ),
           _buildPlaylistControls(),
-          // 下部: トラック一覧（残りスペースを使用）
           Expanded(child: _buildPlaylistPanel(bottomInset)),
         ],
       );
@@ -1344,7 +1447,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          const VideoPlayerWidget(),
+          if (!(_isPlaylist && _hideVideo)) const VideoPlayerWidget(),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,
