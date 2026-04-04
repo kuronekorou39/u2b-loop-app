@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yte;
 
 import '../core/constants.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../core/utils/url_utils.dart';
 import '../models/loop_item.dart';
@@ -969,6 +970,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                         ),
                       ),
                     ),
+                    if (tags.isNotEmpty)
+                      _buildTagFilterButton(tags, filterTagIds),
                     PopupMenuButton<_SortMode>(
                       icon: const Icon(Icons.sort, size: 22),
                       tooltip: '並び替え',
@@ -985,9 +988,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   ],
                 ),
               ),
-            // タグフィルターバー
-            if (isDataTab && tags.isNotEmpty)
-              _buildTagFilterBar(tags, filterTagIds),
+            // 選択中タグの表示
+            if (isDataTab && filterTagIds.isNotEmpty)
+              _buildSelectedTagBar(tags, filterTagIds),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -1137,71 +1140,166 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   // === タグフィルターバー ===
 
-  Widget _buildTagFilterBar(List<Tag> tags, Set<String> filterTagIds) {
+  Widget _buildTagFilterButton(List<Tag> tags, Set<String> filterTagIds) {
+    const untaggedId = '__untagged__';
+    return Stack(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.label_outline, size: 22),
+          tooltip: 'タグフィルター',
+          onPressed: () {
+            var selected = Set<String>.from(filterTagIds);
+            showModalBottomSheet(
+              context: context,
+              builder: (ctx) => StatefulBuilder(
+                builder: (ctx, setSheetState) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          children: [
+                            const Text('タグフィルター',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold)),
+                            const Spacer(),
+                            if (selected.isNotEmpty)
+                              TextButton(
+                                onPressed: () {
+                                  ref.read(tagFilterProvider.notifier)
+                                      .state = {};
+                                  Navigator.pop(ctx);
+                                },
+                                child: const Text('クリア',
+                                    style: TextStyle(fontSize: 13)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      CheckboxListTile(
+                        title: const Text('未分類',
+                            style: TextStyle(fontSize: 14)),
+                        secondary:
+                            const Icon(Icons.label_off, size: 20),
+                        value: selected.contains(untaggedId),
+                        onChanged: (_) {
+                          setSheetState(() {
+                            if (selected.contains(untaggedId)) {
+                              selected.remove(untaggedId);
+                            } else {
+                              selected.add(untaggedId);
+                            }
+                          });
+                          ref.read(tagFilterProvider.notifier).state =
+                              Set.from(selected);
+                        },
+                      ),
+                      for (final tag in tags)
+                        CheckboxListTile(
+                          title: Text(tag.name,
+                              style: const TextStyle(fontSize: 14)),
+                          value: selected.contains(tag.id),
+                          onChanged: (_) {
+                            setSheetState(() {
+                              if (selected.contains(tag.id)) {
+                                selected.remove(tag.id);
+                              } else {
+                                selected.add(tag.id);
+                              }
+                            });
+                            ref.read(tagFilterProvider.notifier).state =
+                                Set.from(selected);
+                          },
+                        ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        if (filterTagIds.isNotEmpty)
+          Positioned(
+            right: 4,
+            top: 4,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: AppTheme.accentGreen,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '${filterTagIds.length}',
+                style: const TextStyle(fontSize: 9, color: Colors.black),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSelectedTagBar(List<Tag> tags, Set<String> filterTagIds) {
     const untaggedId = '__untagged__';
     return SizedBox(
-      height: 40,
+      height: 36,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         children: [
-          // 「タグなし」フィルター（通常タグと区別するためアイコン+スタイル変更）
+          if (filterTagIds.contains(untaggedId))
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Chip(
+                avatar: const Icon(Icons.label_off, size: 14),
+                label:
+                    const Text('未分類', style: TextStyle(fontSize: 11)),
+                onDeleted: () {
+                  ref.read(tagFilterProvider.notifier).update((s) {
+                    final next = Set<String>.from(s);
+                    next.remove(untaggedId);
+                    return next;
+                  });
+                },
+                deleteIconColor: Colors.grey,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          for (final tag in tags)
+            if (filterTagIds.contains(tag.id))
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Chip(
+                  label:
+                      Text(tag.name, style: const TextStyle(fontSize: 11)),
+                  onDeleted: () {
+                    ref.read(tagFilterProvider.notifier).update((s) {
+                      final next = Set<String>.from(s);
+                      next.remove(tag.id);
+                      return next;
+                    });
+                  },
+                  deleteIconColor: Colors.grey,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
           Padding(
             padding: const EdgeInsets.only(right: 6),
-            child: FilterChip(
-              avatar: Icon(Icons.label_off, size: 14,
-                  color: filterTagIds.contains(untaggedId)
-                      ? null : Colors.grey[500]),
-              label: const Text('未分類', style: TextStyle(fontSize: 12)),
-              selected: filterTagIds.contains(untaggedId),
-              onSelected: (selected) {
-                ref.read(tagFilterProvider.notifier).update((s) {
-                  final next = Set<String>.from(s);
-                  if (selected) {
-                    next.add(untaggedId);
-                  } else {
-                    next.remove(untaggedId);
-                  }
-                  return next;
-                });
+            child: ActionChip(
+              label: const Text('クリア', style: TextStyle(fontSize: 11)),
+              onPressed: () {
+                ref.read(tagFilterProvider.notifier).state = {};
               },
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
-          for (final tag in tags)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilterChip(
-                label: Text(tag.name, style: const TextStyle(fontSize: 12)),
-                selected: filterTagIds.contains(tag.id),
-                onSelected: (selected) {
-                  ref.read(tagFilterProvider.notifier).update((s) {
-                    final next = Set<String>.from(s);
-                    if (selected) {
-                      next.add(tag.id);
-                    } else {
-                      next.remove(tag.id);
-                    }
-                    return next;
-                  });
-                },
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-          if (filterTagIds.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: ActionChip(
-                label: const Text('クリア', style: TextStyle(fontSize: 12)),
-                onPressed: () {
-                  ref.read(tagFilterProvider.notifier).state = {};
-                },
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
         ],
       ),
     );
