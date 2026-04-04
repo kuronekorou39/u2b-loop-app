@@ -39,6 +39,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   final Set<String> _selectedIds = {};
   bool get _isSelecting => _selectedIds.isNotEmpty;
 
+  bool _showDataTabUI = true;
   String _searchQuery = '';
   _SortMode _sortMode = _SortMode.updatedDesc;
   final _searchController = TextEditingController();
@@ -49,10 +50,21 @@ class _ListScreenState extends ConsumerState<ListScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() => setState(() {}));
+    // スワイプ中にタブ0の閾値を超えたら即座にUI切り替え
+    _tabController.animation?.addListener(_onTabAnimation);
+  }
+
+  void _onTabAnimation() {
+    final val = _tabController.animation?.value ?? _tabController.index.toDouble();
+    final shouldShow = val < 0.5;
+    if (shouldShow != _showDataTabUI) {
+      setState(() => _showDataTabUI = shouldShow);
+    }
   }
 
   @override
   void dispose() {
+    _tabController.animation?.removeListener(_onTabAnimation);
     _searchFocusNode.dispose();
     _searchController.dispose();
     _tabController.dispose();
@@ -879,7 +891,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final filterTagIds = ref.watch(tagFilterProvider);
     final playlists = ref.watch(playlistsProvider);
 
-    final isDataTab = _tabController.index == 0;
+    final isDataTab = _showDataTabUI;
     final isPlaylistTab = _tabController.index == 1;
 
     // 検索フィルター
