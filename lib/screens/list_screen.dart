@@ -41,6 +41,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   bool get _isSelecting => _selectedIds.isNotEmpty;
 
   bool _showDataTabUI = true;
+  bool _hasTabSwitched = false;
   String _searchQuery = '';
   _SortMode _sortMode = _SortMode.updatedDesc;
   final _searchController = TextEditingController();
@@ -71,6 +72,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final val = _tabController.animation?.value ?? _tabController.index.toDouble();
     final shouldShow = val < 0.5;
     if (shouldShow != _showDataTabUI) {
+      _hasTabSwitched = true;
       setState(() => _showDataTabUI = shouldShow);
     }
   }
@@ -981,7 +983,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
           children: [
             // 検索・ソートバー
             AnimatedSize(
-              duration: const Duration(milliseconds: 200),
+              duration: _hasTabSwitched
+                  ? const Duration(milliseconds: 200)
+                  : Duration.zero,
               curve: Curves.easeOut,
               alignment: Alignment.topCenter,
               child: isDataTab ? Padding(
