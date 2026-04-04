@@ -925,7 +925,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
       },
       child: Scaffold(
         appBar: _buildNormalAppBar(isDataTab, items),
-        body: Column(
+        body: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          behavior: HitTestBehavior.translucent,
+          child: Column(
           children: [
             // 検索・ソートバー
             if (isDataTab)
@@ -1017,7 +1020,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               ),
             ),
           ],
-        ),
+        )),
         floatingActionButton: _isSelecting
             ? null
             : _tabController.index == 0
@@ -1148,7 +1151,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
           icon: const Icon(Icons.label_outline, size: 22),
           tooltip: 'タグフィルター',
           onPressed: () {
-            FocusScope.of(context).unfocus();
             var selected = Set<String>.from(filterTagIds);
             showModalBottomSheet(
               context: context,
