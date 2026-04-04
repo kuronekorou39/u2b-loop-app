@@ -945,8 +945,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
           child: Column(
           children: [
             // 検索・ソートバー
-            if (isDataTab)
-              Padding(
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              alignment: Alignment.topCenter,
+              child: isDataTab ? Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
                 child: Row(
                   children: [
@@ -1005,7 +1008,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     ),
                   ],
                 ),
-              ),
+              ) : const SizedBox.shrink(),
+            ),
             // 選択中タグの表示
             if (isDataTab && filterTagIds.isNotEmpty)
               _buildSelectedTagBar(tags, filterTagIds),
