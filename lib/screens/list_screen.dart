@@ -42,6 +42,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   String _searchQuery = '';
   _SortMode _sortMode = _SortMode.updatedDesc;
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -52,6 +53,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     _tabController.dispose();
     super.dispose();
@@ -941,6 +943,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                         height: 36,
                         child: TextField(
                           controller: _searchController,
+                          focusNode: _searchFocusNode,
                           decoration: InputDecoration(
                             hintText: '検索...',
                             hintStyle: const TextStyle(fontSize: 13),
