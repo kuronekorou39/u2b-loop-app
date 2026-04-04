@@ -1148,6 +1148,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           icon: const Icon(Icons.label_outline, size: 22),
           tooltip: 'タグフィルター',
           onPressed: () {
+            FocusScope.of(context).unfocus();
             var selected = Set<String>.from(filterTagIds);
             showModalBottomSheet(
               context: context,
