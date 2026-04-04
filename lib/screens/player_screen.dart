@@ -947,6 +947,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // --- Waveform ---
 
+  void _retryWaveform() {
+    final source = ref.read(videoSourceProvider);
+    if (source != null) _generateWaveform(source);
+  }
+
   Future<void> _generateWaveform(VideoSource source) async {
     ref.read(waveformDataProvider.notifier).state = null;
     ref.read(waveformErrorProvider.notifier).state = null;
@@ -1440,6 +1445,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
             allowMarkerDrag: false,
+            onRetryWaveform: _retryWaveform,
           ),
           _buildPlaylistControls(),
           Expanded(child: _buildPlaylistPanel(bottomInset)),
@@ -1458,6 +1464,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
             allowMarkerDrag: !_isPlaylist && _editMode,
+            onRetryWaveform: _retryWaveform,
           ),
 
           // Region + Loop controls (single mode only)

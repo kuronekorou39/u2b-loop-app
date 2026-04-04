@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -14,12 +15,14 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   final bool compact;
   final VoidCallback? onToggleCompact;
   final bool allowMarkerDrag;
+  final VoidCallback? onRetryWaveform;
 
   const LoopSeekbar({
     super.key,
     this.compact = false,
     this.onToggleCompact,
     this.allowMarkerDrag = true,
+    this.onRetryWaveform,
   });
 
   @override
@@ -28,6 +31,11 @@ class LoopSeekbar extends ConsumerStatefulWidget {
 
 class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   _DragTarget? _activeDrag;
+
+  // Waveform retry
+  bool _retrying = false;
+  Timer? _retryTimer;
+  String? _lastError;
 
   // Zoom / pan
   double _zoomLevel = 1.0;
@@ -68,6 +76,23 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   }
 
   @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleRetry(String error) {
+    if (_retrying || _lastError == error) return;
+    _lastError = error;
+    _retryTimer?.cancel();
+    _retryTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() => _retrying = true);
+      widget.onRetryWaveform?.call();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final player = ref.watch(playerProvider);
     var position =
@@ -84,6 +109,13 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final waveform = ref.watch(waveformDataProvider);
     ref.watch(waveformLoadingProvider);
     final waveformError = ref.watch(waveformErrorProvider);
+
+    // 波形取得成功時にリトライ状態をリセット
+    if (waveformError == null && (_retrying || _lastError != null)) {
+      _retryTimer?.cancel();
+      _retrying = false;
+      _lastError = null;
+    }
 
     // Auto-follow: keep position near 30% from left edge of viewport
     ref.listen(positionProvider, (_, next) {
@@ -262,27 +294,71 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             viewEnd: viewEnd,
                           ),
                         ),
-                        if (waveformError != null && waveform == null)
-                          Positioned.fill(
-                            child: Center(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black54,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  '波形: $waveformError',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white70,
+                        if (waveformError != null && waveform == null) ...[
+                          Builder(builder: (_) {
+                            _scheduleRetry(waveformError);
+                            return Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 2,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '波形: $waveformError',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
                                   ),
-                                  textAlign: TextAlign.center,
-                                ),
+                                  if (_retrying) ...[
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            width: 10,
+                                            height: 10,
+                                            child:
+                                                CircularProgressIndicator(
+                                              strokeWidth: 1.5,
+                                              color: Colors.white70,
+                                            ),
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            '再取得中...',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.white70,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                            ),
-                          ),
+                            );
+                          }),
+                        ],
                       ],
                     ),
                   );
