@@ -1098,7 +1098,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           _selectionAction(
               Icons.playlist_add, 'PL追加', _showAddToPlaylistSheet),
           _selectionAction(
-              Icons.label_outline, 'タグ', _showBulkTagSheet),
+              Icons.new_label, 'タグ', _showBulkTagSheet),
           _selectionAction(
               Icons.select_all, '全選択', () => _selectAll(items)),
           _selectionAction(
