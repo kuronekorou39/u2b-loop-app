@@ -40,8 +40,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
   final Set<String> _selectedIds = {};
   bool get _isSelecting => _selectedIds.isNotEmpty;
 
-  bool _showDataTabUI = true;
-  bool _hasTabSwitched = false;
   String _searchQuery = '';
   _SortMode _sortMode = _SortMode.updatedDesc;
   final _searchController = TextEditingController();
@@ -53,7 +51,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() => setState(() {}));
     // スワイプ中にタブ0の閾値を超えたら即座にUI切り替え
-    _tabController.animation?.addListener(_onTabAnimation);
   }
 
   /// showModalBottomSheet のラッパー。閉じた後にフォーカスを解除する。
@@ -68,18 +65,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
     });
   }
 
-  void _onTabAnimation() {
-    final val = _tabController.animation?.value ?? _tabController.index.toDouble();
-    final shouldShow = val < 0.5;
-    if (shouldShow != _showDataTabUI) {
-      _hasTabSwitched = true;
-      setState(() => _showDataTabUI = shouldShow);
-    }
-  }
-
   @override
   void dispose() {
-    _tabController.animation?.removeListener(_onTabAnimation);
     _searchFocusNode.dispose();
     _searchController.dispose();
     _tabController.dispose();
@@ -928,7 +915,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final filterTagIds = ref.watch(tagFilterProvider);
     final playlists = ref.watch(playlistsProvider);
 
-    final isDataTab = _showDataTabUI;
+    final isDataTab = _tabController.index == 0;
     final isPlaylistTab = _tabController.index == 1;
 
     // 検索フィルター
@@ -981,14 +968,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
           behavior: HitTestBehavior.translucent,
           child: Column(
           children: [
-            // 検索・ソートバー
-            AnimatedSize(
-              duration: _hasTabSwitched
-                  ? const Duration(milliseconds: 200)
-                  : Duration.zero,
-              curve: Curves.easeOut,
-              alignment: Alignment.topCenter,
-              child: isDataTab ? Padding(
+            // 検索・ソートバー（スペースを常に確保）
+            Visibility(
+              visible: isDataTab,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
                 child: Row(
                   children: [
@@ -1047,7 +1033,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     ),
                   ],
                 ),
-              ) : const SizedBox.shrink(),
+              ),
             ),
             // 選択中タグの表示
             if (isDataTab && filterTagIds.isNotEmpty)
