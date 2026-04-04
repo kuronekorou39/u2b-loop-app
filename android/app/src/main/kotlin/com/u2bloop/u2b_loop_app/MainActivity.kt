@@ -194,9 +194,21 @@ class MainActivity : FlutterActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                enterPictureInPictureMode(buildPipParams())
-            } catch (_: Exception) {}
+            // Flutter側に再生状態を問い合わせてからPiPに入る
+            pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    isPlaying = result as? Boolean ?: isPlaying
+                    try {
+                        enterPictureInPictureMode(buildPipParams())
+                    } catch (_: Exception) {}
+                }
+                override fun error(code: String, msg: String?, details: Any?) {
+                    try { enterPictureInPictureMode(buildPipParams()) } catch (_: Exception) {}
+                }
+                override fun notImplemented() {
+                    try { enterPictureInPictureMode(buildPipParams()) } catch (_: Exception) {}
+                }
+            })
         }
     }
 

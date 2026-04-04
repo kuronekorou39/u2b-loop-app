@@ -104,6 +104,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         final player = ref.read(playerProvider);
         await player.playOrPause();
         _updatePiPPlayState();
+      } else if (call.method == 'getPlayState') {
+        return ref.read(playerProvider).state.playing;
       }
     });
 
