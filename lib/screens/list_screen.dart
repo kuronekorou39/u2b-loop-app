@@ -15,6 +15,7 @@ import '../models/tag.dart';
 import '../providers/data_provider.dart';
 
 import 'detail_screen.dart';
+import 'player_screen.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
 
@@ -890,6 +891,32 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
   }
 
+  void _playPlaylist(Playlist pl, List<LoopItem> allItems) {
+    final plItems = pl.itemIds
+        .map((id) => allItems.where((item) => item.id == id).firstOrNull)
+        .whereType<LoopItem>()
+        .toList();
+    if (plItems.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          item: plItems.first,
+          playlistItems: plItems,
+          regionSelections:
+              pl.regionSelections.isNotEmpty ? pl.regionSelections : null,
+          disabledItemIds:
+              pl.disabledItemIds.isNotEmpty ? pl.disabledItemIds : null,
+          playlistName: pl.name,
+          playlistId: pl.id,
+        ),
+      ),
+    );
+  }
+
+  void _duplicatePlaylist(Playlist playlist) {
+    ref.read(playlistsProvider.notifier).duplicate(playlist.id);
+  }
+
   // === Build ===
 
   @override
@@ -1472,9 +1499,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 padding: EdgeInsets.symmetric(
                     horizontal: tiny ? 4 : 6, vertical: tiny ? 0 : 1),
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primaryContainer
+                  color: (t.color ??
+                          Theme.of(context).colorScheme.primaryContainer)
                       .withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(4),
                 ),
@@ -1730,7 +1756,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
             allItems.where((item) => item.tagIds.contains(tag.id)).length;
 
         return ListTile(
-          leading: const Icon(Icons.label_outline, size: 20),
+          leading: Icon(Icons.label,
+              size: 20,
+              color: tag.color ??
+                  Theme.of(context).colorScheme.primary),
           title: Text(tag.name, style: const TextStyle(fontSize: 14)),
           trailing: Text('$count 曲',
               style: const TextStyle(fontSize: 12, color: Colors.grey)),
@@ -1795,6 +1824,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
               },
             ),
             ListTile(
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('色を変更'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showTagColorPicker(tag);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('削除',
                   style: TextStyle(color: Colors.red)),
@@ -1807,6 +1844,59 @@ class _ListScreenState extends ConsumerState<ListScreen>
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showTagColorPicker(Tag tag) {
+    _showSheet(builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('「${tag.name}」の色',
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (var i = 0; i < tagPresetColors.length; i++)
+                    GestureDetector(
+                      onTap: () {
+                        ref.read(tagsProvider.notifier).setColor(tag.id, i);
+                        Navigator.pop(ctx);
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: tagPresetColors[i] ??
+                              Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                          border: tag.colorIndex == i
+                              ? Border.all(color: Colors.white, width: 3)
+                              : null,
+                        ),
+                        child: i == 0
+                            ? const Center(
+                                child: Text('D',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white)))
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -1885,12 +1975,30 @@ class _ListScreenState extends ConsumerState<ListScreen>
           title: Text(pl.name),
           subtitle: Text('$count 曲',
               style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          trailing: PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'delete') _deletePlaylist(pl);
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'delete', child: Text('削除')),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (count > 0)
+                IconButton(
+                  icon: const Icon(Icons.play_arrow, size: 22),
+                  tooltip: '再生',
+                  onPressed: () => _playPlaylist(pl, items),
+                  visualDensity: VisualDensity.compact,
+                ),
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'duplicate') _duplicatePlaylist(pl);
+                  if (v == 'delete') _deletePlaylist(pl);
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                      value: 'duplicate', child: Text('複製')),
+                  const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('削除',
+                          style: TextStyle(color: Colors.red))),
+                ],
+              ),
             ],
           ),
           onTap: () {

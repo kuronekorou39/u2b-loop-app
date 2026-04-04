@@ -271,6 +271,15 @@ class TagsNotifier extends StateNotifier<List<Tag>> {
     }
   }
 
+  Future<void> setColor(String id, int colorIndex) async {
+    final tag = _box.get(id);
+    if (tag != null) {
+      tag.colorIndex = colorIndex;
+      await _box.put(id, tag);
+      _refresh();
+    }
+  }
+
   Future<void> delete(String id) async {
     await _box.delete(id);
     _refresh();
@@ -313,6 +322,26 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
   Future<void> delete(String id) async {
     await _box.delete(id);
     _refresh();
+  }
+
+  Future<app.Playlist> duplicate(String id) async {
+    final src = _box.get(id);
+    if (src == null) throw Exception('Playlist not found');
+    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final copy = app.Playlist(
+      id: newId,
+      name: '${src.name} (コピー)',
+      itemIds: List.from(src.itemIds),
+      regionSelections: Map.fromEntries(
+        src.regionSelections.entries
+            .map((e) => MapEntry(e.key, List<String>.from(e.value))),
+      ),
+      disabledItemIds: Set.from(src.disabledItemIds),
+      thumbnailItemId: src.thumbnailItemId,
+    );
+    await _box.put(newId, copy);
+    _refresh();
+    return copy;
   }
 
   Future<void> addItems(String playlistId, List<String> itemIds,
