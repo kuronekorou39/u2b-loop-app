@@ -55,6 +55,10 @@ class MainActivity : FlutterActivity() {
             builder.setActions(listOf(RemoteAction(icon, title, title, intent)))
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(autoPipEnabled)
+        }
+
         return builder.build()
     }
 
@@ -135,8 +139,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "updatePiPPlayState" -> {
                     isPlaying = call.argument<Boolean>("playing") ?: false
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                        isInPictureInPictureMode) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         setPictureInPictureParams(buildPipParams())
                     }
                     result.success(true)

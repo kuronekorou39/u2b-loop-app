@@ -1326,9 +1326,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildPiPView() {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.black,
-      body: Center(child: VideoPlayerWidget()),
+      body: _hideVideo
+          ? const SizedBox.shrink()
+          : const Center(child: VideoPlayerWidget()),
     );
   }
 
