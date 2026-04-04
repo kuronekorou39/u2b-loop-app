@@ -54,6 +54,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
     _tabController.animation?.addListener(_onTabAnimation);
   }
 
+  /// showModalBottomSheet のラッパー。閉じた後にフォーカスを解除する。
+  Future<T?> _showSheet<T>({required WidgetBuilder builder, bool isScrollControlled = false}) {
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: isScrollControlled,
+      builder: builder,
+    ).then((result) {
+      _searchFocusNode.unfocus();
+      return result;
+    });
+  }
+
   void _onTabAnimation() {
     final val = _tabController.animation?.value ?? _tabController.index.toDouble();
     final shouldShow = val < 0.5;
@@ -541,9 +553,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _showErrorOptions(LoopItem item) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
+    _showSheet(builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -634,8 +644,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final selectedItems =
         items.where((i) => _selectedIds.contains(i.id)).toList();
 
-    showModalBottomSheet(
-      context: context,
+    _showSheet(
       isScrollControlled: true,
       builder: (ctx) => _BulkTagSheet(
         tags: tags,
@@ -668,9 +677,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   void _showAddToPlaylistSheet() {
     _searchFocusNode.unfocus();
     final playlists = ref.read(playlistsProvider);
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
+    _showSheet(builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -801,8 +808,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // --- タグ管理 ---
 
   void _showTagManager() {
-    showModalBottomSheet(
-      context: context,
+    _showSheet(
       isScrollControlled: true,
       builder: (ctx) => _TagManagerSheet(
         tags: ref.read(tagsProvider),
@@ -1173,9 +1179,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           tooltip: 'タグフィルター',
           onPressed: () {
             var selected = Set<String>.from(filterTagIds);
-            showModalBottomSheet(
-              context: context,
-              builder: (ctx) => StatefulBuilder(
+            _showSheet(builder: (ctx) => StatefulBuilder(
                 builder: (ctx, setSheetState) => SafeArea(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1778,9 +1782,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _showTagMenu(Tag tag) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
+    _showSheet(builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
