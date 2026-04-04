@@ -43,7 +43,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   String _searchQuery = '';
   _SortMode _sortMode = _SortMode.updatedDesc;
   final _searchController = TextEditingController();
-  final _searchFocusNode = FocusNode();
+  final _searchFocusNode = FocusNode(skipTraversal: true);
 
   @override
   void initState() {
@@ -628,6 +628,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // --- 複数選択タグ操作 ---
 
   void _showBulkTagSheet() {
+    _searchFocusNode.unfocus();
     final tags = ref.read(tagsProvider);
     final items = ref.read(loopItemsProvider);
     final selectedItems =
@@ -665,6 +666,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // --- 複数選択 → プレイリストに追加 ---
 
   void _showAddToPlaylistSheet() {
+    _searchFocusNode.unfocus();
     final playlists = ref.read(playlistsProvider);
     showModalBottomSheet(
       context: context,
