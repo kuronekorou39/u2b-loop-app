@@ -364,6 +364,14 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     _refresh();
   }
 
+  Future<void> setThumbnailItem(String playlistId, String? itemId) async {
+    final pl = _box.get(playlistId);
+    if (pl == null) return;
+    pl.thumbnailItemId = itemId;
+    await _box.put(playlistId, pl);
+    _refresh();
+  }
+
   Future<void> addItemsByTag(
       String playlistId, String tagId, List<LoopItem> allItems) async {
     final pl = _box.get(playlistId);

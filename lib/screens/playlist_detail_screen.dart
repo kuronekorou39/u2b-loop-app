@@ -88,6 +88,73 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     }
   }
 
+  void _selectThumbnail(Playlist pl, List<LoopItem> items) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('サムネイル選択',
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold)),
+            ),
+            const Divider(height: 1),
+            if (pl.thumbnailItemId != null)
+              ListTile(
+                leading: const Icon(Icons.restart_alt),
+                title: const Text('デフォルトに戻す（1曲目）'),
+                onTap: () {
+                  ref
+                      .read(playlistsProvider.notifier)
+                      .setThumbnailItem(pl.id, null);
+                  Navigator.pop(ctx);
+                },
+              ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: items.length,
+                itemBuilder: (_, i) {
+                  final item = items[i];
+                  final isCurrent =
+                      item.id == pl.effectiveThumbnailItemId;
+                  return ListTile(
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        width: 48,
+                        height: 36,
+                        child: _buildThumbnail(item),
+                      ),
+                    ),
+                    title: Text(item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13)),
+                    trailing: isCurrent
+                        ? const Icon(Icons.check,
+                            color: Colors.green, size: 20)
+                        : null,
+                    onTap: () {
+                      ref
+                          .read(playlistsProvider.notifier)
+                          .setThumbnailItem(pl.id, item.id);
+                      Navigator.pop(ctx);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _removeItem(Playlist pl, String itemId) {
     ref.read(playlistsProvider.notifier).removeItem(pl.id, itemId);
   }
@@ -265,10 +332,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'rename') _renamePlaylist(pl);
+              if (v == 'thumbnail') _selectThumbnail(pl, items);
               if (v == 'delete') _deletePlaylist(pl);
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'rename', child: Text('名前変更')),
+              if (items.isNotEmpty)
+                const PopupMenuItem(
+                    value: 'thumbnail', child: Text('サムネイル変更')),
               const PopupMenuItem(
                   value: 'delete',
                   child: Text('削除', style: TextStyle(color: Colors.red))),

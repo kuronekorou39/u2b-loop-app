@@ -1114,7 +1114,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           _selectionAction(
               Icons.playlist_add, 'PL追加', _showAddToPlaylistSheet),
           _selectionAction(
-              Icons.new_label, 'タグ', _showBulkTagSheet),
+              Icons.bookmark_add_outlined, 'タグ', _showBulkTagSheet),
           _selectionAction(
               Icons.select_all, '全選択', () => _selectAll(items)),
           _selectionAction(
@@ -1494,42 +1494,49 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final selected = _selectedIds.contains(item.id);
     return ListTile(
       selected: selected,
-      leading: _isSelecting
-          ? Checkbox(
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSelecting)
+            Checkbox(
               value: selected,
               onChanged: (_) => _toggleSelect(item),
-            )
-          : ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: SizedBox(
-                width: 64,
-                height: 36,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _buildThumbnail(item),
-                    if (item.isFetching)
-                      Container(
-                        color: Colors.black54,
-                        child: const Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          ),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              width: 64,
+              height: 36,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _buildThumbnail(item),
+                  if (item.isFetching)
+                    Container(
+                      color: Colors.black54,
+                      child: const Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
                         ),
                       ),
-                    if (item.hasError)
-                      Container(
-                        color: Colors.black54,
-                        child: const Icon(Icons.error_outline,
-                            size: 18, color: Colors.orange),
-                      ),
-                  ],
-                ),
+                    ),
+                  if (item.hasError)
+                    Container(
+                      color: Colors.black54,
+                      child: const Icon(Icons.error_outline,
+                          size: 18, color: Colors.orange),
+                    ),
+                ],
               ),
             ),
+          ),
+        ],
+      ),
       title: Text(
         item.isFetching ? 'データ取得中...' : item.title,
         maxLines: 1,
@@ -1850,8 +1857,27 @@ class _ListScreenState extends ConsumerState<ListScreen>
         final count = pl.itemIds
             .where((id) => items.any((item) => item.id == id))
             .length;
+        final thumbItemId = pl.effectiveThumbnailItemId;
+        final thumbItem = thumbItemId != null
+            ? items.where((item) => item.id == thumbItemId).firstOrNull
+            : null;
         return ListTile(
-          leading: const Icon(Icons.playlist_play),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: thumbItem != null
+                  ? _buildThumbnail(thumbItem)
+                  : Container(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      child: const Icon(Icons.playlist_play,
+                          color: Colors.grey),
+                    ),
+            ),
+          ),
           title: Text(pl.name),
           subtitle: Text('$count 曲',
               style: const TextStyle(fontSize: 12, color: Colors.grey)),

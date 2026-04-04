@@ -14,6 +14,9 @@ class Playlist {
   /// 無効化されたアイテムのIDセット（再生時にスキップ）
   Set<String> disabledItemIds;
 
+  /// サムネイル用のアイテムID（nullなら最初のアイテムを使用）
+  String? thumbnailItemId;
+
   Playlist({
     required this.id,
     required this.name,
@@ -21,10 +24,15 @@ class Playlist {
     DateTime? createdAt,
     Map<String, List<String>>? regionSelections,
     Set<String>? disabledItemIds,
+    this.thumbnailItemId,
   })  : itemIds = itemIds ?? [],
         createdAt = createdAt ?? DateTime.now(),
         regionSelections = regionSelections ?? {},
         disabledItemIds = disabledItemIds ?? {};
+
+  /// サムネに使うアイテムIDを返す（明示設定 or 最初のアイテム）
+  String? get effectiveThumbnailItemId =>
+      thumbnailItemId ?? (itemIds.isNotEmpty ? itemIds.first : null);
 }
 
 class PlaylistAdapter extends TypeAdapter<Playlist> {
@@ -48,6 +56,9 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       disabled = (fields[5] as List).cast<String>().toSet();
     }
 
+    // field 6: thumbnailItemId (後方互換: 旧データにはない)
+    final thumbnailItemId = fields[6] as String?;
+
     return Playlist(
       id: fields[0] as String,
       name: fields[1] as String,
@@ -55,6 +66,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       createdAt: DateTime.fromMillisecondsSinceEpoch(fields[3] as int),
       regionSelections: regionSel,
       disabledItemIds: disabled,
+      thumbnailItemId: thumbnailItemId,
     );
   }
 
@@ -67,6 +79,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       3: obj.createdAt.millisecondsSinceEpoch,
       4: obj.regionSelections.isNotEmpty ? obj.regionSelections : null,
       5: obj.disabledItemIds.isNotEmpty ? obj.disabledItemIds.toList() : null,
+      6: obj.thumbnailItemId,
     });
   }
 }
