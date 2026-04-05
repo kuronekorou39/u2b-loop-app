@@ -2110,6 +2110,9 @@ class _BulkTagSheet extends StatefulWidget {
 
 class _BulkTagSheetState extends State<_BulkTagSheet> {
   late List<Tag> _tags;
+  // ローカルで適用状態を管理（非同期のズレを防止）
+  final Set<String> _addedTagIds = {};
+  final Set<String> _removedTagIds = {};
 
   @override
   void initState() {
@@ -2117,13 +2120,18 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
     _tags = List.from(widget.tags);
   }
 
-  // タグが全選択アイテムについているか
-  bool _allHaveTag(String tagId) =>
-      widget.selectedItems.every((i) => i.tagIds.contains(tagId));
+  // ローカル状態を加味してタグの適用状態を判定
+  bool _effectiveHasTag(LoopItem item, String tagId) {
+    if (_addedTagIds.contains(tagId)) return true;
+    if (_removedTagIds.contains(tagId)) return false;
+    return item.tagIds.contains(tagId);
+  }
 
-  // タグが一部のアイテムについているか
+  bool _allHaveTag(String tagId) =>
+      widget.selectedItems.every((i) => _effectiveHasTag(i, tagId));
+
   bool _someHaveTag(String tagId) =>
-      widget.selectedItems.any((i) => i.tagIds.contains(tagId));
+      widget.selectedItems.any((i) => _effectiveHasTag(i, tagId));
 
   void _showNewTagInput() async {
     final controller = TextEditingController();
@@ -2160,7 +2168,10 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
     if (name != null && name.isNotEmpty) {
       final tag = await widget.onCreateTag(name);
       widget.onAddTag(tag.id);
-      setState(() => _tags.add(tag));
+      setState(() {
+        _tags.add(tag);
+        _addedTagIds.add(tag.id);
+      });
     }
   }
 
@@ -2185,7 +2196,12 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                   TextButton(
                     onPressed: () {
                       widget.onClearTags();
-                      Navigator.pop(context);
+                      setState(() {
+                        _addedTagIds.clear();
+                        for (final t in _tags) {
+                          _removedTagIds.add(t.id);
+                        }
+                      });
                     },
                     child: const Text('すべて解除',
                         style: TextStyle(fontSize: 12)),
@@ -2217,10 +2233,17 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                     onChanged: (_) {
                       if (_allHaveTag(tag.id)) {
                         widget.onRemoveTag(tag.id);
+                        setState(() {
+                          _addedTagIds.remove(tag.id);
+                          _removedTagIds.add(tag.id);
+                        });
                       } else {
                         widget.onAddTag(tag.id);
+                        setState(() {
+                          _removedTagIds.remove(tag.id);
+                          _addedTagIds.add(tag.id);
+                        });
                       }
-                      setState(() {});
                     },
                   ),
               ],
