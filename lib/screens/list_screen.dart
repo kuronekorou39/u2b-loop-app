@@ -2110,9 +2110,8 @@ class _BulkTagSheet extends StatefulWidget {
 
 class _BulkTagSheetState extends State<_BulkTagSheet> {
   late List<Tag> _tags;
-  // ローカルで適用状態を管理（非同期のズレを防止）
-  final Set<String> _addedTagIds = {};
-  final Set<String> _removedTagIds = {};
+  // タグごとの適用状態: true=全員付与, false=全員なし, null=初期（実データ参照）
+  final Map<String, bool> _tagState = {};
 
   @override
   void initState() {
@@ -2120,18 +2119,15 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
     _tags = List.from(widget.tags);
   }
 
-  // ローカル状態を加味してタグの適用状態を判定
-  bool _effectiveHasTag(LoopItem item, String tagId) {
-    if (_addedTagIds.contains(tagId)) return true;
-    if (_removedTagIds.contains(tagId)) return false;
-    return item.tagIds.contains(tagId);
+  /// 表示用の値: true=✓, false=□, null=ー
+  bool? _displayValue(String tagId) {
+    if (_tagState.containsKey(tagId)) return _tagState[tagId];
+    final all = widget.selectedItems.every((i) => i.tagIds.contains(tagId));
+    if (all) return true;
+    final some = widget.selectedItems.any((i) => i.tagIds.contains(tagId));
+    if (some) return null;
+    return false;
   }
-
-  bool _allHaveTag(String tagId) =>
-      widget.selectedItems.every((i) => _effectiveHasTag(i, tagId));
-
-  bool _someHaveTag(String tagId) =>
-      widget.selectedItems.any((i) => _effectiveHasTag(i, tagId));
 
   void _showNewTagInput() async {
     final controller = TextEditingController();
@@ -2170,7 +2166,7 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
       widget.onAddTag(tag.id);
       setState(() {
         _tags.add(tag);
-        _addedTagIds.add(tag.id);
+        _tagState[tag.id] = true;
       });
     }
   }
@@ -2197,9 +2193,8 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                     onPressed: () {
                       widget.onClearTags();
                       setState(() {
-                        _addedTagIds.clear();
                         for (final t in _tags) {
-                          _removedTagIds.add(t.id);
+                          _tagState[t.id] = false;
                         }
                       });
                     },
@@ -2224,25 +2219,17 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                   CheckboxListTile(
                     title:
                         Text(tag.name, style: const TextStyle(fontSize: 14)),
-                    value: _allHaveTag(tag.id)
-                        ? true
-                        : _someHaveTag(tag.id)
-                            ? null
-                            : false,
+                    value: _displayValue(tag.id),
                     tristate: true,
                     onChanged: (_) {
-                      if (_allHaveTag(tag.id)) {
+                      if (_displayValue(tag.id) == true) {
+                        // ✓ → 全外し
                         widget.onRemoveTag(tag.id);
-                        setState(() {
-                          _addedTagIds.remove(tag.id);
-                          _removedTagIds.add(tag.id);
-                        });
+                        setState(() => _tagState[tag.id] = false);
                       } else {
+                        // □ or ー → 全付け
                         widget.onAddTag(tag.id);
-                        setState(() {
-                          _removedTagIds.remove(tag.id);
-                          _addedTagIds.add(tag.id);
-                        });
+                        setState(() => _tagState[tag.id] = true);
                       }
                     },
                   ),
