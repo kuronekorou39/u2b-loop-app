@@ -689,63 +689,60 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     style: TextStyle(color: Colors.grey)),
               ),
             Flexible(
-              child: ListView(
+              child: ListView.builder(
                 shrinkWrap: true,
-                children: [
-                  for (final pl in playlists) ...[
-                    () {
-                      final count = pl.itemIds
-                          .where((id) =>
-                              allItems.any((item) => item.id == id))
-                          .length;
-                      final thumbItemId = pl.effectiveThumbnailItemId;
-                      final thumbItem = thumbItemId != null
-                          ? allItems
-                              .where((item) => item.id == thumbItemId)
-                              .firstOrNull
-                          : null;
-                      return ListTile(
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: SizedBox(
-                            width: 48,
-                            height: 36,
-                            child: thumbItem != null
-                                ? _buildThumbnail(thumbItem)
-                                : Container(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerHighest,
-                                    child: const Icon(
-                                        Icons.playlist_play,
-                                        color: Colors.grey,
-                                        size: 20),
-                                  ),
-                          ),
+                itemCount: playlists.length,
+                itemBuilder: (_, i) {
+                  final pl = playlists[i];
+                  final count = pl.itemIds
+                      .where((id) =>
+                          allItems.any((item) => item.id == id))
+                      .length;
+                  final thumbItemId = pl.effectiveThumbnailItemId;
+                  final thumbItem = thumbItemId != null
+                      ? allItems
+                          .where((item) => item.id == thumbItemId)
+                          .firstOrNull
+                      : null;
+                  return ListTile(
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        width: 48,
+                        height: 36,
+                        child: thumbItem != null
+                            ? _buildThumbnail(thumbItem)
+                            : Container(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                                child: const Icon(Icons.playlist_play,
+                                    color: Colors.grey, size: 20),
+                              ),
+                      ),
+                    ),
+                    title: Text(pl.name,
+                        style: const TextStyle(fontSize: 14)),
+                    subtitle: Text('$count 曲',
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.grey)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      final ids = _selectedIds.toList();
+                      ref
+                          .read(playlistsProvider.notifier)
+                          .addItems(pl.id, ids);
+                      _clearSelection();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                              '${ids.length}件を「${pl.name}」に追加しました'),
+                          duration: const Duration(seconds: 2),
                         ),
-                        title: Text(pl.name,
-                            style: const TextStyle(fontSize: 14)),
-                        subtitle: Text('$count 曲',
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.grey)),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        final ids = _selectedIds.toList();
-                        ref
-                            .read(playlistsProvider.notifier)
-                            .addItems(pl.id, ids);
-                        _clearSelection();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                                '${ids.length}件を「${pl.name}」に追加しました'),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
                       );
-                    }(),
-                  ],
+                    },
+                  );
+                },
               ),
             ),
             const Divider(height: 1),
