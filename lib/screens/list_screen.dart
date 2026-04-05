@@ -411,9 +411,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
         tagId: tagId,
       );
       progressNotifier.value = i + 1;
-      // プログレッシブディレイ
-      final delayMs = 500 + (i ~/ 10) * 200;
-      await Future.delayed(Duration(milliseconds: delayMs));
     }
 
     progressNotifier.dispose();

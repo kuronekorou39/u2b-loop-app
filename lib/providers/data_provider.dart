@@ -21,6 +21,24 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   final Box<LoopItem> _box;
   int _idCounter = 0;
 
+  // プログレッシブディレイ管理（時間経過でリセット）
+  int _requestCount = 0;
+  DateTime _lastRequestTime = DateTime.now();
+  static const _delayResetDuration = Duration(seconds: 30);
+  static const _delayMaxMs = 1500;
+
+  /// リクエスト間のディレイを計算。30秒以上空いたらカウンタリセット。
+  Duration _nextDelay() {
+    final now = DateTime.now();
+    if (now.difference(_lastRequestTime) > _delayResetDuration) {
+      _requestCount = 0;
+    }
+    _lastRequestTime = now;
+    _requestCount++;
+    final ms = (300 + (_requestCount ~/ 10) * 200).clamp(300, _delayMaxMs);
+    return Duration(milliseconds: ms);
+  }
+
   String _generateId() => '${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
   LoopItemsNotifier(this._box)
@@ -81,6 +99,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     final id = _generateId();
     String? thumbPath;
     if (thumbnailUrl != null) {
+      await Future.delayed(_nextDelay());
       thumbPath = await ThumbnailService().save(id, thumbnailUrl);
     }
     final item = LoopItem(
@@ -191,9 +210,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           item.thumbnailPath = path;
           await _box.put(item.id, item);
         }
-        // プログレッシブディレイ
-        final delayMs = 300 + (done ~/ 10) * 200;
-        await Future.delayed(Duration(milliseconds: delayMs));
+        await Future.delayed(_nextDelay());
       } else if (item.sourceType == 'local' && item.uri.isNotEmpty) {
         try {
           final path =
