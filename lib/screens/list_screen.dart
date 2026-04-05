@@ -359,17 +359,50 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Future<void> _addVideos(List<yte.Video> videos, String playlistTitle) async {
     // タグを選択/作成するダイアログ
     final tagId = await _showImportTagDialog(playlistTitle);
-
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('「$playlistTitle」から${videos.length}件を追加中...'),
-        duration: const Duration(seconds: 3),
+
+    // 進捗ダイアログ
+    final progressNotifier = ValueNotifier<int>(0);
+    final total = videos.length;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: ValueListenableBuilder<int>(
+          valueListenable: progressNotifier,
+          builder: (_, count, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      '「$playlistTitle」に追加中...',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(value: count / total),
+              const SizedBox(height: 4),
+              Text('$count / $total',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+        ),
       ),
     );
 
     final notifier = ref.read(loopItemsProvider.notifier);
-    for (final v in videos) {
+    for (var i = 0; i < videos.length; i++) {
+      final v = videos[i];
       await notifier.addYouTubeWithInfo(
         videoId: v.id.value,
         title: v.title,
@@ -377,7 +410,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
         thumbnailUrl: v.thumbnails.highResUrl,
         tagId: tagId,
       );
+      progressNotifier.value = i + 1;
+      // プログレッシブディレイ
+      final delayMs = 500 + (i ~/ 10) * 200;
+      await Future.delayed(Duration(milliseconds: delayMs));
     }
+
+    progressNotifier.dispose();
+    if (mounted) Navigator.pop(context);
   }
 
   /// インポート時にタグを付与するか選択するダイアログ

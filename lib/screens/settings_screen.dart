@@ -215,8 +215,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
       setState(() {});
 
-      // バックグラウンドでサムネイルを再取得
-      ref.read(loopItemsProvider.notifier).repairThumbnails();
+      // サムネイルを再取得（進捗表示）
+      _repairThumbnailsWithProgress();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -225,6 +225,63 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _repairThumbnailsWithProgress() {
+    final doneNotifier = ValueNotifier<int>(0);
+    final totalNotifier = ValueNotifier<int>(0);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: ValueListenableBuilder<int>(
+          valueListenable: totalNotifier,
+          builder: (_, total, __) => ValueListenableBuilder<int>(
+            valueListenable: doneNotifier,
+            builder: (_, done, __) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 16),
+                    const Expanded(
+                      child: Text('サムネイルを復元中...',
+                          style: TextStyle(fontSize: 14)),
+                    ),
+                  ],
+                ),
+                if (total > 0) ...[
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                      value: total > 0 ? done / total : 0),
+                  const SizedBox(height: 4),
+                  Text('$done / $total',
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    ref.read(loopItemsProvider.notifier).repairThumbnails(
+      onProgress: (done, total) {
+        doneNotifier.value = done;
+        totalNotifier.value = total;
+      },
+    ).then((_) {
+      doneNotifier.dispose();
+      totalNotifier.dispose();
+      if (mounted) Navigator.pop(context);
+    });
   }
 
   // ─── Clear ───

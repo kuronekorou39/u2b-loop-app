@@ -165,39 +165,48 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   }
 
   /// サムネイルが未取得のアイテムを一括で再取得
-  Future<void> repairThumbnails() async {
+  /// [onProgress] が指定された場合、(処理済み, 対象件数) で進捗を通知
+  Future<void> repairThumbnails({
+    void Function(int done, int total)? onProgress,
+  }) async {
     final items = _box.values.toList();
-    var count = 0;
+    // 対象件数を先にカウント
+    final targets = <LoopItem>[];
     for (final item in items) {
-      if (item.thumbnailPath != null) {
-        if (await File(item.thumbnailPath!).exists()) continue;
+      if (item.thumbnailPath != null &&
+          await File(item.thumbnailPath!).exists()) continue;
+      if (item.thumbnailUrl != null ||
+          (item.sourceType == 'local' && item.uri.isNotEmpty)) {
+        targets.add(item);
       }
+    }
+    if (targets.isEmpty) return;
+
+    var done = 0;
+    for (final item in targets) {
       if (item.thumbnailUrl != null) {
-        // YouTube: URLからダウンロード（毎件ディレイ）
         final path =
             await ThumbnailService().save(item.id, item.thumbnailUrl);
         if (path != null) {
           item.thumbnailPath = path;
           await _box.put(item.id, item);
-          count++;
-          if (count % 5 == 0) _refresh();
         }
-        // プログレッシブディレイ: 件数が増えるほど長く待つ
-        final delayMs = 300 + (count ~/ 10) * 200; // 300ms → 500ms → 700ms ...
+        // プログレッシブディレイ
+        final delayMs = 300 + (done ~/ 10) * 200;
         await Future.delayed(Duration(milliseconds: delayMs));
       } else if (item.sourceType == 'local' && item.uri.isNotEmpty) {
-        // ローカル: 動画からフレーム抽出
         try {
           final path =
               await ThumbnailService().generateFromVideo(item.id, item.uri);
           if (path != null) {
             item.thumbnailPath = path;
             await _box.put(item.id, item);
-            count++;
-            if (count % 5 == 0) _refresh();
           }
         } catch (_) {}
       }
+      done++;
+      onProgress?.call(done, targets.length);
+      if (done % 5 == 0) _refresh();
     }
     _refresh();
   }
