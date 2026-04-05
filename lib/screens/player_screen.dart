@@ -459,12 +459,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 1番だけモードではB点を終了地点として使う
     final loop = ref.read(loopProvider);
     final plState = ref.read(playlistPlayerProvider);
-    final endPoint = (plState.firstVerseMode && loop.enabled && loop.hasB)
-        ? loop.pointB!
-        : duration;
+    final isFirstVerse =
+        plState.firstVerseMode && loop.enabled && loop.hasB;
+    final endPoint = isFirstVerse ? loop.pointB! : duration;
 
     final remaining = endPoint - position;
-    final thresholdSec = endPoint.inSeconds > 120 ? 30 : 10;
+    // 1番だけモードでは早めにプリロード開始（30秒前）
+    final thresholdSec = isFirstVerse
+        ? 30
+        : endPoint.inSeconds > 120
+            ? 30
+            : 10;
 
     if (remaining.inSeconds <= thresholdSec) {
       _preloadNextTrack();
@@ -1227,6 +1232,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ref.read(waveformErrorProvider.notifier).state = '波形取得失敗';
         } else {
           ref.read(waveformDataProvider.notifier).state = waveform;
+          // 波形キャッシュに保存し、1番だけモードの切断点を再計算
+          _waveformCache[_currentItem.id] = waveform;
+          if (_isPlaylist) {
+            final track =
+                ref.read(playlistPlayerProvider).currentTrack;
+            if (track != null && !track.hasRegion) {
+              _applyFirstVerseCut(track);
+            }
+          }
         }
       }
     } catch (e) {
