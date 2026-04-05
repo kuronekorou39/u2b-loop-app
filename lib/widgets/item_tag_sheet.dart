@@ -98,18 +98,28 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
                   style:
                       TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
             ),
+            const Divider(height: 1),
             if (_tags.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('タグがありません',
                     style: TextStyle(color: Colors.grey)),
               ),
-            for (final tag in _tags)
-              CheckboxListTile(
-                title: Text(tag.name, style: const TextStyle(fontSize: 14)),
-                value: _activeTagIds.contains(tag.id),
-                onChanged: (_) => _toggle(tag.id),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final tag in _tags)
+                    CheckboxListTile(
+                      title: Text(tag.name,
+                          style: const TextStyle(fontSize: 14)),
+                      value: _activeTagIds.contains(tag.id),
+                      onChanged: (_) => _toggle(tag.id),
+                    ),
+                ],
               ),
+            ),
+            const Divider(height: 1),
             Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

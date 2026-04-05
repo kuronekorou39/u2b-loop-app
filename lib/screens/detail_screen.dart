@@ -234,7 +234,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final tags = ref.read(tagsProvider);
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
       builder: (ctx) => ItemTagSheet(
         tags: tags,
         item: item,

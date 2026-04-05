@@ -813,27 +813,34 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                         ),
                       ),
                       const Divider(height: 1),
-                      for (final tag in widget.tags)
-                        CheckboxListTile(
-                          title: Text(tag.name,
-                              style: const TextStyle(fontSize: 14)),
-                          secondary: Icon(Icons.label,
-                              size: 20, color: tag.color),
-                          value: selected.contains(tag.id),
-                          onChanged: (_) {
-                            setSheetState(() {
-                              if (selected.contains(tag.id)) {
-                                selected.remove(tag.id);
-                              } else {
-                                selected.add(tag.id);
-                              }
-                            });
-                            setState(() {
-                              _filterTagIds.clear();
-                              _filterTagIds.addAll(selected);
-                            });
-                          },
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: [
+                            for (final tag in widget.tags)
+                              CheckboxListTile(
+                                title: Text(tag.name,
+                                    style: const TextStyle(fontSize: 14)),
+                                secondary: Icon(Icons.label,
+                                    size: 20, color: tag.color),
+                                value: selected.contains(tag.id),
+                                onChanged: (_) {
+                                  setSheetState(() {
+                                    if (selected.contains(tag.id)) {
+                                      selected.remove(tag.id);
+                                    } else {
+                                      selected.add(tag.id);
+                                    }
+                                  });
+                                  setState(() {
+                                    _filterTagIds.clear();
+                                    _filterTagIds.addAll(selected);
+                                  });
+                                },
+                              ),
+                          ],
                         ),
+                      ),
                       const SizedBox(height: 8),
                     ],
                   ),

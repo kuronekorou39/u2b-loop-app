@@ -1280,41 +1280,48 @@ class _ListScreenState extends ConsumerState<ListScreen>
                         ),
                       ),
                       const Divider(height: 1),
-                      CheckboxListTile(
-                        title: const Text('未分類',
-                            style: TextStyle(fontSize: 14)),
-                        secondary:
-                            const Icon(Icons.label_off, size: 20),
-                        value: selected.contains(untaggedId),
-                        onChanged: (_) {
-                          setSheetState(() {
-                            if (selected.contains(untaggedId)) {
-                              selected.remove(untaggedId);
-                            } else {
-                              selected.add(untaggedId);
-                            }
-                          });
-                          ref.read(tagFilterProvider.notifier).state =
-                              Set.from(selected);
-                        },
-                      ),
-                      for (final tag in tags)
-                        CheckboxListTile(
-                          title: Text(tag.name,
-                              style: const TextStyle(fontSize: 14)),
-                          value: selected.contains(tag.id),
-                          onChanged: (_) {
-                            setSheetState(() {
-                              if (selected.contains(tag.id)) {
-                                selected.remove(tag.id);
-                              } else {
-                                selected.add(tag.id);
-                              }
-                            });
-                            ref.read(tagFilterProvider.notifier).state =
-                                Set.from(selected);
-                          },
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: [
+                            CheckboxListTile(
+                              title: const Text('未分類',
+                                  style: TextStyle(fontSize: 14)),
+                              secondary:
+                                  const Icon(Icons.label_off, size: 20),
+                              value: selected.contains(untaggedId),
+                              onChanged: (_) {
+                                setSheetState(() {
+                                  if (selected.contains(untaggedId)) {
+                                    selected.remove(untaggedId);
+                                  } else {
+                                    selected.add(untaggedId);
+                                  }
+                                });
+                                ref.read(tagFilterProvider.notifier).state =
+                                    Set.from(selected);
+                              },
+                            ),
+                            for (final tag in tags)
+                              CheckboxListTile(
+                                title: Text(tag.name,
+                                    style: const TextStyle(fontSize: 14)),
+                                value: selected.contains(tag.id),
+                                onChanged: (_) {
+                                  setSheetState(() {
+                                    if (selected.contains(tag.id)) {
+                                      selected.remove(tag.id);
+                                    } else {
+                                      selected.add(tag.id);
+                                    }
+                                  });
+                                  ref.read(tagFilterProvider.notifier).state =
+                                      Set.from(selected);
+                                },
+                              ),
+                          ],
                         ),
+                      ),
                       const SizedBox(height: 8),
                     ],
                   ),

@@ -1127,7 +1127,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final tags = ref.read(tagsProvider);
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
       builder: (ctx) => ItemTagSheet(
         tags: tags,
         item: track.item,
