@@ -672,42 +672,54 @@ class _ListScreenState extends ConsumerState<ListScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Text('プレイリストに追加',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'プレイリストに追加（${_selectedIds.length}件）',
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.bold),
+              ),
             ),
+            const Divider(height: 1),
             if (playlists.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('プレイリストがありません',
                     style: TextStyle(color: Colors.grey)),
               ),
-            for (final pl in playlists)
-              ListTile(
-                leading: const Icon(Icons.playlist_play),
-                title: Text(pl.name),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  final ids = _selectedIds.toList();
-                  ref
-                      .read(playlistsProvider.notifier)
-                      .addItems(pl.id, ids);
-                  _clearSelection();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          '${ids.length}件を「${pl.name}」に追加しました'),
-                      duration: const Duration(seconds: 2),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final pl in playlists)
+                    ListTile(
+                      leading: const Icon(Icons.playlist_play),
+                      title: Text(pl.name,
+                          style: const TextStyle(fontSize: 14)),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        final ids = _selectedIds.toList();
+                        ref
+                            .read(playlistsProvider.notifier)
+                            .addItems(pl.id, ids);
+                        _clearSelection();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                '${ids.length}件を「${pl.name}」に追加しました'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
+                ],
               ),
-            const Divider(),
+            ),
+            const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.add),
-              title: const Text('新規作成して追加'),
+              title: const Text('新規作成して追加',
+                  style: TextStyle(fontSize: 14)),
               onTap: () async {
                 Navigator.pop(ctx);
                 final controller = TextEditingController();
@@ -765,6 +777,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 }
               },
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -2155,22 +2168,21 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Text(
-                    'タグ（${widget.selectedItems.length}件に適用）',
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'タグ（${widget.selectedItems.length}件に適用）',
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (_tags.isNotEmpty)
                   TextButton(
                     onPressed: () {
                       widget.onClearTags();
@@ -2179,46 +2191,51 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                     child: const Text('すべて解除',
                         style: TextStyle(fontSize: 12)),
                   ),
-                ],
-              ),
+              ],
             ),
-            if (_tags.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('タグがありません',
-                    style: TextStyle(color: Colors.grey)),
-              ),
-            for (final tag in _tags)
-              CheckboxListTile(
-                title: Text(tag.name, style: const TextStyle(fontSize: 14)),
-                value: _allHaveTag(tag.id)
-                    ? true
-                    : _someHaveTag(tag.id)
-                        ? null
-                        : false,
-                tristate: true,
-                onChanged: (_) {
-                  if (_allHaveTag(tag.id)) {
-                    // ✓ → 解除
-                    widget.onRemoveTag(tag.id);
-                  } else {
-                    // □ or ー → 全員に追加
-                    widget.onAddTag(tag.id);
-                  }
-                  setState(() {});
-                },
-              ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: OutlinedButton.icon(
-                onPressed: _showNewTagInput,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('新しいタグを作成'),
-              ),
+          ),
+          const Divider(height: 1),
+          if (_tags.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('タグがありません',
+                  style: TextStyle(color: Colors.grey)),
             ),
-            const SizedBox(height: 8),
-          ],
-        ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final tag in _tags)
+                  CheckboxListTile(
+                    title:
+                        Text(tag.name, style: const TextStyle(fontSize: 14)),
+                    value: _allHaveTag(tag.id)
+                        ? true
+                        : _someHaveTag(tag.id)
+                            ? null
+                            : false,
+                    tristate: true,
+                    onChanged: (_) {
+                      if (_allHaveTag(tag.id)) {
+                        widget.onRemoveTag(tag.id);
+                      } else {
+                        widget.onAddTag(tag.id);
+                      }
+                      setState(() {});
+                    },
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.add, size: 20),
+            title: const Text('新しいタグを作成',
+                style: TextStyle(fontSize: 14)),
+            onTap: _showNewTagInput,
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
