@@ -214,6 +214,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       );
       setState(() {});
+
+      // バックグラウンドでサムネイルを再取得
+      ref.read(loopItemsProvider.notifier).repairThumbnails();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -160,6 +162,37 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         await update(item);
       }
     } catch (_) {}
+  }
+
+  /// サムネイルが未取得のアイテムを一括で再取得
+  Future<void> repairThumbnails() async {
+    final items = _box.values.toList();
+    for (final item in items) {
+      if (item.thumbnailPath != null) {
+        // パスはあるがファイルが存在しない場合もチェック
+        if (await File(item.thumbnailPath!).exists()) continue;
+      }
+      if (item.thumbnailUrl != null) {
+        // YouTube: URLからダウンロード
+        final path =
+            await ThumbnailService().save(item.id, item.thumbnailUrl);
+        if (path != null) {
+          item.thumbnailPath = path;
+          await _box.put(item.id, item);
+        }
+      } else if (item.sourceType == 'local' && item.uri.isNotEmpty) {
+        // ローカル: 動画からフレーム抽出
+        try {
+          final path =
+              await ThumbnailService().generateFromVideo(item.id, item.uri);
+          if (path != null) {
+            item.thumbnailPath = path;
+            await _box.put(item.id, item);
+          }
+        } catch (_) {}
+      }
+    }
+    _refresh();
   }
 
   /// アイテムを複製（新IDで同じ内容のコピーを作成）
