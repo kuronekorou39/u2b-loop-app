@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
@@ -200,12 +201,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   void _showItemPicker(Playlist pl) {
     final allItems = ref.read(loopItemsProvider);
     final readyItems = allItems.where((i) => i.isReady).toList();
+    final tags = ref.read(tagsProvider);
     final existing = Set<String>.from(pl.itemIds);
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _ItemPickerPage(
           items: readyItems,
+          tags: tags,
           existingIds: existing,
           existingRegions: pl.regionSelections,
           onAdd: (ids, regions) {
@@ -687,6 +690,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
 class _ItemPickerPage extends StatefulWidget {
   final List<LoopItem> items;
+  final List<Tag> tags;
   final Set<String> existingIds;
   final Map<String, List<String>> existingRegions;
   final void Function(List<String> ids, Map<String, List<String>> regions)
@@ -694,6 +698,7 @@ class _ItemPickerPage extends StatefulWidget {
 
   const _ItemPickerPage({
     required this.items,
+    required this.tags,
     required this.existingIds,
     required this.existingRegions,
     required this.onAdd,
@@ -711,6 +716,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
   // 展開中のアイテムID
   final Set<String> _expanded = {};
   String _searchQuery = '';
+  final Set<String> _filterTagIds = {};
 
   int get _selectedCount => _selections.length;
 
@@ -769,9 +775,100 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
     Navigator.pop(context);
   }
 
+  Widget _buildTagFilterButton() {
+    return Stack(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.label_outline, size: 22),
+          tooltip: 'タグフィルター',
+          onPressed: () {
+            var selected = Set<String>.from(_filterTagIds);
+            showModalBottomSheet(
+              context: context,
+              builder: (ctx) => StatefulBuilder(
+                builder: (ctx, setSheetState) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          children: [
+                            const Text('タグフィルター',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold)),
+                            const Spacer(),
+                            if (selected.isNotEmpty)
+                              TextButton(
+                                onPressed: () {
+                                  setState(() => _filterTagIds.clear());
+                                  Navigator.pop(ctx);
+                                },
+                                child: const Text('クリア',
+                                    style: TextStyle(fontSize: 13)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      for (final tag in widget.tags)
+                        CheckboxListTile(
+                          title: Text(tag.name,
+                              style: const TextStyle(fontSize: 14)),
+                          secondary: Icon(Icons.label,
+                              size: 20, color: tag.color),
+                          value: selected.contains(tag.id),
+                          onChanged: (_) {
+                            setSheetState(() {
+                              if (selected.contains(tag.id)) {
+                                selected.remove(tag.id);
+                              } else {
+                                selected.add(tag.id);
+                              }
+                            });
+                            setState(() {
+                              _filterTagIds.clear();
+                              _filterTagIds.addAll(selected);
+                            });
+                          },
+                        ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        if (_filterTagIds.isNotEmpty)
+          Positioned(
+            right: 4,
+            top: 4,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: AppTheme.accentGreen,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '${_filterTagIds.length}',
+                style: const TextStyle(fontSize: 9, color: Colors.black),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     var items = widget.items;
+    if (_filterTagIds.isNotEmpty) {
+      items = items.where((i) =>
+          _filterTagIds.every((tid) => i.tagIds.contains(tid))).toList();
+    }
     if (_searchQuery.isNotEmpty) {
       final q = _searchQuery.toLowerCase();
       items = items.where((i) => i.title.toLowerCase().contains(q)).toList();
@@ -791,30 +888,77 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: SizedBox(
-              height: 36,
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: '検索...',
-                  hintStyle: const TextStyle(fontSize: 13),
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide(color: Colors.grey.shade700),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide(color: Colors.grey.shade700),
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 36,
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: '検索...',
+                        hintStyle: const TextStyle(fontSize: 13),
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        isDense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide:
+                              BorderSide(color: Colors.grey.shade700),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide:
+                              BorderSide(color: Colors.grey.shade700),
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                      onChanged: (v) =>
+                          setState(() => _searchQuery = v),
+                    ),
                   ),
                 ),
-                style: const TextStyle(fontSize: 13),
-                onChanged: (v) => setState(() => _searchQuery = v),
-              ),
+                if (widget.tags.isNotEmpty)
+                  _buildTagFilterButton(),
+              ],
             ),
           ),
+          if (_filterTagIds.isNotEmpty)
+            SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                children: [
+                  for (final tag in widget.tags)
+                    if (_filterTagIds.contains(tag.id))
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Chip(
+                          label: Text(tag.name,
+                              style: const TextStyle(fontSize: 11)),
+                          onDeleted: () => setState(() =>
+                              _filterTagIds.remove(tag.id)),
+                          deleteIconColor: Colors.grey,
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                  ActionChip(
+                    label: const Text('クリア',
+                        style: TextStyle(fontSize: 11)),
+                    onPressed: () =>
+                        setState(() => _filterTagIds.clear()),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize:
+                        MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: ListView.builder(
               itemCount: items.length,

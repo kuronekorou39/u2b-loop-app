@@ -874,6 +874,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           autofocus: true,
           decoration: const InputDecoration(
             hintText: 'プレイリスト名',
+            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
           ),
