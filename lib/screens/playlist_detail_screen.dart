@@ -299,87 +299,172 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       if (item != null) items.add(item);
     }
 
+    final thumbItemId = pl.effectiveThumbnailItemId;
+    final thumbItem = thumbItemId != null
+        ? allItems.where((i) => i.id == thumbItemId).firstOrNull
+        : null;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(pl.name, style: const TextStyle(fontSize: 16)),
+        title: const Text('プレイリスト', style: TextStyle(fontSize: 16)),
         actions: [
-          if (items.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: FilledButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => PlayerScreen(
-                      item: items.first,
-                      playlistItems: items,
-                      regionSelections: pl.regionSelections.isNotEmpty
-                          ? pl.regionSelections
-                          : null,
-                      disabledItemIds: pl.disabledItemIds.isNotEmpty
-                          ? pl.disabledItemIds
-                          : null,
-                      playlistName: pl.name,
-                      playlistId: pl.id,
-                    ),
-                  ),
-                ),
-                icon: const Icon(Icons.play_arrow, size: 20),
-                label: const Text('再生', style: TextStyle(fontSize: 13)),
-                style: FilledButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12),
-                  minimumSize: const Size(0, 36),
-                ),
-              ),
-            ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'rename') _renamePlaylist(pl);
-              if (v == 'thumbnail') _selectThumbnail(pl, items);
-              if (v == 'delete') _deletePlaylist(pl);
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'rename', child: Text('名前変更')),
-              if (items.isNotEmpty)
-                const PopupMenuItem(
-                    value: 'thumbnail', child: Text('サムネイル変更')),
-              const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('削除', style: TextStyle(color: Colors.red))),
-            ],
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            tooltip: '削除',
+            onPressed: () => _deletePlaylist(pl),
           ),
         ],
       ),
-      body: items.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.playlist_play,
-                      size: 64,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.3)),
-                  const SizedBox(height: 12),
-                  Text('曲がありません',
-                      style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.5))),
-                  const SizedBox(height: 4),
-                  Text('＋ ボタンで追加',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.3))),
-                ],
-              ),
-            )
-          : ReorderableListView.builder(
+      body: Column(
+        children: [
+          // ヘッダー
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // サムネイル + 編集ボタン
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        width: 120,
+                        height: 90,
+                        child: thumbItem != null
+                            ? _buildThumbnail(thumbItem)
+                            : Container(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                                child: const Icon(Icons.playlist_play,
+                                    color: Colors.grey, size: 40),
+                              ),
+                      ),
+                    ),
+                    if (items.isNotEmpty)
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: GestureDetector(
+                          onTap: () => _selectThumbnail(pl, items),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Icon(Icons.photo_camera,
+                                size: 16, color: Colors.white70),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                // タイトル + 曲数 + ボタン
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              pl.name,
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => _renamePlaylist(pl),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.edit, size: 18,
+                                  color: Colors.grey),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text('${items.length} 曲',
+                          style: const TextStyle(
+                              fontSize: 13, color: Colors.grey)),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          if (items.isNotEmpty)
+                            FilledButton.icon(
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PlayerScreen(
+                                    item: items.first,
+                                    playlistItems: items,
+                                    regionSelections:
+                                        pl.regionSelections.isNotEmpty
+                                            ? pl.regionSelections
+                                            : null,
+                                    disabledItemIds:
+                                        pl.disabledItemIds.isNotEmpty
+                                            ? pl.disabledItemIds
+                                            : null,
+                                    playlistName: pl.name,
+                                    playlistId: pl.id,
+                                  ),
+                                ),
+                              ),
+                              icon: const Icon(Icons.play_arrow, size: 18),
+                              label: const Text('再生',
+                                  style: TextStyle(fontSize: 12)),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12),
+                                minimumSize: const Size(0, 32),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // トラック一覧
+          Expanded(
+            child: items.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.playlist_play,
+                            size: 48,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.3)),
+                        const SizedBox(height: 8),
+                        Text('曲がありません',
+                            style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.5))),
+                        const SizedBox(height: 4),
+                        Text('＋ ボタンで追加',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.3))),
+                      ],
+                    ),
+                  )
+                : ReorderableListView.builder(
               padding: EdgeInsets.only(
                   bottom: 80 + MediaQuery.of(context).viewPadding.bottom),
               itemCount: items.length,
@@ -469,6 +554,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 );
               },
             ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddSheet(pl),
         child: const Icon(Icons.playlist_add),
