@@ -2438,12 +2438,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     ref
                         .read(playlistPlayerProvider.notifier)
                         .toggleFirstVerseMode();
-                    // 現在のトラックに即適用
-                    final track = ref
-                        .read(playlistPlayerProvider)
-                        .currentTrack;
+                    final plState =
+                        ref.read(playlistPlayerProvider);
+                    final track = plState.currentTrack;
                     if (track != null && !track.hasRegion) {
-                      _applyFirstVerseCut(track);
+                      if (plState.firstVerseMode) {
+                        // ON → 切断点を適用
+                        _applyFirstVerseCut(track);
+                      } else {
+                        // OFF → 区間リセット
+                        _cancelFade();
+                        ref.read(loopProvider.notifier).reset();
+                      }
                     }
                   },
                   tooltip: '1番だけ',
