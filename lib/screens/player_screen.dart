@@ -294,14 +294,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   /// 1番だけモード: 波形から切断点を計算してB点にセット
-  void _applyFirstVerseCut(PlaylistTrack track) {
+  void _applyFirstVerseCut(PlaylistTrack track, [int retryCount = 0]) {
     _cancelFade();
     final plState = ref.read(playlistPlayerProvider);
     if (!plState.firstVerseMode) return;
 
     final durationMs =
         ref.read(playerProvider).state.duration.inMilliseconds;
-    if (durationMs <= 0) return;
+    if (durationMs <= 0) {
+      // duration未取得 → 少し待って再試行（最大5回）
+      if (retryCount < 5) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _applyFirstVerseCut(track, retryCount + 1);
+        });
+      }
+      return;
+    }
 
     final waveform = _waveformCache[track.item.id];
     final cutMs = VerseDetector.findCutPoint(
@@ -448,8 +456,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (duration <= Duration.zero) return;
 
-    final remaining = duration - position;
-    final thresholdSec = duration.inSeconds > 120 ? 30 : 10;
+    // 1番だけモードではB点を終了地点として使う
+    final loop = ref.read(loopProvider);
+    final plState = ref.read(playlistPlayerProvider);
+    final endPoint = (plState.firstVerseMode && loop.enabled && loop.hasB)
+        ? loop.pointB!
+        : duration;
+
+    final remaining = endPoint - position;
+    final thresholdSec = endPoint.inSeconds > 120 ? 30 : 10;
 
     if (remaining.inSeconds <= thresholdSec) {
       _preloadNextTrack();
