@@ -311,7 +311,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    final waveform = _waveformCache[track.item.id];
+    // キャッシュ or プロバイダから波形を取得
+    final waveform = _waveformCache[track.item.id] ??
+        ref.read(waveformDataProvider);
     final cutMs = VerseDetector.findCutPoint(
       waveform: waveform,
       durationMs: durationMs,
