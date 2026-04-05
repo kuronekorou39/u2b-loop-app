@@ -638,6 +638,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       builder: (ctx) => _BulkTagSheet(
         tags: tags,
         selectedItems: selectedItems,
+        allItems: items,
         onAddTag: (tagId) {
           ref
               .read(loopItemsProvider.notifier)
@@ -666,6 +667,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   void _showAddToPlaylistSheet() {
     _searchFocusNode.unfocus();
     final playlists = ref.read(playlistsProvider);
+    final allItems = ref.read(loopItemsProvider);
     _showSheet(builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -690,11 +692,42 @@ class _ListScreenState extends ConsumerState<ListScreen>
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  for (final pl in playlists)
-                    ListTile(
-                      leading: const Icon(Icons.playlist_play),
-                      title: Text(pl.name,
-                          style: const TextStyle(fontSize: 14)),
+                  for (final pl in playlists) ...[
+                    () {
+                      final count = pl.itemIds
+                          .where((id) =>
+                              allItems.any((item) => item.id == id))
+                          .length;
+                      final thumbItemId = pl.effectiveThumbnailItemId;
+                      final thumbItem = thumbItemId != null
+                          ? allItems
+                              .where((item) => item.id == thumbItemId)
+                              .firstOrNull
+                          : null;
+                      return ListTile(
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: SizedBox(
+                            width: 48,
+                            height: 36,
+                            child: thumbItem != null
+                                ? _buildThumbnail(thumbItem)
+                                : Container(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest,
+                                    child: const Icon(
+                                        Icons.playlist_play,
+                                        color: Colors.grey,
+                                        size: 20),
+                                  ),
+                          ),
+                        ),
+                        title: Text(pl.name,
+                            style: const TextStyle(fontSize: 14)),
+                        subtitle: Text('$count 曲',
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.grey)),
                       onTap: () {
                         Navigator.pop(ctx);
                         final ids = _selectedIds.toList();
@@ -710,8 +743,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           ),
                         );
                       },
-                    ),
-                ],
+                      );
+                    }(),
+                  ],
               ),
             ),
             const Divider(height: 1),
@@ -2090,6 +2124,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
 class _BulkTagSheet extends StatefulWidget {
   final List<Tag> tags;
   final List<LoopItem> selectedItems;
+  final List<LoopItem> allItems;
   final void Function(String tagId) onAddTag;
   final void Function(String tagId) onRemoveTag;
   final VoidCallback onClearTags;
@@ -2098,6 +2133,7 @@ class _BulkTagSheet extends StatefulWidget {
   const _BulkTagSheet({
     required this.tags,
     required this.selectedItems,
+    required this.allItems,
     required this.onAddTag,
     required this.onRemoveTag,
     required this.onClearTags,
@@ -2217,8 +2253,16 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
               children: [
                 for (final tag in _tags)
                   CheckboxListTile(
-                    title:
-                        Text(tag.name, style: const TextStyle(fontSize: 14)),
+                    title: Text(tag.name,
+                        style: const TextStyle(fontSize: 14)),
+                    subtitle: Text(
+                      '${widget.allItems.where((i) => i.tagIds.contains(tag.id)).length} 曲',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.grey),
+                    ),
+                    secondary: Icon(Icons.label,
+                        size: 20,
+                        color: tag.color),
                     value: _displayValue(tag.id),
                     tristate: true,
                     onChanged: (_) {
