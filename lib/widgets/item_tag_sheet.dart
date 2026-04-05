@@ -103,7 +103,7 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('タグがありません',
-                    style: TextStyle(color: Colors.grey)),
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
               ),
             Flexible(
               child: ListView(

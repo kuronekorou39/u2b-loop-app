@@ -1243,7 +1243,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             if (_regions.length > 1)
               ListTile(
                 leading:
-                    const Icon(Icons.delete, color: Colors.red),
+                    const Icon(Icons.delete_outline, color: Colors.red),
                 title: const Text('削除',
                     style: TextStyle(color: Colors.red)),
                 onTap: () {

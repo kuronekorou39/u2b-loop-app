@@ -429,7 +429,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('追加する曲に共通のタグを付けますか？',
-                style: TextStyle(fontSize: 13, color: Colors.grey[400])),
+                style: TextStyle(fontSize: 13, color: Colors.grey)),
             const SizedBox(height: 12),
             // 既存タグ
             if (tags.isNotEmpty)
@@ -593,7 +593,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除', style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -723,7 +723,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('プレイリストがありません',
-                    style: TextStyle(color: Colors.grey)),
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
               ),
             Flexible(
               child: ListView.builder(
@@ -1820,7 +1820,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
 
     if (tags.isEmpty) {
-      return _buildEmpty(Icons.label_outline, 'タグがありません', '曲の詳細画面からタグを作成');
+      return _buildEmpty(Icons.label_outline, 'タグがありません', '＋ ボタンで作成');
     }
 
     return ListView.builder(
@@ -1908,7 +1908,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除',
                   style: TextStyle(color: Colors.red)),
               onTap: () {
@@ -2276,7 +2276,7 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
             const Padding(
               padding: EdgeInsets.all(16),
               child: Text('タグがありません',
-                  style: TextStyle(color: Colors.grey)),
+                  style: TextStyle(fontSize: 13, color: Colors.grey)),
             ),
           Flexible(
             child: ListView(
@@ -2456,7 +2456,7 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('タグがありません',
-                    style: TextStyle(color: Colors.grey)),
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
               ),
             for (final tag in _tags)
               ListTile(

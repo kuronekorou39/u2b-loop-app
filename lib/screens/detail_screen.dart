@@ -152,7 +152,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('プレイリストがありません',
-                    style: TextStyle(color: Colors.grey)),
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
               ),
             for (final pl in playlists)
               ListTile(
@@ -355,7 +355,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.grey.shade700),
                   ),
-                  labelStyle: TextStyle(color: Colors.grey[500]),
+                  labelStyle: TextStyle(color: Colors.grey),
                   floatingLabelStyle:
                       const TextStyle(color: AppTheme.accentGreen),
                   counterText: '',
@@ -377,14 +377,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.grey.shade700),
                   ),
-                  labelStyle: TextStyle(color: Colors.grey[500]),
+                  labelStyle: TextStyle(color: Colors.grey),
                   floatingLabelStyle:
                       const TextStyle(color: AppTheme.accentGreen),
                   hintText: '練習メモなど',
                   hintStyle: TextStyle(color: Colors.grey[700], fontSize: 13),
                   counterText: '',
                 ),
-                style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+                style: TextStyle(fontSize: 13, color: Colors.grey),
                 maxLines: 4,
                 minLines: 1,
               ),
@@ -526,7 +526,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除',
                   style: TextStyle(color: Colors.red)),
               onTap: () {

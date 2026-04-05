@@ -248,7 +248,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('タグがありません',
-                    style: TextStyle(color: Colors.grey)),
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
               ),
             for (final tag in tags)
               ListTile(
@@ -487,7 +487,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     padding: const EdgeInsets.only(right: 16),
                     color: Colors.red,
                     child:
-                        const Icon(Icons.delete, color: Colors.white),
+                        const Icon(Icons.delete_outline, color: Colors.white),
                   ),
                   onDismissed: (_) => _removeItem(pl, item.id),
                   child: Opacity(

@@ -908,7 +908,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除',
                   style: TextStyle(color: Colors.red)),
               onTap: () {
@@ -2121,7 +2121,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           ? Icons.keyboard_arrow_down
                           : Icons.queue_music,
                       size: 16,
-                      color: Colors.grey[500],
+                      color: Colors.grey,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -2130,7 +2130,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           : 'トラック一覧を表示',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.grey[500],
+                        color: Colors.grey,
                       ),
                     ),
                   ],
