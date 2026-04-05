@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +24,7 @@ import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
+import '../services/export_service.dart';
 import '../services/waveform_service.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/loop/loop_controls.dart';
@@ -945,6 +949,123 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } catch (_) {}
   }
 
+  // --- Export ---
+
+  void _showExportDialog() {
+    final loop = ref.read(loopProvider);
+    if (!loop.hasBothPoints) return;
+
+    final aStr = TimeUtils.formatShort(loop.pointA!);
+    final bStr = TimeUtils.formatShort(loop.pointB!);
+    final durationSec =
+        (loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() /
+            1000;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('区間を書き出し'),
+        content: Text('$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)',
+            style: const TextStyle(fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _executeExport(true);
+            },
+            icon: const Icon(Icons.audiotrack, size: 16),
+            label: const Text('音声のみ'),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _executeExport(false);
+            },
+            icon: const Icon(Icons.videocam, size: 16),
+            label: const Text('MP4'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _executeExport(bool audioOnly) async {
+    final loop = ref.read(loopProvider);
+    if (!loop.hasBothPoints) return;
+
+    final source = ref.read(videoSourceProvider);
+    if (source == null) return;
+
+    final inputUri = source.type == VideoSourceType.local
+        ? _currentItem.uri
+        : source.uri;
+
+    final startMs = loop.pointA!.inMilliseconds;
+    final endMs = loop.pointB!.inMilliseconds;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(width: 12),
+            Text('書き出し中...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
+    final service = ExportService();
+    final result = await service.exportRegion(
+      inputUri: inputUri,
+      startMs: startMs,
+      endMs: endMs,
+      format: audioOnly ? ExportFormat.audioOnly : ExportFormat.mp4,
+      title: _currentItem.title,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (!result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('書き出し失敗: ${result.error}')),
+      );
+      return;
+    }
+
+    final ext = audioOnly ? 'm4a' : 'mp4';
+    final safeTitle =
+        _currentItem.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final tempFile = File(result.outputPath!);
+    final bytes = await tempFile.readAsBytes();
+
+    final savePath = await FilePicker.platform.saveFile(
+      dialogTitle: '書き出し先を選択',
+      fileName: '$safeTitle.$ext',
+      bytes: Uint8List.fromList(bytes),
+    );
+
+    try {
+      await tempFile.delete();
+    } catch (_) {}
+
+    if (savePath != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('書き出し完了')),
+      );
+    }
+  }
+
   // --- Waveform ---
 
   void _retryWaveform() {
@@ -1846,6 +1967,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       const SizedBox(height: 6),
                       _buildPointDisplay(
                           'B', AppTheme.pointBColor, loop.pointB),
+                      if (loop.hasBothPoints) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 28,
+                          child: OutlinedButton.icon(
+                            onPressed: _showExportDialog,
+                            icon: const Icon(Icons.file_download_outlined,
+                                size: 14),
+                            label: const Text('書き出し',
+                                style: TextStyle(fontSize: 11)),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                  color: Colors.grey.shade700),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(6)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
 
                     // Gap slider (when loop enabled, non-edit mode only)
