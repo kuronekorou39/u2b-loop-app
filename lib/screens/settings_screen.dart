@@ -227,9 +227,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  String _formatEta(Duration d) {
+    if (d.inHours > 0) {
+      return '約${d.inHours}時間${d.inMinutes % 60}分';
+    } else if (d.inMinutes > 0) {
+      return '約${d.inMinutes}分';
+    }
+    return '1分未満';
+  }
+
   void _repairThumbnailsWithProgress() {
     final doneNotifier = ValueNotifier<int>(0);
     final totalNotifier = ValueNotifier<int>(0);
+    final etaNotifier = ValueNotifier<String>('');
+    final startTime = DateTime.now();
 
     showDialog(
       context: context,
@@ -239,33 +250,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           valueListenable: totalNotifier,
           builder: (_, total, __) => ValueListenableBuilder<int>(
             valueListenable: doneNotifier,
-            builder: (_, done, __) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 16),
-                    const Expanded(
-                      child: Text('サムネイルを復元中...',
-                          style: TextStyle(fontSize: 14)),
+            builder: (_, done, __) => ValueListenableBuilder<String>(
+              valueListenable: etaNotifier,
+              builder: (_, eta, __) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Text('サムネイルを復元中...',
+                            style: TextStyle(fontSize: 14)),
+                      ),
+                    ],
+                  ),
+                  if (total > 0) ...[
+                    const SizedBox(height: 12),
+                    LinearProgressIndicator(
+                        value: total > 0 ? done / total : 0),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('$done / $total',
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey)),
+                        if (eta.isNotEmpty)
+                          Text('残り $eta',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey)),
+                      ],
                     ),
                   ],
-                ),
-                if (total > 0) ...[
-                  const SizedBox(height: 12),
-                  LinearProgressIndicator(
-                      value: total > 0 ? done / total : 0),
-                  const SizedBox(height: 4),
-                  Text('$done / $total',
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -276,10 +299,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       onProgress: (done, total) {
         doneNotifier.value = done;
         totalNotifier.value = total;
+        if (done >= 3) {
+          final elapsed = DateTime.now().difference(startTime);
+          final perItem = elapsed.inMilliseconds / done;
+          final remaining = Duration(
+              milliseconds: (perItem * (total - done)).round());
+          etaNotifier.value = _formatEta(remaining);
+        }
       },
     ).then((_) {
       doneNotifier.dispose();
       totalNotifier.dispose();
+      etaNotifier.dispose();
       if (mounted) Navigator.pop(context);
     });
   }

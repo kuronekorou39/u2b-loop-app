@@ -356,6 +356,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
   }
 
+  String _formatEta(Duration d) {
+    if (d.inHours > 0) {
+      return '約${d.inHours}時間${d.inMinutes % 60}分';
+    } else if (d.inMinutes > 0) {
+      return '約${d.inMinutes}分';
+    }
+    return '1分未満';
+  }
+
   Future<void> _addVideos(List<yte.Video> videos, String playlistTitle) async {
     // タグを選択/作成するダイアログ
     final tagId = await _showImportTagDialog(playlistTitle);
@@ -363,38 +372,53 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
     // 進捗ダイアログ
     final progressNotifier = ValueNotifier<int>(0);
+    final etaNotifier = ValueNotifier<String>('');
     final total = videos.length;
+    final startTime = DateTime.now();
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         content: ValueListenableBuilder<int>(
           valueListenable: progressNotifier,
-          builder: (_, count, __) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      '「$playlistTitle」に追加中...',
-                      style: const TextStyle(fontSize: 14),
+          builder: (_, count, __) => ValueListenableBuilder<String>(
+            valueListenable: etaNotifier,
+            builder: (_, eta, __) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              LinearProgressIndicator(value: count / total),
-              const SizedBox(height: 4),
-              Text('$count / $total',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        '「$playlistTitle」に追加中...',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(value: count / total),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('$count / $total',
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.grey)),
+                    if (eta.isNotEmpty)
+                      Text('残り $eta',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -411,9 +435,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
         tagId: tagId,
       );
       progressNotifier.value = i + 1;
+      // 残り時間推定（3件目以降）
+      if (i >= 2) {
+        final elapsed = DateTime.now().difference(startTime);
+        final perItem = elapsed.inMilliseconds / (i + 1);
+        final remaining = Duration(
+            milliseconds: (perItem * (total - i - 1)).round());
+        etaNotifier.value = _formatEta(remaining);
+      }
     }
 
     progressNotifier.dispose();
+    etaNotifier.dispose();
     if (mounted) Navigator.pop(context);
   }
 
