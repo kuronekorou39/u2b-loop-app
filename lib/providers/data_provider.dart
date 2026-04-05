@@ -167,18 +167,24 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   /// サムネイルが未取得のアイテムを一括で再取得
   Future<void> repairThumbnails() async {
     final items = _box.values.toList();
+    var count = 0;
     for (final item in items) {
       if (item.thumbnailPath != null) {
-        // パスはあるがファイルが存在しない場合もチェック
         if (await File(item.thumbnailPath!).exists()) continue;
       }
       if (item.thumbnailUrl != null) {
-        // YouTube: URLからダウンロード
+        // YouTube: URLからダウンロード（ディレイ付き）
         final path =
             await ThumbnailService().save(item.id, item.thumbnailUrl);
         if (path != null) {
           item.thumbnailPath = path;
           await _box.put(item.id, item);
+          count++;
+          // 5件ごとにUI更新 + ディレイ
+          if (count % 5 == 0) {
+            _refresh();
+            await Future.delayed(const Duration(seconds: 2));
+          }
         }
       } else if (item.sourceType == 'local' && item.uri.isNotEmpty) {
         // ローカル: 動画からフレーム抽出
@@ -188,6 +194,8 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           if (path != null) {
             item.thumbnailPath = path;
             await _box.put(item.id, item);
+            count++;
+            if (count % 5 == 0) _refresh();
           }
         } catch (_) {}
       }
