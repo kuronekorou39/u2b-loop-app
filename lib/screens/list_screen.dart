@@ -1125,12 +1125,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     child: const Icon(Icons.add),
                   )
                 : _tabController.index == 1
-                    ? FloatingActionButton.extended(
+                    ? FloatingActionButton(
                         onPressed: _createPlaylist,
-                        icon: const Icon(Icons.playlist_add),
-                        label: const Text('作成'),
+                        child: const Icon(Icons.playlist_add),
                       )
-                    : null,
+                    : FloatingActionButton(
+                        onPressed: _createTagFromTab,
+                        child: const Icon(Icons.new_label),
+                      ),
       ),
     );
   }
@@ -1418,7 +1420,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       List<LoopItem> items, List<Tag> tags, int cols, double ratio) {
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return GridView.builder(
-      padding: EdgeInsets.fromLTRB(6, 6, 6, 6 + bottomPad),
+      padding: EdgeInsets.fromLTRB(6, 6, 6, 80 + bottomPad),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: cols,
         childAspectRatio: ratio,
@@ -1558,7 +1560,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget _buildListView(List<LoopItem> items, List<Tag> tags) {
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return ListView.builder(
-      padding: EdgeInsets.only(top: 4, bottom: 4 + bottomPad),
+      padding: EdgeInsets.only(top: 4, bottom: 80 + bottomPad),
       itemCount: items.length,
       itemBuilder: (context, i) => _buildListTile(items[i], tags),
     );
@@ -1776,23 +1778,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
 
     return ListView.builder(
-      padding: EdgeInsets.only(top: 4, bottom: 4 + bottomPad),
-      itemCount: tags.length + 1, // +1 for add button
+      padding: EdgeInsets.only(top: 4, bottom: 80 + bottomPad),
+      itemCount: tags.length,
       itemBuilder: (context, i) {
-        if (i == tags.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: OutlinedButton.icon(
-              onPressed: () => _createTagFromTab(),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('タグを作成'),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: Colors.grey.shade700),
-              ),
-            ),
-          );
-        }
-
         final tag = tags[i];
         final count =
             allItems.where((item) => item.tagIds.contains(tag.id)).length;
@@ -1986,7 +1974,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final items = ref.watch(loopItemsProvider);
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return ListView.builder(
-      padding: EdgeInsets.only(top: 4, bottom: 4 + bottomPad),
+      padding: EdgeInsets.only(top: 4, bottom: 80 + bottomPad),
       itemCount: playlists.length,
       itemBuilder: (context, i) {
         final pl = playlists[i];

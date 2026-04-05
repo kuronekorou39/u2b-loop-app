@@ -350,10 +350,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 decoration: InputDecoration(
                   labelText: 'タイトル',
                   isDense: true,
-                  border: const OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.grey.shade700),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.grey.shade700),
+                  ),
                   labelStyle: TextStyle(color: Colors.grey[500]),
                   floatingLabelStyle:
-                      const TextStyle(color: Color(0xFF4ECCA3)),
+                      const TextStyle(color: AppTheme.accentGreen),
                   counterText: '',
                 ),
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
@@ -367,9 +372,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 decoration: InputDecoration(
                   labelText: '備考',
                   isDense: true,
-                  border: const OutlineInputBorder(),
-                  labelStyle: TextStyle(color: Colors.grey[600]),
-                  floatingLabelStyle: TextStyle(color: Colors.grey[400]),
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.grey.shade700),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.grey.shade700),
+                  ),
+                  labelStyle: TextStyle(color: Colors.grey[500]),
+                  floatingLabelStyle:
+                      const TextStyle(color: AppTheme.accentGreen),
                   hintText: '練習メモなど',
                   hintStyle: TextStyle(color: Colors.grey[700], fontSize: 13),
                   counterText: '',
@@ -677,6 +688,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       runSpacing: 6,
       children: [
         ...itemTags.map((t) => Chip(
+              avatar: t.color != null
+                  ? Icon(Icons.circle, size: 10, color: t.color)
+                  : null,
               label: Text(t.name, style: const TextStyle(fontSize: 12)),
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -687,15 +701,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     .removeTagFromItems([item.id], t.id);
               },
             )),
-        ActionChip(
-          avatar: const Icon(Icons.add, size: 16),
+        OutlinedButton.icon(
+          onPressed: () => _showTagPicker(item),
+          icon: const Icon(Icons.add, size: 16),
           label: Text(
             itemTags.isEmpty ? 'タグ追加' : '追加',
             style: const TextStyle(fontSize: 12),
           ),
-          visualDensity: VisualDensity.compact,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          onPressed: () => _showTagPicker(item),
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            side: BorderSide(color: Colors.grey.shade700),
+          ),
         ),
       ],
     );

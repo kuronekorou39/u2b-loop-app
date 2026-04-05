@@ -468,7 +468,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddSheet(pl),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.playlist_add),
       ),
     );
   }
