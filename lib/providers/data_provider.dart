@@ -173,19 +173,16 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         if (await File(item.thumbnailPath!).exists()) continue;
       }
       if (item.thumbnailUrl != null) {
-        // YouTube: URLからダウンロード（ディレイ付き）
+        // YouTube: URLからダウンロード（毎件ディレイ）
         final path =
             await ThumbnailService().save(item.id, item.thumbnailUrl);
         if (path != null) {
           item.thumbnailPath = path;
           await _box.put(item.id, item);
           count++;
-          // 5件ごとにUI更新 + ディレイ
-          if (count % 5 == 0) {
-            _refresh();
-            await Future.delayed(const Duration(seconds: 2));
-          }
+          if (count % 5 == 0) _refresh();
         }
+        await Future.delayed(const Duration(milliseconds: 500));
       } else if (item.sourceType == 'local' && item.uri.isNotEmpty) {
         // ローカル: 動画からフレーム抽出
         try {
