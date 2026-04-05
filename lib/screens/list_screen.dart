@@ -968,93 +968,102 @@ class _ListScreenState extends ConsumerState<ListScreen>
           behavior: HitTestBehavior.translucent,
           child: Column(
           children: [
-            // 検索・ソートバー（スペースを常に確保）
-            Visibility(
-              visible: isDataTab,
-              maintainSize: true,
-              maintainAnimation: true,
-              maintainState: true,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 36,
-                        child: TextField(
-                          controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          decoration: InputDecoration(
-                            hintText: '検索...',
-                            hintStyle: const TextStyle(fontSize: 13),
-                            prefixIcon: const Icon(Icons.search, size: 20),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? GestureDetector(
-                                    onTap: () {
-                                      _searchController.clear();
-                                      setState(() => _searchQuery = '');
-                                    },
-                                    child: const Icon(Icons.close, size: 18),
-                                  )
-                                : null,
-                            isDense: true,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 0),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide:
-                                  BorderSide(color: Colors.grey.shade700),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide:
-                                  BorderSide(color: Colors.grey.shade700),
-                            ),
-                          ),
-                          style: const TextStyle(fontSize: 13),
-                          onChanged: (v) => setState(() => _searchQuery = v),
-                        ),
-                      ),
-                    ),
-                    if (tags.isNotEmpty)
-                      _buildTagFilterButton(tags, filterTagIds),
-                    PopupMenuButton<_SortMode>(
-                      icon: const Icon(Icons.sort, size: 22),
-                      tooltip: '並び替え',
-                      onSelected: (mode) =>
-                          setState(() => _sortMode = mode),
-                      itemBuilder: (_) => [
-                        _sortMenuItem(_SortMode.updatedDesc, '更新日（新→古）'),
-                        _sortMenuItem(_SortMode.updatedAsc, '更新日（古→新）'),
-                        _sortMenuItem(_SortMode.createdDesc, '作成日（新→古）'),
-                        _sortMenuItem(_SortMode.titleAsc, 'タイトル（A→Z）'),
-                        _sortMenuItem(_SortMode.titleDesc, 'タイトル（Z→A）'),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // 選択中タグの表示
-            if (isDataTab && filterTagIds.isNotEmpty)
-              _buildSelectedTagBar(tags, filterTagIds),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 physics:
                     _isSelecting ? const NeverScrollableScrollPhysics() : null,
                 children: [
-                  items.isEmpty
-                      ? _buildEmpty(
-                          Icons.music_note_outlined,
-                          filterTagIds.isNotEmpty
-                              ? '該当するデータがありません'
-                              : 'データがありません',
-                          filterTagIds.isNotEmpty
-                              ? 'フィルターを変更してください'
-                              : '＋ ボタンで追加',
-                        )
-                      : _buildItemsView(items, tags),
+                  // 曲リストタブ（検索バー含む）
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 36,
+                                child: TextField(
+                                  controller: _searchController,
+                                  focusNode: _searchFocusNode,
+                                  decoration: InputDecoration(
+                                    hintText: '検索...',
+                                    hintStyle: const TextStyle(fontSize: 13),
+                                    prefixIcon:
+                                        const Icon(Icons.search, size: 20),
+                                    suffixIcon: _searchQuery.isNotEmpty
+                                        ? GestureDetector(
+                                            onTap: () {
+                                              _searchController.clear();
+                                              setState(
+                                                  () => _searchQuery = '');
+                                            },
+                                            child: const Icon(Icons.close,
+                                                size: 18),
+                                          )
+                                        : null,
+                                    isDense: true,
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            vertical: 0),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: BorderSide(
+                                          color: Colors.grey.shade700),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: BorderSide(
+                                          color: Colors.grey.shade700),
+                                    ),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                  onChanged: (v) =>
+                                      setState(() => _searchQuery = v),
+                                ),
+                              ),
+                            ),
+                            if (tags.isNotEmpty)
+                              _buildTagFilterButton(tags, filterTagIds),
+                            PopupMenuButton<_SortMode>(
+                              icon: const Icon(Icons.sort, size: 22),
+                              tooltip: '並び替え',
+                              onSelected: (mode) =>
+                                  setState(() => _sortMode = mode),
+                              itemBuilder: (_) => [
+                                _sortMenuItem(
+                                    _SortMode.updatedDesc, '更新日（新→古）'),
+                                _sortMenuItem(
+                                    _SortMode.updatedAsc, '更新日（古→新）'),
+                                _sortMenuItem(
+                                    _SortMode.createdDesc, '作成日（新→古）'),
+                                _sortMenuItem(
+                                    _SortMode.titleAsc, 'タイトル（A→Z）'),
+                                _sortMenuItem(
+                                    _SortMode.titleDesc, 'タイトル（Z→A）'),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (filterTagIds.isNotEmpty)
+                        _buildSelectedTagBar(tags, filterTagIds),
+                      Expanded(
+                        child: items.isEmpty
+                            ? _buildEmpty(
+                                Icons.music_note_outlined,
+                                filterTagIds.isNotEmpty
+                                    ? '該当するデータがありません'
+                                    : 'データがありません',
+                                filterTagIds.isNotEmpty
+                                    ? 'フィルターを変更してください'
+                                    : '＋ ボタンで追加',
+                              )
+                            : _buildItemsView(items, tags),
+                      ),
+                    ],
+                  ),
                   playlists.isEmpty
                       ? _buildEmpty(
                           Icons.playlist_play, 'プレイリストがありません', '＋ ボタンで新規作成')
