@@ -48,7 +48,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
     _tabController.addListener(() => setState(() {}));
     // スワイプ中にタブ0の閾値を超えたら即座にUI切り替え
   }
@@ -996,8 +996,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final filterTagIds = ref.watch(tagFilterProvider);
     final playlists = ref.watch(playlistsProvider);
 
-    final isDataTab = _tabController.index == 0;
-    final isPlaylistTab = _tabController.index == 1;
+    final isDataTab = _tabController.index == 1;
+    final isPlaylistTab = _tabController.index == 2;
 
     // 検索フィルター
     const untaggedId = '__untagged__';
@@ -1055,6 +1055,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 physics:
                     _isSelecting ? const NeverScrollableScrollPhysics() : null,
                 children: [
+                  // タグ管理タブ
+                  _buildTagManagerTab(tags, allItems),
                   // 曲リストタブ（検索バー含む）
                   Column(
                     children: [
@@ -1149,7 +1151,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       ? _buildEmpty(
                           Icons.playlist_play, 'プレイリストがありません', '＋ ボタンで新規作成')
                       : _buildPlaylistList(playlists),
-                  _buildTagManagerTab(tags, allItems),
                 ],
               ),
             ),
@@ -1159,17 +1160,17 @@ class _ListScreenState extends ConsumerState<ListScreen>
             ? null
             : _tabController.index == 0
                 ? FloatingActionButton(
-                    onPressed: _showAddDialog,
-                    child: const Icon(Icons.add),
+                    onPressed: _createTagFromTab,
+                    child: const Icon(Icons.new_label),
                   )
                 : _tabController.index == 1
                     ? FloatingActionButton(
-                        onPressed: _createPlaylist,
-                        child: const Icon(Icons.playlist_add),
+                        onPressed: _showAddDialog,
+                        child: const Icon(Icons.add),
                       )
                     : FloatingActionButton(
-                        onPressed: _createTagFromTab,
-                        child: const Icon(Icons.new_label),
+                        onPressed: _createPlaylist,
+                        child: const Icon(Icons.playlist_add),
                       ),
       ),
     );
@@ -1206,9 +1207,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
           : TabBar(
               controller: _tabController,
               tabs: const [
+                Tab(text: 'タグ管理'),
                 Tab(text: '曲リスト'),
                 Tab(text: 'プレイリスト'),
-                Tab(text: 'タグ管理'),
               ],
             ),
     );
@@ -1841,7 +1842,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           onTap: () {
             // 曲リストタブに移動してこのタグでフィルター
             ref.read(tagFilterProvider.notifier).state = {tag.id};
-            _tabController.animateTo(0);
+            _tabController.animateTo(1);
           },
           onLongPress: () => _showTagMenu(tag),
         );
