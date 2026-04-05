@@ -182,7 +182,9 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           count++;
           if (count % 5 == 0) _refresh();
         }
-        await Future.delayed(const Duration(milliseconds: 500));
+        // プログレッシブディレイ: 件数が増えるほど長く待つ
+        final delayMs = 300 + (count ~/ 10) * 200; // 300ms → 500ms → 700ms ...
+        await Future.delayed(Duration(milliseconds: delayMs));
       } else if (item.sourceType == 'local' && item.uri.isNotEmpty) {
         // ローカル: 動画からフレーム抽出
         try {
