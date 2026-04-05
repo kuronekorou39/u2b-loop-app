@@ -2197,11 +2197,13 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                         ? null
                         : false,
                 tristate: true,
-                onChanged: (val) {
-                  if (val == true || val == null) {
-                    widget.onAddTag(tag.id);
-                  } else {
+                onChanged: (_) {
+                  if (_allHaveTag(tag.id)) {
+                    // ✓ → 解除
                     widget.onRemoveTag(tag.id);
+                  } else {
+                    // □ or ー → 全員に追加
+                    widget.onAddTag(tag.id);
                   }
                   setState(() {});
                 },
