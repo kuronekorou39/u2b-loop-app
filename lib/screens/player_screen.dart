@@ -951,22 +951,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // --- Export ---
 
-  void _showExportDialog() {
+  void _showExportDialog({bool fullTrack = false}) {
     final loop = ref.read(loopProvider);
-    if (!loop.hasBothPoints) return;
+    if (!fullTrack && !loop.hasBothPoints) return;
 
-    final aStr = TimeUtils.formatShort(loop.pointA!);
-    final bStr = TimeUtils.formatShort(loop.pointB!);
-    final durationSec =
-        (loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() /
-            1000;
+    String subtitle;
+    if (fullTrack) {
+      final dur = ref.read(playerProvider).state.duration;
+      subtitle = '全体 (${TimeUtils.formatShort(dur)})';
+    } else {
+      final aStr = TimeUtils.formatShort(loop.pointA!);
+      final bStr = TimeUtils.formatShort(loop.pointB!);
+      final durationSec =
+          (loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() /
+              1000;
+      subtitle = '$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)';
+    }
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('区間を書き出し'),
-        content: Text('$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)',
-            style: const TextStyle(fontSize: 13)),
+        title: Text(fullTrack ? '全体を書き出し' : '区間を書き出し'),
+        content: Text(subtitle, style: const TextStyle(fontSize: 13)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -975,7 +981,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           TextButton.icon(
             onPressed: () {
               Navigator.pop(ctx);
-              _executeExport(true);
+              _executeExport(true, fullTrack: fullTrack);
             },
             icon: const Icon(Icons.audiotrack, size: 16),
             label: const Text('音声のみ'),
@@ -983,7 +989,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           TextButton.icon(
             onPressed: () {
               Navigator.pop(ctx);
-              _executeExport(false);
+              _executeExport(false, fullTrack: fullTrack);
             },
             icon: const Icon(Icons.videocam, size: 16),
             label: const Text('MP4'),
@@ -993,9 +999,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  Future<void> _executeExport(bool audioOnly) async {
+  Future<void> _executeExport(bool audioOnly,
+      {bool fullTrack = false}) async {
     final loop = ref.read(loopProvider);
-    if (!loop.hasBothPoints) return;
+    if (!fullTrack && !loop.hasBothPoints) return;
 
     final source = ref.read(videoSourceProvider);
     if (source == null) return;
@@ -1004,8 +1011,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ? _currentItem.uri
         : source.uri;
 
-    final startMs = loop.pointA!.inMilliseconds;
-    final endMs = loop.pointB!.inMilliseconds;
+    final int startMs;
+    final int endMs;
+    if (fullTrack) {
+      startMs = 0;
+      endMs = ref.read(playerProvider).state.duration.inMilliseconds;
+    } else {
+      startMs = loop.pointA!.inMilliseconds;
+      endMs = loop.pointB!.inMilliseconds;
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1934,11 +1948,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ] else if (_activeRegionIdx == -1) ...[
-                      // --- 全体: AB区間設定ボタン ---
+                      // --- 全体: AB区間設定ボタン + 書き出し ---
                       if (regions.length < _maxRegions)
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 8),
+                          padding: const EdgeInsets.only(top: 8),
                           child: SizedBox(
                             width: double.infinity,
                             height: 32,
@@ -1960,6 +1973,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             ),
                           ),
                         ),
+                      if (hasSource)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 28,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showExportDialog(
+                                  fullTrack: !loop.hasBothPoints),
+                              icon: const Icon(
+                                  Icons.file_download_outlined,
+                                  size: 14),
+                              label: Text(
+                                  loop.hasBothPoints
+                                      ? '区間を書き出し'
+                                      : '全体を書き出し',
+                                  style: const TextStyle(fontSize: 11)),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(
+                                    color: Colors.grey.shade700),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(6)),
+                              ),
+                            ),
+                          ),
+                        ),
                     ] else ...[
                       // --- Non-edit: read-only A/B display ---
                       _buildPointDisplay(
@@ -1973,7 +2015,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           width: double.infinity,
                           height: 28,
                           child: OutlinedButton.icon(
-                            onPressed: _showExportDialog,
+                            onPressed: () =>
+                                _showExportDialog(fullTrack: false),
                             icon: const Icon(Icons.file_download_outlined,
                                 size: 14),
                             label: const Text('書き出し',
