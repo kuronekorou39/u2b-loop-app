@@ -25,7 +25,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   int _requestCount = 0;
   DateTime _lastRequestTime = DateTime.now();
   static const _delayResetDuration = Duration(seconds: 30);
-  static const _delayMaxMs = 1500;
+  static const _delayMaxMs = 3000;
 
   /// リクエスト間のディレイを計算。30秒以上空いたらカウンタリセット。
   Duration _nextDelay() {
