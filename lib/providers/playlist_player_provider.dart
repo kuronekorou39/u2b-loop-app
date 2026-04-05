@@ -10,6 +10,7 @@ class PlaylistPlayerState {
   final int currentOrderIndex;
   final RepeatMode repeatMode;
   final bool shuffle;
+  final bool firstVerseMode;
 
   const PlaylistPlayerState({
     this.tracks = const [],
@@ -17,6 +18,7 @@ class PlaylistPlayerState {
     this.currentOrderIndex = 0,
     this.repeatMode = RepeatMode.none,
     this.shuffle = false,
+    this.firstVerseMode = false,
   });
 
   bool get isEmpty => tracks.isEmpty;
@@ -92,6 +94,7 @@ class PlaylistPlayerState {
     int? currentOrderIndex,
     RepeatMode? repeatMode,
     bool? shuffle,
+    bool? firstVerseMode,
   }) {
     return PlaylistPlayerState(
       tracks: tracks ?? this.tracks,
@@ -99,6 +102,7 @@ class PlaylistPlayerState {
       currentOrderIndex: currentOrderIndex ?? this.currentOrderIndex,
       repeatMode: repeatMode ?? this.repeatMode,
       shuffle: shuffle ?? this.shuffle,
+      firstVerseMode: firstVerseMode ?? this.firstVerseMode,
     );
   }
 }
@@ -317,6 +321,10 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
       currentOrderIndex: newOrderIndex,
     );
     return true;
+  }
+
+  void toggleFirstVerseMode() {
+    state = state.copyWith(firstVerseMode: !state.firstVerseMode);
   }
 
   void clear() {

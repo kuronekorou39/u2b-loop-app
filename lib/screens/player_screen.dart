@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/constants.dart';
+import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
@@ -82,6 +83,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _preloadCheckTimer;
   int _preloadGeneration = 0; // レース条件防止用の世代カウンタ
 
+  // First verse fade
+  Timer? _fadeTimer;
+  bool _isFading = false;
+
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
 
@@ -148,6 +153,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   void deactivate() {
+    _cancelFade();
     _preloadCheckTimer?.cancel();
     // 自動PiPを無効化
     try {
@@ -192,11 +198,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _advanceToNext() {
+    final plState = ref.read(playlistPlayerProvider);
+    final shouldFadeIn = plState.firstVerseMode && _isFading;
+    _cancelFade();
+    // ボリュームを即リセット（フェードアウト中だった場合）
+    try {
+      ref.read(playerProvider).setVolume(100);
+    } catch (_) {}
+
     final notifier = ref.read(playlistPlayerProvider.notifier);
-    final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
+    final oldTrack = plState.currentTrack;
 
     // Check preload BEFORE advancing (next() changes state)
-    final plState = ref.read(playlistPlayerProvider);
     final nextIdx = plState.peekNextTrackIndex();
     final isPreloaded =
         _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
@@ -219,11 +232,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _preloadedTrackIndex = null;
       _loadTrackRegion(newTrack);
       _startPreloadMonitor();
+      if (shouldFadeIn) _startFadeIn();
     } else if (isPreloaded) {
       // Different item, preloaded - swap players!
       _swapToPreloaded(newTrack);
       _loadTrackRegion(newTrack);
       _startPreloadMonitor();
+      if (shouldFadeIn) _startFadeIn();
     } else {
       // Different item, not preloaded - full reload
       _cancelPreload();
@@ -268,12 +283,100 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (!ref.read(loopProvider).enabled) notifier.toggleEnabled();
     } else {
       notifier.reset();
+      // 1番だけモード: 区間未設定のトラックに仮想B点を設定
+      _applyFirstVerseCut(track);
     }
     if (track.startMs != null) {
       ref.read(playerProvider).seek(Duration(milliseconds: track.startMs!));
     }
     _setupPlaylistCallbacks();
     if (mounted) setState(() {});
+  }
+
+  /// 1番だけモード: 波形から切断点を計算してB点にセット
+  void _applyFirstVerseCut(PlaylistTrack track) {
+    _cancelFade();
+    final plState = ref.read(playlistPlayerProvider);
+    if (!plState.firstVerseMode) return;
+
+    final durationMs =
+        ref.read(playerProvider).state.duration.inMilliseconds;
+    if (durationMs <= 0) return;
+
+    final waveform = _waveformCache[track.item.id];
+    final cutMs = VerseDetector.findCutPoint(
+      waveform: waveform,
+      durationMs: durationMs,
+    );
+
+    if (cutMs != null) {
+      final notifier = ref.read(loopProvider.notifier);
+      notifier.setPointA(Duration.zero);
+      notifier.setPointB(Duration(milliseconds: cutMs));
+      if (!ref.read(loopProvider).enabled) notifier.toggleEnabled();
+      _startFadeOutMonitor(cutMs);
+    }
+  }
+
+  /// B点の3秒前からフェードアウトを開始する監視
+  void _startFadeOutMonitor(int cutMs) {
+    _cancelFade();
+    final fadeStartMs = cutMs - 3000;
+    if (fadeStartMs <= 0) return;
+
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted) {
+        _cancelFade();
+        return;
+      }
+      final posMs =
+          ref.read(playerProvider).state.position.inMilliseconds;
+      if (posMs >= fadeStartMs && !_isFading) {
+        _isFading = true;
+        _startFadeOut(cutMs);
+      }
+    });
+  }
+
+  /// 3秒かけてフェードアウト
+  void _startFadeOut(int cutMs) {
+    _fadeTimer?.cancel();
+    const steps = 15; // 200ms × 15 = 3秒
+    var step = 0;
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      step++;
+      final volume = (1.0 - step / steps).clamp(0.0, 1.0);
+      try {
+        ref.read(playerProvider).setVolume(volume * 100);
+      } catch (_) {}
+      if (step >= steps) _fadeTimer?.cancel();
+    });
+  }
+
+  /// フェードイン（次曲開始時に呼ぶ）
+  void _startFadeIn() {
+    _cancelFade();
+    const steps = 5; // 200ms × 5 = 1秒
+    var step = 0;
+    ref.read(playerProvider).setVolume(0);
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      step++;
+      final volume = (step / steps).clamp(0.0, 1.0);
+      try {
+        ref.read(playerProvider).setVolume(volume * 100);
+      } catch (_) {}
+      if (step >= steps) {
+        _fadeTimer?.cancel();
+        _fadeTimer = null;
+        _isFading = false;
+      }
+    });
+  }
+
+  void _cancelFade() {
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _isFading = false;
   }
 
   /// パネルからのトラック選択：プリロード済みなら即切替、未準備なら裏読み込み開始
@@ -2289,6 +2392,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     pl.RepeatMode.all => '全曲リピート',
                     pl.RepeatMode.single => '1曲リピート',
                   },
+                  visualDensity: VisualDensity.compact,
+                ),
+                // 1番だけモード
+                IconButton(
+                  icon: Icon(
+                    Icons.looks_one_outlined,
+                    size: 22,
+                    color: plState.firstVerseMode
+                        ? AppTheme.accentGreen
+                        : Colors.grey,
+                  ),
+                  onPressed: () {
+                    ref
+                        .read(playlistPlayerProvider.notifier)
+                        .toggleFirstVerseMode();
+                    // 現在のトラックに即適用
+                    final track = ref
+                        .read(playlistPlayerProvider)
+                        .currentTrack;
+                    if (track != null && !track.hasRegion) {
+                      _applyFirstVerseCut(track);
+                    }
+                  },
+                  tooltip: '1番だけ',
                   visualDensity: VisualDensity.compact,
                 ),
               ],
