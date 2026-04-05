@@ -635,7 +635,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
         items.where((i) => _selectedIds.contains(i.id)).toList();
 
     _showSheet(
-      isScrollControlled: true,
       builder: (ctx) => _BulkTagSheet(
         tags: tags,
         selectedItems: selectedItems,
