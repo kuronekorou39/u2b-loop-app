@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
+import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
@@ -24,6 +25,7 @@ class _ShareImportDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     final youtubeCount =
         data.items.where((i) => i.videoId.isNotEmpty).length;
     final regionCount =
@@ -37,23 +39,21 @@ class _ShareImportDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(data.name,
-              style:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          Text('$youtubeCount 曲',
-              style: const TextStyle(fontSize: 13)),
+          Text(data.name, style: textTheme.displaySmall),
+          SizedBox(height: AppSpacing.lg),
+          Text('$youtubeCount 曲', style: textTheme.bodyMedium),
           if (regionCount > 0)
             Text('$regionCount 個のAB区間',
-                style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                style: textTheme.bodyMedium!
+                    .copyWith(color: textTheme.bodySmall!.color)),
           if (tagNames.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
               child: Wrap(
-                spacing: 4,
+                spacing: AppSpacing.xs,
                 children: tagNames
                     .map((t) => Chip(
-                          label: Text(t, style: const TextStyle(fontSize: 11)),
+                          label: Text(t, style: textTheme.labelSmall),
                           visualDensity: VisualDensity.compact,
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
@@ -83,48 +83,47 @@ class _ShareImportDialog extends StatelessWidget {
     final total = data.items.where((i) => i.videoId.isNotEmpty).length;
     final progressNotifier = ValueNotifier<int>(0);
 
-    // 進捗ダイアログ
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: ValueListenableBuilder<int>(
-          valueListenable: progressNotifier,
-          builder: (_, count, __) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text('「${data.name}」をインポート中...',
-                        style: const TextStyle(fontSize: 14)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              LinearProgressIndicator(
-                  value: total > 0 ? count / total : 0),
-              const SizedBox(height: 4),
-              Text('$count / $total',
-                  style:
-                      const TextStyle(fontSize: 12, color: Colors.grey)),
-            ],
+      builder: (ctx) {
+        final textTheme = Theme.of(ctx).textTheme;
+        return AlertDialog(
+          content: ValueListenableBuilder<int>(
+            valueListenable: progressNotifier,
+            builder: (_, count, __) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: AppSpacing.xxl,
+                      height: AppSpacing.xxl,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: AppSpacing.xl),
+                    Expanded(
+                      child: Text('「${data.name}」をインポート中...',
+                          style: textTheme.bodyLarge),
+                    ),
+                  ],
+                ),
+                SizedBox(height: AppSpacing.lg),
+                LinearProgressIndicator(
+                    value: total > 0 ? count / total : 0),
+                SizedBox(height: AppSpacing.xs),
+                Text('$count / $total', style: textTheme.bodySmall),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
     final itemBox = Hive.box<LoopItem>('loop_items');
     final tagBox = Hive.box<Tag>('tags');
     final existingTags = tagBox.values.toList();
 
-    // タグ名→IDマッピング（既存タグは再利用、なければ作成）
     final tagNameToId = <String, String>{};
     for (final name in data.items.expand((i) => i.tags).toSet()) {
       final existing =
@@ -139,24 +138,20 @@ class _ShareImportDialog extends StatelessWidget {
       }
     }
 
-    // アイテム作成
     final itemIds = <String>[];
     for (final si in data.items) {
       if (si.videoId.isEmpty) continue;
 
-      // 既存チェック
       final existing =
           itemBox.values.where((i) => i.videoId == si.videoId).firstOrNull;
       if (existing != null) {
         itemIds.add(existing.id);
-        // 区間をマージ（既存にないものだけ追加）
         for (final sr in si.regions) {
           if (!existing.regions.any((r) => r.name == sr.name)) {
             existing.regions
                 .add(sr.toLoopRegion('${existing.id}_r${existing.regions.length}'));
           }
         }
-        // タグをマージ
         for (final tagName in si.tags) {
           final tagId = tagNameToId[tagName];
           if (tagId != null && !existing.tagIds.contains(tagId)) {
@@ -168,7 +163,6 @@ class _ShareImportDialog extends StatelessWidget {
         continue;
       }
 
-      // 新規作成
       final id = DateTime.now().microsecondsSinceEpoch.toString();
       final tagIds = si.tags
           .map((name) => tagNameToId[name])
@@ -198,7 +192,6 @@ class _ShareImportDialog extends StatelessWidget {
       await Future.delayed(const Duration(milliseconds: 50));
     }
 
-    // プレイリスト作成
     final plId = DateTime.now().microsecondsSinceEpoch.toString();
     final playlist = Playlist(
       id: plId,
@@ -207,18 +200,14 @@ class _ShareImportDialog extends StatelessWidget {
     );
     await Hive.box<Playlist>('playlists').put(plId, playlist);
 
-    // プロバイダ更新
     ref.invalidate(loopItemsProvider);
     ref.invalidate(playlistsProvider);
     ref.invalidate(tagsProvider);
 
-    // サムネ取得
     ref.read(loopItemsProvider.notifier).repairThumbnails();
 
     progressNotifier.dispose();
-    if (context.mounted) {
-      Navigator.pop(context); // 進捗ダイアログを閉じる
-    }
+    if (context.mounted) Navigator.pop(context);
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

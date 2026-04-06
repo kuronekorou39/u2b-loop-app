@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
 
@@ -85,25 +86,25 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text('タグを選択',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xl, vertical: AppSpacing.md),
+              child: Text('タグを選択', style: textTheme.titleMedium),
             ),
             const Divider(height: 1),
             if (_tags.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('タグがありません',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: Text('タグがありません', style: textTheme.bodyMedium!
+                    .copyWith(color: textTheme.bodySmall!.color)),
               ),
             Flexible(
               child: ListView(
@@ -111,8 +112,7 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
                 children: [
                   for (final tag in _tags)
                     CheckboxListTile(
-                      title: Text(tag.name,
-                          style: const TextStyle(fontSize: 14)),
+                      title: Text(tag.name, style: textTheme.bodyLarge),
                       value: _activeTagIds.contains(tag.id),
                       onChanged: (_) => _toggle(tag.id),
                     ),
@@ -121,15 +121,15 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
             ),
             const Divider(height: 1),
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xl, vertical: AppSpacing.xs),
               child: OutlinedButton.icon(
                 onPressed: _createNew,
-                icon: const Icon(Icons.add, size: 18),
+                icon: const Icon(Icons.add, size: AppIconSizes.sm),
                 label: const Text('新しいタグを作成して追加'),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),

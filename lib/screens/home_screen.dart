@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/theme/app_theme.dart';
 import '../providers/theme_provider.dart';
-import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/video_player_widget.dart';
@@ -16,9 +16,9 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'U2B Loop',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          style: Theme.of(context).textTheme.titleLarge,
         ),
         centerTitle: false,
         actions: [
@@ -38,7 +38,7 @@ class HomeScreen extends ConsumerWidget {
             VideoPlayerWidget(),
             PlayerControls(),
             LoopSeekbar(),
-            SizedBox(height: 24),
+            SizedBox(height: AppSpacing.xxl),
           ],
         ),
       ),
