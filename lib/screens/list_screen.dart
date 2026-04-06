@@ -13,6 +13,8 @@ import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../services/share_service.dart';
+import '../widgets/share_import_dialog.dart';
 
 import 'detail_screen.dart';
 import 'player_screen.dart';
@@ -81,6 +83,20 @@ class _ListScreenState extends ConsumerState<ListScreen>
     void doAdd(BuildContext dialogCtx) async {
       final url = urlController.text.trim();
       if (url.isEmpty) return;
+
+      // 共有URL
+      if (url.startsWith('u2bloop://')) {
+        Navigator.pop(dialogCtx);
+        final data = ShareService.decode(url);
+        if (data != null && mounted) {
+          showShareImportDialog(context, ref, data);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('無効な共有URLです')),
+          );
+        }
+        return;
+      }
 
       final videoId = UrlUtils.extractVideoId(url);
       final playlistId = UrlUtils.extractPlaylistId(url);
@@ -157,7 +173,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               autofocus: true,
               maxLength: AppLimits.urlMaxLength,
               decoration: const InputDecoration(
-                hintText: 'YouTube URL / プレイリストURL',
+                hintText: 'YouTube URL / 共有URL',
                 hintStyle: kHintStyle,
                 prefixIcon: Icon(Icons.link, size: 18),
                 isDense: true,

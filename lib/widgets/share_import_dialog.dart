@@ -80,6 +80,46 @@ class _ShareImportDialog extends StatelessWidget {
   }
 
   void _import(BuildContext context) async {
+    final total = data.items.where((i) => i.videoId.isNotEmpty).length;
+    final progressNotifier = ValueNotifier<int>(0);
+
+    // 進捗ダイアログ
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: ValueListenableBuilder<int>(
+          valueListenable: progressNotifier,
+          builder: (_, count, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text('「${data.name}」をインポート中...',
+                        style: const TextStyle(fontSize: 14)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                  value: total > 0 ? count / total : 0),
+              const SizedBox(height: 4),
+              Text('$count / $total',
+                  style:
+                      const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+        ),
+      ),
+    );
+
     final itemBox = Hive.box<LoopItem>('loop_items');
     final tagBox = Hive.box<Tag>('tags');
     final existingTags = tagBox.values.toList();
@@ -124,6 +164,7 @@ class _ShareImportDialog extends StatelessWidget {
           }
         }
         await itemBox.put(existing.id, existing);
+        progressNotifier.value++;
         continue;
       }
 
@@ -153,7 +194,7 @@ class _ShareImportDialog extends StatelessWidget {
       );
       await itemBox.put(id, item);
       itemIds.add(id);
-      // 連続追加ディレイ
+      progressNotifier.value++;
       await Future.delayed(const Duration(milliseconds: 50));
     }
 
@@ -173,6 +214,11 @@ class _ShareImportDialog extends StatelessWidget {
 
     // サムネ取得
     ref.read(loopItemsProvider.notifier).repairThumbnails();
+
+    progressNotifier.dispose();
+    if (context.mounted) {
+      Navigator.pop(context); // 進捗ダイアログを閉じる
+    }
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
