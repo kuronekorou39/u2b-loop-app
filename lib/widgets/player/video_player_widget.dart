@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../../core/theme/app_theme.dart';
 import '../../providers/player_provider.dart';
 
 class VideoPlayerWidget extends ConsumerStatefulWidget {
@@ -47,7 +48,8 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         child: const Center(
           child: Text(
             '動画を読み込んでください',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
+            style: Theme.of(context).textTheme.bodyLarge!
+                .copyWith(color: Colors.grey),
           ),
         ),
       );
@@ -132,13 +134,13 @@ class _FlipButton extends StatelessWidget {
           color: active
               ? Colors.white.withValues(alpha: 0.25)
               : Colors.black.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: AppRadius.borderXs,
         ),
         child: Transform.rotate(
           angle: rotate ? pi / 2 : 0,
           child: Icon(
             icon,
-            size: 16,
+            size: AppIconSizes.s,
             color: active ? Colors.white : Colors.white60,
           ),
         ),

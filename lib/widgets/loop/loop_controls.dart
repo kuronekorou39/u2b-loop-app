@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_utils.dart';
 
 /// AB設定の共通ウィジェット（静的メソッドで提供）
@@ -31,14 +32,14 @@ class LoopControls {
               side: BorderSide(color: color),
               foregroundColor: color,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6)),
+                  borderRadius: AppRadius.borderSm),
             ),
             child: Text(label,
                 style: const TextStyle(
                     fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.md),
         // Time display (tappable to seek)
         GestureDetector(
           onTap: onTimeTap,
@@ -62,14 +63,14 @@ class LoopControls {
               padding: const EdgeInsets.symmetric(horizontal: 6),
               side: BorderSide(color: Colors.grey.shade700),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4)),
+                  borderRadius: AppRadius.borderXs),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: Text('-$stepLabel', style: const TextStyle(fontSize: 11)),
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: AppSpacing.xs),
         // + step
         SizedBox(
           height: 28,
@@ -79,7 +80,7 @@ class LoopControls {
               padding: const EdgeInsets.symmetric(horizontal: 6),
               side: BorderSide(color: Colors.grey.shade700),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4)),
+                  borderRadius: AppRadius.borderXs),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),

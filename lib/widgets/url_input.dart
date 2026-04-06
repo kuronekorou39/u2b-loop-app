@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/url_utils.dart';
 import '../models/video_source.dart';
 import '../providers/loop_provider.dart';
@@ -119,7 +120,7 @@ class _UrlInputState extends ConsumerState<UrlInput> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: AppRadius.borderMd,
             ),
             child: Row(
               children: [
@@ -127,18 +128,18 @@ class _UrlInputState extends ConsumerState<UrlInput> {
                   source.type == VideoSourceType.youtube
                       ? Icons.play_circle_outline
                       : Icons.video_file_outlined,
-                  size: 18,
+                  size: AppIconSizes.sm,
                   color: Colors.grey,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Text(
                     source.title,
-                    style: const TextStyle(fontSize: 13),
+                    style: Theme.of(context).textTheme.bodyMedium,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Icon(Icons.unfold_more, size: 18, color: Colors.grey),
+                const Icon(Icons.unfold_more, size: AppIconSizes.sm, color: Colors.grey),
               ],
             ),
           ),
@@ -163,7 +164,7 @@ class _UrlInputState extends ConsumerState<UrlInput> {
                   decoration: BoxDecoration(
                     color:
                         Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppRadius.borderMd,
                   ),
                   child: Row(
                     children: [
@@ -171,19 +172,19 @@ class _UrlInputState extends ConsumerState<UrlInput> {
                         source.type == VideoSourceType.youtube
                             ? Icons.play_circle_outline
                             : Icons.video_file_outlined,
-                        size: 16,
+                        size: AppIconSizes.s,
                         color: Colors.grey,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Text(
                           source.title,
-                          style: const TextStyle(fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const Icon(Icons.unfold_less,
-                          size: 18, color: Colors.grey),
+                          size: AppIconSizes.sm, color: Colors.grey),
                     ],
                   ),
                 ),
@@ -196,13 +197,13 @@ class _UrlInputState extends ConsumerState<UrlInput> {
                   controller: _controller,
                   decoration: const InputDecoration(
                     hintText: 'YouTube URLを入力',
-                    prefixIcon: Icon(Icons.link, size: 20),
+                    prefixIcon: Icon(Icons.link, size: AppIconSizes.md),
                     isDense: true,
                   ),
                   onSubmitted: (_) => _loadYoutube(),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.md),
               _loading
                   ? const SizedBox(
                       width: 40,
@@ -220,12 +221,12 @@ class _UrlInputState extends ConsumerState<UrlInput> {
                     ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.sm),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: _pickLocalFile,
-              icon: const Icon(Icons.folder_open, size: 18),
+              icon: const Icon(Icons.folder_open, size: AppIconSizes.sm),
               label: const Text('ローカルファイルを選択'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 10),
