@@ -1,7 +1,6 @@
 # U2B Loop App
 
 YouTubeとローカル動画のAB区間ループ再生アプリ（Flutter/Android）。
-既存Webアプリ（C:\projects\u2b-loop）を参考に作成。
 
 ## 開発ルール
 
