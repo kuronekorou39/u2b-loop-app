@@ -13,11 +13,28 @@ class AppSpacing {
 
 class AppIconSizes {
   static const xs = 14.0;
+  static const s = 16.0;
   static const sm = 18.0;
   static const md = 20.0;
+  static const ml = 22.0;
   static const lg = 24.0;
   static const xl = 28.0;
   static const xxl = 48.0;
+  static const huge = 64.0;
+}
+
+class AppRadius {
+  static const xs = 4.0;
+  static const sm = 6.0;
+  static const md = 8.0;
+  static const lg = 12.0;
+  static const xl = 18.0;
+
+  static final borderXs = BorderRadius.circular(xs);
+  static final borderSm = BorderRadius.circular(sm);
+  static final borderMd = BorderRadius.circular(md);
+  static final borderLg = BorderRadius.circular(lg);
+  static final borderXl = BorderRadius.circular(xl);
 }
 
 // === Theme ===
@@ -37,52 +54,59 @@ class AppTheme {
         brightness == Brightness.dark ? Colors.grey : Colors.grey.shade600;
 
     return TextTheme(
-      // AppBar タイトル、大見出し
+      // AppBarタイトル、ダイアログタイトル (16)
+      displaySmall: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+        fontFamily: _fontFamily,
+        color: color,
+      ),
+      // 大見出し (18)
       titleLarge: TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,
         fontFamily: _fontFamily,
         color: color,
       ),
-      // セクション見出し、ダイアログタイトル
+      // セクション見出し (15)
       titleMedium: TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.bold,
         fontFamily: _fontFamily,
         color: color,
       ),
-      // サブタイトル、ボタンラベル
+      // サブタイトル (14, w500)
       titleSmall: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w500,
         fontFamily: _fontFamily,
         color: color,
       ),
-      // 本文
+      // 本文 (14)
       bodyLarge: TextStyle(
         fontSize: 14,
         fontFamily: _fontFamily,
         color: color,
       ),
-      // リスト項目テキスト
+      // リスト項目テキスト (13)
       bodyMedium: TextStyle(
         fontSize: 13,
         fontFamily: _fontFamily,
         color: color,
       ),
-      // 補助テキスト、ヒント
+      // 補助テキスト (12, grey)
       bodySmall: TextStyle(
         fontSize: 12,
         fontFamily: _fontFamily,
         color: subColor,
       ),
-      // キャプション、バッジ
+      // キャプション、バッジ (11, grey)
       labelSmall: TextStyle(
         fontSize: 11,
         fontFamily: _fontFamily,
         color: subColor,
       ),
-      // チップ、タグ
+      // チップ、タグ (12)
       labelMedium: TextStyle(
         fontSize: 12,
         fontFamily: _fontFamily,
@@ -122,7 +146,7 @@ class AppTheme {
         filled: true,
         fillColor: bgSecondary,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
         ),
         contentPadding:
@@ -170,7 +194,7 @@ class AppTheme {
         filled: true,
         fillColor: bgSecondary,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Colors.grey.shade300),
         ),
         contentPadding:
