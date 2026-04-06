@@ -2095,8 +2095,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 FilledButton.icon(
                   onPressed: () => _playPlaylist(pl, items),
                   icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
-                  label: Text('再生',
-                      style: Theme.of(context).textTheme.labelMedium),
+                  label: const Text('再生'),
                   style: FilledButton.styleFrom(
                     padding:
                         const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
