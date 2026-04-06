@@ -436,6 +436,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     height: 28,
                     child: IconButton(
                       icon: const Icon(Icons.remove, size: AppIconSizes.s),
+                      tooltip: 'ズームアウト',
                       onPressed: _zoomLevel > 1.05 ? _zoomOut : null,
                       padding: EdgeInsets.zero,
                       style: IconButton.styleFrom(
@@ -465,6 +466,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     height: 28,
                     child: IconButton(
                       icon: const Icon(Icons.add, size: AppIconSizes.s),
+                      tooltip: 'ズームイン',
                       onPressed: _zoomLevel < 128.0 ? _zoomIn : null,
                       padding: EdgeInsets.zero,
                       style: IconButton.styleFrom(

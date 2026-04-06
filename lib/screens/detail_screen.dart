@@ -286,7 +286,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           Navigator.of(context).pop();
           return;
         }
-        if (await _confirmDiscard() && mounted) {
+        if (await _confirmDiscard()) {
+          if (!context.mounted) return;
           Navigator.of(context).pop();
         }
       },
@@ -649,8 +650,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
     final aText = aController.text.trim();
     final bText = bController.text.trim();
-    final aMs = aText.isNotEmpty ? (double.tryParse(aText)! * 1000).round() : null;
-    final bMs = bText.isNotEmpty ? (double.tryParse(bText)! * 1000).round() : null;
+    final aParsed = aText.isNotEmpty ? double.tryParse(aText) : null;
+    final bParsed = bText.isNotEmpty ? double.tryParse(bText) : null;
+    final aMs = aParsed != null ? (aParsed * 1000).round() : null;
+    final bMs = bParsed != null ? (bParsed * 1000).round() : null;
 
     regions[index] = regions[index].copyWith(
       pointAMs: () => aMs,
@@ -765,7 +768,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       final file = File(item.thumbnailPath!);
       content = Image.file(file,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholderThumb(item));
+          errorBuilder: (_, _, _) => _placeholderThumb(item));
     } else {
       content = _placeholderThumb(item);
     }

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
 import '../core/theme/app_theme.dart';
-import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
@@ -80,7 +79,6 @@ class _ShareImportDialog extends StatelessWidget {
   }
 
   void _import(BuildContext context) async {
-    final itemBox = Hive.box<LoopItem>('loop_items');
     final tagBox = Hive.box<Tag>('tags');
     final existingTags = tagBox.values.toList();
 
@@ -99,59 +97,9 @@ class _ShareImportDialog extends StatelessWidget {
       }
     }
 
-    // 枠を一括追加（fetchStatus: 'fetching' で個別ローディング表示）
-    final itemIds = <String>[];
-    final newItemIds = <String>[]; // 情報取得が必要な新規アイテム
-    for (final si in data.items) {
-      if (si.videoId.isEmpty) continue;
-
-      final existing =
-          itemBox.values.where((i) => i.videoId == si.videoId).firstOrNull;
-      if (existing != null) {
-        itemIds.add(existing.id);
-        for (final sr in si.regions) {
-          if (!existing.regions.any((r) => r.name == sr.name)) {
-            existing.regions
-                .add(sr.toLoopRegion('${existing.id}_r${existing.regions.length}'));
-          }
-        }
-        for (final tagName in si.tags) {
-          final tagId = tagNameToId[tagName];
-          if (tagId != null && !existing.tagIds.contains(tagId)) {
-            existing.tagIds.add(tagId);
-          }
-        }
-        await itemBox.put(existing.id, existing);
-        continue;
-      }
-
-      final id = DateTime.now().microsecondsSinceEpoch.toString();
-      final tagIds = si.tags
-          .map((name) => tagNameToId[name])
-          .whereType<String>()
-          .toList();
-      final regions = si.regions
-          .asMap()
-          .entries
-          .map((e) => e.value.toLoopRegion('${id}_r${e.key}'))
-          .toList();
-      final item = LoopItem(
-        id: id,
-        title: si.title,
-        uri: '',
-        sourceType: 'youtube',
-        videoId: si.videoId,
-        youtubeUrl: 'https://youtu.be/${si.videoId}',
-        thumbnailUrl:
-            'https://img.youtube.com/vi/${si.videoId}/hqdefault.jpg',
-        fetchStatus: 'fetching',
-        tagIds: tagIds,
-        regions: regions,
-      );
-      await itemBox.put(id, item);
-      itemIds.add(id);
-      newItemIds.add(id);
-    }
+    // Notifier経由で枠を一括追加
+    final notifier = ref.read(loopItemsProvider.notifier);
+    final itemIds = await notifier.importSharedItems(data.items, tagNameToId);
 
     // プレイリスト作成
     final plId = DateTime.now().microsecondsSinceEpoch.toString();
@@ -163,7 +111,6 @@ class _ShareImportDialog extends StatelessWidget {
     await Hive.box<Playlist>('playlists').put(plId, playlist);
 
     // UIを更新して完了通知
-    ref.invalidate(loopItemsProvider);
     ref.invalidate(playlistsProvider);
     ref.invalidate(tagsProvider);
 
@@ -177,8 +124,8 @@ class _ShareImportDialog extends StatelessWidget {
     }
 
     // バックグラウンドで各アイテムのYouTube情報を順次取得
-    if (newItemIds.isNotEmpty) {
-      ref.read(loopItemsProvider.notifier).fetchItemsInBackground(newItemIds);
+    if (itemIds.isNotEmpty) {
+      notifier.fetchItemsInBackground(itemIds);
     }
   }
 }

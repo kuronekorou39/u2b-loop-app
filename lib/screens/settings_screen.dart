@@ -250,11 +250,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (_) => AlertDialog(
         content: ValueListenableBuilder<int>(
           valueListenable: totalNotifier,
-          builder: (_, total, __) => ValueListenableBuilder<int>(
+          builder: (_, total, _) => ValueListenableBuilder<int>(
             valueListenable: doneNotifier,
-            builder: (_, done, __) => ValueListenableBuilder<String>(
+            builder: (_, done, _) => ValueListenableBuilder<String>(
               valueListenable: etaNotifier,
-              builder: (_, eta, __) => Column(
+              builder: (_, eta, _) => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(

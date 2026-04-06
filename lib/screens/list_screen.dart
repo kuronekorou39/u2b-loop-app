@@ -262,9 +262,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
       builder: (_) => AlertDialog(
         content: ValueListenableBuilder<String>(
           valueListenable: statusNotifier,
-          builder: (_, status, __) => ValueListenableBuilder<int>(
+          builder: (_, status, _) => ValueListenableBuilder<int>(
             valueListenable: countNotifier,
-            builder: (_, count, __) => Column(
+            builder: (_, count, _) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
@@ -396,9 +396,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
       builder: (_) => AlertDialog(
         content: ValueListenableBuilder<int>(
           valueListenable: progressNotifier,
-          builder: (_, count, __) => ValueListenableBuilder<String>(
+          builder: (_, count, _) => ValueListenableBuilder<String>(
             valueListenable: etaNotifier,
-            builder: (_, eta, __) => Column(
+            builder: (_, eta, _) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
@@ -919,29 +919,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
         _ViewMode.grid4 => 'リスト表示へ',
       };
 
-  // --- タグ管理 ---
-
-  void _showTagManager() {
-    _showSheet(
-      isScrollControlled: true,
-      builder: (ctx) => _TagManagerSheet(
-        tags: ref.read(tagsProvider),
-        onRename: (id, name) {
-          ref.read(tagsProvider.notifier).rename(id, name);
-        },
-        onDelete: (id) async {
-          await ref.read(tagsProvider.notifier).delete(id);
-          await ref.read(loopItemsProvider.notifier).removeTagFromAll(id);
-          // フィルターからも除去
-          ref.read(tagFilterProvider.notifier).update((s) => s..remove(id));
-        },
-        onCreate: (name) {
-          ref.read(tagsProvider.notifier).create(name);
-        },
-      ),
-    );
-  }
-
   // --- プレイリスト ---
 
   Future<void> _createPlaylist() async {
@@ -1041,7 +1018,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final playlists = ref.watch(playlistsProvider);
 
     final isDataTab = _tabController.index == 1;
-    final isPlaylistTab = _tabController.index == 2;
 
     // 検索フィルター
     const untaggedId = '__untagged__';
@@ -1558,9 +1534,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
                           ),
                           if (item.isReady) ...[
-                            if (_buildRegionInfoText(item) != null)
+                            if (_buildRegionInfoText(item) case final regionInfo?)
                               Text(
-                                _buildRegionInfoText(item)!,
+                                regionInfo,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.labelSmall!.copyWith(
@@ -1953,7 +1929,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               onTap: () {
                 Navigator.pop(ctx);
                 ref.read(tagFilterProvider.notifier).update(
-                    (s) => s..remove(tag.id));
+                    (s) => {...s}..remove(tag.id));
                 ref.read(tagsProvider.notifier).delete(tag.id);
                 ref.read(loopItemsProvider.notifier).removeTagFromAll(tag.id);
               },
@@ -2168,7 +2144,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       final file = File(item.thumbnailPath!);
       content = Image.file(file,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholderThumb(item));
+          errorBuilder: (_, _, _) => _placeholderThumb(item));
     } else {
       content = _placeholderThumb(item);
     }
@@ -2640,7 +2616,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                       child: Image.network(
                         video.thumbnails.lowResUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (_, _, _) => Container(
                           color: Theme.of(context)
                               .colorScheme
                               .surfaceContainerHighest,

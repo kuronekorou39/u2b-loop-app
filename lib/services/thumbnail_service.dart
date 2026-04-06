@@ -19,6 +19,7 @@ class ThumbnailService {
       try {
         final request = await client.getUrl(Uri.parse(thumbnailUrl));
         final response = await request.close();
+        if (response.statusCode != 200) return null;
         final bytes = await response.fold<List<int>>(
             [], (prev, chunk) => prev..addAll(chunk));
         await file.writeAsBytes(bytes);

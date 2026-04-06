@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -152,7 +150,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   @override
-  void deactivate() {
+  void dispose() {
     _cancelFade();
     _preloadCheckTimer?.cancel();
     // 自動PiPを無効化
@@ -168,7 +166,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
     } catch (_) {}
     _pipChannel.setMethodCallHandler(null);
-    super.deactivate();
+    if (_cachedAudioPath != null) {
+      try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
+    }
+    super.dispose();
   }
 
   // --- Playlist callbacks ---
@@ -521,12 +522,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
         if (isStale()) return;
 
-        final muxed = manifest!.muxed.sortByVideoQuality();
+        final muxed = manifest.muxed.sortByVideoQuality();
         String streamUrl;
         if (muxed.isNotEmpty) {
           streamUrl = muxed.last.url.toString();
         } else {
-          final videoOnly = manifest!.videoOnly.sortByVideoQuality();
+          final videoOnly = manifest.videoOnly.sortByVideoQuality();
           if (videoOnly.isEmpty) return;
           streamUrl = videoOnly.last.url.toString();
         }
@@ -1880,7 +1881,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             ),
                             label: Text(
                               loop.enabled ? 'Loop ON' : 'Loop OFF',
-                              style: textTheme.labelSmall,
                             ),
                             style: FilledButton.styleFrom(
                               backgroundColor: loop.enabled

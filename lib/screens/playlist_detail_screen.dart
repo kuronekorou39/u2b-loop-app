@@ -28,13 +28,6 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
-  Playlist? _findPlaylist() {
-    return ref
-        .read(playlistsProvider)
-        .where((p) => p.id == widget.playlistId)
-        .firstOrNull;
-  }
-
   void _renamePlaylist(Playlist pl) async {
     final controller = TextEditingController(text: pl.name);
     final newName = await showDialog<String>(
@@ -859,7 +852,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   Widget _buildThumbnail(LoopItem item) {
     if (item.thumbnailPath != null) {
       final file = File(item.thumbnailPath!);
-      return Image.file(file, fit: BoxFit.cover, errorBuilder: (_, __, ___) {
+      return Image.file(file, fit: BoxFit.cover, errorBuilder: (_, _, _) {
         return Container(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: const Icon(Icons.play_circle_outline,
@@ -1327,7 +1320,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
   Widget _buildThumbnail(LoopItem item) {
     if (item.thumbnailPath != null) {
       final file = File(item.thumbnailPath!);
-      return Image.file(file, fit: BoxFit.cover, errorBuilder: (_, __, ___) {
+      return Image.file(file, fit: BoxFit.cover, errorBuilder: (_, _, _) {
         return Container(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: const Icon(Icons.play_circle_outline,

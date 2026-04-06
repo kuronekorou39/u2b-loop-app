@@ -16,6 +16,9 @@ class LoopNotifier extends StateNotifier<LoopState> {
   /// 戻り値 true = 処理済み（ループしない）、false = 通常のABループを実行
   bool Function()? onBPointReached;
 
+  /// onBPointReached の二重実行を防ぐガードフラグ
+  bool _bPointHandled = false;
+
   /// 動画終了検知用コールバック（ABループなし時、動画が終端に達した場合）
   VoidCallback? onTrackEnd;
 
@@ -37,14 +40,15 @@ class LoopNotifier extends StateNotifier<LoopState> {
 
   void _checkLoop() {
     final player = _ref.read(playerProvider);
+    if (!player.state.playing) return; // 再生中でなければスキップ
+
     final position = player.state.position;
     final duration = player.state.duration;
 
     // 動画終了検知（ABループが無効、かつ動画終端付近）
     if (!state.enabled && onTrackEnd != null) {
       if (duration > Duration.zero &&
-          position >= duration - const Duration(milliseconds: 500) &&
-          player.state.playing) {
+          position >= duration - const Duration(milliseconds: 500)) {
         onTrackEnd!();
         return;
       }
@@ -59,11 +63,18 @@ class LoopNotifier extends StateNotifier<LoopState> {
     // A >= B の場合はループ不可（逆転・同一地点）
     if (a >= b) return;
 
+    // B地点の500ms以上手前ならガードをリセット
+    if (position < b - const Duration(milliseconds: 500)) {
+      _bPointHandled = false;
+    }
+
     if (position >= b) {
-      // プレイリストモードのコールバック
-      if (onBPointReached != null && onBPointReached!()) {
+      // プレイリストモードのコールバック（二重実行ガード付き）
+      if (!_bPointHandled && onBPointReached != null && onBPointReached!()) {
+        _bPointHandled = true;
         return; // コールバックが処理済み
       }
+      if (_bPointHandled) return; // 既にコールバック処理済み
 
       if (state.gapSeconds > 0) {
         state = state.copyWith(isInGap: true);
@@ -129,6 +140,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
   }
 
   void reset() {
+    _bPointHandled = false;
     final step = state.adjustStep;
     state = LoopState(adjustStep: step);
   }

@@ -38,7 +38,9 @@ class PlaylistPlayerState {
   int? get currentTrackIndex {
     if (playOrder.isEmpty ||
         currentOrderIndex < 0 ||
-        currentOrderIndex >= playOrder.length) return null;
+        currentOrderIndex >= playOrder.length) {
+      return null;
+    }
     return playOrder[currentOrderIndex];
   }
 

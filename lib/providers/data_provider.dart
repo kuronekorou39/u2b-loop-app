@@ -8,6 +8,7 @@ import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
 import '../models/tag.dart';
+import '../services/share_service.dart';
 import '../services/thumbnail_service.dart';
 
 // --- LoopItem ---
@@ -160,12 +161,14 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   /// 複数アイテムのYouTube情報をバックグラウンドで順次取得（ディレイ付き）
   void fetchItemsInBackground(List<String> itemIds) async {
-    for (final id in itemIds) {
-      final item = _box.get(id);
-      if (item == null || item.fetchStatus != 'fetching') continue;
-      await _fetchYouTubeInfo(item);
-      await Future.delayed(_nextDelay());
-    }
+    try {
+      for (final id in itemIds) {
+        final item = _box.get(id);
+        if (item == null || item.fetchStatus != 'fetching') continue;
+        await _fetchYouTubeInfo(item);
+        await Future.delayed(_nextDelay());
+      }
+    } catch (_) {}
   }
 
   Future<void> addLocalFile(String path, String fileName) async {
@@ -203,7 +206,9 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     final targets = <LoopItem>[];
     for (final item in items) {
       if (item.thumbnailPath != null &&
-          await File(item.thumbnailPath!).exists()) continue;
+          await File(item.thumbnailPath!).exists()) {
+        continue;
+      }
       if (item.thumbnailUrl != null ||
           (item.sourceType == 'local' && item.uri.isNotEmpty)) {
         targets.add(item);
@@ -256,11 +261,13 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       tagIds: List.from(source.tagIds),
       youtubeUrl: source.youtubeUrl,
       regions: source.regions
-          .map((r) => LoopRegion(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
-                name: r.name,
-                pointAMs: r.pointAMs,
-                pointBMs: r.pointBMs,
+          .asMap()
+          .entries
+          .map((e) => LoopRegion(
+                id: '${DateTime.now().microsecondsSinceEpoch}_${e.key}',
+                name: e.value.name,
+                pointAMs: e.value.pointAMs,
+                pointBMs: e.value.pointBMs,
               ))
           .toList(),
     );
@@ -311,6 +318,61 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       }
     }
     _refresh();
+  }
+
+  /// 共有インポート用: 枠を一括追加してIDリストを返す
+  Future<List<String>> importSharedItems(
+      List<ShareItem> sharedItems, Map<String, String> tagNameToId) async {
+    final itemIds = <String>[];
+    final newItemIds = <String>[];
+    for (final si in sharedItems) {
+      if (si.videoId.isEmpty) continue;
+
+      final existing =
+          _box.values.where((i) => i.videoId == si.videoId).firstOrNull;
+      if (existing != null) {
+        itemIds.add(existing.id);
+        for (final sr in si.regions) {
+          if (!existing.regions.any((r) => r.name == sr.name)) {
+            existing.regions
+                .add(sr.toLoopRegion('${existing.id}_r${existing.regions.length}'));
+          }
+        }
+        for (final tagName in si.tags) {
+          final tagId = tagNameToId[tagName];
+          if (tagId != null && !existing.tagIds.contains(tagId)) {
+            existing.tagIds.add(tagId);
+          }
+        }
+        await _box.put(existing.id, existing);
+        continue;
+      }
+
+      final id = _generateId();
+      final tagIds =
+          si.tags.map((name) => tagNameToId[name]).whereType<String>().toList();
+      final regions = si.regions
+          .asMap()
+          .entries
+          .map((e) => e.value.toLoopRegion('${id}_r${e.key}'))
+          .toList();
+      final item = LoopItem(
+        id: id,
+        title: si.title,
+        uri: '',
+        sourceType: 'youtube',
+        videoId: si.videoId,
+        youtubeUrl: 'https://youtu.be/${si.videoId}',
+        thumbnailUrl: 'https://img.youtube.com/vi/${si.videoId}/hqdefault.jpg',
+        fetchStatus: 'fetching',
+        tagIds: tagIds,
+        regions: regions,
+      );
+      await add(item);
+      itemIds.add(id);
+      newItemIds.add(id);
+    }
+    return itemIds;
   }
 }
 

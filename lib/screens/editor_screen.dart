@@ -82,11 +82,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   @override
-  void deactivate() {
+  void dispose() {
     try {
       ref.read(playerProvider).stop();
     } catch (_) {}
-    super.deactivate();
+    super.dispose();
   }
 
   // --- Region sync ---
@@ -388,8 +388,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final muxed = manifest.muxed.sortByVideoQuality();
       if (muxed.isEmpty) return;
       final streamInfo = muxed.first;
-      print(
-          '[Waveform] 事前DL: muxed ${streamInfo.qualityLabel} ${streamInfo.size}');
 
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/u2b_waveform_audio.tmp');
@@ -419,15 +417,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
       if (bytes > 100000) {
         _cachedAudioPath = tempFile.path;
-        print(
-            '[Waveform] 事前DL成功: ${(bytes / 1024 / 1024).toStringAsFixed(1)}MB');
       } else {
         try {
           await tempFile.delete();
         } catch (_) {}
       }
-    } catch (e) {
-      print('[Waveform] 事前DLスキップ: $e');
+    } catch (_) {
+      // 波形DL失敗は無視（波形なしで動作可能）
     }
   }
 
@@ -685,7 +681,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           Navigator.of(context).pop();
           return;
         }
-        if (await _confirmDiscard() && mounted) {
+        if (await _confirmDiscard()) {
+          if (!context.mounted) return;
           Navigator.of(context).pop();
         }
       },
@@ -978,8 +975,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             size: AppIconSizes.s,
                           ),
                           label: Text(
-                              loop.enabled ? 'Loop ON' : 'Loop OFF',
-                              style: textTheme.labelSmall),
+                              loop.enabled ? 'Loop ON' : 'Loop OFF'),
                           style: FilledButton.styleFrom(
                             backgroundColor: loop.enabled
                                 ? theme.colorScheme.primary
