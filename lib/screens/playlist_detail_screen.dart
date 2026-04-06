@@ -140,7 +140,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   style: TextStyle(fontSize: 12, color: Colors.grey)),
               onTap: () {
                 Navigator.pop(ctx);
-                SharePlus.instance.share(ShareParams(text: url));
+                Share.share(url);
               },
             ),
             ListTile(
