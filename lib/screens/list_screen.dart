@@ -2105,11 +2105,16 @@ class _ListScreenState extends ConsumerState<ListScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               if (count > 0)
-                IconButton(
-                  icon: const Icon(Icons.play_arrow, size: 22),
-                  tooltip: '再生',
+                FilledButton.icon(
                   onPressed: () => _playPlaylist(pl, items),
-                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.play_arrow, size: 18),
+                  label: const Text('再生',
+                      style: TextStyle(fontSize: 12)),
+                  style: FilledButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 32),
+                  ),
                 ),
               PopupMenuButton<String>(
                 onSelected: (v) {
