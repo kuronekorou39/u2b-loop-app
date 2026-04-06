@@ -310,7 +310,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                                         horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(4),
+                                      borderRadius: AppRadius.borderXs,
                                     ),
                                     child: Text(
                                       '波形: $waveformError',
@@ -321,14 +321,13 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                                     ),
                                   ),
                                   if (_retrying) ...[
-                                    const SizedBox(width: 4),
+                                    const SizedBox(width: AppSpacing.xs),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
+                                          horizontal: AppSpacing.sm, vertical: 2),
                                       decoration: BoxDecoration(
                                         color: Colors.black54,
-                                        borderRadius:
-                                            BorderRadius.circular(4),
+                                        borderRadius: AppRadius.borderXs,
                                       ),
                                       child: const Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -342,7 +341,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                                               color: Colors.white70,
                                             ),
                                           ),
-                                          SizedBox(width: 4),
+                                          SizedBox(width: AppSpacing.xs),
                                           Text(
                                             '再取得中...',
                                             style: TextStyle(
@@ -436,7 +435,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     width: 28,
                     height: 28,
                     child: IconButton(
-                      icon: const Icon(Icons.remove, size: 16),
+                      icon: const Icon(Icons.remove, size: AppIconSizes.s),
                       onPressed: _zoomLevel > 1.05 ? _zoomOut : null,
                       padding: EdgeInsets.zero,
                       style: IconButton.styleFrom(
@@ -444,13 +443,13 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             .colorScheme
                             .surfaceContainerHighest,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: AppRadius.borderXs,
                         ),
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                     child: Text(
                       '${_zoomLevel.toStringAsFixed(_zoomLevel >= 10 ? 0 : 1)}x',
                       style: TextStyle(
@@ -465,7 +464,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     width: 28,
                     height: 28,
                     child: IconButton(
-                      icon: const Icon(Icons.add, size: 16),
+                      icon: const Icon(Icons.add, size: AppIconSizes.s),
                       onPressed: _zoomLevel < 128.0 ? _zoomIn : null,
                       padding: EdgeInsets.zero,
                       style: IconButton.styleFrom(
@@ -473,13 +472,13 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             .colorScheme
                             .surfaceContainerHighest,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: AppRadius.borderXs,
                         ),
                       ),
                     ),
                   ),
                   if (isZoomed && !_autoFollow) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: AppSpacing.sm),
                     GestureDetector(
                       onTap: () => setState(() => _autoFollow = true),
                       child: Container(
@@ -511,12 +510,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 ),
                 // Compact toggle
                 if (widget.onToggleCompact != null) ...[
-                  const SizedBox(width: 4),
+                  const SizedBox(width: AppSpacing.xs),
                   SizedBox(
                     width: 28,
                     height: 28,
                     child: IconButton(
-                      icon: const Icon(Icons.unfold_less, size: 16),
+                      icon: const Icon(Icons.unfold_less, size: AppIconSizes.s),
                       onPressed: widget.onToggleCompact,
                       padding: EdgeInsets.zero,
                       tooltip: 'コンパクト表示',
@@ -539,9 +538,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
         children: [
           Text(
             TimeUtils.format(position),
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
+            style: Theme.of(context).textTheme.labelSmall,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: SizedBox(
               height: 32,
@@ -589,17 +588,17 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.md),
           Text(
             TimeUtils.format(duration),
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
+            style: Theme.of(context).textTheme.labelSmall,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: AppSpacing.xs),
           SizedBox(
             width: 28,
             height: 28,
             child: IconButton(
-              icon: const Icon(Icons.unfold_more, size: 16),
+              icon: const Icon(Icons.unfold_more, size: AppIconSizes.s),
               onPressed: widget.onToggleCompact,
               padding: EdgeInsets.zero,
               tooltip: '波形表示',

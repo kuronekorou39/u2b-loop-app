@@ -1097,7 +1097,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(fullTrack ? '全体を書き出し' : '区間を書き出し'),
-        content: Text(subtitle, style: const TextStyle(fontSize: 13)),
+        content: Text(subtitle, style: Theme.of(ctx).textTheme.bodyMedium),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1108,7 +1108,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               Navigator.pop(ctx);
               _executeExport(true, fullTrack: fullTrack);
             },
-            icon: const Icon(Icons.audiotrack, size: 16),
+            icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
             label: const Text('音声のみ'),
           ),
           TextButton.icon(
@@ -1116,7 +1116,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               Navigator.pop(ctx);
               _executeExport(false, fullTrack: fullTrack);
             },
-            icon: const Icon(Icons.videocam, size: 16),
+            icon: const Icon(Icons.videocam, size: AppIconSizes.s),
             label: const Text('MP4'),
           ),
         ],
@@ -1152,10 +1152,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         content: Row(
           children: [
             SizedBox(
-                width: 16,
-                height: 16,
+                width: AppIconSizes.s,
+                height: AppIconSizes.s,
                 child: CircularProgressIndicator(strokeWidth: 2)),
-            SizedBox(width: 12),
+            SizedBox(width: AppSpacing.lg),
             Text('書き出し中...'),
           ],
         ),
@@ -1347,11 +1347,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.md),
               child: Text(
                 track.displayName,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold),
+                style: Theme.of(ctx).textTheme.titleSmall!.copyWith(fontWeight: FontWeight.bold),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1385,7 +1384,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   _removeTrackFromPlaylist(trackIndex, track);
                 },
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),
@@ -1469,23 +1468,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 Widget statusWidget;
                 if (isCurrent) {
                   statusWidget = const Icon(Icons.play_arrow,
-                      color: AppTheme.accentGreen, size: 16);
+                      color: AppTheme.accentGreen, size: AppIconSizes.s);
                 } else if (_isPreloading &&
                     _preloadingTargetIndex == i) {
                   statusWidget = const SizedBox(
-                    width: 14,
-                    height: 14,
+                    width: AppIconSizes.xs,
+                    height: AppIconSizes.xs,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.orange),
                   );
                 } else if (_preloadedTrackIndex == i) {
                   statusWidget = const Icon(Icons.check_circle_outline,
-                      color: AppTheme.accentGreen, size: 16);
+                      color: AppTheme.accentGreen, size: AppIconSizes.s);
                 } else {
                   statusWidget = Text(
                     '${i + 1}',
-                    style: const TextStyle(
-                        fontSize: 11, color: Colors.grey),
+                    style: Theme.of(ctx).textTheme.labelSmall,
                     textAlign: TextAlign.center,
                   );
                 }
@@ -1495,16 +1493,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   onLongPress: () => _showTrackMenu(i, track),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
                     child: Row(
                       children: [
-                        SizedBox(width: 24, child: statusWidget),
-                        const SizedBox(width: 8),
+                        SizedBox(width: AppIconSizes.lg, child: statusWidget),
+                        const SizedBox(width: AppSpacing.md),
                         Expanded(
                           child: Text(
                             track.displayName,
-                            style: TextStyle(
-                              fontSize: 12,
+                            style: Theme.of(ctx).textTheme.labelMedium!.copyWith(
                               fontWeight: isCurrent
                                   ? FontWeight.bold
                                   : FontWeight.normal,
@@ -1520,13 +1517,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ),
                         if (track.hasRegion)
                           Padding(
-                            padding: const EdgeInsets.only(left: 4),
+                            padding: const EdgeInsets.only(left: AppSpacing.xs),
                             child: Text(
                               '${track.startMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.startMs!)) : '--:--'}'
                               ' - '
                               '${track.endMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.endMs!)) : '--:--'}',
-                              style: const TextStyle(
-                                  fontSize: 10, color: Colors.grey),
+                              style: Theme.of(ctx).textTheme.labelSmall!.copyWith(fontSize: 10),
                             ),
                           ),
                       ],
@@ -1546,6 +1542,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isInPiP) return _buildPiPView();
+    final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
 
     // Watch playlist provider for reactivity
@@ -1562,13 +1559,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             if (_isPlaylist && widget.playlistName != null)
               Text(
                 widget.playlistName!,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                style: textTheme.labelSmall,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             Text(
               displayTitle,
-              style: const TextStyle(fontSize: 14),
+              style: textTheme.bodyLarge,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1579,14 +1576,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             IconButton(
               icon: Icon(
                 _hideVideo ? Icons.videocam_off : Icons.videocam,
-                size: 20,
+                size: AppIconSizes.md,
                 color: _hideVideo ? Colors.grey : null,
               ),
               onPressed: () => setState(() => _hideVideo = !_hideVideo),
               tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
             ),
           IconButton(
-            icon: const Icon(Icons.picture_in_picture_alt, size: 22),
+            icon: const Icon(Icons.picture_in_picture_alt, size: AppIconSizes.ml),
             onPressed: _enterPiP,
             tooltip: 'ピクチャーインピクチャー',
           ),
@@ -1610,6 +1607,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildLoadingView() {
+    final textTheme = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Center(
@@ -1618,8 +1616,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           children: [
             Text(
               _currentItem.title,
-              style: TextStyle(
-                fontSize: 14,
+              style: textTheme.titleSmall!.copyWith(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context)
                     .colorScheme
@@ -1630,7 +1627,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xxl),
             TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: _loadingProgress),
               duration: const Duration(milliseconds: 400),
@@ -1639,7 +1636,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 return Column(
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: AppRadius.borderXs,
                       child: LinearProgressIndicator(
                         value: value,
                         minHeight: 6,
@@ -1648,11 +1645,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             .surfaceContainerHighest,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.lg),
                     Text(
                       _loadingStatus,
-                      style: TextStyle(
-                        fontSize: 13,
+                      style: textTheme.bodyMedium!.copyWith(
                         color: Theme.of(context)
                             .colorScheme
                             .onSurface
@@ -1670,26 +1666,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildErrorView() {
+    final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.orange),
-            const SizedBox(height: 16),
-            const Text('読み込み失敗',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
+            const Icon(Icons.error_outline, size: AppIconSizes.xxl, color: Colors.orange),
+            const SizedBox(height: AppSpacing.xl),
+            Text('読み込み失敗',
+                style: textTheme.displaySmall),
+            const SizedBox(height: AppSpacing.md),
             Text(
               _loadError!,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xxl),
             FilledButton.icon(
               onPressed: _loadItem,
-              icon: const Icon(Icons.refresh, size: 18),
+              icon: const Icon(Icons.refresh, size: AppIconSizes.sm),
               label: const Text('再試行'),
             ),
           ],
@@ -1741,7 +1738,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           // Playlist controls
           if (_isPlaylist) _buildPlaylistControls(),
 
-          SizedBox(height: _isPlaylist ? bottomInset : 24 + bottomInset),
+          SizedBox(height: _isPlaylist ? bottomInset : AppSpacing.xxl + bottomInset),
         ],
       ),
     );
@@ -1753,15 +1750,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       List<LoopRegion> regions, LoopState loop) {
     final notifier = ref.read(loopProvider.notifier);
     final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
     final hasSource = ref.watch(videoSourceProvider) != null;
 
     String stepLabel(double s) =>
         s < 1 ? '${s}s' : '${s.toInt()}s';
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1775,16 +1773,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     // 「全体」+ 区間追加ボタン
                     InkWell(
                       onTap: _clearRegion,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: AppRadius.borderSm,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            vertical: 5, horizontal: 4),
+                            vertical: 5, horizontal: AppSpacing.xs),
                         decoration: BoxDecoration(
                           color: _activeRegionIdx == -1
                               ? theme.colorScheme.primary
                                   .withValues(alpha: 0.15)
                               : null,
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: AppRadius.borderSm,
                           border: Border.all(
                             color: _activeRegionIdx == -1
                                 ? theme.colorScheme.primary
@@ -1801,8 +1799,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                 Expanded(
                                   child: Text(
                                     '全体',
-                                    style: TextStyle(
-                                      fontSize: 12,
+                                    style: textTheme.labelMedium!.copyWith(
                                       fontWeight: _activeRegionIdx == -1
                                           ? FontWeight.bold
                                           : FontWeight.normal,
@@ -1817,7 +1814,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                     onTap: _addRegion,
                                     child: Icon(
                                         Icons.add_circle_outline,
-                                        size: 16,
+                                        size: AppIconSizes.s,
                                         color: Colors.grey.shade500),
                                   ),
                               ],
@@ -1825,10 +1822,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             const SizedBox(height: 1),
                             Text(
                               'デフォルト',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey.shade600,
-                              ),
+                              style: textTheme.labelSmall!.copyWith(fontSize: 10),
                             ),
                           ],
                         ),
@@ -1859,7 +1853,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
               ),
               VerticalDivider(
-                width: 16,
+                width: AppSpacing.xl,
                 thickness: 1,
                 color: theme.dividerColor.withValues(alpha: 0.3),
               ),
@@ -1882,11 +1876,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                               loop.enabled
                                   ? Icons.repeat_on
                                   : Icons.repeat,
-                              size: 16,
+                              size: AppIconSizes.s,
                             ),
                             label: Text(
                               loop.enabled ? 'Loop ON' : 'Loop OFF',
-                              style: const TextStyle(fontSize: 11),
+                              style: textTheme.labelSmall,
                             ),
                             style: FilledButton.styleFrom(
                               backgroundColor: loop.enabled
@@ -1906,16 +1900,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         if (loop.hasBothPoints)
                           Text(
                             '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500),
+                            style: textTheme.bodySmall,
                           ),
                         // Edit toggle (hidden when 全体 selected)
                         if (_activeRegionIdx >= 0) ...[
-                          const SizedBox(width: 4),
+                          const SizedBox(width: AppSpacing.xs),
                           SizedBox(
-                            width: 24,
-                            height: 24,
+                            width: AppIconSizes.lg,
+                            height: AppIconSizes.lg,
                             child: IconButton(
                               icon: Icon(
                                 _editMode ? Icons.check : Icons.edit,
@@ -1937,7 +1929,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.sm),
 
                     // --- Edit mode: full A/B controls ---
                     if (_editMode) ...[
@@ -1983,15 +1975,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             child: TextButton.icon(
                               onPressed: () => notifier.swapPoints(),
                               icon: Icon(Icons.swap_vert,
-                                  size: 14,
+                                  size: AppIconSizes.xs,
                                   color: Colors.amber.shade300),
                               label: Text('A⇔B 入れ替え',
-                                  style: TextStyle(
+                                  style: textTheme.labelSmall!.copyWith(
                                       fontSize: 10,
                                       color: Colors.amber.shade300)),
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 6),
+                                    horizontal: AppSpacing.sm),
                                 minimumSize: Size.zero,
                                 tapTargetSize:
                                     MaterialTapTargetSize.shrinkWrap,
@@ -2000,7 +1992,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           ),
                         )
                       else
-                        const SizedBox(height: 6),
+                        const SizedBox(height: AppSpacing.sm),
                       LoopControls.buildPointRow(
                         label: 'B',
                         color: AppTheme.pointBColor,
@@ -2032,17 +2024,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           }
                         },
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.sm),
                       // Step selector (editor-style)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           Text('Step',
-                              style: TextStyle(
+                              style: textTheme.labelSmall!.copyWith(
                                   fontSize: 9,
                                   fontWeight: FontWeight.w500,
-                                  letterSpacing: 0.5,
-                                  color: Colors.grey.shade500)),
+                                  letterSpacing: 0.5)),
                           const SizedBox(width: 5),
                           ...LoopControls.steps.map((s) {
                             final isSelected = _editStep == s;
@@ -2056,7 +2047,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                   height: 22,
                                   padding:
                                       const EdgeInsets.symmetric(
-                                          horizontal: 6),
+                                          horizontal: AppSpacing.sm),
                                   decoration: BoxDecoration(
                                     color: isSelected
                                         ? Colors.grey.shade800
@@ -2067,8 +2058,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                   alignment: Alignment.center,
                                   child: Text(
                                     label,
-                                    style: TextStyle(
-                                      fontSize: 11,
+                                    style: textTheme.labelSmall!.copyWith(
                                       fontFamily: 'monospace',
                                       color: isSelected
                                           ? Colors.grey.shade300
@@ -2085,31 +2075,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       // --- 全体: AB区間設定ボタン + 書き出し ---
                       if (regions.length < _maxRegions)
                         Padding(
-                          padding: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.only(top: AppSpacing.md),
                           child: SizedBox(
                             width: double.infinity,
                             height: 32,
                             child: OutlinedButton.icon(
                               onPressed: _addRegion,
-                              icon: Icon(Icons.add, size: 14,
+                              icon: Icon(Icons.add, size: AppIconSizes.xs,
                                   color: Colors.grey.shade400),
                               label: Text('AB区間を設定する',
-                                  style: TextStyle(
-                                      fontSize: 12,
+                                  style: textTheme.labelMedium!.copyWith(
                                       color: Colors.grey.shade400)),
                               style: OutlinedButton.styleFrom(
                                 side: BorderSide(
                                     color: Colors.grey.shade700),
                                 shape: RoundedRectangleBorder(
                                     borderRadius:
-                                        BorderRadius.circular(6)),
+                                        AppRadius.borderSm),
                               ),
                             ),
                           ),
                         ),
                       if (hasSource)
                         Padding(
-                          padding: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.only(top: AppSpacing.sm),
                           child: SizedBox(
                             width: double.infinity,
                             height: 28,
@@ -2118,20 +2107,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                   fullTrack: !loop.hasBothPoints),
                               icon: const Icon(
                                   Icons.file_download_outlined,
-                                  size: 14),
+                                  size: AppIconSizes.xs),
                               label: Text(
                                   loop.hasBothPoints
                                       ? '区間を書き出し'
                                       : '全体を書き出し',
-                                  style: const TextStyle(fontSize: 11)),
+                                  style: textTheme.labelSmall),
                               style: OutlinedButton.styleFrom(
                                 side: BorderSide(
                                     color: Colors.grey.shade700),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8),
+                                    horizontal: AppSpacing.md),
                                 shape: RoundedRectangleBorder(
                                     borderRadius:
-                                        BorderRadius.circular(6)),
+                                        AppRadius.borderSm),
                               ),
                             ),
                           ),
@@ -2140,11 +2129,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       // --- Non-edit: read-only A/B display ---
                       _buildPointDisplay(
                           'A', AppTheme.pointAColor, loop.pointA),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.sm),
                       _buildPointDisplay(
                           'B', AppTheme.pointBColor, loop.pointB),
                       if (loop.hasBothPoints) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: AppSpacing.md),
                         SizedBox(
                           width: double.infinity,
                           height: 28,
@@ -2152,17 +2141,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             onPressed: () =>
                                 _showExportDialog(fullTrack: false),
                             icon: const Icon(Icons.file_download_outlined,
-                                size: 14),
-                            label: const Text('書き出し',
-                                style: TextStyle(fontSize: 11)),
+                                size: AppIconSizes.xs),
+                            label: Text('書き出し',
+                                style: textTheme.labelSmall),
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(
                                   color: Colors.grey.shade700),
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8),
+                                  horizontal: AppSpacing.md),
                               shape: RoundedRectangleBorder(
                                   borderRadius:
-                                      BorderRadius.circular(6)),
+                                      AppRadius.borderSm),
                             ),
                           ),
                         ),
@@ -2171,12 +2160,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
                     // Gap slider (when loop enabled, non-edit mode only)
                     if (loop.enabled && !_editMode) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: AppSpacing.xs),
                       Row(
                         children: [
-                          const Text('Gap:',
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey)),
+                          Text('Gap:',
+                              style: textTheme.labelSmall),
                           Expanded(
                             child: SliderTheme(
                               data: const SliderThemeData(
@@ -2201,7 +2189,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             width: 30,
                             child: Text(
                               '${loop.gapSeconds.toStringAsFixed(1)}s',
-                              style: const TextStyle(fontSize: 11),
+                              style: textTheme.labelSmall,
                             ),
                           ),
                         ],
@@ -2243,17 +2231,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       timeText = '未設定';
     }
 
+    final tileTextTheme = theme.textTheme;
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: AppRadius.borderSm,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: AppSpacing.xs),
         decoration: BoxDecoration(
           color: isActive
               ? theme.colorScheme.primary.withValues(alpha: 0.15)
               : null,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: AppRadius.borderSm,
           border: Border.all(
             color: isActive
                 ? theme.colorScheme.primary.withValues(alpha: 0.5)
@@ -2266,8 +2255,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           children: [
             Text(
               name,
-              style: TextStyle(
-                fontSize: 12,
+              style: tileTextTheme.labelMedium!.copyWith(
                 fontWeight:
                     isActive ? FontWeight.bold : FontWeight.normal,
                 color: isActive ? theme.colorScheme.primary : null,
@@ -2278,7 +2266,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             const SizedBox(height: 1),
             Text(
               timeText,
-              style: TextStyle(
+              style: tileTextTheme.labelSmall!.copyWith(
                 fontSize: 10,
                 color: (pointAMs != null || pointBMs != null)
                     ? Colors.grey.shade400
@@ -2293,6 +2281,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Widget _buildPointDisplay(
       String label, Color color, Duration? time) {
+    final ptTextTheme = Theme.of(context).textTheme;
     return Row(
       children: [
         Container(
@@ -2300,25 +2289,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           height: 36,
           decoration: BoxDecoration(
             border: Border.all(color: color),
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: AppRadius.borderSm,
           ),
           alignment: Alignment.center,
           child: Text(label,
-              style: TextStyle(
+              style: ptTextTheme.bodyMedium!.copyWith(
                   fontWeight: FontWeight.bold,
-                  fontSize: 13,
                   color: color)),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.md),
         GestureDetector(
           onTap: time != null
               ? () => ref.read(playerProvider).seek(time)
               : null,
           child: Text(
             TimeUtils.formatNullable(time),
-            style: TextStyle(
+            style: ptTextTheme.bodyMedium!.copyWith(
               fontFamily: 'monospace',
-              fontSize: 13,
               decoration:
                   time != null ? TextDecoration.underline : null,
               decorationColor: color.withValues(alpha: 0.5),
@@ -2330,6 +2317,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildPlaylistControls() {
+    final textTheme = Theme.of(context).textTheme;
     final plState = ref.watch(playlistPlayerProvider);
     final currentTrack = plState.currentTrack;
     final currentIdx = plState.currentTrackIndex;
@@ -2350,9 +2338,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
         child: Column(
           children: [
             // Controls row: shuffle, prev, track info, next, repeat
@@ -2362,7 +2350,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 IconButton(
                   icon: Icon(
                     Icons.shuffle,
-                    size: 22,
+                    size: AppIconSizes.ml,
                     color: plState.shuffle
                         ? AppTheme.accentGreen
                         : Colors.grey,
@@ -2375,7 +2363,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
                 // Prev
                 IconButton(
-                  icon: const Icon(Icons.skip_previous, size: 28),
+                  icon: const Icon(Icons.skip_previous, size: AppIconSizes.xl),
                   onPressed: plState.hasPrev ? _advanceToPrev : null,
                   visualDensity: VisualDensity.compact,
                 ),
@@ -2390,14 +2378,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           currentIdx != null
                               ? '${currentIdx + 1} / ${plState.trackCount}'
                               : '- / ${plState.trackCount}',
-                          style: const TextStyle(fontSize: 13),
+                          style: textTheme.bodyMedium,
                           textAlign: TextAlign.center,
                         ),
                         if (currentTrack != null)
                           Text(
                             currentTrack.displayName,
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.grey),
+                            style: textTheme.labelSmall,
                             textAlign: TextAlign.center,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -2408,13 +2395,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
                 // Next
                 IconButton(
-                  icon: const Icon(Icons.skip_next, size: 28),
+                  icon: const Icon(Icons.skip_next, size: AppIconSizes.xl),
                   onPressed: plState.hasNext ? _advanceToNext : null,
                   visualDensity: VisualDensity.compact,
                 ),
                 // Repeat mode
                 IconButton(
-                  icon: Icon(repeatIcon, size: 22, color: repeatColor),
+                  icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
                   onPressed: () => ref
                       .read(playlistPlayerProvider.notifier)
                       .cycleRepeatMode(),
@@ -2429,7 +2416,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 IconButton(
                   icon: Icon(
                     Icons.looks_one_outlined,
-                    size: 22,
+                    size: AppIconSizes.ml,
                     color: plState.firstVerseMode
                         ? AppTheme.accentGreen
                         : Colors.grey,
@@ -2461,9 +2448,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             InkWell(
               onTap: () => setState(
                   () => _showPlaylistPanel = !_showPlaylistPanel),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: AppRadius.borderMd,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -2471,18 +2458,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _showPlaylistPanel
                           ? Icons.keyboard_arrow_down
                           : Icons.queue_music,
-                      size: 16,
+                      size: AppIconSizes.s,
                       color: Colors.grey,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: AppSpacing.xs),
                     Text(
                       _showPlaylistPanel
                           ? 'トラック一覧を閉じる'
                           : 'トラック一覧を表示',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey,
-                      ),
+                      style: textTheme.labelSmall,
                     ),
                   ],
                 ),

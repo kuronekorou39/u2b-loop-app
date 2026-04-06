@@ -124,20 +124,19 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text('「${pl.name}」を共有',
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.bold)),
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text('${youtubeItems.length}曲（${url.length}文字）',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  style: Theme.of(context).textTheme.bodySmall),
             ),
             const Divider(height: 16),
             ListTile(
               leading: const Icon(Icons.share_outlined),
               title: const Text('テキストで共有'),
-              subtitle: const Text('LINE、メールなどで送信',
-                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+              subtitle: Text('LINE、メールなどで送信',
+                  style: Theme.of(context).textTheme.bodySmall),
               onTap: () {
                 Navigator.pop(ctx);
                 Share.share(url);
@@ -164,12 +163,12 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 },
               ),
             if (!canQr)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text('曲数が多いためQRコードは使用できません',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    style: Theme.of(context).textTheme.bodySmall),
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),
@@ -180,7 +179,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(name, style: const TextStyle(fontSize: 15)),
+        title: Text(name, style: Theme.of(context).textTheme.titleMedium),
         content: SizedBox(
           width: 250,
           height: 250,
@@ -210,11 +209,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text('サムネイル選択',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.bold)),
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             const Divider(height: 1),
             if (pl.thumbnailItemId != null)
@@ -238,7 +236,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       item.id == pl.effectiveThumbnailItemId;
                   return ListTile(
                     leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: AppRadius.borderXs,
                       child: SizedBox(
                         width: 48,
                         height: 36,
@@ -248,10 +246,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     title: Text(item.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13)),
+                        style: Theme.of(context).textTheme.bodyMedium),
                     trailing: isCurrent
                         ? const Icon(Icons.check,
-                            color: Colors.green, size: 20)
+                            color: Colors.green, size: AppIconSizes.md)
                         : null,
                     onTap: () {
                       ref
@@ -283,11 +281,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Text('曲を追加',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             ListTile(
               leading: const Icon(Icons.list),
@@ -351,25 +348,24 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Text('タグで一括追加',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             if (tags.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
+              Padding(
+                padding: const EdgeInsets.all(16),
                 child: Text('タグがありません',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
               ),
             for (final tag in tags)
               ListTile(
-                leading: const Icon(Icons.label_outline, size: 20),
+                leading: const Icon(Icons.label_outline, size: AppIconSizes.md),
                 title: Text(tag.name),
                 subtitle: Text(
                   '${allItems.where((i) => i.tagIds.contains(tag.id) && i.isReady).length} 曲',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -417,9 +413,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ? allItems.where((i) => i.id == thumbItemId).firstOrNull
         : null;
 
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('プレイリスト', style: TextStyle(fontSize: 16)),
+        title: Text('プレイリスト', style: textTheme.displaySmall),
         actions: [
           if (items.isNotEmpty)
             IconButton(
@@ -446,7 +444,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 Stack(
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: AppRadius.borderMd,
                       child: SizedBox(
                         width: 120,
                         height: 90,
@@ -468,19 +466,19 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         child: GestureDetector(
                           onTap: () => _selectThumbnail(pl, items),
                           child: Container(
-                            padding: const EdgeInsets.all(4),
+                            padding: const EdgeInsets.all(AppSpacing.xs),
                             decoration: BoxDecoration(
                               color: Colors.black54,
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: AppRadius.borderXs,
                             ),
                             child: const Icon(Icons.photo_camera,
-                                size: 16, color: Colors.white70),
+                                size: AppIconSizes.s, color: Colors.white70),
                           ),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: AppSpacing.xl),
                 // タイトル + 曲数 + ボタン
                 Expanded(
                   child: Column(
@@ -491,8 +489,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           Expanded(
                             child: Text(
                               pl.name,
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
+                              style: textTheme.titleLarge,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -500,18 +497,17 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           GestureDetector(
                             onTap: () => _renamePlaylist(pl),
                             child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.edit, size: 18,
+                              padding: EdgeInsets.all(AppSpacing.xs),
+                              child: Icon(Icons.edit, size: AppIconSizes.sm,
                                   color: Colors.grey),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: AppSpacing.xs),
                       Text('${items.length} 曲',
-                          style: const TextStyle(
-                              fontSize: 13, color: Colors.grey)),
-                      const SizedBox(height: 12),
+                          style: textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+                      const SizedBox(height: AppSpacing.lg),
                       Row(
                         children: [
                           if (items.isNotEmpty)
@@ -534,9 +530,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                   ),
                                 ),
                               ),
-                              icon: const Icon(Icons.play_arrow, size: 18),
-                              label: const Text('再生',
-                                  style: TextStyle(fontSize: 12)),
+                              icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
+                              label: Text('再生',
+                                  style: textTheme.labelMedium),
                               style: FilledButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12),
@@ -560,22 +556,21 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.playlist_play,
-                            size: 48,
+                            size: AppIconSizes.xxl,
                             color: Theme.of(context)
                                 .colorScheme
                                 .onSurface
                                 .withValues(alpha: 0.3)),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: AppSpacing.md),
                         Text('曲がありません',
                             style: TextStyle(
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurface
                                     .withValues(alpha: 0.5))),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: AppSpacing.xs),
                         Text('＋ ボタンで追加',
-                            style: TextStyle(
-                                fontSize: 12,
+                            style: textTheme.labelMedium?.copyWith(
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurface
@@ -619,7 +614,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         child: Stack(
                           children: [
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: AppRadius.borderXs,
                               child: SizedBox(
                                 width: 64,
                                 height: 36,
@@ -632,10 +627,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                   decoration: BoxDecoration(
                                     color: Colors.black54,
                                     borderRadius:
-                                        BorderRadius.circular(4),
+                                        AppRadius.borderXs,
                                   ),
                                   child: const Icon(Icons.block,
-                                      color: Colors.white54, size: 20),
+                                      color: Colors.white54, size: AppIconSizes.md),
                                 ),
                               ),
                           ],
@@ -645,8 +640,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         item.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
+                        style: textTheme.bodyLarge?.copyWith(
                           decoration: isDisabled
                               ? TextDecoration.lineThrough
                               : null,
@@ -716,7 +710,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     final widgets = <Widget>[];
     if (parts.isNotEmpty) {
       widgets.add(Text(parts.join(' | '),
-          style: const TextStyle(fontSize: 11, color: Colors.grey)));
+          style: Theme.of(context).textTheme.labelSmall));
     }
     if (itemTags.isNotEmpty) {
       widgets.add(Padding(
@@ -726,15 +720,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           children: itemTags
               .map((t) => Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: 0),
                     decoration: BoxDecoration(
                       color: Theme.of(context)
                           .colorScheme
                           .primaryContainer
                           .withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: AppRadius.borderXs,
                     ),
-                    child: Text(t.name, style: const TextStyle(fontSize: 9)),
+                    child: Text(t.name, style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9)),
                   ))
               .toList(),
         ),
@@ -754,7 +748,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         .withValues(alpha: 0.6)),
                 const SizedBox(width: 3),
                 Text('区間を選択',
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.labelSmall!.copyWith(
                         fontSize: 10,
                         color: Theme.of(context).colorScheme.primary
                             .withValues(alpha: 0.6))),
@@ -795,8 +789,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   children: [
                     Expanded(
                       child: Text('区間を選択',
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.bold)),
+                          style: Theme.of(context).textTheme.titleMedium),
                     ),
                     TextButton(
                       onPressed: () {
@@ -823,10 +816,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     }
                   });
                 },
-                title: const Text('全体',
-                    style: TextStyle(fontSize: 14)),
-                subtitle: const Text('区間を使わず全体を再生',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                title: Text('全体',
+                    style: Theme.of(context).textTheme.bodyLarge),
+                subtitle: Text('区間を使わず全体を再生',
+                    style: Theme.of(context).textTheme.bodySmall),
                 dense: true,
                 controlAffinity: ListTileControlAffinity.leading,
               ),
@@ -845,19 +838,18 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     });
                   },
                   title: Text(region.name,
-                      style: const TextStyle(fontSize: 14)),
+                      style: Theme.of(context).textTheme.bodyLarge),
                   subtitle: region.hasPoints
                       ? Text(
                           '${region.pointAMs != null ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!)) : '--:--'}'
                           ' - '
                           '${region.pointBMs != null ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!)) : '--:--'}',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.grey))
+                          style: Theme.of(context).textTheme.bodySmall)
                       : null,
                   dense: true,
                   controlAffinity: ListTileControlAffinity.leading,
                 ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.md),
             ],
           ),
         ),
@@ -872,7 +864,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         return Container(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: const Icon(Icons.play_circle_outline,
-              color: Colors.grey, size: 18),
+              color: Colors.grey, size: AppIconSizes.sm),
         );
       });
     }
@@ -884,7 +876,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               ? Icons.play_circle_outline
               : Icons.video_file_outlined,
           color: Colors.grey,
-          size: 18,
+          size: AppIconSizes.sm,
         ),
       ),
     );
@@ -986,7 +978,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
     return Stack(
       children: [
         IconButton(
-          icon: const Icon(Icons.label_outline, size: 22),
+          icon: const Icon(Icons.label_outline, size: AppIconSizes.ml),
           tooltip: 'タグフィルター',
           onPressed: () {
             var selected = Set<String>.from(_filterTagIds);
@@ -1002,10 +994,8 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         child: Row(
                           children: [
-                            const Text('タグフィルター',
-                                style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold)),
+                            Text('タグフィルター',
+                                style: Theme.of(context).textTheme.titleMedium),
                             const Spacer(),
                             if (selected.isNotEmpty)
                               TextButton(
@@ -1013,8 +1003,8 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                                   setState(() => _filterTagIds.clear());
                                   Navigator.pop(ctx);
                                 },
-                                child: const Text('クリア',
-                                    style: TextStyle(fontSize: 13)),
+                                child: Text('クリア',
+                                    style: Theme.of(context).textTheme.bodyMedium),
                               ),
                           ],
                         ),
@@ -1027,9 +1017,9 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                             for (final tag in widget.tags)
                               CheckboxListTile(
                                 title: Text(tag.name,
-                                    style: const TextStyle(fontSize: 14)),
+                                    style: Theme.of(context).textTheme.bodyLarge),
                                 secondary: Icon(Icons.label,
-                                    size: 20, color: tag.color),
+                                    size: AppIconSizes.md, color: tag.color),
                                 value: selected.contains(tag.id),
                                 onChanged: (_) {
                                   setSheetState(() {
@@ -1048,7 +1038,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.md),
                     ],
                   ),
                 ),
@@ -1061,14 +1051,14 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
             right: 4,
             top: 4,
             child: Container(
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.all(AppSpacing.xs),
               decoration: const BoxDecoration(
                 color: AppTheme.accentGreen,
                 shape: BoxShape.circle,
               ),
               child: Text(
                 '${_filterTagIds.length}',
-                style: const TextStyle(fontSize: 9, color: Colors.black),
+                style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9, color: Colors.black),
               ),
             ),
           ),
@@ -1088,15 +1078,17 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
       items = items.where((i) => i.title.toLowerCase().contains(q)).toList();
     }
 
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('曲を選択', style: TextStyle(fontSize: 16)),
+        title: Text('曲を選択', style: textTheme.displaySmall),
         actions: [
           FilledButton(
             onPressed: _selectedCount == 0 ? null : _submit,
             child: Text('追加 ($_selectedCount)'),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.md),
         ],
       ),
       body: Column(
@@ -1111,23 +1103,23 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                     child: TextField(
                       decoration: InputDecoration(
                         hintText: '検索...',
-                        hintStyle: const TextStyle(fontSize: 13),
-                        prefixIcon: const Icon(Icons.search, size: 20),
+                        hintStyle: textTheme.bodyMedium,
+                        prefixIcon: const Icon(Icons.search, size: AppIconSizes.md),
                         isDense: true,
                         contentPadding:
                             const EdgeInsets.symmetric(vertical: 0),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: AppRadius.borderXl,
                           borderSide:
                               BorderSide(color: Colors.grey.shade700),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: AppRadius.borderXl,
                           borderSide:
                               BorderSide(color: Colors.grey.shade700),
                         ),
                       ),
-                      style: const TextStyle(fontSize: 13),
+                      style: textTheme.bodyMedium,
                       onChanged: (v) =>
                           setState(() => _searchQuery = v),
                     ),
@@ -1144,15 +1136,15 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
                 children: [
                   for (final tag in widget.tags)
                     if (_filterTagIds.contains(tag.id))
                       Padding(
-                        padding: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.only(right: AppSpacing.sm),
                         child: Chip(
                           label: Text(tag.name,
-                              style: const TextStyle(fontSize: 11)),
+                              style: textTheme.labelSmall),
                           onDeleted: () => setState(() =>
                               _filterTagIds.remove(tag.id)),
                           deleteIconColor: Colors.grey,
@@ -1162,8 +1154,8 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                         ),
                       ),
                   ActionChip(
-                    label: const Text('クリア',
-                        style: TextStyle(fontSize: 11)),
+                    label: Text('クリア',
+                        style: textTheme.labelSmall),
                     onPressed: () =>
                         setState(() => _filterTagIds.clear()),
                     visualDensity: VisualDensity.compact,
@@ -1210,7 +1202,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
       children: [
         ListTile(
           leading: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: AppRadius.borderXs,
             child: SizedBox(
               width: 64,
               height: 36,
@@ -1221,19 +1213,17 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
             item.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 14,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: alreadyIn ? Colors.grey : null,
             ),
           ),
           subtitle: alreadyIn
-              ? const Text('追加済み',
-                  style: TextStyle(fontSize: 11, color: Colors.grey))
+              ? Text('追加済み',
+                  style: Theme.of(context).textTheme.labelSmall)
               : hasRegions
                   ? Text(
                       '${regions.length + 1} 区間（全体含む）',
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.grey),
+                      style: Theme.of(context).textTheme.labelSmall,
                     )
                   : null,
           trailing: Row(
@@ -1252,7 +1242,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                   },
                   child: Icon(
                     isExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 24,
+                    size: AppIconSizes.lg,
                     color: Colors.grey,
                   ),
                 ),
@@ -1273,10 +1263,10 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
             child: ListTile(
               dense: true,
               visualDensity: const VisualDensity(vertical: -3),
-              title: const Text('全体',
-                  style: TextStyle(fontSize: 13)),
-              subtitle: const Text('区間を使わず全体を再生',
-                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+              title: Text('全体',
+                  style: Theme.of(context).textTheme.bodyMedium),
+              subtitle: Text('区間を使わず全体を再生',
+                  style: Theme.of(context).textTheme.labelSmall),
               trailing: Checkbox(
                 value: selectedRegions?.contains(_fullTrackId) ?? false,
                 onChanged: isSelected
@@ -1300,12 +1290,11 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
                 visualDensity: const VisualDensity(vertical: -3),
                 title: Text(
                   region.name,
-                  style: const TextStyle(fontSize: 13),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 subtitle: timeStr != null
                     ? Text(timeStr,
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.grey))
+                        style: Theme.of(context).textTheme.labelSmall)
                     : null,
                 trailing: Checkbox(
                   value: regionSelected,
@@ -1343,7 +1332,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
         return Container(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: const Icon(Icons.play_circle_outline,
-              color: Colors.grey, size: 18),
+              color: Colors.grey, size: AppIconSizes.sm),
         );
       });
     }
@@ -1355,7 +1344,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
               ? Icons.play_circle_outline
               : Icons.video_file_outlined,
           color: Colors.grey,
-          size: 18,
+          size: AppIconSizes.sm,
         ),
       ),
     );

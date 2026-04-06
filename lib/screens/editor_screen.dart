@@ -504,6 +504,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final loop = ref.read(loopProvider);
     if (!loop.hasBothPoints) return;
 
+    final textTheme = Theme.of(context).textTheme;
     final region = _regions[_selectedRegionIdx];
     final aStr = TimeUtils.formatShort(loop.pointA!);
     final bStr = TimeUtils.formatShort(loop.pointB!);
@@ -520,10 +521,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('${region.name}: $aStr - $bStr (${durationSec.toStringAsFixed(1)}s)',
-                style: const TextStyle(fontSize: 13)),
-            const SizedBox(height: 16),
-            const Text('形式を選択:',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
+                style: textTheme.bodyMedium),
+            const SizedBox(height: AppSpacing.xl),
+            Text('形式を選択:',
+                style: textTheme.bodySmall),
           ],
         ),
         actions: [
@@ -536,7 +537,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               Navigator.pop(ctx);
               _executeExport(ExportFormat.audioOnly);
             },
-            icon: const Icon(Icons.audiotrack, size: 16),
+            icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
             label: const Text('音声のみ'),
           ),
           TextButton.icon(
@@ -544,7 +545,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               Navigator.pop(ctx);
               _executeExport(ExportFormat.mp4);
             },
-            icon: const Icon(Icons.videocam, size: 16),
+            icon: const Icon(Icons.videocam, size: AppIconSizes.s),
             label: const Text('MP4'),
           ),
         ],
@@ -576,11 +577,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         content: Row(
           children: [
             SizedBox(
-                width: 16,
-                height: 16,
+                width: AppIconSizes.s,
+                height: AppIconSizes.s,
                 child:
                     CircularProgressIndicator(strokeWidth: 2)),
-            SizedBox(width: 12),
+            SizedBox(width: AppSpacing.lg),
             Text('書き出し中...'),
           ],
         ),
@@ -673,6 +674,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
 
     return PopScope(
@@ -691,7 +693,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         appBar: AppBar(
           title: Text(
             'AB設定 - ${_item.title}',
-            style: const TextStyle(fontSize: 14),
+            style: textTheme.bodyLarge,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -713,40 +715,41 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   Widget _buildSaveButton() {
     if (_saving) {
       return const Padding(
-        padding: EdgeInsets.all(12),
+        padding: EdgeInsets.all(AppSpacing.lg),
         child: SizedBox(
-          width: 24,
-          height: 24,
+          width: AppIconSizes.lg,
+          height: AppIconSizes.lg,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }
     return TextButton.icon(
       onPressed: _save,
-      icon: const Icon(Icons.save, size: 18),
+      icon: const Icon(Icons.save, size: AppIconSizes.sm),
       label: const Text('保存'),
     );
   }
 
   Widget _buildWaveformAction() {
+    final textTheme = Theme.of(context).textTheme;
     final waveform = ref.watch(waveformDataProvider);
     final loading = ref.watch(waveformLoadingProvider);
     final error = ref.watch(waveformErrorProvider);
 
     if (loading && waveform == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12),
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: 14,
-              height: 14,
+            const SizedBox(
+              width: AppIconSizes.xs,
+              height: AppIconSizes.xs,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
-            SizedBox(width: 6),
+            const SizedBox(width: AppSpacing.sm),
             Text('波形取得中',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
+                style: textTheme.bodySmall),
           ],
         ),
       );
@@ -756,7 +759,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final source = ref.read(videoSourceProvider);
       return IconButton(
         icon: Icon(Icons.graphic_eq,
-            size: 20, color: error != null ? Colors.orange : Colors.grey),
+            size: AppIconSizes.md, color: error != null ? Colors.orange : Colors.grey),
         tooltip: error != null ? '$error（タップで再取得）' : '波形を取得',
         onPressed: () {
           if (source != null) _generateWaveform(source);
@@ -768,6 +771,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   Widget _buildLoadingView() {
+    final textTheme = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Center(
@@ -776,8 +780,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           children: [
             Text(
               _item.title,
-              style: TextStyle(
-                fontSize: 14,
+              style: textTheme.titleSmall!.copyWith(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context)
                     .colorScheme
@@ -788,7 +791,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xxl),
             TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: _loadingProgress),
               duration: const Duration(milliseconds: 400),
@@ -797,7 +800,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 return Column(
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: AppRadius.borderXs,
                       child: LinearProgressIndicator(
                         value: value,
                         minHeight: 6,
@@ -806,14 +809,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             .surfaceContainerHighest,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.lg),
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 250),
                       child: Text(
                         _loadingStatus,
                         key: ValueKey(_loadingStatus),
-                        style: TextStyle(
-                          fontSize: 13,
+                        style: textTheme.bodyMedium!.copyWith(
                           color: Theme.of(context)
                               .colorScheme
                               .onSurface
@@ -832,35 +834,34 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   Widget _buildErrorView() {
+    final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.orange),
-            const SizedBox(height: 16),
+            const Icon(Icons.error_outline, size: AppIconSizes.xxl, color: Colors.orange),
+            const SizedBox(height: AppSpacing.xl),
             Text(
               '読み込み失敗',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+              style: textTheme.displaySmall!.copyWith(
                 color: Theme.of(context)
                     .colorScheme
                     .onSurface
                     .withValues(alpha: 0.7),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
             Text(
               _loadError!,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xxl),
             FilledButton.icon(
               onPressed: _loadPlayer,
-              icon: const Icon(Icons.refresh, size: 18),
+              icon: const Icon(Icons.refresh, size: AppIconSizes.sm),
               label: const Text('再試行'),
             ),
           ],
@@ -878,7 +879,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         // Unified region + AB controls panel
         Expanded(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(8, 4, 8, max(bottomInset + 16, 40)),
+            padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.xs, AppSpacing.md, max(bottomInset + AppSpacing.xl, 40)),
             child: _buildUnifiedPanel(),
           ),
         ),
@@ -891,6 +892,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final loopNotifier = ref.read(loopProvider.notifier);
     final hasSource = ref.watch(videoSourceProvider) != null;
     final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
     final canAdd = _regions.length < _maxRegions;
 
     // Sync current region values from loop provider in real-time
@@ -908,7 +910,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -933,15 +935,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   SizedBox(
                     width: double.infinity,
                     height: 28,
                     child: OutlinedButton.icon(
                       onPressed: canAdd ? _addRegion : null,
-                      icon: const Icon(Icons.add, size: 14),
+                      icon: const Icon(Icons.add, size: AppIconSizes.xs),
                       label: Text(canAdd ? '追加' : '上限',
-                          style: const TextStyle(fontSize: 11)),
+                          style: textTheme.labelSmall),
                       style: OutlinedButton.styleFrom(
                         padding: EdgeInsets.zero,
                         side: BorderSide(color: Colors.grey.shade700),
@@ -953,7 +955,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             ),
             // Separator
             VerticalDivider(
-              width: 16,
+              width: AppSpacing.xl,
               thickness: 1,
               color: theme.dividerColor.withValues(alpha: 0.3),
             ),
@@ -973,11 +975,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                               : null,
                           icon: Icon(
                             loop.enabled ? Icons.repeat_on : Icons.repeat,
-                            size: 16,
+                            size: AppIconSizes.s,
                           ),
                           label: Text(
                               loop.enabled ? 'Loop ON' : 'Loop OFF',
-                              style: const TextStyle(fontSize: 11)),
+                              style: textTheme.labelSmall),
                           style: FilledButton.styleFrom(
                             backgroundColor: loop.enabled
                                 ? theme.colorScheme.primary
@@ -994,12 +996,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       if (loop.hasBothPoints)
                         Text(
                           '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.grey.shade500),
+                          style: textTheme.bodySmall!.copyWith(
+                              color: Colors.grey.shade500),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpacing.sm),
 
                   // Point A row
                   LoopControls.buildPointRow(
@@ -1027,14 +1029,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         child: TextButton.icon(
                           onPressed: () => loopNotifier.swapPoints(),
                           icon: Icon(Icons.swap_vert,
-                              size: 14, color: Colors.amber.shade300),
+                              size: AppIconSizes.xs, color: Colors.amber.shade300),
                           label: Text('A⇔B 入れ替え',
-                              style: TextStyle(
+                              style: textTheme.labelSmall!.copyWith(
                                   fontSize: 10,
                                   color: Colors.amber.shade300)),
                           style: TextButton.styleFrom(
                             padding:
-                                const EdgeInsets.symmetric(horizontal: 6),
+                                const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -1042,7 +1044,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       ),
                     )
                   else
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.sm),
 
                   // Point B row
                   LoopControls.buildPointRow(
@@ -1059,14 +1061,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                     onMinus: () => loopNotifier.adjustPointB(-1),
                     onPlus: () => loopNotifier.adjustPointB(1),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpacing.sm),
 
                   // Step selector (inline chips, right-aligned)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Text('Step',
-                          style: TextStyle(
+                          style: textTheme.labelSmall!.copyWith(
                               fontSize: 9,
                               fontWeight: FontWeight.w500,
                               letterSpacing: 0.5,
@@ -1082,7 +1084,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             child: Container(
                               height: 22,
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6),
+                                  horizontal: AppSpacing.sm),
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? Colors.grey.shade800
@@ -1092,8 +1094,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                               alignment: Alignment.center,
                               child: Text(
                                 label,
-                                style: TextStyle(
-                                  fontSize: 11,
+                                style: textTheme.labelSmall!.copyWith(
                                   fontFamily: 'monospace',
                                   color: isSelected
                                       ? Colors.grey.shade300
@@ -1116,12 +1117,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         TextButton.icon(
                           onPressed: () => _showExportDialog(),
                           icon: const Icon(Icons.file_download,
-                              size: 14),
-                          label: const Text('書き出し',
-                              style: TextStyle(fontSize: 11)),
+                              size: AppIconSizes.xs),
+                          label: Text('書き出し',
+                              style: textTheme.labelSmall),
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8),
+                                horizontal: AppSpacing.md),
                             minimumSize: Size.zero,
                             tapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
@@ -1134,14 +1135,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             hasSource ? () => loopNotifier.reset() : null,
                         style: TextButton.styleFrom(
                           padding:
-                              const EdgeInsets.symmetric(horizontal: 8),
+                              const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                           minimumSize: Size.zero,
                           tapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                           foregroundColor: Colors.grey,
                         ),
-                        child: const Text('クリア',
-                            style: TextStyle(fontSize: 11)),
+                        child: Text('クリア',
+                            style: textTheme.labelSmall),
                       ),
                     ],
                   ),
@@ -1158,6 +1159,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final region = _regions[index];
     final isSelected = index == _selectedRegionIdx;
     final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
 
     String timeText;
     if (region.hasA || region.hasB) {
@@ -1180,14 +1182,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     return InkWell(
       onTap: () => _selectRegion(index),
       onLongPress: () => _showRegionMenu(index),
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: AppRadius.borderSm,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: AppSpacing.xs),
         decoration: BoxDecoration(
           color: isSelected
               ? theme.colorScheme.primary.withValues(alpha: 0.15)
               : null,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: AppRadius.borderSm,
           border: isSelected
               ? Border.all(
                   color: theme.colorScheme.primary.withValues(alpha: 0.5),
@@ -1199,8 +1201,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           children: [
             Text(
               region.name,
-              style: TextStyle(
-                fontSize: 12,
+              style: textTheme.labelMedium!.copyWith(
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 color: isSelected
                     ? theme.colorScheme.primary
@@ -1212,7 +1213,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             const SizedBox(height: 1),
             Text(
               timeText,
-              style: TextStyle(
+              style: textTheme.labelSmall!.copyWith(
                 fontSize: 10,
                 color: (region.hasA || region.hasB)
                     ? Colors.grey.shade400

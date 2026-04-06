@@ -114,8 +114,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
         final choice = await showDialog<String>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('どちらを追加しますか？',
-                style: TextStyle(fontSize: 15)),
+            title: Text('どちらを追加しますか？',
+                style: Theme.of(context).textTheme.titleMedium),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, 'video'),
@@ -164,7 +164,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('追加', style: TextStyle(fontSize: 16)),
+        title: Text('追加', style: Theme.of(context).textTheme.displaySmall),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -175,17 +175,17 @@ class _ListScreenState extends ConsumerState<ListScreen>
               decoration: const InputDecoration(
                 hintText: 'YouTube URL / 共有URL',
                 hintStyle: kHintStyle,
-                prefixIcon: Icon(Icons.link, size: 18),
+                prefixIcon: Icon(Icons.link, size: AppIconSizes.sm),
                 isDense: true,
                 border: OutlineInputBorder(),
                 counterText: '',
               ),
-              style: const TextStyle(fontSize: 13),
+              style: Theme.of(context).textTheme.bodyMedium,
               maxLines: 3,
               minLines: 3,
               onSubmitted: (_) => doAdd(ctx),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
             Align(
               alignment: Alignment.centerRight,
               child: IconButton(
@@ -196,15 +196,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 tooltip: '追加',
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.lg),
             Row(
               children: [
                 const Expanded(child: Divider()),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                   child: Text('または',
-                      style: TextStyle(
-                          fontSize: 12,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           color: Theme.of(context)
                               .colorScheme
                               .onSurface
@@ -213,7 +212,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 const Expanded(child: Divider()),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.lg),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -221,7 +220,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   Navigator.pop(ctx);
                   _addLocalFile();
                 },
-                icon: const Icon(Icons.folder_open, size: 18),
+                icon: const Icon(Icons.folder_open, size: AppIconSizes.sm),
                 label: const Text('ローカルファイルを選択'),
               ),
             ),
@@ -271,19 +270,19 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 Row(
                   children: [
                     const SizedBox(
-                      width: 24,
-                      height: 24,
+                      width: AppIconSizes.lg,
+                      height: AppIconSizes.lg,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(child: Text(status, style: const TextStyle(fontSize: 14))),
+                    const SizedBox(width: AppSpacing.xl),
+                    Expanded(child: Text(status, style: Theme.of(context).textTheme.bodyLarge)),
                   ],
                 ),
                 if (count > 0)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: AppSpacing.md),
                     child: Text('$count 件取得済み',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        style: Theme.of(context).textTheme.bodySmall),
                   ),
               ],
             ),
@@ -405,32 +404,30 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 Row(
                   children: [
                     const SizedBox(
-                      width: 24,
-                      height: 24,
+                      width: AppIconSizes.lg,
+                      height: AppIconSizes.lg,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: AppSpacing.xl),
                     Expanded(
                       child: Text(
                         '「$playlistTitle」に追加中...',
-                        style: const TextStyle(fontSize: 14),
+                        style: Theme.of(context).textTheme.bodyLarge,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.lg),
                 LinearProgressIndicator(value: count / total),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.xs),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('$count / $total',
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.grey)),
+                        style: Theme.of(context).textTheme.bodySmall),
                     if (eta.isNotEmpty)
                       Text('残り $eta',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.grey)),
+                          style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ],
@@ -472,24 +469,24 @@ class _ListScreenState extends ConsumerState<ListScreen>
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('タグを付与', style: TextStyle(fontSize: 15)),
+        title: Text('タグを付与', style: Theme.of(context).textTheme.titleMedium),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('追加する曲に共通のタグを付けますか？',
-                style: TextStyle(fontSize: 13, color: Colors.grey)),
-            const SizedBox(height: 12),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+            const SizedBox(height: AppSpacing.lg),
             // 既存タグ
             if (tags.isNotEmpty)
               Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
                 children: [
                   for (final tag in tags)
                     ActionChip(
                       label: Text(tag.name,
-                          style: const TextStyle(fontSize: 12)),
+                          style: Theme.of(context).textTheme.labelMedium),
                       onPressed: () => Navigator.pop(ctx, tag.id),
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize:
@@ -497,7 +494,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     ),
                 ],
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
             // プレイリスト名で新規作成
             OutlinedButton.icon(
               onPressed: () async {
@@ -506,9 +503,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     .create(playlistTitle);
                 if (ctx.mounted) Navigator.pop(ctx, tag.id);
               },
-              icon: const Icon(Icons.add, size: 16),
+              icon: const Icon(Icons.add, size: AppIconSizes.s),
               label: Text('「$playlistTitle」タグを作成',
-                  style: const TextStyle(fontSize: 12)),
+                  style: Theme.of(context).textTheme.labelMedium),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: Colors.grey.shade700),
               ),
@@ -535,21 +532,21 @@ class _ListScreenState extends ConsumerState<ListScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('$playlistTitle (${allVideos.length}件)',
-            style: const TextStyle(fontSize: 15)),
+            style: Theme.of(context).textTheme.titleMedium),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               '${duplicates.length}件が既に登録されています。',
-              style: const TextStyle(fontSize: 13),
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (newVideos.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
                 child: Text(
                   '新規: ${newVideos.length}件',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
           ],
@@ -760,19 +757,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.md),
               child: Text(
                 'プレイリストに追加（${_selectedIds.length}件）',
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
             const Divider(height: 1),
             if (playlists.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Text('プレイリストがありません',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
               ),
             Flexible(
               child: ListView.builder(
@@ -792,7 +788,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       : null;
                   return ListTile(
                     leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: AppRadius.borderXs,
                       child: SizedBox(
                         width: 48,
                         height: 36,
@@ -803,15 +799,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                     .colorScheme
                                     .surfaceContainerHighest,
                                 child: const Icon(Icons.playlist_play,
-                                    color: Colors.grey, size: 20),
+                                    color: Colors.grey, size: AppIconSizes.md),
                               ),
                       ),
                     ),
                     title: Text(pl.name,
-                        style: const TextStyle(fontSize: 14)),
+                        style: Theme.of(context).textTheme.bodyLarge),
                     subtitle: Text('$count 曲',
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.grey)),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey)),
                     onTap: () {
                       Navigator.pop(ctx);
                       final ids = _selectedIds.toList();
@@ -834,8 +829,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.add),
-              title: const Text('新規作成して追加',
-                  style: TextStyle(fontSize: 14)),
+              title: Text('新規作成して追加',
+                  style: Theme.of(context).textTheme.bodyLarge),
               onTap: () async {
                 Navigator.pop(ctx);
                 final controller = TextEditingController();
@@ -893,7 +888,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 }
               },
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),
@@ -1110,7 +1105,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.xs, 0),
                         child: Row(
                           children: [
                             Expanded(
@@ -1121,9 +1116,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                   focusNode: _searchFocusNode,
                                   decoration: InputDecoration(
                                     hintText: '検索...',
-                                    hintStyle: const TextStyle(fontSize: 13),
+                                    hintStyle: Theme.of(context).textTheme.bodyMedium,
                                     prefixIcon:
-                                        const Icon(Icons.search, size: 20),
+                                        const Icon(Icons.search, size: AppIconSizes.md),
                                     suffixIcon: _searchQuery.isNotEmpty
                                         ? GestureDetector(
                                             onTap: () {
@@ -1132,7 +1127,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                                   () => _searchQuery = '');
                                             },
                                             child: const Icon(Icons.close,
-                                                size: 18),
+                                                size: AppIconSizes.sm),
                                           )
                                         : null,
                                     isDense: true,
@@ -1140,17 +1135,17 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                         const EdgeInsets.symmetric(
                                             vertical: 0),
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(18),
+                                      borderRadius: AppRadius.borderXl,
                                       borderSide: BorderSide(
                                           color: Colors.grey.shade700),
                                     ),
                                     enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(18),
+                                      borderRadius: AppRadius.borderXl,
                                       borderSide: BorderSide(
                                           color: Colors.grey.shade700),
                                     ),
                                   ),
-                                  style: const TextStyle(fontSize: 13),
+                                  style: Theme.of(context).textTheme.bodyMedium,
                                   onChanged: (v) =>
                                       setState(() => _searchQuery = v),
                                 ),
@@ -1159,7 +1154,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             if (tags.isNotEmpty)
                               _buildTagFilterButton(tags, filterTagIds),
                             PopupMenuButton<_SortMode>(
-                              icon: const Icon(Icons.sort, size: 22),
+                              icon: const Icon(Icons.sort, size: AppIconSizes.ml),
                               tooltip: '並び替え',
                               onSelected: (mode) =>
                                   setState(() => _sortMode = mode),
@@ -1242,7 +1237,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           ),
         ],
         IconButton(
-          icon: const Icon(Icons.settings, size: 22),
+          icon: const Icon(Icons.settings, size: AppIconSizes.ml),
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const SettingsScreen()),
           ),
@@ -1267,17 +1262,16 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Widget _buildSelectionBar(List<LoopItem> items) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
       child: Row(
         children: [
           GestureDetector(
             onTap: _clearSelection,
-            child: const Icon(Icons.close, size: 20, color: Colors.white),
+            child: const Icon(Icons.close, size: AppIconSizes.md, color: Colors.white),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.md),
           Text('${_selectedIds.length} 件選択',
-              style:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
           const Spacer(),
           _selectionAction(
               Icons.playlist_add, 'PL追加', _showAddToPlaylistSheet),
@@ -1303,9 +1297,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: color),
+            Icon(icon, size: AppIconSizes.sm, color: color),
             Text(label,
-                style: TextStyle(fontSize: 9, color: color ?? Colors.grey)),
+                style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9, color: color ?? Colors.grey)),
           ],
         ),
       ),
@@ -1318,11 +1312,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
       child: Row(
         children: [
           if (_sortMode == mode)
-            const Icon(Icons.check, size: 18)
+            const Icon(Icons.check, size: AppIconSizes.sm)
           else
-            const SizedBox(width: 18),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: AppIconSizes.sm),
+          const SizedBox(width: AppSpacing.md),
+          Text(label, style: Theme.of(context).textTheme.bodyLarge),
         ],
       ),
     );
@@ -1335,7 +1329,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     return Stack(
       children: [
         IconButton(
-          icon: const Icon(Icons.label_outline, size: 22),
+          icon: const Icon(Icons.label_outline, size: AppIconSizes.ml),
           tooltip: 'タグフィルター',
           onPressed: () {
             var selected = Set<String>.from(filterTagIds);
@@ -1346,13 +1340,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.md),
                         child: Row(
                           children: [
-                            const Text('タグフィルター',
-                                style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold)),
+                            Text('タグフィルタ��',
+                                style: Theme.of(context).textTheme.titleMedium),
                             const Spacer(),
                             if (selected.isNotEmpty)
                               TextButton(
@@ -1361,8 +1353,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                       .state = {};
                                   Navigator.pop(ctx);
                                 },
-                                child: const Text('クリア',
-                                    style: TextStyle(fontSize: 13)),
+                                child: Text('ク���ア',
+                                    style: Theme.of(context).textTheme.bodyMedium),
                               ),
                           ],
                         ),
@@ -1373,10 +1365,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           shrinkWrap: true,
                           children: [
                             CheckboxListTile(
-                              title: const Text('未分類',
-                                  style: TextStyle(fontSize: 14)),
+                              title: Text('未分類',
+                                  style: Theme.of(context).textTheme.bodyLarge),
                               secondary:
-                                  const Icon(Icons.label_off, size: 20),
+                                  const Icon(Icons.label_off, size: AppIconSizes.md),
                               value: selected.contains(untaggedId),
                               onChanged: (_) {
                                 setSheetState(() {
@@ -1393,7 +1385,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             for (final tag in tags)
                               CheckboxListTile(
                                 title: Text(tag.name,
-                                    style: const TextStyle(fontSize: 14)),
+                                    style: Theme.of(context).textTheme.bodyLarge),
                                 value: selected.contains(tag.id),
                                 onChanged: (_) {
                                   setSheetState(() {
@@ -1410,7 +1402,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.md),
                     ],
                   ),
                 ),
@@ -1423,14 +1415,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
             right: 4,
             top: 4,
             child: Container(
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.all(AppSpacing.xs),
               decoration: const BoxDecoration(
                 color: AppTheme.accentGreen,
                 shape: BoxShape.circle,
               ),
               child: Text(
                 '${filterTagIds.length}',
-                style: const TextStyle(fontSize: 9, color: Colors.black),
+                style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9, color: Colors.black),
               ),
             ),
           ),
@@ -1444,15 +1436,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
       height: 36,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
         children: [
           if (filterTagIds.contains(untaggedId))
             Padding(
-              padding: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
               child: Chip(
-                avatar: const Icon(Icons.label_off, size: 14),
+                avatar: const Icon(Icons.label_off, size: AppIconSizes.xs),
                 label:
-                    const Text('未分類', style: TextStyle(fontSize: 11)),
+                    Text('未分類', style: Theme.of(context).textTheme.labelSmall),
                 onDeleted: () {
                   ref.read(tagFilterProvider.notifier).update((s) {
                     final next = Set<String>.from(s);
@@ -1468,10 +1460,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
           for (final tag in tags)
             if (filterTagIds.contains(tag.id))
               Padding(
-                padding: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.only(right: AppSpacing.sm),
                 child: Chip(
                   label:
-                      Text(tag.name, style: const TextStyle(fontSize: 11)),
+                      Text(tag.name, style: Theme.of(context).textTheme.labelSmall),
                   onDeleted: () {
                     ref.read(tagFilterProvider.notifier).update((s) {
                       final next = Set<String>.from(s);
@@ -1485,9 +1477,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 ),
               ),
           Padding(
-            padding: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.only(right: AppSpacing.sm),
             child: ActionChip(
-              label: const Text('クリア', style: TextStyle(fontSize: 11)),
+              label: Text('クリア', style: Theme.of(context).textTheme.labelSmall),
               onPressed: () {
                 ref.read(tagFilterProvider.notifier).state = {};
               },
@@ -1516,7 +1508,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       List<LoopItem> items, List<Tag> tags, int cols, double ratio) {
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return GridView.builder(
-      padding: EdgeInsets.fromLTRB(6, 6, 6, 80 + bottomPad),
+      padding: EdgeInsets.fromLTRB(AppSpacing.sm, AppSpacing.sm, AppSpacing.sm, 80 + bottomPad),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: cols,
         childAspectRatio: ratio,
@@ -1535,7 +1527,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       clipBehavior: Clip.antiAlias,
       shape: selected
           ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppRadius.borderLg,
               side: BorderSide(
                   color: Theme.of(context).colorScheme.primary, width: 2),
             )
@@ -1555,7 +1547,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 if (!compact)
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(6, 3, 6, 3),
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 3, AppSpacing.sm, 3),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1563,8 +1555,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             item.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.bold),
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
                           ),
                           if (item.isReady) ...[
                             if (_buildRegionInfoText(item) != null)
@@ -1572,7 +1563,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                 _buildRegionInfoText(item)!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: Theme.of(context).textTheme.labelSmall!.copyWith(
                                     fontSize: 9, color: Colors.grey),
                               ),
                             if (item.memo != null && item.memo!.isNotEmpty)
@@ -1580,9 +1571,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                 item.memo!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.grey.shade600),
+                                style: Theme.of(context).textTheme.labelSmall!.copyWith(
+                                    fontSize: 9, color: Colors.grey.shade600),
                               ),
                           ],
                           if (item.tagIds.isNotEmpty)
@@ -1606,7 +1596,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   ),
                   padding: const EdgeInsets.all(2),
                   child:
-                      const Icon(Icons.check, size: 14, color: Colors.white),
+                      const Icon(Icons.check, size: AppIconSizes.xs, color: Colors.white),
                 ),
               ),
             if (_isSelecting && !selected)
@@ -1637,15 +1627,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
       children: itemTags
           .map((t) => Container(
                 padding: EdgeInsets.symmetric(
-                    horizontal: tiny ? 4 : 6, vertical: tiny ? 0 : 1),
+                    horizontal: tiny ? AppSpacing.xs : AppSpacing.sm, vertical: tiny ? 0 : 1),
                 decoration: BoxDecoration(
                   color: (t.color ??
                           Theme.of(context).colorScheme.primaryContainer)
                       .withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: AppRadius.borderXs,
                 ),
                 child: Text(t.name,
-                    style: TextStyle(fontSize: tiny ? 8 : 10)),
+                    style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: tiny ? 8 : 10)),
               ))
           .toList(),
     );
@@ -1677,7 +1667,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: AppRadius.borderXs,
             child: SizedBox(
               width: 64,
               height: 36,
@@ -1690,8 +1680,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       color: Colors.black54,
                       child: const Center(
                         child: SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: AppIconSizes.s,
+                          height: AppIconSizes.s,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white),
                         ),
@@ -1701,7 +1691,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     Container(
                       color: Colors.black54,
                       child: const Icon(Icons.error_outline,
-                          size: 18, color: Colors.orange),
+                          size: AppIconSizes.sm, color: Colors.orange),
                     ),
                 ],
               ),
@@ -1713,10 +1703,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
         item.isFetching ? 'データ取得中...' : item.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 14,
-          color: item.isFetching ? Colors.grey : null,
-        ),
+        style: item.isFetching
+            ? Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey)
+            : Theme.of(context).textTheme.bodyLarge,
       ),
       subtitle: _buildSubtitle(item, tags),
       trailing: _isSelecting
@@ -1794,12 +1783,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Widget? _buildSubtitle(LoopItem item, List<Tag> tags) {
     if (item.isFetching) {
-      return const Text('情報を取得中...',
-          style: TextStyle(fontSize: 11, color: Colors.grey));
+      return Text('情報を取得中...',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey));
     }
     if (item.hasError) {
       return Text('取得失敗（タップで操作）',
-          style: TextStyle(fontSize: 11, color: Colors.orange.shade300));
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.orange.shade300));
     }
 
     final parts = <Widget>[];
@@ -1812,7 +1801,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       parts.add(Text(info.join('  |  '),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, color: Colors.grey)));
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey)));
     }
     if (item.tagIds.isNotEmpty) {
       parts.add(Padding(
@@ -1835,29 +1824,29 @@ class _ListScreenState extends ConsumerState<ListScreen>
       color: Colors.black.withValues(alpha: 0.5),
       child: Center(
         child: item.isFetching
-            ? const Column(
+            ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    width: 24,
-                    height: 24,
+                  const SizedBox(
+                    width: AppIconSizes.lg,
+                    height: AppIconSizes.lg,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white),
                   ),
-                  SizedBox(height: 6),
+                  const SizedBox(height: AppSpacing.sm),
                   Text('取得中...',
-                      style: TextStyle(color: Colors.white, fontSize: 11)),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white)),
                 ],
               )
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.error_outline,
-                      color: Colors.orange, size: 28),
-                  const SizedBox(height: 4),
+                      color: Colors.orange, size: AppIconSizes.xl),
+                  const SizedBox(height: AppSpacing.xs),
                   Text('取得失敗',
-                      style: TextStyle(
-                          color: Colors.orange.shade300, fontSize: 11)),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Colors.orange.shade300)),
                 ],
               ),
       ),
@@ -1883,12 +1872,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
         return ListTile(
           leading: Icon(Icons.label,
-              size: 20,
+              size: AppIconSizes.md,
               color: tag.color ??
                   Theme.of(context).colorScheme.primary),
-          title: Text(tag.name, style: const TextStyle(fontSize: 14)),
+          title: Text(tag.name, style: Theme.of(context).textTheme.bodyLarge),
           trailing: Text('$count 曲',
-              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              style: Theme.of(context).textTheme.bodySmall),
           onTap: () {
             // 曲リストタブに移動してこのタグでフィルター
             ref.read(tagFilterProvider.notifier).state = {tag.id};
@@ -1978,18 +1967,17 @@ class _ListScreenState extends ConsumerState<ListScreen>
   void _showTagColorPicker(Tag tag) {
     _showSheet(builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.xl),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('「${tag.name}」の色',
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.xl),
               Wrap(
-                spacing: 12,
-                runSpacing: 12,
+                spacing: AppSpacing.lg,
+                runSpacing: AppSpacing.lg,
                 children: [
                   for (var i = 0; i < tagPresetColors.length; i++)
                     GestureDetector(
@@ -2009,10 +1997,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                               : null,
                         ),
                         child: i == 0
-                            ? const Center(
+                            ? Center(
                                 child: Text('D',
-                                    style: TextStyle(
-                                        fontSize: 14,
+                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white)))
                             : null,
@@ -2020,7 +2007,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.md),
             ],
           ),
         ),
@@ -2083,7 +2070,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
             : null;
         return ListTile(
           leading: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: AppRadius.borderXs,
             child: SizedBox(
               width: 56,
               height: 56,
@@ -2100,19 +2087,19 @@ class _ListScreenState extends ConsumerState<ListScreen>
           ),
           title: Text(pl.name),
           subtitle: Text('$count 曲',
-              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              style: Theme.of(context).textTheme.bodySmall),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (count > 0)
                 FilledButton.icon(
                   onPressed: () => _playPlaylist(pl, items),
-                  icon: const Icon(Icons.play_arrow, size: 18),
-                  label: const Text('再生',
-                      style: TextStyle(fontSize: 12)),
+                  icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
+                  label: Text('再生',
+                      style: Theme.of(context).textTheme.labelMedium),
                   style: FilledButton.styleFrom(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 12),
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                     minimumSize: const Size(0, 32),
                   ),
                 ),
@@ -2152,22 +2139,21 @@ class _ListScreenState extends ConsumerState<ListScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon,
-              size: 64,
+              size: AppIconSizes.huge,
               color: Theme.of(context)
                   .colorScheme
                   .onSurface
                   .withValues(alpha: 0.3)),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.lg),
           Text(title,
               style: TextStyle(
                   color: Theme.of(context)
                       .colorScheme
                       .onSurface
                       .withValues(alpha: 0.5))),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Text(sub,
-              style: TextStyle(
-                  fontSize: 12,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: Theme.of(context)
                       .colorScheme
                       .onSurface
@@ -2178,13 +2164,19 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   Widget _buildThumbnail(LoopItem item) {
+    Widget content;
     if (item.thumbnailPath != null) {
       final file = File(item.thumbnailPath!);
-      return Image.file(file,
+      content = Image.file(file,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _placeholderThumb(item));
+    } else {
+      content = _placeholderThumb(item);
     }
-    return _placeholderThumb(item);
+    return Hero(
+      tag: 'thumb_${item.id}',
+      child: content,
+    );
   }
 
   Widget _placeholderThumb(LoopItem item) {
@@ -2196,7 +2188,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               ? Icons.play_circle_outline
               : Icons.video_file_outlined,
           color: Colors.grey,
-          size: _viewMode == _ViewMode.grid4 ? 16 : null,
+          size: _viewMode == _ViewMode.grid4 ? AppIconSizes.s : null,
         ),
       ),
     );
@@ -2301,13 +2293,12 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.md),
             child: Row(
               children: [
                 Text(
                   'タグ（${widget.selectedItems.length}件に適用）',
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const Spacer(),
                 if (_tags.isNotEmpty)
@@ -2320,18 +2311,18 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                         }
                       });
                     },
-                    child: const Text('すべて解除',
-                        style: TextStyle(fontSize: 12)),
+                    child: Text('すべて解除',
+                        style: Theme.of(context).textTheme.labelMedium),
                   ),
               ],
             ),
           ),
           const Divider(height: 1),
           if (_tags.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
               child: Text('タグがありません',
-                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
             ),
           Flexible(
             child: ListView(
@@ -2340,14 +2331,13 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                 for (final tag in _tags)
                   CheckboxListTile(
                     title: Text(tag.name,
-                        style: const TextStyle(fontSize: 14)),
+                        style: Theme.of(context).textTheme.bodyLarge),
                     subtitle: Text(
                       '${widget.allItems.where((i) => i.tagIds.contains(tag.id)).length} 曲',
-                      style: const TextStyle(
-                          fontSize: 11, color: Colors.grey),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey),
                     ),
                     secondary: Icon(Icons.label,
-                        size: 20,
+                        size: AppIconSizes.md,
                         color: tag.color),
                     value: _displayValue(tag.id),
                     tristate: true,
@@ -2368,12 +2358,12 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.add, size: 20),
-            title: const Text('新しいタグを作成',
-                style: TextStyle(fontSize: 14)),
+            leading: const Icon(Icons.add, size: AppIconSizes.md),
+            title: Text('新しいタグを作成',
+                style: Theme.of(context).textTheme.bodyLarge),
             onTap: _showNewTagInput,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.md),
         ],
       ),
     );
@@ -2496,38 +2486,37 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.md),
               child: Text('タグ管理',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             if (_tags.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Text('タグがありません',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
               ),
             for (final tag in _tags)
               ListTile(
-                title: Text(tag.name, style: const TextStyle(fontSize: 14)),
-                leading: const Icon(Icons.label_outline, size: 20),
+                title: Text(tag.name, style: Theme.of(context).textTheme.bodyLarge),
+                leading: const Icon(Icons.label_outline, size: AppIconSizes.md),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.edit, size: 18),
+                      icon: const Icon(Icons.edit, size: AppIconSizes.sm),
                       onPressed: () => _rename(tag),
                       tooltip: '名前変更',
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline,
-                          size: 18, color: Colors.red),
+                          size: AppIconSizes.sm, color: Colors.red),
                       onPressed: () => _delete(tag),
                       tooltip: '削除',
                     ),
@@ -2535,14 +2524,14 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
                 ),
               ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.xs),
               child: OutlinedButton.icon(
                 onPressed: _create,
-                icon: const Icon(Icons.add, size: 18),
+                icon: const Icon(Icons.add, size: AppIconSizes.sm),
                 label: const Text('新しいタグを作成'),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),
@@ -2591,7 +2580,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.playlistTitle,
-            style: const TextStyle(fontSize: 14),
+            style: Theme.of(context).textTheme.bodyLarge,
             maxLines: 1,
             overflow: TextOverflow.ellipsis),
         actions: [
@@ -2607,30 +2596,29 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                   },
             child: Text('追加 ($selectedCount)'),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.md),
         ],
       ),
       body: Column(
         children: [
           // 一括選択バー
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
             child: Row(
               children: [
                 Text('${widget.videos.length}件中 $selectedCount件選択',
-                    style:
-                        const TextStyle(fontSize: 12, color: Colors.grey)),
+                    style: Theme.of(context).textTheme.bodySmall),
                 const Spacer(),
                 TextButton(
                   onPressed: () => setState(() {
                     _selected =
                         widget.videos.map((v) => v.id.value).toSet();
                   }),
-                  child: const Text('すべて選択', style: TextStyle(fontSize: 12)),
+                  child: Text('すべて選択', style: Theme.of(context).textTheme.labelMedium),
                 ),
                 TextButton(
                   onPressed: () => setState(() => _selected.clear()),
-                  child: const Text('すべて解除', style: TextStyle(fontSize: 12)),
+                  child: Text('すべて解除', style: Theme.of(context).textTheme.labelMedium),
                 ),
               ],
             ),
@@ -2646,7 +2634,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
 
                 return ListTile(
                   leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: AppRadius.borderXs,
                     child: SizedBox(
                       width: 64,
                       height: 36,
@@ -2658,7 +2646,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                               .colorScheme
                               .surfaceContainerHighest,
                           child: const Icon(Icons.play_circle_outline,
-                              color: Colors.grey, size: 18),
+                              color: Colors.grey, size: AppIconSizes.sm),
                         ),
                       ),
                     ),
@@ -2667,12 +2655,12 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                     video.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13),
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   subtitle: isDuplicate
-                      ? const Text('登録済み',
-                          style: TextStyle(
-                              fontSize: 11, color: Colors.orange))
+                      ? Text('登録済み',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Colors.orange))
                       : null,
                   trailing: Checkbox(
                     value: isSelected,

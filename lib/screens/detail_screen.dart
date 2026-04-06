@@ -142,17 +142,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
               child: Text('プレイリストに追加',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
             if (playlists.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Text('プレイリストがありません',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    style: Theme.of(context).textTheme.bodyMedium!.copyWith(color: Colors.grey)),
               ),
             for (final pl in playlists)
               ListTile(
@@ -273,6 +272,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
 
     _initControllers(item);
+    final textTheme = Theme.of(context).textTheme;
 
     final ytUrl = _getYouTubeUrl(item);
     final itemTags = tags.where((t) => item.tagIds.contains(t.id)).toList();
@@ -292,12 +292,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('詳細', style: TextStyle(fontSize: 16)),
+          title: Text('詳細', style: textTheme.displaySmall),
           actions: [
             if (_hasChanges(item))
               TextButton.icon(
                 onPressed: () => _save(item),
-                icon: const Icon(Icons.save, size: 18),
+                icon: const Icon(Icons.save, size: AppIconSizes.sm),
                 label: const Text('保存'),
               ),
             PopupMenuButton<String>(
@@ -326,21 +326,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             children: [
               // サムネイル
               _buildThumbnail(item),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.xl),
 
               // 再生ボタン
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () => _openPlayer(item),
-                  icon: const Icon(Icons.play_arrow, size: 20),
+                  icon: const Icon(Icons.play_arrow, size: AppIconSizes.md),
                   label: const Text('再生'),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.lg),
 
               // タイトル
               TextField(
@@ -360,9 +360,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       const TextStyle(color: AppTheme.accentGreen),
                   counterText: '',
                 ),
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                style: textTheme.titleMedium,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.lg),
 
               // 備考
               TextField(
@@ -384,32 +384,32 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   hintStyle: TextStyle(color: Colors.grey[700], fontSize: 13),
                   counterText: '',
                 ),
-                style: TextStyle(fontSize: 13, color: Colors.grey),
+                style: textTheme.bodySmall,
                 maxLines: 4,
                 minLines: 1,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.xl),
 
               // タグ
               _buildTagSection(item, itemTags),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.lg),
 
               // YouTube URL
               if (ytUrl != null) ...[
                 _buildUrlCard(ytUrl),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.lg),
               ],
 
               // ソース情報 (hide videoId for YouTube)
               if (item.sourceType != 'youtube')
                 _buildSourceInfo(item),
               if (item.sourceType != 'youtube')
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.lg),
 
               // AB区間一覧
               if (regions.isNotEmpty) ...[
                 _buildRegionsList(item, regions),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.lg),
               ],
 
               // AB区間設定ボタン
@@ -417,7 +417,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () => _openAbEditor(item),
-                  icon: const Icon(Icons.tune, size: 18),
+                  icon: const Icon(Icons.tune, size: AppIconSizes.sm),
                   label: Text(
                     regions.isNotEmpty ? 'AB区間を編集' : 'AB区間を設定',
                   ),
@@ -438,32 +438,33 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // --- Regions list ---
 
   Widget _buildRegionsList(LoopItem item, List<dynamic> regions) {
+    final textTheme = Theme.of(context).textTheme;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        leading: const Icon(Icons.segment, size: 18, color: Colors.grey),
+        leading: const Icon(Icons.segment, size: AppIconSizes.sm, color: Colors.grey),
         title: Text('AB区間 (${regions.length})',
-            style: const TextStyle(fontSize: 13, color: Colors.grey)),
+            style: textTheme.bodyMedium!.copyWith(color: Colors.grey)),
         initiallyExpanded: false,
         dense: true,
         shape: const Border(),
         collapsedShape: const Border(),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+        tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         childrenPadding:
-            const EdgeInsets.only(left: 12, right: 12, bottom: 8),
+            const EdgeInsets.only(left: AppSpacing.lg, right: AppSpacing.lg, bottom: AppSpacing.md),
         children: [
           for (var i = 0; i < regions.length; i++)
             InkWell(
               onLongPress: () => _showRegionEditMenu(item, i),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: AppRadius.borderXs,
               child: Padding(
                 padding:
-                    const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    const EdgeInsets.symmetric(vertical: AppSpacing.sm, horizontal: AppSpacing.xs),
                 child: Row(
                   children: [
                     Text(
                       regions[i].name,
-                      style: const TextStyle(fontSize: 13),
+                      style: textTheme.bodyMedium,
                     ),
                     const Spacer(),
                     Text(
@@ -471,22 +472,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ? TimeUtils.formatShort(Duration(
                               milliseconds: regions[i].pointAMs!))
                           : '--:--',
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.pointAColor),
+                      style: textTheme.labelMedium!.copyWith(
+                          color: AppTheme.pointAColor),
                     ),
-                    const Text(' - ',
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(' - ',
+                        style: textTheme.labelMedium!.copyWith(
+                            color: Colors.grey)),
                     Text(
                       regions[i].hasB
                           ? TimeUtils.formatShort(Duration(
                               milliseconds: regions[i].pointBMs!))
                           : '--:--',
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.pointBColor),
+                      style: textTheme.labelMedium!.copyWith(
+                          color: AppTheme.pointBColor),
                     ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.more_vert, size: 14,
+                    const SizedBox(width: AppSpacing.xs),
+                    Icon(Icons.more_vert, size: AppIconSizes.xs,
                         color: Colors.grey[700]),
                   ],
                 ),
@@ -682,18 +683,19 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // --- タグセクション ---
 
   Widget _buildTagSection(LoopItem item, List<Tag> itemTags) {
+    final textTheme = Theme.of(context).textTheme;
     return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
       children: [
         ...itemTags.map((t) => Chip(
               avatar: t.color != null
                   ? Icon(Icons.circle, size: 10, color: t.color)
                   : null,
-              label: Text(t.name, style: const TextStyle(fontSize: 12)),
+              label: Text(t.name, style: textTheme.labelMedium),
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              deleteIcon: const Icon(Icons.close, size: 14),
+              deleteIcon: const Icon(Icons.close, size: AppIconSizes.xs),
               onDeleted: () {
                 ref
                     .read(loopItemsProvider.notifier)
@@ -702,15 +704,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             )),
         OutlinedButton.icon(
           onPressed: () => _showTagPicker(item),
-          icon: const Icon(Icons.add, size: 16),
+          icon: const Icon(Icons.add, size: AppIconSizes.s),
           label: Text(
             itemTags.isEmpty ? 'タグ追加' : '追加',
-            style: const TextStyle(fontSize: 12),
+            style: textTheme.labelMedium,
           ),
           style: OutlinedButton.styleFrom(
             visualDensity: VisualDensity.compact,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
             side: BorderSide(color: Colors.grey.shade700),
           ),
         ),
@@ -721,29 +723,30 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // --- YouTube URL ---
 
   Widget _buildUrlCard(String url) {
+    final textTheme = Theme.of(context).textTheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Row(
           children: [
-            const Icon(Icons.link, size: 18, color: Colors.grey),
-            const SizedBox(width: 8),
+            const Icon(Icons.link, size: AppIconSizes.sm, color: Colors.grey),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Text(
                 url,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: textTheme.bodySmall,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.copy, size: 18),
+              icon: const Icon(Icons.copy, size: AppIconSizes.sm),
               onPressed: () => _copyUrl(url),
               tooltip: 'コピー',
               visualDensity: VisualDensity.compact,
             ),
             IconButton(
-              icon: const Icon(Icons.open_in_new, size: 18),
+              icon: const Icon(Icons.open_in_new, size: AppIconSizes.sm),
               onPressed: () => _openUrl(url),
               tooltip: '開く',
               visualDensity: VisualDensity.compact,
@@ -766,9 +769,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     } else {
       content = _placeholderThumb(item);
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: AspectRatio(aspectRatio: 16 / 9, child: content),
+    return Hero(
+      tag: 'thumb_${item.id}',
+      child: ClipRRect(
+        borderRadius: AppRadius.borderMd,
+        child: AspectRatio(aspectRatio: 16 / 9, child: content),
+      ),
     );
   }
 
@@ -799,23 +805,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Widget _buildSourceInfo(LoopItem item) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Row(
           children: [
             Icon(
               item.sourceType == 'youtube'
                   ? Icons.smart_display
                   : Icons.folder,
-              size: 18,
+              size: AppIconSizes.sm,
               color: Colors.grey,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Text(
                 item.sourceType == 'youtube'
                     ? 'YouTube (${item.videoId ?? ""})'
                     : item.uri,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: Theme.of(context).textTheme.bodySmall,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

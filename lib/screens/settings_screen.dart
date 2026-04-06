@@ -9,6 +9,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../core/constants.dart';
+import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
@@ -264,7 +265,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             isDense: true,
             border: OutlineInputBorder(),
           ),
-          style: const TextStyle(fontSize: 12),
+          style: Theme.of(ctx).textTheme.labelMedium,
         ),
         actions: [
           TextButton(
@@ -294,6 +295,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _repairThumbnailsWithProgress() {
+    final textTheme = Theme.of(context).textTheme;
     final doneNotifier = ValueNotifier<int>(0);
     final totalNotifier = ValueNotifier<int>(0);
     final etaNotifier = ValueNotifier<String>('');
@@ -319,28 +321,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         height: 24,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                      const SizedBox(width: 16),
-                      const Expanded(
+                      const SizedBox(width: AppSpacing.xl),
+                      Expanded(
                         child: Text('サムネイルを復元中...',
-                            style: TextStyle(fontSize: 14)),
+                            style: textTheme.bodyLarge),
                       ),
                     ],
                   ),
                   if (total > 0) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.lg),
                     LinearProgressIndicator(
                         value: total > 0 ? done / total : 0),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppSpacing.xs),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('$done / $total',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)),
+                            style: textTheme.bodySmall),
                         if (eta.isNotEmpty)
                           Text('残り $eta',
-                              style: const TextStyle(
-                                  fontSize: 12, color: Colors.grey)),
+                              style: textTheme.bodySmall),
                       ],
                     ),
                   ],
@@ -450,10 +450,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = ref.watch(themeProvider);
+    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar:
-          AppBar(title: const Text('設定', style: TextStyle(fontSize: 16))),
+          AppBar(title: Text('設定', style: textTheme.displaySmall)),
       body: Stack(
         children: [
           ListView(
@@ -466,15 +467,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SwitchListTile(
                   secondary:
                       Icon(isDark ? Icons.dark_mode : Icons.light_mode),
-                  title: const Text('ダークモード',
-                      style: TextStyle(fontSize: 14)),
+                  title: Text('ダークモード',
+                      style: textTheme.bodyLarge),
                   value: isDark,
                   onChanged: (v) =>
                       ref.read(themeProvider.notifier).state = v,
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.xl),
 
               // ── データ管理 ──
               _sectionHeader('データ管理'),
@@ -482,15 +483,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Column(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.md),
                       child: Row(
                         children: [
                           _statChip(
                               Icons.music_note, '$_itemCount', 'アイテム'),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: AppSpacing.lg),
                           _statChip(Icons.queue_music,
                               '$_playlistCount', 'プレイリスト'),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: AppSpacing.lg),
                           _statChip(
                               Icons.label_outline, '$_tagCount', 'タグ'),
                         ],
@@ -499,46 +500,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const Divider(height: 1),
                     ListTile(
                       leading: const Icon(Icons.upload_file),
-                      title: const Text('エクスポート',
-                          style: TextStyle(fontSize: 14)),
-                      subtitle: const Text('JSONファイルに書き出し',
-                          style: TextStyle(fontSize: 12)),
+                      title: Text('エクスポート',
+                          style: textTheme.bodyLarge),
+                      subtitle: Text('JSONファイルに書き出し',
+                          style: textTheme.bodySmall),
                       onTap: _busy ? null : _exportData,
                     ),
                     const Divider(height: 1, indent: 56),
                     ListTile(
                       leading: const Icon(Icons.download),
-                      title: const Text('インポート',
-                          style: TextStyle(fontSize: 14)),
-                      subtitle: const Text('JSONファイルから復元',
-                          style: TextStyle(fontSize: 12)),
+                      title: Text('インポート',
+                          style: textTheme.bodyLarge),
+                      subtitle: Text('JSONファイルから復元',
+                          style: textTheme.bodySmall),
                       onTap: _busy ? null : _importData,
                     ),
                     const Divider(height: 1, indent: 56),
                     ListTile(
                       leading: const Icon(Icons.link),
-                      title: const Text('共有URLからインポート',
-                          style: TextStyle(fontSize: 14)),
-                      subtitle: const Text('プレイリスト共有URLを貼り付け',
-                          style: TextStyle(fontSize: 12)),
+                      title: Text('共有URLからインポート',
+                          style: textTheme.bodyLarge),
+                      subtitle: Text('プレイリスト共有URLを貼り付け',
+                          style: textTheme.bodySmall),
                       onTap: _importFromShareUrl,
                     ),
                     const Divider(height: 1),
                     ListTile(
                       leading: const Icon(Icons.delete_forever,
                           color: Colors.red),
-                      title: const Text('データクリア',
+                      title: Text('データクリア',
                           style:
-                              TextStyle(fontSize: 14, color: Colors.red)),
-                      subtitle: const Text('全てのデータを削除',
-                          style: TextStyle(fontSize: 12)),
+                              textTheme.bodyLarge!.copyWith(color: Colors.red)),
+                      subtitle: Text('全てのデータを削除',
+                          style: textTheme.bodySmall),
                       onTap: _busy ? null : _clearData,
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.xl),
 
               // ── アプリ情報 ──
               _sectionHeader('アプリ情報'),
@@ -547,8 +548,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.system_update),
-                      title: const Text('アップデートを確認',
-                          style: TextStyle(fontSize: 14)),
+                      title: Text('アップデートを確認',
+                          style: textTheme.bodyLarge),
                       onTap: () {
                         UpdateService.checkForUpdate(context);
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -566,10 +567,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         final version = snap.data?.version ?? '...';
                         return ListTile(
                           leading: const Icon(Icons.info_outline),
-                          title: const Text('バージョン',
-                              style: TextStyle(fontSize: 14)),
+                          title: Text('バージョン',
+                              style: textTheme.bodyLarge),
                           subtitle: Text('v$version',
-                              style: const TextStyle(fontSize: 12)),
+                              style: textTheme.bodySmall),
                         );
                       },
                     ),
@@ -577,7 +578,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xxl),
             ],
           ),
           if (_busy)
@@ -592,11 +593,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _sectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 6),
+      padding: const EdgeInsets.only(left: AppSpacing.xs, bottom: AppSpacing.sm),
       child: Text(
         title,
-        style: TextStyle(
-          fontSize: 12,
+        style: Theme.of(context).textTheme.labelMedium!.copyWith(
           fontWeight: FontWeight.bold,
           color: Theme.of(context).colorScheme.primary,
           letterSpacing: 0.5,
@@ -606,25 +606,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _statChip(IconData icon, String count, String label) {
+    final textTheme = Theme.of(context).textTheme;
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
         decoration: BoxDecoration(
           color: Theme.of(context)
               .colorScheme
               .surfaceContainerHighest
               .withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: AppRadius.borderMd,
         ),
         child: Column(
           children: [
-            Icon(icon, size: 16, color: Colors.grey),
+            Icon(icon, size: AppIconSizes.s, color: Colors.grey),
             const SizedBox(height: 2),
-            Text(count,
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(count, style: textTheme.displaySmall),
             Text(label,
-                style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                style: textTheme.labelSmall!.copyWith(fontSize: 10)),
           ],
         ),
       ),

@@ -45,7 +45,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     if (source == null) {
       videoWidget = Container(
         color: Colors.black,
-        child: const Center(
+        child: Center(
           child: Text(
             '動画を読み込んでください',
             style: Theme.of(context).textTheme.bodyLarge!

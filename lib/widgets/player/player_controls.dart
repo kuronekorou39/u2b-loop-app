@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
+import '../../core/theme/app_theme.dart';
 import '../../providers/player_provider.dart';
 
 class PlayerControls extends ConsumerWidget {
@@ -187,12 +188,11 @@ class PlayerControls extends ConsumerWidget {
                 border: Border.all(
                   color: hasSource ? Colors.grey : Colors.grey.shade800,
                 ),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: AppRadius.borderSm,
               ),
               child: Text(
                 '${rate}x',
-                style: TextStyle(
-                  fontSize: 13,
+                style: Theme.of(context).textTheme.bodyMedium!.copyWith(
                   color: hasSource ? null : Colors.grey.shade600,
                 ),
               ),
@@ -238,7 +238,7 @@ class _VolumeDialogState extends State<_VolumeDialog> {
           top: widget.anchor.dy - 60,
           child: Material(
             elevation: 8,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: AppRadius.borderMd,
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -286,7 +286,7 @@ class _VolumeDialogState extends State<_VolumeDialog> {
                     ),
                   ),
                   Text('${_volume.round()}%',
-                      style: const TextStyle(fontSize: 11)),
+                      style: Theme.of(context).textTheme.labelSmall),
                 ],
               ),
             ),
