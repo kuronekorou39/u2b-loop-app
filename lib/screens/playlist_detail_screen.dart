@@ -531,8 +531,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                 ),
                               ),
                               icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
-                              label: Text('再生',
-                                  style: textTheme.labelMedium),
+                              label: const Text('再生'),
                               style: FilledButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12),

@@ -2132,14 +2132,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       const SizedBox(height: AppSpacing.sm),
                       _buildPointDisplay(
                           'B', AppTheme.pointBColor, loop.pointB),
-                      if (loop.hasBothPoints) ...[
-                        const SizedBox(height: AppSpacing.md),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 28,
-                          child: OutlinedButton.icon(
-                            onPressed: () =>
-                                _showExportDialog(fullTrack: false),
+                      const SizedBox(height: AppSpacing.md),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 28,
+                        child: OutlinedButton.icon(
+                          onPressed: loop.hasBothPoints
+                              ? () => _showExportDialog(fullTrack: false)
+                              : null,
                             icon: const Icon(Icons.file_download_outlined,
                                 size: AppIconSizes.xs),
                             label: Text('書き出し',
@@ -2155,7 +2155,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             ),
                           ),
                         ),
-                      ],
                     ],
 
                     // Gap slider (when loop enabled, non-edit mode only)

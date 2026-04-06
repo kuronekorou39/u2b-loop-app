@@ -1343,7 +1343,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                         padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.md),
                         child: Row(
                           children: [
-                            Text('タグフィルタ��',
+                            Text('タグフィルター',
                                 style: Theme.of(context).textTheme.titleMedium),
                             const Spacer(),
                             if (selected.isNotEmpty)
@@ -1353,7 +1353,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                       .state = {};
                                   Navigator.pop(ctx);
                                 },
-                                child: Text('ク���ア',
+                                child: Text('クリア',
                                     style: Theme.of(context).textTheme.bodyMedium),
                               ),
                           ],

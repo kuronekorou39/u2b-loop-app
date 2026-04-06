@@ -1113,9 +1113,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                   // Export + Clear buttons (bottom)
                   Row(
                     children: [
-                      if (loop.hasBothPoints)
-                        TextButton.icon(
-                          onPressed: () => _showExportDialog(),
+                      TextButton.icon(
+                          onPressed: loop.hasBothPoints
+                              ? () => _showExportDialog()
+                              : null,
                           icon: const Icon(Icons.file_download,
                               size: AppIconSizes.xs),
                           label: Text('書き出し',
