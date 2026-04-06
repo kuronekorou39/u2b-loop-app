@@ -3,12 +3,10 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
@@ -16,9 +14,7 @@ import '../models/playlist.dart' as app;
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../providers/theme_provider.dart';
-import '../services/share_service.dart';
 import '../services/update_service.dart';
-import '../widgets/share_import_dialog.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -241,59 +237,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return '1分未満';
   }
 
-  void _importFromShareUrl() async {
-    final controller = TextEditingController();
-    // クリップボードからu2bloopURLを自動検出
-    try {
-      final clip = await Clipboard.getData(Clipboard.kTextPlain);
-      if (clip?.text != null && clip!.text!.startsWith('u2bloop://')) {
-        controller.text = clip.text!;
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
-    final url = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('共有URLからインポート'),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'u2bloop://share/...',
-            hintStyle: kHintStyle,
-            isDense: true,
-            border: OutlineInputBorder(),
-          ),
-          style: Theme.of(ctx).textTheme.labelMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('読み込み'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-
-    if (url == null || url.isEmpty || !mounted) return;
-
-    final data = ShareService.decode(url);
-    if (data == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('無効な共有URLです')),
-      );
-      return;
-    }
-
-    showShareImportDialog(context, ref, data);
-  }
-
   void _repairThumbnailsWithProgress() {
     final textTheme = Theme.of(context).textTheme;
     final doneNotifier = ValueNotifier<int>(0);
@@ -514,15 +457,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       subtitle: Text('JSONファイルから復元',
                           style: textTheme.bodySmall),
                       onTap: _busy ? null : _importData,
-                    ),
-                    const Divider(height: 1, indent: 56),
-                    ListTile(
-                      leading: const Icon(Icons.link),
-                      title: Text('共有URLからインポート',
-                          style: textTheme.bodyLarge),
-                      subtitle: Text('プレイリスト共有URLを貼り付け',
-                          style: textTheme.bodySmall),
-                      onTap: _importFromShareUrl,
                     ),
                     const Divider(height: 1),
                     ListTile(

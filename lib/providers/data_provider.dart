@@ -158,6 +158,16 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _fetchYouTubeInfo(item);
   }
 
+  /// 複数アイテムのYouTube情報をバックグラウンドで順次取得（ディレイ付き）
+  void fetchItemsInBackground(List<String> itemIds) async {
+    for (final id in itemIds) {
+      final item = _box.get(id);
+      if (item == null || item.fetchStatus != 'fetching') continue;
+      await _fetchYouTubeInfo(item);
+      await Future.delayed(_nextDelay());
+    }
+  }
+
   Future<void> addLocalFile(String path, String fileName) async {
     final id = _generateId();
     final item = LoopItem(

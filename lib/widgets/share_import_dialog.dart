@@ -80,50 +80,11 @@ class _ShareImportDialog extends StatelessWidget {
   }
 
   void _import(BuildContext context) async {
-    final total = data.items.where((i) => i.videoId.isNotEmpty).length;
-    final progressNotifier = ValueNotifier<int>(0);
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final textTheme = Theme.of(ctx).textTheme;
-        return AlertDialog(
-          content: ValueListenableBuilder<int>(
-            valueListenable: progressNotifier,
-            builder: (_, count, __) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: AppSpacing.xxl,
-                      height: AppSpacing.xxl,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: AppSpacing.xl),
-                    Expanded(
-                      child: Text('「${data.name}」をインポート中...',
-                          style: textTheme.bodyLarge),
-                    ),
-                  ],
-                ),
-                SizedBox(height: AppSpacing.lg),
-                LinearProgressIndicator(
-                    value: total > 0 ? count / total : 0),
-                SizedBox(height: AppSpacing.xs),
-                Text('$count / $total', style: textTheme.bodySmall),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
     final itemBox = Hive.box<LoopItem>('loop_items');
     final tagBox = Hive.box<Tag>('tags');
     final existingTags = tagBox.values.toList();
 
+    // タグの名前→ID変換テーブルを作成
     final tagNameToId = <String, String>{};
     for (final name in data.items.expand((i) => i.tags).toSet()) {
       final existing =
@@ -138,7 +99,9 @@ class _ShareImportDialog extends StatelessWidget {
       }
     }
 
+    // 枠を一括追加（fetchStatus: 'fetching' で個別ローディング表示）
     final itemIds = <String>[];
+    final newItemIds = <String>[]; // 情報取得が必要な新規アイテム
     for (final si in data.items) {
       if (si.videoId.isEmpty) continue;
 
@@ -159,7 +122,6 @@ class _ShareImportDialog extends StatelessWidget {
           }
         }
         await itemBox.put(existing.id, existing);
-        progressNotifier.value++;
         continue;
       }
 
@@ -182,16 +144,16 @@ class _ShareImportDialog extends StatelessWidget {
         youtubeUrl: 'https://youtu.be/${si.videoId}',
         thumbnailUrl:
             'https://img.youtube.com/vi/${si.videoId}/hqdefault.jpg',
-        fetchStatus: null,
+        fetchStatus: 'fetching',
         tagIds: tagIds,
         regions: regions,
       );
       await itemBox.put(id, item);
       itemIds.add(id);
-      progressNotifier.value++;
-      await Future.delayed(const Duration(milliseconds: 50));
+      newItemIds.add(id);
     }
 
+    // プレイリスト作成
     final plId = DateTime.now().microsecondsSinceEpoch.toString();
     final playlist = Playlist(
       id: plId,
@@ -200,14 +162,10 @@ class _ShareImportDialog extends StatelessWidget {
     );
     await Hive.box<Playlist>('playlists').put(plId, playlist);
 
+    // UIを更新して完了通知
     ref.invalidate(loopItemsProvider);
     ref.invalidate(playlistsProvider);
     ref.invalidate(tagsProvider);
-
-    ref.read(loopItemsProvider.notifier).repairThumbnails();
-
-    progressNotifier.dispose();
-    if (context.mounted) Navigator.pop(context);
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -216,6 +174,11 @@ class _ShareImportDialog extends StatelessWidget {
               Text('「${data.name}」をインポートしました（${itemIds.length}曲）'),
         ),
       );
+    }
+
+    // バックグラウンドで各アイテムのYouTube情報を順次取得
+    if (newItemIds.isNotEmpty) {
+      ref.read(loopItemsProvider.notifier).fetchItemsInBackground(newItemIds);
     }
   }
 }

@@ -8,7 +8,7 @@ class AppLimits {
   static const int memoMaxLength = 500;
   static const int tagNameMaxLength = 30;
   static const int playlistNameMaxLength = 50;
-  static const int urlMaxLength = 500;
+  static const int urlMaxLength = 2500;
   static const int regionNameMaxLength = 20;
   static const int maxTagsPerItem = 20;
   static const int maxRegions = 10;
