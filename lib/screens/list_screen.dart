@@ -1227,9 +1227,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   PreferredSizeWidget _buildNormalAppBar(bool isDataTab, List<LoopItem> items) {
     return AppBar(
-      title: const Text(
-        'U2B Loop',
-        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+      title: Image.asset(
+        'assets/images/logo.png',
+        height: 30,
+        fit: BoxFit.contain,
       ),
       centerTitle: false,
       actions: [
