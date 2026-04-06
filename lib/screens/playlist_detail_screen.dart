@@ -1,7 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
@@ -10,6 +13,7 @@ import '../models/loop_region.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../services/share_service.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
 
@@ -87,6 +91,115 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       ref.read(playlistsProvider.notifier).delete(pl.id);
       Navigator.of(context).pop();
     }
+  }
+
+  void _sharePlaylist(Playlist pl, List<LoopItem> items) {
+    final tags = ref.read(tagsProvider);
+    final tagIdToName = {for (final t in tags) t.id: t.name};
+    final youtubeItems =
+        items.where((i) => i.videoId != null && i.videoId!.isNotEmpty).toList();
+
+    if (youtubeItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('YouTube動画がありません')),
+      );
+      return;
+    }
+
+    final url = ShareService.encode(
+      playlistName: pl.name,
+      items: youtubeItems,
+      tagIdToName: tagIdToName,
+    );
+
+    final canQr = url.length <= 2000;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('「${pl.name}」を共有',
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold)),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('${youtubeItems.length}曲（${url.length}文字）',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ),
+            const Divider(height: 16),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('テキストで共有'),
+              subtitle: const Text('LINE、メールなどで送信',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+              onTap: () {
+                Navigator.pop(ctx);
+                SharePlus.instance.share(ShareParams(text: url));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_copy),
+              title: const Text('URLをコピー'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: url));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('URLをコピーしました')),
+                );
+              },
+            ),
+            if (canQr)
+              ListTile(
+                leading: const Icon(Icons.qr_code),
+                title: const Text('QRコードを表示'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showQrDialog(pl.name, url);
+                },
+              ),
+            if (!canQr)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text('曲数が多いためQRコードは使用できません',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQrDialog(String name, String url) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(name, style: const TextStyle(fontSize: 15)),
+        content: SizedBox(
+          width: 250,
+          height: 250,
+          child: Center(
+            child: QrImageView(
+              data: url,
+              size: 240,
+              backgroundColor: Colors.white,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('閉じる'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _selectThumbnail(Playlist pl, List<LoopItem> items) {
@@ -308,6 +421,12 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       appBar: AppBar(
         title: const Text('プレイリスト', style: TextStyle(fontSize: 16)),
         actions: [
+          if (items.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: '共有',
+              onPressed: () => _sharePlaylist(pl, items),
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             tooltip: '削除',

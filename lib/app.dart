@@ -1,10 +1,15 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/theme_provider.dart';
 import 'screens/list_screen.dart';
+import 'services/share_service.dart';
 import 'services/update_service.dart';
+import 'widgets/share_import_dialog.dart';
 
 class App extends ConsumerWidget {
   const App({super.key});
@@ -28,21 +33,51 @@ class App extends ConsumerWidget {
   }
 }
 
-class _Home extends StatefulWidget {
+class _Home extends ConsumerStatefulWidget {
   const _Home();
 
   @override
-  State<_Home> createState() => _HomeState();
+  ConsumerState<_Home> createState() => _HomeState();
 }
 
-class _HomeState extends State<_Home> {
+class _HomeState extends ConsumerState<_Home> {
+  late final AppLinks _appLinks;
+  StreamSubscription? _linkSub;
+
   @override
   void initState() {
     super.initState();
-    // 起動後にアップデートチェック
+    _appLinks = AppLinks();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       UpdateService.checkForUpdate(context);
+      _initDeepLinks();
     });
+  }
+
+  Future<void> _initDeepLinks() async {
+    // アプリ起動時のURL
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) _handleUri(initialUri);
+    } catch (_) {}
+
+    // バックグラウンドからのURL
+    _linkSub = _appLinks.uriLinkStream.listen(_handleUri);
+  }
+
+  void _handleUri(Uri uri) {
+    final url = uri.toString();
+    final data = ShareService.decode(url);
+    if (data != null && mounted) {
+      showShareImportDialog(context, ref, data);
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
   }
 
   @override
