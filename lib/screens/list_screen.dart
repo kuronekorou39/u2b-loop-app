@@ -174,7 +174,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
               maxLength: AppLimits.urlMaxLength,
               decoration: const InputDecoration(
                 hintText: 'YouTube URL / 共有URL',
-                hintStyle: kHintStyle,
                 prefixIcon: Icon(Icons.link, size: AppIconSizes.sm),
                 isDense: true,
                 border: OutlineInputBorder(),
@@ -844,8 +843,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       maxLength: AppLimits.playlistNameMaxLength,
                       decoration: const InputDecoration(
                         hintText: 'プレイリスト名',
-                        hintStyle: kHintStyle,
-                        isDense: true,
+                                isDense: true,
                         border: OutlineInputBorder(),
                         counterText: '',
                       ),
@@ -932,7 +930,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
           autofocus: true,
           decoration: const InputDecoration(
             hintText: 'プレイリスト名',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -1877,7 +1874,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
           maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',
@@ -2003,7 +1999,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
           maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',
@@ -2230,7 +2225,6 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
           maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',
@@ -2387,7 +2381,6 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
           maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',
@@ -2430,7 +2423,6 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
           maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',

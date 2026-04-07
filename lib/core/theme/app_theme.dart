@@ -145,6 +145,9 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: bgSecondary,
+        labelStyle: const TextStyle(color: Colors.grey),
+        floatingLabelStyle: const TextStyle(color: accent),
+        hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
@@ -193,6 +196,9 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: bgSecondary,
+        labelStyle: TextStyle(color: Colors.grey.shade600),
+        floatingLabelStyle: const TextStyle(color: accent),
+        hintStyle: TextStyle(color: Colors.grey.shade600, fontSize: 13),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Colors.grey.shade300),

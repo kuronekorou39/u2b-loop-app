@@ -347,18 +347,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               TextField(
                 controller: _titleController,
                 maxLength: AppLimits.titleMaxLength,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'タイトル',
                   isDense: true,
-                  border: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey.shade700),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey.shade700),
-                  ),
-                  labelStyle: TextStyle(color: Colors.grey),
-                  floatingLabelStyle:
-                      const TextStyle(color: AppTheme.accentGreen),
+                  border: OutlineInputBorder(),
                   counterText: '',
                 ),
                 style: textTheme.titleMedium,
@@ -369,20 +361,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               TextField(
                 controller: _memoController,
                 maxLength: AppLimits.memoMaxLength,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: '備考',
                   isDense: true,
-                  border: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey.shade700),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey.shade700),
-                  ),
-                  labelStyle: TextStyle(color: Colors.grey),
-                  floatingLabelStyle:
-                      const TextStyle(color: AppTheme.accentGreen),
+                  border: OutlineInputBorder(),
                   hintText: '練習メモなど',
-                  hintStyle: TextStyle(color: Colors.grey[700], fontSize: 13),
                   counterText: '',
                 ),
                 style: textTheme.bodySmall,
@@ -555,7 +538,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           maxLength: AppLimits.regionNameMaxLength,
           decoration: const InputDecoration(
             hintText: '区間名を入力',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',
@@ -607,9 +589,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               controller: aController,
               decoration: const InputDecoration(
                 labelText: 'A (秒)',
-                labelStyle: kHintStyle,
                 hintText: '例: 10.5',
-                hintStyle: kHintStyle,
                 isDense: true,
                 border: OutlineInputBorder(),
               ),
@@ -621,9 +601,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               controller: bController,
               decoration: const InputDecoration(
                 labelText: 'B (秒)',
-                labelStyle: kHintStyle,
                 hintText: '例: 45.0',
-                hintStyle: kHintStyle,
                 isDense: true,
                 border: OutlineInputBorder(),
               ),

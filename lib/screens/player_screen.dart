@@ -628,7 +628,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           }
           if (bytes > 100000) {
             try {
-              waveform = await service.generateFromUrl(tempFile.path, 4000);
+              waveform = await service.generateForLocalFile(tempFile.path, 4000);
             } finally {
               try { await tempFile.delete(); } catch (_) {}
             }
@@ -999,7 +999,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           maxLength: AppLimits.regionNameMaxLength,
           decoration: const InputDecoration(
             hintText: '区間名を入力',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',
@@ -1306,7 +1305,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final path = _cachedAudioPath!;
       _cachedAudioPath = null;
       try {
-        return await service.generateFromUrl(path, 4000);
+        return await service.generateForLocalFile(path, 4000);
       } finally {
         try {
           await File(path).delete();
@@ -1326,7 +1325,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final path = _cachedAudioPath!;
       _cachedAudioPath = null;
       try {
-        return await service.generateFromUrl(path, 4000);
+        return await service.generateForLocalFile(path, 4000);
       } finally {
         try {
           await File(path).delete();
@@ -1583,11 +1582,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               onPressed: () => setState(() => _hideVideo = !_hideVideo),
               tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
             ),
-          IconButton(
-            icon: const Icon(Icons.picture_in_picture_alt, size: AppIconSizes.ml),
-            onPressed: _enterPiP,
-            tooltip: 'ピクチャーインピクチャー',
-          ),
+          if (Platform.isAndroid)
+            IconButton(
+              icon: const Icon(Icons.picture_in_picture_alt, size: AppIconSizes.ml),
+              onPressed: _enterPiP,
+              tooltip: 'ピクチャーインピクチャー',
+            ),
         ],
       ),
       body: _loading

@@ -171,7 +171,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           maxLength: AppLimits.regionNameMaxLength,
           decoration: const InputDecoration(
             hintText: '区間名を入力',
-            hintStyle: kHintStyle,
             isDense: true,
             border: OutlineInputBorder(),
             counterText: '',
