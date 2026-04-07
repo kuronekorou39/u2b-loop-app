@@ -18,6 +18,7 @@ import '../models/loop_region.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
+import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../services/export_service.dart';
 import '../services/waveform_service.dart';
@@ -72,6 +73,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         widget.initialRegionIndex.clamp(0, _regions.length - 1);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // ミニプレイヤーが再生中なら停止
+      if (ref.read(miniPlayerProvider).active) {
+        ref.read(miniPlayerProvider.notifier).deactivate();
+        try {
+          ref.read(playerProvider).stop();
+        } catch (_) {}
+      }
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
       ref.read(waveformDataProvider.notifier).state = null;

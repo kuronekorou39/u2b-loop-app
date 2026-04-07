@@ -23,24 +23,30 @@ const _androidContentCheck = YoutubeApiClient({
 }, 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
 
 class YouTubeService {
+  static const _networkTimeout = Duration(seconds: 15);
+
   final yt = YoutubeExplode();
 
   /// ストリームマニフェストを取得（コンテンツ警告付き動画にも対応）
   Future<StreamManifest> getManifestWithFallback(String videoId) async {
     try {
-      return await yt.videos.streamsClient.getManifest(videoId);
+      return await yt.videos.streamsClient
+          .getManifest(videoId)
+          .timeout(_networkTimeout);
     } on VideoUnplayableException {
       // コンテンツ警告等で再生不可の場合、contentCheckOk付きで再試行
       // TVクライアントはBot判定されやすいため、Android+contentCheckOkを使用
-      return await yt.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: [_androidContentCheck, YoutubeApiClient.tv],
-      );
+      return await yt.videos.streamsClient
+          .getManifest(
+            videoId,
+            ytClients: [_androidContentCheck, YoutubeApiClient.tv],
+          )
+          .timeout(_networkTimeout);
     }
   }
 
   Future<VideoSource> getVideoSource(String videoId) async {
-    final video = await yt.videos.get(videoId);
+    final video = await yt.videos.get(videoId).timeout(_networkTimeout);
     final manifest = await getManifestWithFallback(videoId);
 
     // Prefer muxed streams (audio+video combined)

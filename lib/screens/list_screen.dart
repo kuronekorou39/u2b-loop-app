@@ -370,96 +370,37 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
   }
 
-  String _formatEta(Duration d) {
-    if (d.inHours > 0) {
-      return '約${d.inHours}時間${d.inMinutes % 60}分';
-    } else if (d.inMinutes > 0) {
-      return '約${d.inMinutes}分';
-    }
-    return '1分未満';
-  }
-
   Future<void> _addVideos(List<yte.Video> videos, String playlistTitle) async {
     // タグを選択/作成するダイアログ
     final tagId = await _showImportTagDialog(playlistTitle);
     if (!mounted) return;
 
-    // 進捗ダイアログ
-    final progressNotifier = ValueNotifier<int>(0);
-    final etaNotifier = ValueNotifier<String>('');
-    final total = videos.length;
-    final startTime = DateTime.now();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: ValueListenableBuilder<int>(
-          valueListenable: progressNotifier,
-          builder: (_, count, _) => ValueListenableBuilder<String>(
-            valueListenable: etaNotifier,
-            builder: (_, eta, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: AppIconSizes.lg,
-                      height: AppIconSizes.lg,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: AppSpacing.xl),
-                    Expanded(
-                      child: Text(
-                        '「$playlistTitle」に追加中...',
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                LinearProgressIndicator(value: count / total),
-                const SizedBox(height: AppSpacing.xs),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('$count / $total',
-                        style: Theme.of(context).textTheme.bodySmall),
-                    if (eta.isNotEmpty)
-                      Text('残り $eta',
-                          style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    // 即座にHive保存（サムネイルDLなし）→ UIに即反映
+    final notifier = ref.read(loopItemsProvider.notifier);
+    final addedIds = await notifier.addYouTubeBatch(
+      videos: videos
+          .map((v) => (
+                videoId: v.id.value,
+                title: v.title,
+                url: 'https://youtu.be/${v.id.value}',
+                thumbnailUrl: v.thumbnails.highResUrl,
+              ))
+          .toList(),
+      tagId: tagId,
     );
 
-    final notifier = ref.read(loopItemsProvider.notifier);
-    for (var i = 0; i < videos.length; i++) {
-      final v = videos[i];
-      await notifier.addYouTubeWithInfo(
-        videoId: v.id.value,
-        title: v.title,
-        originalUrl: 'https://youtu.be/${v.id.value}',
-        thumbnailUrl: v.thumbnails.highResUrl,
-        tagId: tagId,
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('「$playlistTitle」から${addedIds.length}曲を追加しました'),
+        ),
       );
-      progressNotifier.value = i + 1;
-      // 残り時間推定（3件目以降）
-      if (i >= 2) {
-        final elapsed = DateTime.now().difference(startTime);
-        final perItem = elapsed.inMilliseconds / (i + 1);
-        final remaining = Duration(
-            milliseconds: (perItem * (total - i - 1)).round());
-        etaNotifier.value = _formatEta(remaining);
-      }
     }
 
-    progressNotifier.dispose();
-    etaNotifier.dispose();
-    if (mounted) Navigator.pop(context);
+    // サムネイルをバックグラウンドでダウンロード
+    if (addedIds.isNotEmpty) {
+      notifier.downloadThumbnailsInBackground(addedIds);
+    }
   }
 
   /// インポート時にタグを付与するか選択するダイアログ

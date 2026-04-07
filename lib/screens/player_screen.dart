@@ -15,12 +15,14 @@ import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
+import '../models/tag.dart';
 import '../models/loop_state.dart';
 import '../models/playlist_mode.dart' as pl;
 import '../models/playlist_track.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
+import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
 import '../services/export_service.dart';
@@ -80,6 +82,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isPreloading = false;
   Timer? _preloadCheckTimer;
   int _preloadGeneration = 0; // レース条件防止用の世代カウンタ
+  int _preloadFailCount = 0; // プリロード連続失敗カウンタ
+  DateTime? _lastPreloadFailTime;
+
+  // Playlist error control
+  int _consecutiveLoadErrors = 0;
+  DateTime? _lastAdvanceTime;
+  static const _maxConsecutiveErrors = 3;
+  static const _minAdvanceInterval = Duration(seconds: 3);
 
   // First verse fade
   Timer? _fadeTimer;
@@ -125,6 +135,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         } catch (_) {}
       });
 
+      // ミニプレイヤーからの復帰判定
+      final miniState = ref.read(miniPlayerProvider);
+      if (miniState.active && miniState.item?.id == _currentItem.id) {
+        // 同一アイテム: ロードスキップ、再生状態をそのまま引き継ぐ
+        ref.read(miniPlayerProvider.notifier).deactivateUI();
+        _setupPlaylistCallbacks();
+        _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
+        _updatePiPPlayState();
+        _startPreloadMonitor();
+        setState(() {
+          _loading = false;
+          _loadError = null;
+        });
+        return;
+      }
+
+      // ミニプレイヤーが別の曲を再生中: 停止してから新規ロード
+      if (miniState.active) {
+        ref.read(miniPlayerProvider.notifier).deactivate();
+        try {
+          ref.read(playerAProvider).stop();
+          ref.read(playerBProvider).stop();
+        } catch (_) {}
+      }
+
       ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
@@ -157,14 +192,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     try {
       _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
     } catch (_) {}
-    try {
-      ref.read(playerAProvider).stop();
-      ref.read(playerBProvider).stop();
-      ref.read(loopProvider.notifier).onBPointReached = null;
-      ref.read(loopProvider.notifier).onTrackEnd = null;
-      if (_isPlaylist) ref.read(playlistPlayerProvider.notifier).clear();
-      ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
-    } catch (_) {}
+
+    // ミニプレイヤー有効時は再生状態を温存
+    final miniActive = ref.read(miniPlayerProvider).active;
+    if (!miniActive) {
+      try {
+        ref.read(playerAProvider).stop();
+        ref.read(playerBProvider).stop();
+        ref.read(loopProvider.notifier).onBPointReached = null;
+        ref.read(loopProvider.notifier).onTrackEnd = null;
+        if (_isPlaylist) ref.read(playlistPlayerProvider.notifier).clear();
+        ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
+      } catch (_) {}
+    }
+
     _pipChannel.setMethodCallHandler(null);
     if (_cachedAudioPath != null) {
       try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
@@ -199,6 +240,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _advanceToNext() {
+    // 連続エラー上限チェック
+    if (_consecutiveLoadErrors >= _maxConsecutiveErrors) return;
+
+    // 高速遷移の抑制
+    final now = DateTime.now();
+    if (_lastAdvanceTime != null &&
+        now.difference(_lastAdvanceTime!) < _minAdvanceInterval) {
+      final wait = _minAdvanceInterval - now.difference(_lastAdvanceTime!);
+      Future.delayed(wait, () {
+        if (mounted) _advanceToNext();
+      });
+      return;
+    }
+    _lastAdvanceTime = now;
+
     final plState = ref.read(playlistPlayerProvider);
     final shouldFadeIn = plState.firstVerseMode && _isFading;
     _cancelFade();
@@ -440,6 +496,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _startPreloadMonitor() {
     _preloadCheckTimer?.cancel();
     _cancelPreload();
+    _preloadFailCount = 0;
 
     if (!_isPlaylist) return;
 
@@ -452,6 +509,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _checkPreload() {
     if (!mounted || !_isPlaylist) return;
     if (_isPreloading || _preloadedTrackIndex != null) return;
+
+    // 連続失敗時はバックオフ（失敗数 × 10秒）、上限5回で停止
+    if (_preloadFailCount > 0) {
+      if (_preloadFailCount >= 5) return;
+      final backoff = Duration(seconds: _preloadFailCount * 10);
+      if (_lastPreloadFailTime != null &&
+          DateTime.now().difference(_lastPreloadFailTime!) < backoff) {
+        return;
+      }
+    }
 
     final player = ref.read(playerProvider);
     final position = player.state.position;
@@ -569,6 +636,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       if (isStale()) return;
       _preloadedTrackIndex = nextIdx;
+      _preloadFailCount = 0;
       if (mounted) setState(() {});
 
       // --- 波形の先行読み込み（並行） ---
@@ -577,7 +645,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _preloadWaveform(nextTrack, manifest, gen);
       }
     } catch (_) {
-      if (gen == _preloadGeneration) _preloadedTrackIndex = null;
+      if (gen == _preloadGeneration) {
+        _preloadedTrackIndex = null;
+        _preloadFailCount++;
+        _lastPreloadFailTime = DateTime.now();
+      }
     } finally {
       if (gen == _preloadGeneration) {
         _isPreloading = false;
@@ -741,6 +813,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _loading = false;
           _loadError = '$e';
         });
+        // プレイリストモード: 自動で次のトラックにスキップ（上限あり）
+        if (_isPlaylist) {
+          _consecutiveLoadErrors++;
+          if (_consecutiveLoadErrors < _maxConsecutiveErrors) {
+            Future.delayed(const Duration(seconds: 3), () {
+              if (mounted && _loadError != null) _advanceToNext();
+            });
+          }
+        }
       }
     }
   }
@@ -778,7 +859,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (!mounted) return;
     await _setProgress(0.75, 'プレーヤーを準備中...');
     final player = ref.read(playerProvider);
-    await player.open(Media(source.uri), play: false);
+    await player
+        .open(Media(source.uri), play: false)
+        .timeout(const Duration(seconds: 15));
     ref.read(videoSourceProvider.notifier).state = source;
 
     await _finishLoading(item, source);
@@ -842,6 +925,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
     setState(() => _loading = false);
+    _consecutiveLoadErrors = 0;
 
     // Auto-play
     player.play();
@@ -1441,9 +1525,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // --- Playlist panel (inline) ---
 
+  Widget _buildTrackTitle(BuildContext ctx, PlaylistTrack track,
+      bool isCurrent, Map<String, Tag> tagMap) {
+    final titleStyle = Theme.of(ctx).textTheme.labelMedium!.copyWith(
+      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+      color: isCurrent
+          ? AppTheme.accentGreen
+          : track.enabled
+              ? null
+              : Colors.grey,
+    );
+
+    final itemTags = track.item.tagIds
+        .map((id) => tagMap[id])
+        .whereType<Tag>()
+        .take(2)
+        .toList();
+
+    if (itemTags.isEmpty) {
+      return Text(track.displayName,
+          style: titleStyle, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
+
+    return Row(
+      children: [
+        Flexible(
+          child: Text(track.displayName,
+              style: titleStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        for (final tag in itemTags)
+          Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 56),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs, vertical: 0),
+              decoration: BoxDecoration(
+                color: (tag.color ?? Theme.of(ctx).colorScheme.primary)
+                    .withValues(alpha: 0.25),
+                borderRadius: AppRadius.borderXs,
+              ),
+              child: Text(
+                tag.name,
+                style: Theme.of(ctx).textTheme.labelSmall!.copyWith(fontSize: 9),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildPlaylistPanel(double bottomInset) {
     final plState = ref.watch(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
+    final allTags = ref.watch(tagsProvider);
+    final tagMap = {for (final t in allTags) t.id: t};
 
     return Container(
       decoration: BoxDecoration(
@@ -1499,21 +1638,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         SizedBox(width: AppIconSizes.lg, child: statusWidget),
                         const SizedBox(width: AppSpacing.md),
                         Expanded(
-                          child: Text(
-                            track.displayName,
-                            style: Theme.of(ctx).textTheme.labelMedium!.copyWith(
-                              fontWeight: isCurrent
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: isCurrent
-                                  ? AppTheme.accentGreen
-                                  : track.enabled
-                                      ? null
-                                      : Colors.grey,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          child: _buildTrackTitle(ctx, track, isCurrent, tagMap),
                         ),
                         if (track.hasRegion)
                           Padding(
@@ -1551,7 +1676,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ? (plState?.currentTrack?.displayName ?? _currentItem.title)
         : _currentItem.title;
 
-    return Scaffold(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _activateMiniPlayer();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1595,6 +1725,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           : _loadError != null
               ? _buildErrorView()
               : _buildPlayerView(bottomInset),
+    ),
+    );
+  }
+
+  void _activateMiniPlayer() {
+    final item = _currentItem;
+    final plState = _isPlaylist ? ref.read(playlistPlayerProvider) : null;
+    ref.read(miniPlayerProvider.notifier).activate(
+      item: item,
+      playlistItems: widget.playlistItems,
+      initialIndex: plState?.currentTrackIndex ?? widget.initialIndex,
+      regionSelections: widget.regionSelections,
+      disabledItemIds: widget.disabledItemIds,
+      playlistName: widget.playlistName,
+      playlistId: widget.playlistId,
     );
   }
 
@@ -1684,12 +1829,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               style: textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
+            if (_isPlaylist && _consecutiveLoadErrors >= _maxConsecutiveErrors)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.md),
+                child: Text(
+                  '連続でエラーが発生したため停止しました',
+                  style: textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ),
             const SizedBox(height: AppSpacing.xxl),
             FilledButton.icon(
-              onPressed: _loadItem,
+              onPressed: () {
+                _consecutiveLoadErrors = 0;
+                _loadItem();
+              },
               icon: const Icon(Icons.refresh, size: AppIconSizes.sm),
               label: const Text('再試行'),
             ),
+            if (_isPlaylist) ...[
+              const SizedBox(height: AppSpacing.md),
+              OutlinedButton.icon(
+                onPressed: () {
+                  _consecutiveLoadErrors = 0;
+                  _advanceToNext();
+                },
+                icon: const Icon(Icons.skip_next, size: AppIconSizes.sm),
+                label: const Text('次の曲へスキップ'),
+              ),
+            ],
           ],
         ),
       ),

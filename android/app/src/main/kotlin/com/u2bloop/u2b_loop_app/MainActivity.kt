@@ -41,6 +41,11 @@ class MainActivity : FlutterActivity() {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
 
+        // API 31+: アプリがバックグラウンドに移行する際に自動でPiPに入る
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(autoPipEnabled)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val intent = PendingIntent.getBroadcast(
                 this, 0,
@@ -131,6 +136,12 @@ class MainActivity : FlutterActivity() {
                 }
                 "setAutoPiP" -> {
                     autoPipEnabled = call.argument<Boolean>("enabled") ?: false
+                    // API 31+: autoEnterEnabled を即反映
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            setPictureInPictureParams(buildPipParams())
+                        } catch (_: Exception) {}
+                    }
                     result.success(true)
                 }
                 "updatePiPPlayState" -> {
@@ -189,22 +200,27 @@ class MainActivity : FlutterActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // まず現在の状態で即座にPiPに入る
+        // API 26-30: ホームボタン時にPiP（API 31+はsetAutoEnterEnabledで自動処理）
+        if (autoPipEnabled
+            && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             try {
                 enterPictureInPictureMode(buildPipParams())
             } catch (_: Exception) {}
-            // その後Flutterに正確な状態を問い合わせてパラメータを更新
-            pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
-                override fun success(result: Any?) {
-                    isPlaying = result as? Boolean ?: isPlaying
-                    try {
-                        setPictureInPictureParams(buildPipParams())
-                    } catch (_: Exception) {}
-                }
-                override fun error(code: String, msg: String?, details: Any?) {}
-                override fun notImplemented() {}
-            })
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // API 26-30: タスク一覧から別アプリ切替時のPiP対応
+        // （API 31+はsetAutoEnterEnabledで自動処理）
+        if (autoPipEnabled
+            && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+            && !isInPictureInPictureMode) {
+            try {
+                enterPictureInPictureMode(buildPipParams())
+            } catch (_: Exception) {}
         }
     }
 

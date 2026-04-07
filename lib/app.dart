@@ -9,6 +9,7 @@ import 'providers/theme_provider.dart';
 import 'screens/list_screen.dart';
 import 'services/share_service.dart';
 import 'services/update_service.dart';
+import 'widgets/mini_player.dart';
 import 'widgets/share_import_dialog.dart';
 
 class App extends ConsumerWidget {
@@ -29,6 +30,14 @@ class App extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+      builder: (context, child) {
+        return Column(
+          children: [
+            Expanded(child: child!),
+            const MiniPlayerBar(),
+          ],
+        );
+      },
     );
   }
 }

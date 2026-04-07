@@ -121,7 +121,8 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   Future<void> _fetchYouTubeInfo(LoopItem item, {int retry = 0}) async {
     final yt = YoutubeExplode();
     try {
-      final video = await yt.videos.get(item.videoId!);
+      final video = await yt.videos.get(item.videoId!)
+          .timeout(const Duration(seconds: 15));
       item.title = video.title;
       item.thumbnailUrl = video.thumbnails.highResUrl;
 
@@ -169,6 +170,51 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         await Future.delayed(_nextDelay());
       }
     } catch (_) {}
+  }
+
+  /// プレイリスト一括追加（サムネイルDLなし・1回のみUI更新）
+  Future<List<String>> addYouTubeBatch({
+    required List<({String videoId, String title, String url, String? thumbnailUrl})> videos,
+    String? tagId,
+  }) async {
+    final addedIds = <String>[];
+    for (final v in videos) {
+      if (_box.values.any((i) => i.videoId == v.videoId)) continue;
+      final id = _generateId();
+      final item = LoopItem(
+        id: id,
+        title: v.title,
+        uri: '',
+        sourceType: 'youtube',
+        videoId: v.videoId,
+        youtubeUrl: v.url,
+        thumbnailUrl: v.thumbnailUrl,
+        fetchStatus: null,
+        tagIds: tagId != null ? [tagId] : null,
+      );
+      await _box.put(id, item);
+      addedIds.add(id);
+    }
+    if (addedIds.isNotEmpty) _refresh();
+    return addedIds;
+  }
+
+  /// サムネイルをバックグラウンドでダウンロード
+  void downloadThumbnailsInBackground(List<String> itemIds) async {
+    for (final id in itemIds) {
+      final item = _box.get(id);
+      if (item == null || item.thumbnailPath != null || item.thumbnailUrl == null) {
+        continue;
+      }
+      try {
+        await Future.delayed(_nextDelay());
+        final thumbPath = await ThumbnailService().save(id, item.thumbnailUrl);
+        if (thumbPath != null) {
+          item.thumbnailPath = thumbPath;
+          await update(item);
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> addLocalFile(String path, String fileName) async {
@@ -320,7 +366,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
-  /// 共有インポート用: 枠を一括追加してIDリストを返す
+  /// 共有インポート用: 枠を一括追加してIDリストを返す（1回のみUI更新）
   Future<List<String>> importSharedItems(
       List<ShareItem> sharedItems, Map<String, String> tagNameToId) async {
     final itemIds = <String>[];
@@ -368,10 +414,11 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         tagIds: tagIds,
         regions: regions,
       );
-      await add(item);
+      await _box.put(id, item);
       itemIds.add(id);
       newItemIds.add(id);
     }
+    _refresh();
     return itemIds;
   }
 }
