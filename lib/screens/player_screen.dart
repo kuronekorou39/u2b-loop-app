@@ -862,7 +862,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final player = ref.read(playerProvider);
     await player
         .open(Media(source.uri), play: false)
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 30));
     ref.read(videoSourceProvider.notifier).state = source;
 
     await _finishLoading(item, source);

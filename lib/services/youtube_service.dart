@@ -23,7 +23,7 @@ const _androidContentCheck = YoutubeApiClient({
 }, 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
 
 class YouTubeService {
-  static const _networkTimeout = Duration(seconds: 15);
+  static const _networkTimeout = Duration(seconds: 30);
 
   final yt = YoutubeExplode();
 

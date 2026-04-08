@@ -122,7 +122,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     final yt = YoutubeExplode();
     try {
       final video = await yt.videos.get(item.videoId!)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       item.title = video.title;
       item.thumbnailUrl = video.thumbnails.highResUrl;
 
