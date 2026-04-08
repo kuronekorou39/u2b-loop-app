@@ -200,23 +200,30 @@ class MainActivity : FlutterActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // API 26-30: ホームボタン時にPiP（API 31+はsetAutoEnterEnabledで自動処理）
-        if (autoPipEnabled
-            && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // まず現在の状態で即座にPiPに入る
             try {
                 enterPictureInPictureMode(buildPipParams())
             } catch (_: Exception) {}
+            // その後Flutterに正確な状態を問い合わせてパラメータを更新
+            pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    isPlaying = result as? Boolean ?: isPlaying
+                    try {
+                        setPictureInPictureParams(buildPipParams())
+                    } catch (_: Exception) {}
+                }
+                override fun error(code: String, msg: String?, details: Any?) {}
+                override fun notImplemented() {}
+            })
         }
     }
 
     override fun onPause() {
         super.onPause()
-        // API 26-30: タスク一覧から別アプリ切替時のPiP対応
-        // （API 31+はsetAutoEnterEnabledで自動処理）
+        // タスク一覧から別アプリ切替時のPiP対応
         if (autoPipEnabled
             && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            && Build.VERSION.SDK_INT < Build.VERSION_CODES.S
             && !isInPictureInPictureMode) {
             try {
                 enterPictureInPictureMode(buildPipParams())
