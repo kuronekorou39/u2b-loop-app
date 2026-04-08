@@ -59,6 +59,36 @@ class MainActivity : FlutterActivity() {
         return builder.build()
     }
 
+    /// API 31+: setAutoEnterEnabled を含む params（setPictureInPictureParams 専用）
+    private fun buildPipParamsAutoEnter(): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setAutoEnterEnabled(autoPipEnabled)
+
+        val intent = PendingIntent.getBroadcast(
+            this, 0,
+            Intent(ACTION_PLAY_PAUSE).setPackage(packageName),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val icon = if (isPlaying)
+            Icon.createWithResource(this, android.R.drawable.ic_media_pause)
+        else
+            Icon.createWithResource(this, android.R.drawable.ic_media_play)
+        val title = if (isPlaying) "一時停止" else "再生"
+        builder.setActions(listOf(RemoteAction(icon, title, title, intent)))
+
+        return builder.build()
+    }
+
+    /// setPictureInPictureParams を呼ぶ共通メソッド（API分岐をここに集約）
+    private fun applyPipParams() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setPictureInPictureParams(buildPipParamsAutoEnter())
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            setPictureInPictureParams(buildPipParams())
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -132,13 +162,12 @@ class MainActivity : FlutterActivity() {
                 }
                 "setAutoPiP" -> {
                     autoPipEnabled = call.argument<Boolean>("enabled") ?: false
+                    try { applyPipParams() } catch (_: Exception) {}
                     result.success(true)
                 }
                 "updatePiPPlayState" -> {
                     isPlaying = call.argument<Boolean>("playing") ?: false
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        setPictureInPictureParams(buildPipParams())
-                    }
+                    try { applyPipParams() } catch (_: Exception) {}
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -190,51 +219,51 @@ class MainActivity : FlutterActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (!autoPipEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // API 31+: setAutoEnterEnabled がPiP突入を担当。手動enterしない。
+            // 再生状態だけ同期しておく
+            syncPlayState()
+        } else {
+            // API 26-30: 手動でPiP突入（v1.37.1と同一ロジック）
             pipEnteredByHint = true
-            // まず現在の状態で即座にPiPに入る
             try {
                 enterPictureInPictureMode(buildPipParams())
             } catch (_: Exception) {}
-            // その後Flutterに正確な状態を問い合わせてパラメータを更新
-            pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
-                override fun success(result: Any?) {
-                    isPlaying = result as? Boolean ?: isPlaying
-                    try {
-                        setPictureInPictureParams(buildPipParams())
-                    } catch (_: Exception) {}
-                }
-                override fun error(code: String, msg: String?, details: Any?) {}
-                override fun notImplemented() {}
-            })
+            syncPlayState()
         }
     }
 
     override fun onPause() {
         super.onPause()
-        // onUserLeaveHintで既にPiP済みならスキップ
+        // API 31+: setAutoEnterEnabled が全てのバックグラウンド遷移を処理
+        // API 26-30: onUserLeaveHintで処理済みならスキップ、そうでなければ手動PiP
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
         if (pipEnteredByHint) {
             pipEnteredByHint = false
             return
         }
-        // タスク一覧→別アプリ切替時のPiP対応
         if (autoPipEnabled
             && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             && !isInPictureInPictureMode) {
             try {
                 enterPictureInPictureMode(buildPipParams())
             } catch (_: Exception) {}
-            pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
-                override fun success(result: Any?) {
-                    isPlaying = result as? Boolean ?: isPlaying
-                    try {
-                        setPictureInPictureParams(buildPipParams())
-                    } catch (_: Exception) {}
-                }
-                override fun error(code: String, msg: String?, details: Any?) {}
-                override fun notImplemented() {}
-            })
+            syncPlayState()
         }
+    }
+
+    /// Flutterに再生状態を問い合わせてPiPパラメータを更新
+    private fun syncPlayState() {
+        pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
+            override fun success(result: Any?) {
+                isPlaying = result as? Boolean ?: isPlaying
+                try { applyPipParams() } catch (_: Exception) {}
+            }
+            override fun error(code: String, msg: String?, details: Any?) {}
+            override fun notImplemented() {}
+        })
     }
 
     private suspend fun trimMedia(
