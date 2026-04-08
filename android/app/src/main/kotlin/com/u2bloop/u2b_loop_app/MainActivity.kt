@@ -38,11 +38,33 @@ class MainActivity : FlutterActivity() {
     private var pipReceiver: BroadcastReceiver? = null
     private var pipEnteredByHint = false
 
+    /// v1.37.1と同一: enterPictureInPictureMode用（setAutoEnterEnabledなし）
     private fun buildPipParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
 
-        // API 31+: アプリがバックグラウンドに移行する際に自動でPiPに入る
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = PendingIntent.getBroadcast(
+                this, 0,
+                Intent(ACTION_PLAY_PAUSE).setPackage(packageName),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            val icon = if (isPlaying)
+                Icon.createWithResource(this, android.R.drawable.ic_media_pause)
+            else
+                Icon.createWithResource(this, android.R.drawable.ic_media_play)
+            val title = if (isPlaying) "一時停止" else "再生"
+            builder.setActions(listOf(RemoteAction(icon, title, title, intent)))
+        }
+
+        return builder.build()
+    }
+
+    /// setPictureInPictureParams用: setAutoEnterEnabled含む
+    private fun buildPipParamsForAutoEnter(): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(autoPipEnabled)
         }
@@ -137,10 +159,10 @@ class MainActivity : FlutterActivity() {
                 }
                 "setAutoPiP" -> {
                     autoPipEnabled = call.argument<Boolean>("enabled") ?: false
-                    // API 31+: autoEnterEnabled を即反映
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // autoEnterEnabled を含むparamsを登録
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         try {
-                            setPictureInPictureParams(buildPipParams())
+                            setPictureInPictureParams(buildPipParamsForAutoEnter())
                         } catch (_: Exception) {}
                     }
                     result.success(true)
@@ -148,7 +170,7 @@ class MainActivity : FlutterActivity() {
                 "updatePiPPlayState" -> {
                     isPlaying = call.argument<Boolean>("playing") ?: false
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        setPictureInPictureParams(buildPipParams())
+                        setPictureInPictureParams(buildPipParamsForAutoEnter())
                     }
                     result.success(true)
                 }
@@ -212,7 +234,7 @@ class MainActivity : FlutterActivity() {
                 override fun success(result: Any?) {
                     isPlaying = result as? Boolean ?: isPlaying
                     try {
-                        setPictureInPictureParams(buildPipParams())
+                        setPictureInPictureParams(buildPipParamsForAutoEnter())
                     } catch (_: Exception) {}
                 }
                 override fun error(code: String, msg: String?, details: Any?) {}
@@ -240,7 +262,7 @@ class MainActivity : FlutterActivity() {
                 override fun success(result: Any?) {
                     isPlaying = result as? Boolean ?: isPlaying
                     try {
-                        setPictureInPictureParams(buildPipParams())
+                        setPictureInPictureParams(buildPipParamsForAutoEnter())
                     } catch (_: Exception) {}
                 }
                 override fun error(code: String, msg: String?, details: Any?) {}
