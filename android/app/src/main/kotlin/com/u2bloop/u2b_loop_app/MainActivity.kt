@@ -215,6 +215,10 @@ class MainActivity : FlutterActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipChannel?.invokeMethod("onPiPChanged", isInPictureInPictureMode)
+        // PiP突入直後に再生状態を再同期（autoEnter時の状態揺れを補正）
+        if (isInPictureInPictureMode) {
+            syncPlayState()
+        }
     }
 
     override fun onUserLeaveHint() {
