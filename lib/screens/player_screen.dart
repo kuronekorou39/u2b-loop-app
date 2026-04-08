@@ -351,6 +351,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   /// 1番だけモード: 波形から切断点を計算してB点にセット
+  /// AB設定済みの区間トラックには適用しない（_loadTrackRegionで分岐済み）
   void _applyFirstVerseCut(PlaylistTrack track, [int retryCount = 0]) {
     _cancelFade();
     final plState = ref.read(playlistPlayerProvider);
