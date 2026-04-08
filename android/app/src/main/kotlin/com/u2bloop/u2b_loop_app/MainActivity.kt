@@ -36,6 +36,7 @@ class MainActivity : FlutterActivity() {
     private var autoPipEnabled = false
     private var isPlaying = false
     private var pipReceiver: BroadcastReceiver? = null
+    private var pipEnteredByHint = false
 
     private fun buildPipParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
@@ -201,6 +202,7 @@ class MainActivity : FlutterActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            pipEnteredByHint = true
             // まず現在の状態で即座にPiPに入る
             try {
                 enterPictureInPictureMode(buildPipParams())
@@ -221,6 +223,11 @@ class MainActivity : FlutterActivity() {
 
     override fun onPause() {
         super.onPause()
+        // onUserLeaveHintで既にPiP処理済みならスキップ（二重呼び出し防止）
+        if (pipEnteredByHint) {
+            pipEnteredByHint = false
+            return
+        }
         // タスク一覧から別アプリ切替時のPiP対応
         if (autoPipEnabled
             && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
@@ -228,6 +235,17 @@ class MainActivity : FlutterActivity() {
             try {
                 enterPictureInPictureMode(buildPipParams())
             } catch (_: Exception) {}
+            // 再生状態を同期
+            pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    isPlaying = result as? Boolean ?: isPlaying
+                    try {
+                        setPictureInPictureParams(buildPipParams())
+                    } catch (_: Exception) {}
+                }
+                override fun error(code: String, msg: String?, details: Any?) {}
+                override fun notImplemented() {}
+            })
         }
     }
 
