@@ -58,6 +58,33 @@ class MainActivity : FlutterActivity() {
         return builder.build()
     }
 
+    /// setPictureInPictureParams専用: setAutoEnterEnabled含む
+    /// enterPictureInPictureModeには使わない（挙動が変わるため）
+    private fun buildPipParamsWithAutoEnter(): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(autoPipEnabled)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = PendingIntent.getBroadcast(
+                this, 0,
+                Intent(ACTION_PLAY_PAUSE).setPackage(packageName),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            val icon = if (isPlaying)
+                Icon.createWithResource(this, android.R.drawable.ic_media_pause)
+            else
+                Icon.createWithResource(this, android.R.drawable.ic_media_play)
+            val title = if (isPlaying) "一時停止" else "再生"
+            builder.setActions(listOf(RemoteAction(icon, title, title, intent)))
+        }
+
+        return builder.build()
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -131,12 +158,18 @@ class MainActivity : FlutterActivity() {
                 }
                 "setAutoPiP" -> {
                     autoPipEnabled = call.argument<Boolean>("enabled") ?: false
+                    // autoEnterEnabled を登録（API 31+でタスク切替時のPiP対応）
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            setPictureInPictureParams(buildPipParamsWithAutoEnter())
+                        } catch (_: Exception) {}
+                    }
                     result.success(true)
                 }
                 "updatePiPPlayState" -> {
                     isPlaying = call.argument<Boolean>("playing") ?: false
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        setPictureInPictureParams(buildPipParams())
+                        setPictureInPictureParams(buildPipParamsWithAutoEnter())
                     }
                     result.success(true)
                 }
@@ -199,12 +232,26 @@ class MainActivity : FlutterActivity() {
                 override fun success(result: Any?) {
                     isPlaying = result as? Boolean ?: isPlaying
                     try {
-                        setPictureInPictureParams(buildPipParams())
+                        setPictureInPictureParams(buildPipParamsWithAutoEnter())
                     } catch (_: Exception) {}
                 }
                 override fun error(code: String, msg: String?, details: Any?) {}
                 override fun notImplemented() {}
             })
+        }
+    }
+
+    // API 26-30: タスク一覧から別アプリ切替時のPiP対応
+    // API 31+はsetAutoEnterEnabledで自動処理するため対象外
+    override fun onPause() {
+        super.onPause()
+        if (autoPipEnabled
+            && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+            && !isInPictureInPictureMode) {
+            try {
+                enterPictureInPictureMode(buildPipParams())
+            } catch (_: Exception) {}
         }
     }
 
