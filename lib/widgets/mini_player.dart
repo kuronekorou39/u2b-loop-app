@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../app.dart';
 import '../core/theme/app_theme.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
@@ -20,13 +21,12 @@ class MiniPlayerBar extends ConsumerWidget {
     final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
     final duration = ref.watch(durationProvider).valueOrNull ?? Duration.zero;
     final player = ref.read(playerProvider);
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
 
     final progress =
         duration > Duration.zero ? position.inMilliseconds / duration.inMilliseconds : 0.0;
 
     return GestureDetector(
-      onTap: () => _openFullPlayer(context, ref, miniState),
+      onTap: () => _openFullPlayer(ref, miniState),
       child: Container(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: SafeArea(
@@ -81,7 +81,6 @@ class MiniPlayerBar extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (bottomPad > 0) SizedBox(height: bottomPad),
             ],
           ),
         ),
@@ -89,17 +88,13 @@ class MiniPlayerBar extends ConsumerWidget {
     );
   }
 
-  void _openFullPlayer(
-      BuildContext context, WidgetRef ref, MiniPlayerState state) {
-    // deactivateUI()でcontextが無効化されるため、先にNavigatorを取得
-    final navigator = Navigator.of(context);
-
-    // VideoControllerの排他制御: まずUI非表示にしてVideoを除去
+  void _openFullPlayer(WidgetRef ref, MiniPlayerState state) {
+    // ミニプレイヤーUIを消す（Videoウィジェットを除去）
     ref.read(miniPlayerProvider.notifier).deactivateUI();
 
-    // 次フレームでPlayerScreenを表示（同一フレームにVideoが2箇所にならない）
+    // navigatorKeyでルート操作（builder外のcontextではNavigatorにアクセスできない）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      navigator.push(
+      appNavigatorKey.currentState?.push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
             item: state.item!,

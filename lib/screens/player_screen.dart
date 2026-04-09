@@ -135,10 +135,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         } catch (_) {}
       });
 
-      // ミニプレイヤーからの復帰判定（deactivateUIで active=false, item保持）
+      // ミニプレイヤーからの復帰判定
       final miniState = ref.read(miniPlayerProvider);
-      if (miniState.item != null && miniState.item!.id == _currentItem.id) {
-        // 同一アイテム: ロードスキップ、再生状態をそのまま引き継ぐ
+      final isSameContext = miniState.item != null
+          && miniState.item!.id == _currentItem.id
+          && miniState.playlistId == widget.playlistId;
+
+      if (isSameContext) {
+        // 同一コンテキスト: ロードスキップ、再生状態をそのまま引き継ぐ
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         _setupPlaylistCallbacks();
         _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
@@ -151,8 +155,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      // ミニプレイヤーが別の曲を再生中: 停止してから新規ロード
-      if (miniState.active) {
+      // ミニプレイヤーが再生中: 停止してから新規ロード
+      if (miniState.item != null || miniState.active) {
         ref.read(miniPlayerProvider.notifier).deactivate();
         try {
           ref.read(playerAProvider).stop();

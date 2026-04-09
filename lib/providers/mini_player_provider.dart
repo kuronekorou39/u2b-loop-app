@@ -75,8 +75,6 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
 
   /// 復帰完了後: 情報をクリア
   void clearRestoreInfo() {
-    if (!state.active) {
-      state = const MiniPlayerState();
-    }
+    state = const MiniPlayerState();
   }
 }

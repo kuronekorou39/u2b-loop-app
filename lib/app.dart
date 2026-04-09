@@ -12,6 +12,8 @@ import 'services/update_service.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/share_import_dialog.dart';
 
+final appNavigatorKey = GlobalKey<NavigatorState>();
+
 class App extends ConsumerWidget {
   const App({super.key});
 
@@ -19,6 +21,7 @@ class App extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = ref.watch(themeProvider);
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: 'U2B Loop',
       theme: isDark ? AppTheme.dark : AppTheme.light,
       home: const _Home(),
