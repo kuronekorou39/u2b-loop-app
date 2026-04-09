@@ -233,13 +233,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (plState.repeatMode == pl.RepeatMode.single) {
         return false; // Normal AB loop
       }
-      // Auto-advance to next track
-      _advanceToNext();
-      return true;
+
+      final nextIdx = plState.peekNextTrackIndex();
+      if (nextIdx == null) return false;
+
+      // 同一アイテム → シークだけなのでそのまま進む
+      final nextTrack = plState.tracks[nextIdx];
+      final currentTrack = plState.currentTrack;
+      if (currentTrack != null && nextTrack.isSameItem(currentTrack)) {
+        _advanceToNext();
+        return true;
+      }
+
+      // プリロード済み → 進む
+      if (_preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex) {
+        _advanceToNext();
+        return true;
+      }
+
+      // 未準備 → 現在のトラックをループ、プリロードを確保
+      if (!_isPreloading) _preloadNextTrack();
+      return false;
     };
 
     loopNotifier.onTrackEnd = () {
-      if (_isPlaylist) _advanceToNext();
+      if (!_isPlaylist) return;
+      final plState = ref.read(playlistPlayerProvider);
+      final nextIdx = plState.peekNextTrackIndex();
+      if (nextIdx == null) return;
+
+      final nextTrack = plState.tracks[nextIdx];
+      final currentTrack = plState.currentTrack;
+      final sameItem = currentTrack != null && nextTrack.isSameItem(currentTrack);
+      final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
+
+      if (sameItem || ready) {
+        _advanceToNext();
+      } else {
+        // 未準備 → 先頭に戻して再生継続
+        ref.read(playerProvider).seek(Duration.zero);
+        if (!_isPreloading) _preloadNextTrack();
+      }
     };
   }
 
@@ -1758,61 +1792,156 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // dispose後にref.read()は使えないため、参照を事前キャプチャ
     final loopNotifier = ref.read(loopProvider.notifier);
     final plNotifier = ref.read(playlistPlayerProvider.notifier);
-    final player = ref.read(playerProvider);
+    final playerA = ref.read(playerAProvider);
+    final playerB = ref.read(playerBProvider);
+    final slotNotifier = ref.read(activeSlotProvider.notifier);
     final ytService = ref.read(youtubeServiceProvider);
     final miniNotifier = ref.read(miniPlayerProvider.notifier);
 
-    Future<void> loadTrack(PlaylistTrack track) async {
-      try {
-        if (track.item.sourceType == 'youtube') {
-          final manifest = await ytService.getManifestWithFallback(track.item.videoId!);
-          final muxed = manifest.muxed.sortByVideoQuality();
-          String? url;
-          if (muxed.isNotEmpty) {
-            url = muxed.last.url.toString();
-          } else {
-            final videoOnly = manifest.videoOnly.sortByVideoQuality();
-            if (videoOnly.isNotEmpty) url = videoOnly.last.url.toString();
-          }
-          if (url == null) return;
-          await player.open(Media(url), play: true);
-        } else {
-          await player.open(Media(track.item.uri), play: true);
-        }
-        if (track.startMs != null) {
-          await player.seek(Duration(milliseconds: track.startMs!));
-        }
-        // ループ設定
-        if (track.hasRegion) {
-          loopNotifier.setPointA(
-              track.startMs != null ? Duration(milliseconds: track.startMs!) : null);
-          loopNotifier.setPointB(
-              track.endMs != null ? Duration(milliseconds: track.endMs!) : null);
-          if (!loopNotifier.currentState.enabled) loopNotifier.toggleEnabled();
-        } else {
-          loopNotifier.reset();
-        }
-        // ミニプレイヤーの表示を更新
-        miniNotifier.updateCurrentItem(track.item);
-      } catch (_) {}
+    // プリロード状態（クロージャ内ローカル変数）
+    var currentSlot = ref.read(activeSlotProvider);
+    int? preloadedIdx;
+    var isPreloading = false;
+
+    Player activePlayer() => currentSlot == ActiveSlot.a ? playerA : playerB;
+    Player preloadPlayer() => currentSlot == ActiveSlot.a ? playerB : playerA;
+
+    void applyRegion(PlaylistTrack track) {
+      if (track.hasRegion) {
+        loopNotifier.setPointA(
+            track.startMs != null ? Duration(milliseconds: track.startMs!) : null);
+        loopNotifier.setPointB(
+            track.endMs != null ? Duration(milliseconds: track.endMs!) : null);
+        if (!loopNotifier.currentState.enabled) loopNotifier.toggleEnabled();
+      } else {
+        loopNotifier.reset();
+      }
     }
 
-    // next()はRepeatMode.singleの場合falseを返す（内部でチェック済み）
+    Future<String?> resolveStreamUrl(LoopItem item) async {
+      if (item.sourceType != 'youtube') return item.uri;
+      final manifest = await ytService.getManifestWithFallback(item.videoId!);
+      final muxed = manifest.muxed.sortByVideoQuality();
+      if (muxed.isNotEmpty) return muxed.last.url.toString();
+      final videoOnly = manifest.videoOnly.sortByVideoQuality();
+      if (videoOnly.isNotEmpty) return videoOnly.last.url.toString();
+      return null;
+    }
+
+    /// 次トラックをプリロードプレイヤーに読み込む
+    Future<void> preloadNext() async {
+      if (isPreloading || preloadedIdx != null) return;
+      final nextIdx = plNotifier.currentState.peekNextTrackIndex();
+      if (nextIdx == null) return;
+      final nextTrack = plNotifier.currentState.tracks[nextIdx];
+      final current = plNotifier.currentState.currentTrack;
+      if (current != null && nextTrack.isSameItem(current)) return;
+
+      isPreloading = true;
+      try {
+        final url = await resolveStreamUrl(nextTrack.item);
+        if (url == null) return;
+        final pp = preloadPlayer();
+        await pp.open(Media(url), play: false);
+        if (nextTrack.startMs != null) {
+          await pp.seek(Duration(milliseconds: nextTrack.startMs!));
+        }
+        preloadedIdx = nextIdx;
+      } catch (_) {
+      } finally {
+        isPreloading = false;
+      }
+    }
+
+    /// プリロード済みプレイヤーにスワップして再生開始
+    void swapToPreloaded(PlaylistTrack track) {
+      currentSlot = currentSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
+      slotNotifier.state = currentSlot;
+      preloadedIdx = null;
+      activePlayer().play();
+      applyRegion(track);
+      miniNotifier.updateCurrentItem(track.item);
+      // 次のプリロードを開始
+      preloadNext();
+    }
+
+    /// 同一アイテムの別区間にシーク
+    void seekToTrack(PlaylistTrack track) {
+      if (track.startMs != null) {
+        activePlayer().seek(Duration(milliseconds: track.startMs!));
+      }
+      applyRegion(track);
+      miniNotifier.updateCurrentItem(track.item);
+    }
+
     void miniAdvance() {
+      final ps = plNotifier.currentState;
+      final nextIdx = ps.peekNextTrackIndex();
+      if (nextIdx == null) return;
+
+      final nextTrack = ps.tracks[nextIdx];
+      final current = ps.currentTrack;
+      final sameItem = current != null && nextTrack.isSameItem(current);
+      final ready = preloadedIdx != null && nextIdx == preloadedIdx;
+
+      if (!sameItem && !ready) {
+        // 未準備 → ループ継続、プリロード確保
+        if (!isPreloading) preloadNext();
+        return; // falseを返してABループ
+      }
+
       final changed = plNotifier.next();
       if (!changed) return;
-      // next()でstateが更新された後、currentTrackを取得
-      final tracks = plNotifier.currentState.tracks;
-      final idx = plNotifier.currentState.currentTrackIndex;
-      if (idx == null || idx < 0 || idx >= tracks.length) return;
-      loadTrack(tracks[idx]);
+      final track = plNotifier.currentState.currentTrack;
+      if (track == null) return;
+
+      if (sameItem) {
+        seekToTrack(track);
+      } else {
+        swapToPreloaded(track);
+      }
     }
 
     loopNotifier.onBPointReached = () {
-      miniAdvance();
-      return true;
+      if (plNotifier.currentState.repeatMode == pl.RepeatMode.single) {
+        return false;
+      }
+      final ps = plNotifier.currentState;
+      final nextIdx = ps.peekNextTrackIndex();
+      if (nextIdx == null) return false;
+      final nextTrack = ps.tracks[nextIdx];
+      final current = ps.currentTrack;
+      final sameItem = current != null && nextTrack.isSameItem(current);
+      final ready = preloadedIdx != null && nextIdx == preloadedIdx;
+
+      if (sameItem || ready) {
+        miniAdvance();
+        return true;
+      }
+      // 未準備 → ABループ継続
+      if (!isPreloading) preloadNext();
+      return false;
     };
-    loopNotifier.onTrackEnd = () => miniAdvance();
+
+    loopNotifier.onTrackEnd = () {
+      final ps = plNotifier.currentState;
+      final nextIdx = ps.peekNextTrackIndex();
+      if (nextIdx == null) return;
+      final nextTrack = ps.tracks[nextIdx];
+      final current = ps.currentTrack;
+      final sameItem = current != null && nextTrack.isSameItem(current);
+      final ready = preloadedIdx != null && nextIdx == preloadedIdx;
+
+      if (sameItem || ready) {
+        miniAdvance();
+      } else {
+        activePlayer().seek(Duration.zero);
+        if (!isPreloading) preloadNext();
+      }
+    };
+
+    // 初回プリロード開始
+    preloadNext();
   }
 
   Widget _buildPiPView() {
