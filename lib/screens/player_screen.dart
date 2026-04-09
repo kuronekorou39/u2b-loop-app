@@ -2081,6 +2081,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             allowMarkerDrag: false,
             onRetryWaveform: _retryWaveform,
           ),
+          if (loop.hasBothPoints) _buildPlaylistAbControls(loop),
           _buildPlaylistControls(),
           Expanded(child: _buildPlaylistPanel(bottomInset)),
         ],
@@ -2103,6 +2104,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
           // Region + Loop controls (single mode only)
           if (!_isPlaylist) _buildRegionAndLoopPanel(regions, loop),
+
+          // Playlist: AB微調整 + 区間登録
+          if (_isPlaylist && loop.hasBothPoints) _buildPlaylistAbControls(loop),
 
           // Playlist controls
           if (_isPlaylist) _buildPlaylistControls(),
@@ -2681,6 +2685,94 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
       ],
     );
+  }
+
+  /// プレイリストモード: 現在のAB区間の微調整 + 区間登録
+  Widget _buildPlaylistAbControls(LoopState loop) {
+    final textTheme = Theme.of(context).textTheme;
+    final notifier = ref.read(loopProvider.notifier);
+    final aMs = loop.pointA?.inMilliseconds ?? 0;
+    final bMs = loop.pointB?.inMilliseconds ?? 0;
+
+    Widget timeBtn(String label, int ms, Color color, ValueChanged<int> onChanged) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove, size: AppIconSizes.s),
+            onPressed: () => onChanged(ms - 500),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(),
+            padding: const EdgeInsets.all(4),
+          ),
+          Text(
+            '$label ${TimeUtils.formatShort(Duration(milliseconds: ms))}',
+            style: textTheme.labelSmall!.copyWith(color: color, fontWeight: FontWeight.bold),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, size: AppIconSizes.s),
+            onPressed: () => onChanged(ms + 500),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(),
+            padding: const EdgeInsets.all(4),
+          ),
+        ],
+      );
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+        child: Row(
+          children: [
+            timeBtn('A', aMs, AppTheme.pointAColor, (v) {
+              if (v >= 0 && v < bMs) {
+                notifier.setPointA(Duration(milliseconds: v));
+              }
+            }),
+            const Spacer(),
+            timeBtn('B', bMs, AppTheme.pointBColor, (v) {
+              if (v > aMs) {
+                notifier.setPointB(Duration(milliseconds: v));
+              }
+            }),
+            const SizedBox(width: AppSpacing.md),
+            IconButton(
+              icon: const Icon(Icons.save_alt, size: AppIconSizes.md),
+              tooltip: '区間として登録',
+              onPressed: () => _saveCurrentAbAsRegion(aMs, bMs),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 現在のAB区間をLoopItemのリージョンとして保存
+  Future<void> _saveCurrentAbAsRegion(int aMs, int bMs) async {
+    final track = ref.read(playlistPlayerProvider).currentTrack;
+    if (track == null) return;
+
+    final item = track.item;
+    final name = await _showRegionNameDialog('1番');
+    if (name == null) return;
+
+    final region = LoopRegion(
+      id: '${item.id}_r${item.regions.length}',
+      name: name,
+      pointAMs: aMs,
+      pointBMs: bMs,
+    );
+    item.regions.add(region);
+    await ref.read(loopItemsProvider.notifier).update(item);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('「$name」を${item.title}に登録しました')),
+      );
+    }
   }
 
   Widget _buildPlaylistControls() {
