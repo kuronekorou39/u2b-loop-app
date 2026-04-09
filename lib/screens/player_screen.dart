@@ -1677,7 +1677,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         Expanded(
                           child: _buildTrackTitleText(ctx, track, isCurrent),
                         ),
-                        ..._buildTrackTags(ctx, track, tagMap),
                         if (track.hasRegion)
                           Padding(
                             padding: const EdgeInsets.only(left: AppSpacing.xs),
@@ -1688,6 +1687,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                               style: Theme.of(ctx).textTheme.labelSmall!.copyWith(fontSize: 10),
                             ),
                           ),
+                        ..._buildTrackTags(ctx, track, tagMap),
                       ],
                     ),
                   ),
