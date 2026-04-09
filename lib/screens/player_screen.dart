@@ -1592,12 +1592,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           child: Text(track.displayName,
               style: titleStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
+        const Spacer(),
         const SizedBox(width: AppSpacing.xs),
         for (final tag in itemTags)
           Padding(
             padding: const EdgeInsets.only(left: 2),
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 56),
+              constraints: const BoxConstraints(maxWidth: 72),
               padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.xs, vertical: 0),
               decoration: BoxDecoration(
