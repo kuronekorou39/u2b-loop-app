@@ -264,6 +264,40 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     ref.read(playlistsProvider.notifier).removeItem(pl.id, itemId);
   }
 
+  void _showItemMenu(Playlist pl, LoopItem item, int index) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (index > 0)
+              ListTile(
+                leading: const Icon(Icons.vertical_align_top),
+                title: const Text('先頭に移動'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final id = pl.itemIds.removeAt(index);
+                  pl.itemIds.insert(0, id);
+                  ref.read(playlistsProvider.notifier).update(pl);
+                },
+              ),
+            if (_hasItemRegions(item))
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('区間を選択'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showRegionEditSheet(pl, item);
+                },
+              ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
+  }
+
   // --- アイテム追加 ---
 
   void _showAddSheet(Playlist pl) {
@@ -651,9 +685,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                   DetailScreen(itemId: item.id)),
                         );
                       },
-                      onLongPress: _hasItemRegions(item)
-                          ? () => _showRegionEditSheet(pl, item)
-                          : null,
+                      onLongPress: () => _showItemMenu(pl, item, i),
                     ),
                   ),
                 );

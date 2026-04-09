@@ -59,8 +59,24 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     state = const MiniPlayerState();
   }
 
-  /// フルスクリーン復帰時: UIのみ非表示、再生は継続
+  /// フルスクリーン復帰時: UIのみ非表示、再生情報は保持（復帰判定用）
   void deactivateUI() {
-    state = const MiniPlayerState();
+    state = MiniPlayerState(
+      active: false,
+      item: state.item,
+      playlistItems: state.playlistItems,
+      initialIndex: state.initialIndex,
+      regionSelections: state.regionSelections,
+      disabledItemIds: state.disabledItemIds,
+      playlistName: state.playlistName,
+      playlistId: state.playlistId,
+    );
+  }
+
+  /// 復帰完了後: 情報をクリア
+  void clearRestoreInfo() {
+    if (!state.active) {
+      state = const MiniPlayerState();
+    }
   }
 }

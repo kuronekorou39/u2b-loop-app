@@ -135,11 +135,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         } catch (_) {}
       });
 
-      // ミニプレイヤーからの復帰判定
+      // ミニプレイヤーからの復帰判定（deactivateUIで active=false, item保持）
       final miniState = ref.read(miniPlayerProvider);
-      if (miniState.active && miniState.item?.id == _currentItem.id) {
+      if (miniState.item != null && miniState.item!.id == _currentItem.id) {
         // 同一アイテム: ロードスキップ、再生状態をそのまま引き継ぐ
-        ref.read(miniPlayerProvider.notifier).deactivateUI();
+        ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         _setupPlaylistCallbacks();
         _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
         _updatePiPPlayState();
