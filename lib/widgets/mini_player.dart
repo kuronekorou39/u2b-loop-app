@@ -91,26 +91,27 @@ class MiniPlayerBar extends ConsumerWidget {
 
   void _openFullPlayer(
       BuildContext context, WidgetRef ref, MiniPlayerState state) {
+    // deactivateUI()でcontextが無効化されるため、先にNavigatorを取得
+    final navigator = Navigator.of(context);
+
     // VideoControllerの排他制御: まずUI非表示にしてVideoを除去
     ref.read(miniPlayerProvider.notifier).deactivateUI();
 
     // 次フレームでPlayerScreenを表示（同一フレームにVideoが2箇所にならない）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (context.mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PlayerScreen(
-              item: state.item!,
-              playlistItems: state.playlistItems,
-              initialIndex: state.initialIndex,
-              regionSelections: state.regionSelections,
-              disabledItemIds: state.disabledItemIds,
-              playlistName: state.playlistName,
-              playlistId: state.playlistId,
-            ),
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => PlayerScreen(
+            item: state.item!,
+            playlistItems: state.playlistItems,
+            initialIndex: state.initialIndex,
+            regionSelections: state.regionSelections,
+            disabledItemIds: state.disabledItemIds,
+            playlistName: state.playlistName,
+            playlistId: state.playlistId,
           ),
-        );
-      }
+        ),
+      );
     });
   }
 }
