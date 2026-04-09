@@ -12,6 +12,9 @@ class LoopNotifier extends StateNotifier<LoopState> {
   final Ref _ref;
   Timer? _timer;
 
+  /// 外部からの読み取り用
+  LoopState get currentState => state;
+
   /// B地点到達時のコールバック。設定されていればループの代わりに呼ばれる。
   /// 戻り値 true = 処理済み（ループしない）、false = 通常のABループを実行
   bool Function()? onBPointReached;

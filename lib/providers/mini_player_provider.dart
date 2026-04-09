@@ -73,6 +73,21 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     );
   }
 
+  /// ミニプレイヤー中のトラック進行時: 表示アイテムを更新
+  void updateCurrentItem(LoopItem item) {
+    if (!state.active) return;
+    state = MiniPlayerState(
+      active: true,
+      item: item,
+      playlistItems: state.playlistItems,
+      initialIndex: state.initialIndex,
+      regionSelections: state.regionSelections,
+      disabledItemIds: state.disabledItemIds,
+      playlistName: state.playlistName,
+      playlistId: state.playlistId,
+    );
+  }
+
   /// 復帰完了後: 情報をクリア
   void clearRestoreInfo() {
     state = const MiniPlayerState();

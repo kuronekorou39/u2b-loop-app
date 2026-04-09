@@ -119,6 +119,9 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
 
   final _random = Random();
 
+  /// 外部からの読み取り用（StateNotifier.stateはprotected）
+  PlaylistPlayerState get currentState => state;
+
   /// プレイリストのアイテムからトラックリストを生成
   /// [regionSelections]: itemId → 選択されたregionIdリスト
   ///   マップに存在しない → 全区間を含める

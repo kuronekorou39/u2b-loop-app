@@ -1746,6 +1746,73 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       playlistName: widget.playlistName,
       playlistId: widget.playlistId,
     );
+
+    // プレイリストモード: dispose後も動くコールバックを設定
+    if (_isPlaylist) {
+      _setupMiniPlayerCallbacks();
+    }
+  }
+
+  /// ミニプレイヤー用の軽量コールバック（PlayerScreen dispose後も動作）
+  void _setupMiniPlayerCallbacks() {
+    // dispose後にref.read()は使えないため、参照を事前キャプチャ
+    final loopNotifier = ref.read(loopProvider.notifier);
+    final plNotifier = ref.read(playlistPlayerProvider.notifier);
+    final player = ref.read(playerProvider);
+    final ytService = ref.read(youtubeServiceProvider);
+    final miniNotifier = ref.read(miniPlayerProvider.notifier);
+
+    Future<void> loadTrack(PlaylistTrack track) async {
+      try {
+        if (track.item.sourceType == 'youtube') {
+          final manifest = await ytService.getManifestWithFallback(track.item.videoId!);
+          final muxed = manifest.muxed.sortByVideoQuality();
+          String? url;
+          if (muxed.isNotEmpty) {
+            url = muxed.last.url.toString();
+          } else {
+            final videoOnly = manifest.videoOnly.sortByVideoQuality();
+            if (videoOnly.isNotEmpty) url = videoOnly.last.url.toString();
+          }
+          if (url == null) return;
+          await player.open(Media(url), play: true);
+        } else {
+          await player.open(Media(track.item.uri), play: true);
+        }
+        if (track.startMs != null) {
+          await player.seek(Duration(milliseconds: track.startMs!));
+        }
+        // ループ設定
+        if (track.hasRegion) {
+          loopNotifier.setPointA(
+              track.startMs != null ? Duration(milliseconds: track.startMs!) : null);
+          loopNotifier.setPointB(
+              track.endMs != null ? Duration(milliseconds: track.endMs!) : null);
+          if (!loopNotifier.currentState.enabled) loopNotifier.toggleEnabled();
+        } else {
+          loopNotifier.reset();
+        }
+        // ミニプレイヤーの表示を更新
+        miniNotifier.updateCurrentItem(track.item);
+      } catch (_) {}
+    }
+
+    // next()はRepeatMode.singleの場合falseを返す（内部でチェック済み）
+    void miniAdvance() {
+      final changed = plNotifier.next();
+      if (!changed) return;
+      // next()でstateが更新された後、currentTrackを取得
+      final tracks = plNotifier.currentState.tracks;
+      final idx = plNotifier.currentState.currentTrackIndex;
+      if (idx == null || idx < 0 || idx >= tracks.length) return;
+      loadTrack(tracks[idx]);
+    }
+
+    loopNotifier.onBPointReached = () {
+      miniAdvance();
+      return true;
+    };
+    loopNotifier.onTrackEnd = () => miniAdvance();
   }
 
   Widget _buildPiPView() {
