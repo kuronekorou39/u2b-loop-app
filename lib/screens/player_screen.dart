@@ -1564,58 +1564,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // --- Playlist panel (inline) ---
 
-  Widget _buildTrackTitle(BuildContext ctx, PlaylistTrack track,
-      bool isCurrent, Map<String, Tag> tagMap) {
-    final titleStyle = Theme.of(ctx).textTheme.labelMedium!.copyWith(
-      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-      color: isCurrent
-          ? AppTheme.accentGreen
-          : track.enabled
-              ? null
-              : Colors.grey,
+  Widget _buildTrackTitleText(BuildContext ctx, PlaylistTrack track,
+      bool isCurrent) {
+    return Text(
+      track.displayName,
+      style: Theme.of(ctx).textTheme.labelMedium!.copyWith(
+        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+        color: isCurrent
+            ? AppTheme.accentGreen
+            : track.enabled
+                ? null
+                : Colors.grey,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
+  }
 
+  List<Widget> _buildTrackTags(BuildContext ctx, PlaylistTrack track,
+      Map<String, Tag> tagMap) {
     final itemTags = track.item.tagIds
         .map((id) => tagMap[id])
         .whereType<Tag>()
         .take(2)
         .toList();
+    if (itemTags.isEmpty) return const [];
 
-    if (itemTags.isEmpty) {
-      return Text(track.displayName,
-          style: titleStyle, maxLines: 1, overflow: TextOverflow.ellipsis);
-    }
-
-    return Row(
-      children: [
-        Flexible(
-          child: Text(track.displayName,
-              style: titleStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-        const Spacer(),
-        const SizedBox(width: AppSpacing.xs),
-        for (final tag in itemTags)
-          Padding(
-            padding: const EdgeInsets.only(left: 2),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 72),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xs, vertical: 0),
-              decoration: BoxDecoration(
-                color: (tag.color ?? Theme.of(ctx).colorScheme.primary)
-                    .withValues(alpha: 0.25),
-                borderRadius: AppRadius.borderXs,
-              ),
-              child: Text(
-                tag.name,
-                style: Theme.of(ctx).textTheme.labelSmall!.copyWith(fontSize: 9),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+    return [
+      const SizedBox(width: AppSpacing.xs),
+      for (final tag in itemTags)
+        Padding(
+          padding: const EdgeInsets.only(left: 2),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 72),
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs, vertical: 0),
+            decoration: BoxDecoration(
+              color: (tag.color ?? Theme.of(ctx).colorScheme.primary)
+                  .withValues(alpha: 0.25),
+              borderRadius: AppRadius.borderXs,
+            ),
+            child: Text(
+              tag.name,
+              style: Theme.of(ctx).textTheme.labelSmall!.copyWith(fontSize: 9),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-      ],
-    );
+        ),
+    ];
   }
 
   Widget _buildPlaylistPanel(double bottomInset) {
@@ -1678,8 +1675,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         SizedBox(width: AppIconSizes.lg, child: statusWidget),
                         const SizedBox(width: AppSpacing.md),
                         Expanded(
-                          child: _buildTrackTitle(ctx, track, isCurrent, tagMap),
+                          child: _buildTrackTitleText(ctx, track, isCurrent),
                         ),
+                        ..._buildTrackTags(ctx, track, tagMap),
                         if (track.hasRegion)
                           Padding(
                             padding: const EdgeInsets.only(left: AppSpacing.xs),
