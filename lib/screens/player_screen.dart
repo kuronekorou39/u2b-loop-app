@@ -1056,11 +1056,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _saveRegions() async {
     if (_isPlaylist) return;
     final item = _currentItem;
-    final regions = item.effectiveRegions;
-    item.regions = List.from(regions);
-    if (regions.isNotEmpty) {
-      item.pointAMs = regions.first.pointAMs ?? 0;
-      item.pointBMs = regions.first.pointBMs ?? 0;
+    // effectiveRegionsではなくregionsを直接参照（レガシーAB値の誤復元を防止）
+    if (item.regions.isNotEmpty) {
+      item.pointAMs = item.regions.first.pointAMs ?? 0;
+      item.pointBMs = item.regions.first.pointBMs ?? 0;
     } else {
       item.pointAMs = 0;
       item.pointBMs = 0;
