@@ -2767,11 +2767,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
     item.regions.add(region);
     await ref.read(loopItemsProvider.notifier).update(item);
+    if (!mounted) return;
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('「$name」を${item.title}に登録しました')),
-      );
+    // 現在のトラックをこの区間に切り替えるか確認
+    final replace = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('区間を登録しました'),
+        content: Text('「$name」を登録しました。\nこのプレイリストの現在のトラックを、登録した区間に切り替えますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('登録のみ'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('切り替える'),
+          ),
+        ],
+      ),
+    );
+
+    if (replace == true && mounted) {
+      // 現在のトラックのAB区間を登録した区間に切り替え
+      final notifier = ref.read(loopProvider.notifier);
+      notifier.setPointA(Duration(milliseconds: aMs));
+      notifier.setPointB(Duration(milliseconds: bMs));
+      if (!notifier.currentState.enabled) notifier.toggleEnabled();
+      ref.read(playerProvider).seek(Duration(milliseconds: aMs));
     }
   }
 
