@@ -2081,7 +2081,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             allowMarkerDrag: false,
             onRetryWaveform: _retryWaveform,
           ),
-          if (loop.hasBothPoints) _buildPlaylistAbControls(loop),
           _buildPlaylistControls(),
           Expanded(child: _buildPlaylistPanel(bottomInset)),
         ],
@@ -2104,9 +2103,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
           // Region + Loop controls (single mode only)
           if (!_isPlaylist) _buildRegionAndLoopPanel(regions, loop),
-
-          // Playlist: AB微調整 + 区間登録
-          if (_isPlaylist && loop.hasBothPoints) _buildPlaylistAbControls(loop),
 
           // Playlist controls
           if (_isPlaylist) _buildPlaylistControls(),
@@ -2687,65 +2683,74 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  /// プレイリストモード: 現在のAB区間の微調整 + 区間登録
-  Widget _buildPlaylistAbControls(LoopState loop) {
-    final textTheme = Theme.of(context).textTheme;
-    final notifier = ref.read(loopProvider.notifier);
-    final aMs = loop.pointA?.inMilliseconds ?? 0;
-    final bMs = loop.pointB?.inMilliseconds ?? 0;
+  /// プレイリストモード: AB区間の微調整 + 区間登録ダイアログ
+  void _showAbEditDialog() {
+    final loopNotifier = ref.read(loopProvider.notifier);
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final loop = ref.watch(loopProvider);
+          final aMs = loop.pointA?.inMilliseconds ?? 0;
+          final bMs = loop.pointB?.inMilliseconds ?? 0;
+          final textTheme = Theme.of(ctx).textTheme;
 
-    Widget timeBtn(String label, int ms, Color color, ValueChanged<int> onChanged) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.remove, size: AppIconSizes.s),
-            onPressed: () => onChanged(ms - 500),
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints(),
-            padding: const EdgeInsets.all(4),
-          ),
-          Text(
-            '$label ${TimeUtils.formatShort(Duration(milliseconds: ms))}',
-            style: textTheme.labelSmall!.copyWith(color: color, fontWeight: FontWeight.bold),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, size: AppIconSizes.s),
-            onPressed: () => onChanged(ms + 500),
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints(),
-            padding: const EdgeInsets.all(4),
-          ),
-        ],
-      );
-    }
+          Widget timeRow(String label, int ms, Color color, ValueChanged<int> onChanged) {
+            return Row(
+              children: [
+                Text(label, style: textTheme.titleSmall!.copyWith(color: color)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.remove),
+                  onPressed: () => onChanged(ms - 500),
+                ),
+                Text(
+                  TimeUtils.formatShort(Duration(milliseconds: ms)),
+                  style: textTheme.bodyLarge!.copyWith(
+                      color: color, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () => onChanged(ms + 500),
+                ),
+              ],
+            );
+          }
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-        child: Row(
-          children: [
-            timeBtn('A', aMs, AppTheme.pointAColor, (v) {
-              if (v >= 0 && v < bMs) {
-                notifier.setPointA(Duration(milliseconds: v));
-              }
-            }),
-            const Spacer(),
-            timeBtn('B', bMs, AppTheme.pointBColor, (v) {
-              if (v > aMs) {
-                notifier.setPointB(Duration(milliseconds: v));
-              }
-            }),
-            const SizedBox(width: AppSpacing.md),
-            IconButton(
-              icon: const Icon(Icons.save_alt, size: AppIconSizes.md),
-              tooltip: '区間として登録',
-              onPressed: () => _saveCurrentAbAsRegion(aMs, bMs),
-              visualDensity: VisualDensity.compact,
+          return AlertDialog(
+            title: const Text('AB区間を編集'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                timeRow('A', aMs, AppTheme.pointAColor, (v) {
+                  if (v >= 0 && v < bMs) {
+                    loopNotifier.setPointA(Duration(milliseconds: v));
+                  }
+                }),
+                const SizedBox(height: AppSpacing.md),
+                timeRow('B', bMs, AppTheme.pointBColor, (v) {
+                  if (v > aMs) {
+                    loopNotifier.setPointB(Duration(milliseconds: v));
+                  }
+                }),
+              ],
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('閉じる'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _saveCurrentAbAsRegion(aMs, bMs);
+                },
+                icon: const Icon(Icons.save_alt, size: AppIconSizes.sm),
+                label: const Text('区間として登録'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2924,6 +2929,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   tooltip: '1番だけ',
                   visualDensity: VisualDensity.compact,
                 ),
+                // AB編集（AB区間がある場合のみ）
+                if (ref.watch(loopProvider).hasBothPoints)
+                  IconButton(
+                    icon: Icon(
+                      Icons.tune,
+                      size: AppIconSizes.ml,
+                      color: AppTheme.accentGreen,
+                    ),
+                    onPressed: _showAbEditDialog,
+                    tooltip: 'AB区間を編集',
+                    visualDensity: VisualDensity.compact,
+                  ),
               ],
             ),
             // Track list button
