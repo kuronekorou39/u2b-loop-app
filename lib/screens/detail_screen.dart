@@ -320,115 +320,97 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             ),
           ],
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // サムネイル
-              _buildThumbnail(item),
-              const SizedBox(height: AppSpacing.xl),
-
-              // 再生ボタン
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () => _openPlayer(item),
-                  icon: const Icon(Icons.play_arrow, size: AppIconSizes.md),
-                  label: const Text('再生'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+        body: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          children: [
+            // サムネイル + 再生ボタンオーバーレイ
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                _buildThumbnail(item),
+                Positioned.fill(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: AppRadius.borderMd,
+                      onTap: () => _openPlayer(item),
+                      child: Center(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: const Icon(Icons.play_arrow,
+                              color: Colors.white, size: AppIconSizes.xl),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-
-              // タイトル
-              TextField(
-                controller: _titleController,
-                maxLength: AppLimits.titleMaxLength,
-                decoration: const InputDecoration(
-                  labelText: 'タイトル',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                  counterText: '',
-                ),
-                style: textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-
-              // 備考
-              TextField(
-                controller: _memoController,
-                maxLength: AppLimits.memoMaxLength,
-                decoration: const InputDecoration(
-                  labelText: '備考',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                  hintText: '練習メモなど',
-                  counterText: '',
-                ),
-                style: textTheme.bodySmall,
-                maxLines: 4,
-                minLines: 1,
-              ),
-              const SizedBox(height: AppSpacing.xl),
-
-              // タグ
-              _buildTagSection(item, itemTags),
-              const SizedBox(height: AppSpacing.lg),
-
-              // 再生回数
-              if (item.playCount > 0)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                  child: Row(
-                    children: [
-                      Icon(Icons.headphones, size: AppIconSizes.sm,
-                          color: textTheme.bodySmall!.color),
-                      const SizedBox(width: AppSpacing.xs),
-                      Text('${item.playCount}回再生',
-                          style: textTheme.bodySmall),
-                    ],
-                  ),
-                ),
-
-              // YouTube URL
-              if (ytUrl != null) ...[
-                _buildUrlCard(ytUrl),
-                const SizedBox(height: AppSpacing.lg),
               ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
 
-              // ソース情報 (hide videoId for YouTube)
-              if (item.sourceType != 'youtube')
-                _buildSourceInfo(item),
-              if (item.sourceType != 'youtube')
-                const SizedBox(height: AppSpacing.lg),
-
-              // AB区間一覧
-              if (regions.isNotEmpty) ...[
-                _buildRegionsList(item, regions),
-                const SizedBox(height: AppSpacing.lg),
-              ],
-
-              // AB区間設定ボタン
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _openAbEditor(item),
-                  icon: const Icon(Icons.tune, size: AppIconSizes.sm),
-                  label: Text(
-                    regions.isNotEmpty ? 'AB区間を編集' : 'AB区間を設定',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
+            // タイトル
+            TextField(
+              controller: _titleController,
+              maxLength: AppLimits.titleMaxLength,
+              decoration: const InputDecoration(
+                labelText: 'タイトル',
+                isDense: true,
+                border: OutlineInputBorder(),
+                counterText: '',
               ),
+              style: textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.md),
 
-              SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 48),
-            ],
-          ),
+            // 備考
+            TextField(
+              controller: _memoController,
+              maxLength: AppLimits.memoMaxLength,
+              decoration: const InputDecoration(
+                labelText: '備考',
+                isDense: true,
+                border: OutlineInputBorder(),
+                hintText: '練習メモなど',
+                counterText: '',
+              ),
+              style: textTheme.bodySmall,
+              maxLines: 2,
+              minLines: 1,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+
+            // メタ情報行: 再生回数 | 速度 | URL
+            Wrap(
+              spacing: AppSpacing.xl,
+              runSpacing: AppSpacing.xs,
+              children: [
+                _metaChip(Icons.headphones, '${item.playCount}回再生'),
+                if (item.speed != 1.0)
+                  _metaChip(Icons.speed, '${item.speed}x'),
+                if (ytUrl != null)
+                  InkWell(
+                    onTap: () => _copyUrl(ytUrl),
+                    onLongPress: () => _openUrl(ytUrl),
+                    borderRadius: AppRadius.borderXs,
+                    child: _metaChip(Icons.link, 'YouTube URL', isLink: true),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+
+            // タグ
+            _buildTagSection(item, itemTags),
+            const SizedBox(height: AppSpacing.md),
+
+            // AB区間（ExpansionTile + 編集ボタン統合）
+            _buildRegionsSection(item, regions),
+
+            SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 16),
+          ],
         ),
       ),
     );
@@ -716,39 +698,46 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  // --- YouTube URL ---
-
-  Widget _buildUrlCard(String url) {
+  Widget _metaChip(IconData icon, String label, {bool isLink = false}) {
     final textTheme = Theme.of(context).textTheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: AppIconSizes.xs,
+            color: isLink ? AppTheme.accentGreen : textTheme.bodySmall!.color),
+        const SizedBox(width: 3),
+        Text(label, style: textTheme.labelSmall!.copyWith(
+            color: isLink ? AppTheme.accentGreen : null)),
+      ],
+    );
+  }
+
+  Widget _buildRegionsSection(LoopItem item, List<dynamic> regions) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Row(
-          children: [
-            const Icon(Icons.link, size: AppIconSizes.sm, color: Colors.grey),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(
-                url,
-                style: textTheme.bodySmall,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+      margin: EdgeInsets.zero,
+      child: Column(
+        children: [
+          if (regions.isNotEmpty)
+            _buildRegionsList(item, regions),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () => _openAbEditor(item),
+                icon: const Icon(Icons.tune, size: AppIconSizes.s),
+                label: Text(
+                  regions.isNotEmpty ? 'AB区間を編集' : 'AB区間を設定',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.copy, size: AppIconSizes.sm),
-              onPressed: () => _copyUrl(url),
-              tooltip: 'コピー',
-              visualDensity: VisualDensity.compact,
-            ),
-            IconButton(
-              icon: const Icon(Icons.open_in_new, size: AppIconSizes.sm),
-              onPressed: () => _openUrl(url),
-              tooltip: '開く',
-              visualDensity: VisualDensity.compact,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -798,35 +787,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  Widget _buildSourceInfo(LoopItem item) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Row(
-          children: [
-            Icon(
-              item.sourceType == 'youtube'
-                  ? Icons.smart_display
-                  : Icons.folder,
-              size: AppIconSizes.sm,
-              color: Colors.grey,
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(
-                item.sourceType == 'youtube'
-                    ? 'YouTube (${item.videoId ?? ""})'
-                    : item.uri,
-                style: Theme.of(context).textTheme.bodySmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // タグ編集シートは ItemTagSheet (widgets/item_tag_sheet.dart) に移動
