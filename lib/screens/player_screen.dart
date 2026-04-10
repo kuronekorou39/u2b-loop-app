@@ -965,7 +965,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _setProgress(1.0, '読み込み完了！');
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
-    setState(() => _loading = false);
+    setState(() {
+      _loading = false;
+      _pipLoading = false;
+    });
     _consecutiveLoadErrors = 0;
 
     // Auto-play
@@ -1946,13 +1949,122 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     preloadNext();
   }
 
+  bool _pipLoading = false;
+
   Widget _buildPiPView() {
+    final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
+    final duration = ref.watch(durationProvider).valueOrNull ?? Duration.zero;
+    final progress = duration > Duration.zero
+        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _hideVideo
-          ? const SizedBox.shrink()
-          : const Center(child: VideoPlayerWidget()),
+      body: Column(
+        children: [
+          Expanded(
+            child: _hideVideo
+                ? const SizedBox.shrink()
+                : _pipLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Center(child: VideoPlayerWidget()),
+          ),
+          // シークバー（時間なし）
+          LinearProgressIndicator(
+            value: progress,
+            minHeight: 3,
+            backgroundColor: Colors.white24,
+            color: AppTheme.accentGreen,
+          ),
+          // 前後ボタン（プレイリストモードのみ）
+          if (_isPlaylist)
+            SizedBox(
+              height: 36,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.skip_previous,
+                        color: Colors.white, size: 22),
+                    onPressed: _pipLoading ? null : _pipPrev,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  const SizedBox(width: 32),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next,
+                        color: Colors.white, size: 22),
+                    onPressed: _pipLoading ? null : _pipNext,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
+  }
+
+  Future<void> _pipNext() async {
+    final plState = ref.read(playlistPlayerProvider);
+    if (!plState.hasNext) return;
+
+    final nextIdx = plState.peekNextTrackIndex();
+    if (nextIdx == null) return;
+    final nextTrack = plState.tracks[nextIdx];
+    final currentTrack = plState.currentTrack;
+    final sameItem = currentTrack != null && nextTrack.isSameItem(currentTrack);
+    final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
+
+    if (sameItem || ready) {
+      _advanceToNext();
+      return;
+    }
+
+    // プリロード開始→完了まで待機
+    setState(() => _pipLoading = true);
+    if (!_isPreloading) _preloadNextTrack();
+    // プリロード完了を待つ（最大30秒）
+    for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    if (mounted) setState(() => _pipLoading = false);
+    if (_preloadedTrackIndex != null) _advanceToNext();
+  }
+
+  Future<void> _pipPrev() async {
+    final plState = ref.read(playlistPlayerProvider);
+    if (!plState.hasPrev) return;
+
+    setState(() => _pipLoading = true);
+    _cancelPreload();
+    final notifier = ref.read(playlistPlayerProvider.notifier);
+    final oldTrack = plState.currentTrack;
+    final changed = notifier.prev();
+    if (!changed) {
+      if (mounted) setState(() => _pipLoading = false);
+      return;
+    }
+    _preloadCheckTimer?.cancel();
+
+    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
+    if (newTrack == null) {
+      if (mounted) setState(() => _pipLoading = false);
+      return;
+    }
+
+    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
+      _loadTrackRegion(newTrack);
+      if (mounted) setState(() => _pipLoading = false);
+      _startPreloadMonitor();
+      return;
+    }
+
+    // フルリロード
+    await _loadItem();
   }
 
   Widget _buildLoadingView() {
