@@ -270,8 +270,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (sameItem || ready) {
         _advanceToNext();
       } else {
-        // 未準備 → 先頭に戻して再生継続
-        ref.read(playerProvider).seek(Duration.zero);
+        // 未準備 → 先頭に戻して再生継続（終端停止後はplay()も必要）
+        final p = ref.read(playerProvider);
+        p.seek(Duration.zero);
+        p.play();
         if (!_isPreloading) _preloadNextTrack();
       }
     };
@@ -1935,6 +1937,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         miniAdvance();
       } else {
         activePlayer().seek(Duration.zero);
+        activePlayer().play();
         if (!isPreloading) preloadNext();
       }
     };
