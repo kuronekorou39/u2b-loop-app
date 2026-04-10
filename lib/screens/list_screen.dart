@@ -1710,6 +1710,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final regionInfo = _buildRegionInfoText(item);
     if (regionInfo != null) info.add(regionInfo);
     if (item.speed != 1.0) info.add('${item.speed}x');
+    if (item.playCount > 0) info.add('${item.playCount}回');
     if (item.memo != null && item.memo!.isNotEmpty) info.add(item.memo!);
     if (info.isNotEmpty) {
       parts.add(Text(info.join('  |  '),

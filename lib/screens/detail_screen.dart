@@ -378,6 +378,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               _buildTagSection(item, itemTags),
               const SizedBox(height: AppSpacing.lg),
 
+              // 再生回数
+              if (item.playCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                  child: Row(
+                    children: [
+                      Icon(Icons.headphones, size: AppIconSizes.sm,
+                          color: textTheme.bodySmall!.color),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text('${item.playCount}回再生',
+                          style: textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+
               // YouTube URL
               if (ytUrl != null) ...[
                 _buildUrlCard(ytUrl),

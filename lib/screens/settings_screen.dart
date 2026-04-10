@@ -51,6 +51,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'tagIds': item.tagIds,
         'youtubeUrl': item.youtubeUrl,
         'regions': item.regions.map((r) => r.toMap()).toList(),
+        'playCount': item.playCount,
+        'accumulatedPlayMs': item.accumulatedPlayMs,
       };
 
   Map<String, dynamic> _playlistToJson(app.Playlist pl) => {
@@ -135,6 +137,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     LoopRegion.fromMap((m as Map).cast<String, dynamic>()))
                 .toList() ??
             [],
+        playCount: j['playCount'] as int? ?? 0,
+        accumulatedPlayMs: j['accumulatedPlayMs'] as int? ?? 0,
       );
 
   app.Playlist _playlistFromJson(Map<String, dynamic> j) {
