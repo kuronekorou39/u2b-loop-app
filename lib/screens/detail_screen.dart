@@ -323,32 +323,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         body: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           children: [
-            // サムネイル + 再生ボタンオーバーレイ
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                _buildThumbnail(item),
-                Positioned.fill(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: AppRadius.borderMd,
-                      onTap: () => _openPlayer(item),
-                      child: Center(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(12),
-                          child: const Icon(Icons.play_arrow,
-                              color: Colors.white, size: AppIconSizes.xl),
-                        ),
-                      ),
-                    ),
-                  ),
+            // サムネイル
+            _buildThumbnail(item),
+            const SizedBox(height: AppSpacing.md),
+
+            // 再生ボタン（コンパクト）
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: () => _openPlayer(item),
+                icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
+                label: const Text('再生'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xl, vertical: AppSpacing.xs),
                 ),
-              ],
+              ),
             ),
             const SizedBox(height: AppSpacing.lg),
 
