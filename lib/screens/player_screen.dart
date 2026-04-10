@@ -144,6 +144,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (isSameContext) {
         // 同一コンテキスト: ロードスキップ、再生状態をそのまま引き継ぐ
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
+        ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
         _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
         _updatePiPPlayState();
@@ -201,6 +202,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final miniActive = ref.read(miniPlayerProvider).active;
     if (!miniActive) {
       try {
+        ref.read(loopProvider.notifier).setCurrentItem(null);
         ref.read(playerAProvider).stop();
         ref.read(playerBProvider).stop();
         ref.read(loopProvider.notifier).onBPointReached = null;
@@ -787,6 +789,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // Play new active player
     ref.read(playerProvider).play();
 
+    // 再生カウント: トラック切替
+    ref.read(loopProvider.notifier).setCurrentItem(item.id);
+
     // Apply cached waveform or generate fresh
     final cachedWaveform = _waveformCache.remove(item.id);
     if (cachedWaveform != null) {
@@ -970,6 +975,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _pipLoading = false;
     });
     _consecutiveLoadErrors = 0;
+
+    // 再生カウント: 現在のアイテムを設定
+    ref.read(loopProvider.notifier).setCurrentItem(item.id);
 
     // Auto-play
     player.play();
@@ -1864,6 +1872,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       preloadedIdx = null;
       activePlayer().play();
       applyRegion(track);
+      loopNotifier.setCurrentItem(track.item.id);
       miniNotifier.updateCurrentItem(track.item);
       // 次のプリロードを開始
       preloadNext();

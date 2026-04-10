@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:ui' show VoidCallback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive/hive.dart';
+import '../models/loop_item.dart';
 import '../models/loop_state.dart';
 import 'player_provider.dart';
 
@@ -25,10 +27,21 @@ class LoopNotifier extends StateNotifier<LoopState> {
   /// 動画終了検知用コールバック（ABループなし時、動画が終端に達した場合）
   VoidCallback? onTrackEnd;
 
+  /// 現在再生中のアイテムID（再生カウント用、外部からセット）
+  String? currentItemId;
+
+  /// 再生カウントの保存間隔管理
+  int _playCountAccMs = 0;
+  static const _playCountSaveInterval = 5000; // 5秒ごとにHive保存
+  int _msSinceLastSave = 0;
+
   LoopNotifier(this._ref) : super(const LoopState()) {
     _timer = Timer.periodic(
       const Duration(milliseconds: 100),
-      (_) => _checkLoop(),
+      (_) {
+        _checkLoop();
+        _trackPlayTime();
+      },
     );
   }
 
@@ -148,9 +161,71 @@ class LoopNotifier extends StateNotifier<LoopState> {
     state = LoopState(adjustStep: step);
   }
 
+  /// 再生時間を累積し、しきい値到達で再生回数をインクリメント
+  void _trackPlayTime() {
+    final player = _ref.read(playerProvider);
+    if (!player.state.playing) return;
+    if (currentItemId == null) return;
+
+    final durationMs = player.state.duration.inMilliseconds;
+    if (durationMs <= 0) return;
+
+    _playCountAccMs += 100;
+    _msSinceLastSave += 100;
+
+    final threshold = LoopItem.playCountThresholdMs(durationMs);
+    if (_playCountAccMs < threshold) {
+      // しきい値未達でも定期保存（アプリ終了対策）
+      if (_msSinceLastSave >= _playCountSaveInterval) {
+        _saveAccumulatedTime();
+      }
+      return;
+    }
+
+    // しきい値到達 → カウント+1
+    _playCountAccMs -= threshold;
+    final box = Hive.box<LoopItem>('loop_items');
+    final item = box.get(currentItemId);
+    if (item != null) {
+      item.playCount++;
+      item.accumulatedPlayMs = _playCountAccMs;
+      box.put(item.id, item);
+    }
+    _msSinceLastSave = 0;
+  }
+
+  void _saveAccumulatedTime() {
+    if (currentItemId == null) return;
+    final box = Hive.box<LoopItem>('loop_items');
+    final item = box.get(currentItemId);
+    if (item != null && _playCountAccMs != item.accumulatedPlayMs) {
+      item.accumulatedPlayMs = _playCountAccMs;
+      box.put(item.id, item);
+    }
+    _msSinceLastSave = 0;
+  }
+
+  /// トラック切替時に呼ぶ: 累積時間をアイテムから復元
+  void setCurrentItem(String? itemId) {
+    // 前のアイテムの累積を保存
+    if (currentItemId != null && currentItemId != itemId) {
+      _saveAccumulatedTime();
+    }
+    currentItemId = itemId;
+    _msSinceLastSave = 0;
+    if (itemId != null) {
+      final box = Hive.box<LoopItem>('loop_items');
+      final item = box.get(itemId);
+      _playCountAccMs = item?.accumulatedPlayMs ?? 0;
+    } else {
+      _playCountAccMs = 0;
+    }
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
+    _saveAccumulatedTime();
     super.dispose();
   }
 }

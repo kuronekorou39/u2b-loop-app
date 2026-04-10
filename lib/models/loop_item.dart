@@ -28,6 +28,12 @@ class LoopItem {
   /// 複数AB区間
   List<LoopRegion> regions;
 
+  /// 再生回数
+  int playCount;
+
+  /// 未カウント分の累積再生時間（ミリ秒）
+  int accumulatedPlayMs;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -46,10 +52,19 @@ class LoopItem {
     List<String>? tagIds,
     this.youtubeUrl,
     List<LoopRegion>? regions,
+    this.playCount = 0,
+    this.accumulatedPlayMs = 0,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
         regions = regions ?? [];
+
+  /// 再生カウントのしきい値（ミリ秒）
+  static int playCountThresholdMs(int durationMs) {
+    if (durationMs <= 30000) return durationMs; // ≤30秒: 全部
+    if (durationMs >= 600000) return 480000; // ≥10分: 8分固定
+    return (durationMs * 0.8).round(); // その間: 80%
+  }
 
   bool get isFetching => fetchStatus == 'fetching';
   bool get hasError => fetchStatus != null && fetchStatus!.startsWith('error');
@@ -103,6 +118,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
               ?.map((m) => LoopRegion.fromMap((m as Map).cast<String, dynamic>()))
               .toList() ??
           [],
+      playCount: fields[17] as int? ?? 0,
+      accumulatedPlayMs: fields[18] as int? ?? 0,
     );
   }
 
@@ -126,6 +143,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       14: obj.tagIds,
       15: obj.youtubeUrl,
       16: obj.regions.map((r) => r.toMap()).toList(),
+      17: obj.playCount,
+      18: obj.accumulatedPlayMs,
     });
   }
 }
