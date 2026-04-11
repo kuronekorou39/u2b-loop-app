@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 
 class PlayerControls extends ConsumerWidget {
@@ -75,6 +76,23 @@ class PlayerControls extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // 最初から: A地点 or 先頭にシーク
+          IconButton(
+            icon: const Icon(Icons.skip_previous),
+            iconSize: 20,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(),
+            padding: const EdgeInsets.all(8),
+            onPressed: hasSource
+                ? () {
+                    final loop = ref.read(loopProvider);
+                    final target = (loop.enabled && loop.hasA)
+                        ? loop.pointA!
+                        : Duration.zero;
+                    player.seek(target);
+                  }
+                : null,
+          ),
           // Rewind: tap=seek, long press=set step
           GestureDetector(
             onLongPressStart: hasSource
