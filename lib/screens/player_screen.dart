@@ -2956,24 +2956,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   child: GestureDetector(
                     onTap: () => setState(
                         () => _showPlaylistPanel = !_showPlaylistPanel),
-                    child: Column(
-                      children: [
-                        Text(
-                          currentIdx != null
-                              ? '${currentIdx + 1} / ${plState.trackCount}'
-                              : '- / ${plState.trackCount}',
-                          style: textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                        if (currentTrack != null)
-                          Text(
-                            currentTrack.displayName,
-                            style: textTheme.labelSmall,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                      ],
+                    child: Text(
+                      currentIdx != null
+                          ? '${currentIdx + 1} / ${plState.trackCount}'
+                          : '- / ${plState.trackCount}',
+                      style: textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),

@@ -1,7 +1,7 @@
 name: u2b_loop_app
 description: "YouTube & Local Video AB Loop Player"
 publish_to: 'none'
-version: 1.39.13
+version: 1.39.14
 
 environment:
   sdk: ^3.11.0
