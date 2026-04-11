@@ -629,6 +629,26 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     child:
                         const Icon(Icons.delete_outline, color: Colors.white),
                   ),
+                  confirmDismiss: (_) async {
+                    return await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('削除確認'),
+                        content: Text('「${item.title}」をプレイリストから削除しますか？'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('キャンセル'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('削除',
+                                style: TextStyle(color: Colors.red)),
+                          ),
+                        ],
+                      ),
+                    ) ?? false;
+                  },
                   onDismissed: (_) => _removeItem(pl, item.id),
                   child: Opacity(
                     opacity: isDisabled ? 0.4 : 1.0,
