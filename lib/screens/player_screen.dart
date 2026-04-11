@@ -2187,7 +2187,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
-        child: IntrinsicHeight(
+        child: SizedBox(
+          height: 200,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -2197,85 +2198,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 「全体」+ 区間追加ボタン
-                    InkWell(
+                    // 「全体」（固定）
+                    _buildRegionTile(
+                      name: '全体',
+                      isActive: _activeRegionIdx == -1,
+                      pointAMs: null,
+                      pointBMs: null,
                       onTap: _clearRegion,
-                      borderRadius: AppRadius.borderSm,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 5, horizontal: AppSpacing.xs),
-                        decoration: BoxDecoration(
-                          color: _activeRegionIdx == -1
-                              ? theme.colorScheme.primary
-                                  .withValues(alpha: 0.15)
-                              : null,
-                          borderRadius: AppRadius.borderSm,
-                          border: Border.all(
-                            color: _activeRegionIdx == -1
-                                ? theme.colorScheme.primary
-                                    .withValues(alpha: 0.5)
-                                : Colors.transparent,
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      theme: theme,
+                    ),
+                    Divider(height: 1,
+                        color: theme.dividerColor.withValues(alpha: 0.3)),
+                    // 区間リスト（スクロール可能）
+                    if (regions.isNotEmpty)
+                      Expanded(
+                        child: ListView(
+                          padding: EdgeInsets.zero,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '全体',
-                                    style: textTheme.labelMedium!.copyWith(
-                                      fontWeight: _activeRegionIdx == -1
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      color: _activeRegionIdx == -1
-                                          ? theme.colorScheme.primary
-                                          : null,
-                                    ),
-                                  ),
-                                ),
-                                if (regions.length < _maxRegions)
-                                  GestureDetector(
-                                    onTap: _addRegion,
-                                    child: Icon(
-                                        Icons.add_circle_outline,
-                                        size: AppIconSizes.s,
-                                        color: Colors.grey.shade500),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 1),
-                            Text(
-                              'デフォルト',
-                              style: textTheme.labelSmall!.copyWith(fontSize: 10),
-                            ),
+                            for (var i = 0; i < regions.length; i++) ...[
+                              _buildRegionTile(
+                                name: regions[i].name,
+                                isActive: i == _activeRegionIdx,
+                                pointAMs: regions[i].pointAMs,
+                                pointBMs: regions[i].pointBMs,
+                                onTap: () => _selectRegion(i),
+                                onLongPress: () => _showRegionMenu(i),
+                                theme: theme,
+                              ),
+                              if (i < regions.length - 1)
+                                Divider(height: 1,
+                                    color: theme.dividerColor.withValues(alpha: 0.3)),
+                            ],
                           ],
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    // 追加ボタン（固定）
+                    const SizedBox(height: AppSpacing.xs),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 28,
+                      child: OutlinedButton.icon(
+                        onPressed: regions.length < _maxRegions ? _addRegion : null,
+                        icon: const Icon(Icons.add, size: AppIconSizes.xs),
+                        label: Text(
+                          regions.length < _maxRegions ? '追加' : '上限',
+                          style: textTheme.labelSmall,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          side: BorderSide(color: Colors.grey.shade700),
                         ),
                       ),
                     ),
-                    if (regions.isNotEmpty)
-                      Divider(
-                          height: 1,
-                          color: theme.dividerColor
-                              .withValues(alpha: 0.3)),
-                    for (var i = 0; i < regions.length; i++) ...[
-                      _buildRegionTile(
-                        name: regions[i].name,
-                        isActive: i == _activeRegionIdx,
-                        pointAMs: regions[i].pointAMs,
-                        pointBMs: regions[i].pointBMs,
-                        onTap: () => _selectRegion(i),
-                        onLongPress: () => _showRegionMenu(i),
-                        theme: theme,
-                      ),
-                      if (i < regions.length - 1)
-                        Divider(
-                            height: 1,
-                            color: theme.dividerColor
-                                .withValues(alpha: 0.3)),
-                    ],
                   ],
                 ),
               ),
