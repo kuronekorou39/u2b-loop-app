@@ -1508,7 +1508,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 _showTrackTagEditor(track);
               },
             ),
-            if (!isCurrent && widget.playlistId != null)
+            if (widget.playlistId != null)
               ListTile(
                 leading:
                     const Icon(Icons.playlist_remove, color: Colors.redAccent),

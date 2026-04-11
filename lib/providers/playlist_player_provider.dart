@@ -298,13 +298,14 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
   }
 
   /// トラックをプレイリストから削除し、playOrderを再構築
-  /// 現在再生中のトラックは削除不可（falseを返す）
   bool removeTrack(int trackIndex) {
     if (trackIndex < 0 || trackIndex >= state.tracks.length) return false;
-    if (state.currentTrackIndex == trackIndex) return false;
 
+    final isCurrent = state.currentTrackIndex == trackIndex;
     final newTracks = List<PlaylistTrack>.from(state.tracks)
       ..removeAt(trackIndex);
+
+    if (newTracks.isEmpty) return false;
 
     // playOrderのインデックスを再マッピング
     final currentTrackIdx = state.currentTrackIndex;
@@ -315,9 +316,14 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
       if (old == trackIndex) continue;
       final adjusted = old > trackIndex ? old - 1 : old;
       newOrder.add(adjusted);
-      if (state.playOrder[i] == currentTrackIdx) {
+      if (!isCurrent && state.playOrder[i] == currentTrackIdx) {
         newOrderIndex = newOrder.length - 1;
       }
+    }
+
+    // 再生中トラックを削除した場合: 同じorderIndexを維持（次のトラックが繰り上がる）
+    if (isCurrent) {
+      newOrderIndex = state.currentOrderIndex.clamp(0, newOrder.length - 1);
     }
 
     state = state.copyWith(
