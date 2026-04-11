@@ -2914,7 +2914,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
         child: Column(
           children: [
-            // Controls row: shuffle, prev, track info, next, repeat
+            // Controls row: shuffle, repeat, prev, track info, next, 1番, 調整
             Row(
               children: [
                 // Shuffle
@@ -2930,6 +2930,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       .read(playlistPlayerProvider.notifier)
                       .toggleShuffle(),
                   tooltip: 'シャッフル',
+                  visualDensity: VisualDensity.compact,
+                ),
+                // Repeat mode
+                IconButton(
+                  icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
+                  onPressed: () => ref
+                      .read(playlistPlayerProvider.notifier)
+                      .cycleRepeatMode(),
+                  tooltip: switch (plState.repeatMode) {
+                    pl.RepeatMode.none => 'リピートなし',
+                    pl.RepeatMode.all => '全曲リピート',
+                    pl.RepeatMode.single => '1曲リピート',
+                  },
                   visualDensity: VisualDensity.compact,
                 ),
                 // Prev
@@ -2970,19 +2983,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   onPressed: plState.hasNext ? _advanceToNext : null,
                   visualDensity: VisualDensity.compact,
                 ),
-                // Repeat mode
-                IconButton(
-                  icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
-                  onPressed: () => ref
-                      .read(playlistPlayerProvider.notifier)
-                      .cycleRepeatMode(),
-                  tooltip: switch (plState.repeatMode) {
-                    pl.RepeatMode.none => 'リピートなし',
-                    pl.RepeatMode.all => '全曲リピート',
-                    pl.RepeatMode.single => '1曲リピート',
-                  },
-                  visualDensity: VisualDensity.compact,
-                ),
                 // 1番だけモード
                 IconButton(
                   icon: Icon(
@@ -3001,10 +3001,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     final track = plState.currentTrack;
                     if (track != null && !track.hasRegion) {
                       if (plState.firstVerseMode) {
-                        // ON → 切断点を適用
                         _applyFirstVerseCut(track);
                       } else {
-                        // OFF → 区間リセット
                         _cancelFade();
                         ref.read(loopProvider.notifier).reset();
                       }
@@ -3013,18 +3011,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   tooltip: '1番だけ',
                   visualDensity: VisualDensity.compact,
                 ),
-                // AB編集（AB区間がある場合のみ）
-                if (ref.watch(loopProvider).hasBothPoints)
-                  IconButton(
-                    icon: Icon(
-                      Icons.tune,
-                      size: AppIconSizes.ml,
-                      color: AppTheme.accentGreen,
-                    ),
-                    onPressed: _showAbEditDialog,
-                    tooltip: 'AB区間を編集',
-                    visualDensity: VisualDensity.compact,
+                // AB編集（常時表示）
+                IconButton(
+                  icon: Icon(
+                    Icons.tune,
+                    size: AppIconSizes.ml,
+                    color: ref.watch(loopProvider).hasBothPoints
+                        ? AppTheme.accentGreen
+                        : Colors.grey,
                   ),
+                  onPressed: _showAbEditDialog,
+                  tooltip: 'AB区間を編集',
+                  visualDensity: VisualDensity.compact,
+                ),
               ],
             ),
             // Track list button
