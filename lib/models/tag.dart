@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 
-/// タグのプリセットカラー
+/// タグのプリセットカラー（index 0 = デフォルト青緑）
 const tagPresetColors = [
-  null, // デフォルト（テーマカラー）
+  Color(0xFF4ECCA3), // デフォルト（アクセントグリーン）
   Color(0xFFEF5350), // 赤
   Color(0xFFFF7043), // オレンジ
   Color(0xFFFFCA28), // 黄
@@ -20,10 +20,10 @@ class Tag {
 
   Tag({required this.id, required this.name, this.colorIndex = 0});
 
-  Color? get color =>
-      colorIndex > 0 && colorIndex < tagPresetColors.length
+  Color get color =>
+      colorIndex >= 0 && colorIndex < tagPresetColors.length
           ? tagPresetColors[colorIndex]
-          : null;
+          : tagPresetColors[0];
 }
 
 class TagAdapter extends TypeAdapter<Tag> {

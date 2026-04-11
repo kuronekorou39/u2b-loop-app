@@ -327,19 +327,34 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             _buildThumbnail(item),
             const SizedBox(height: AppSpacing.md),
 
-            // 再生ボタン（コンパクト）
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: () => _openPlayer(item),
-                icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
-                label: const Text('再生'),
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xl, vertical: AppSpacing.xs),
+            // 再生ボタン + メタ情報
+            Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: () => _openPlayer(item),
+                  icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
+                  label: const Text('再生'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xl, vertical: AppSpacing.xs),
+                  ),
                 ),
-              ),
+                const SizedBox(width: AppSpacing.xl),
+                _metaChip(Icons.headphones, '${item.playCount}回'),
+                if (item.speed != 1.0) ...[
+                  const SizedBox(width: AppSpacing.lg),
+                  _metaChip(Icons.speed, '${item.speed}x'),
+                ],
+                const Spacer(),
+                if (ytUrl != null)
+                  InkWell(
+                    onTap: () => _copyUrl(ytUrl),
+                    onLongPress: () => _openUrl(ytUrl),
+                    borderRadius: AppRadius.borderXs,
+                    child: _metaChip(Icons.link, 'URL', isLink: true),
+                  ),
+              ],
             ),
             const SizedBox(height: AppSpacing.lg),
 
@@ -371,25 +386,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               style: textTheme.bodySmall,
               maxLines: 2,
               minLines: 1,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            // メタ情報行: 再生回数 | 速度 | URL
-            Wrap(
-              spacing: AppSpacing.xl,
-              runSpacing: AppSpacing.xs,
-              children: [
-                _metaChip(Icons.headphones, '${item.playCount}回再生'),
-                if (item.speed != 1.0)
-                  _metaChip(Icons.speed, '${item.speed}x'),
-                if (ytUrl != null)
-                  InkWell(
-                    onTap: () => _copyUrl(ytUrl),
-                    onLongPress: () => _openUrl(ytUrl),
-                    borderRadius: AppRadius.borderXs,
-                    child: _metaChip(Icons.link, 'YouTube URL', isLink: true),
-                  ),
-              ],
             ),
             const SizedBox(height: AppSpacing.lg),
 
@@ -658,9 +654,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       runSpacing: AppSpacing.sm,
       children: [
         ...itemTags.map((t) => Chip(
-              avatar: t.color != null
-                  ? Icon(Icons.circle, size: 10, color: t.color)
-                  : null,
+              avatar: Icon(Icons.circle, size: 10, color: t.color),
               label: Text(t.name, style: textTheme.labelMedium),
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,

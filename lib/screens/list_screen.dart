@@ -1543,8 +1543,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 padding: EdgeInsets.symmetric(
                     horizontal: tiny ? AppSpacing.xs : AppSpacing.sm, vertical: tiny ? 0 : 1),
                 decoration: BoxDecoration(
-                  color: (t.color ??
-                          Theme.of(context).colorScheme.primaryContainer)
+                  color: t.color
                       .withValues(alpha: 0.5),
                   borderRadius: AppRadius.borderXs,
                 ),
@@ -1788,8 +1787,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
         return ListTile(
           leading: Icon(Icons.label,
               size: AppIconSizes.md,
-              color: tag.color ??
-                  Theme.of(context).colorScheme.primary),
+              color: tag.color),
           title: Text(tag.name, style: Theme.of(context).textTheme.bodyLarge),
           trailing: Text('$count 曲',
               style: Theme.of(context).textTheme.bodySmall),
@@ -1903,8 +1901,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                         width: 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          color: tagPresetColors[i] ??
-                              Theme.of(context).colorScheme.primary,
+                          color: tagPresetColors[i],
                           shape: BoxShape.circle,
                           border: tag.colorIndex == i
                               ? Border.all(color: Colors.white, width: 3)

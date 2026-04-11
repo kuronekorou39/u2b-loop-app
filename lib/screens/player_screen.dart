@@ -1612,8 +1612,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.xs, vertical: 0),
             decoration: BoxDecoration(
-              color: (tag.color ?? Theme.of(ctx).colorScheme.primary)
-                  .withValues(alpha: 0.25),
+              color: tag.color.withValues(alpha: 0.25),
               borderRadius: AppRadius.borderXs,
             ),
             child: Text(
