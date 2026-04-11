@@ -2474,56 +2474,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ] else if (_activeRegionIdx == -1) ...[
-                      // --- 全体: AB区間設定ボタン + 書き出し ---
-                      if (regions.length < _maxRegions)
-                        Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.md),
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: 32,
-                            child: OutlinedButton.icon(
-                              onPressed: _addRegion,
-                              icon: Icon(Icons.add, size: AppIconSizes.xs,
-                                  color: Colors.grey.shade400),
-                              label: Text('AB区間を設定する',
-                                  style: textTheme.labelMedium!.copyWith(
-                                      color: Colors.grey.shade400)),
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                    color: Colors.grey.shade700),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        AppRadius.borderSm),
-                              ),
-                            ),
-                          ),
-                        ),
+                      // --- 全体: 書き出しボタンのみ（下寄せ） ---
+                      const Spacer(),
                       if (hasSource)
-                        Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.sm),
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: 28,
-                            child: OutlinedButton.icon(
-                              onPressed: () => _showExportDialog(
-                                  fullTrack: !loop.hasBothPoints),
-                              icon: const Icon(
-                                  Icons.file_download_outlined,
-                                  size: AppIconSizes.xs),
-                              label: Text(
-                                  loop.hasBothPoints
-                                      ? '区間を書き出し'
-                                      : '全体を書き出し',
-                                  style: textTheme.labelSmall),
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                    color: Colors.grey.shade700),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        AppRadius.borderSm),
-                              ),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 28,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _showExportDialog(
+                                fullTrack: !loop.hasBothPoints),
+                            icon: const Icon(
+                                Icons.file_download_outlined,
+                                size: AppIconSizes.xs),
+                            label: Text(
+                                loop.hasBothPoints
+                                    ? '区間を書き出し'
+                                    : '全体を書き出し',
+                                style: textTheme.labelSmall),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                  color: Colors.grey.shade700),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.md),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      AppRadius.borderSm),
                             ),
                           ),
                         ),
@@ -2534,7 +2509,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       const SizedBox(height: AppSpacing.sm),
                       _buildPointDisplay(
                           'B', AppTheme.pointBColor, loop.pointB),
-                      const SizedBox(height: AppSpacing.md),
+                      const Spacer(),
                       SizedBox(
                         width: double.infinity,
                         height: 28,
