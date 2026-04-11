@@ -83,7 +83,6 @@ class PlayerControls extends ConsumerWidget {
                 : null,
             child: IconButton(
               icon: Icon(_rewindIcons[seekStep] ?? Icons.replay_5),
-              tooltip: '巻き戻し',
               onPressed: hasSource
                   ? () {
                       final pos = player.state.position;
@@ -111,7 +110,6 @@ class PlayerControls extends ConsumerWidget {
                 : null,
             child: IconButton(
               icon: Icon(_forwardIcons[seekStep] ?? Icons.forward_5),
-              tooltip: '早送り',
               onPressed: hasSource
                   ? () {
                       final pos = player.state.position;
@@ -127,7 +125,6 @@ class PlayerControls extends ConsumerWidget {
                     context, details.globalPosition, player, ref)
                 : null,
             child: IconButton(
-              tooltip: '音量',
               icon: Stack(
                 clipBehavior: Clip.none,
                 children: [
