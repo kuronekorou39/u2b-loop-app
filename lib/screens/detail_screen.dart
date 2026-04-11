@@ -670,18 +670,24 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     style: textTheme.labelMedium!.copyWith(color: t.color)),
               ),
             )),
-        OutlinedButton.icon(
-          onPressed: () => _showTagPicker(item),
-          icon: const Icon(Icons.add, size: AppIconSizes.s),
-          label: Text(
-            itemTags.isEmpty ? 'タグ追加' : '追加',
-            style: textTheme.labelMedium,
-          ),
-          style: OutlinedButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-            side: BorderSide(color: Colors.grey.shade700),
+        GestureDetector(
+          onTap: () => _showTagPicker(item),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade700),
+              borderRadius: AppRadius.borderXs,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add, size: AppIconSizes.xs, color: Colors.grey),
+                const SizedBox(width: 3),
+                Text(itemTags.isEmpty ? 'タグ追加' : '追加',
+                    style: textTheme.labelMedium!.copyWith(color: Colors.grey)),
+              ],
+            ),
           ),
         ),
       ],
