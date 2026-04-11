@@ -653,17 +653,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.sm,
       children: [
-        ...itemTags.map((t) => Chip(
-              avatar: Icon(Icons.circle, size: 10, color: t.color),
-              label: Text(t.name, style: textTheme.labelMedium),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              deleteIcon: const Icon(Icons.close, size: AppIconSizes.xs),
-              onDeleted: () {
+        ...itemTags.map((t) => GestureDetector(
+              onLongPress: () {
                 ref
                     .read(loopItemsProvider.notifier)
                     .removeTagFromItems([item.id], t.id);
               },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                decoration: BoxDecoration(
+                  color: t.color.withValues(alpha: 0.25),
+                  borderRadius: AppRadius.borderXs,
+                ),
+                child: Text(t.name,
+                    style: textTheme.labelMedium!.copyWith(color: t.color)),
+              ),
             )),
         OutlinedButton.icon(
           onPressed: () => _showTagPicker(item),
