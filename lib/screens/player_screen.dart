@@ -116,11 +116,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPChanged') {
         if (mounted) setState(() => _isInPiP = call.arguments as bool);
-      } else if (call.method == 'onPiPAction' &&
-          call.arguments == 'playPause') {
-        final player = ref.read(playerProvider);
-        await player.playOrPause();
-        _updatePiPPlayState();
+      } else if (call.method == 'onPiPAction') {
+        switch (call.arguments) {
+          case 'playPause':
+            final player = ref.read(playerProvider);
+            await player.playOrPause();
+            _updatePiPPlayState();
+          case 'next':
+            if (_isPlaylist) _pipNext();
+          case 'prev':
+            if (_isPlaylist) _pipPrev();
+        }
       } else if (call.method == 'getPlayState') {
         return ref.read(playerProvider).state.playing;
       }
@@ -146,7 +152,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
-        _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
+        _pipChannel.invokeMethod('setAutoPiP', {'enabled': true, 'isPlaylist': _isPlaylist});
         _updatePiPPlayState();
         _startPreloadMonitor();
         setState(() {
@@ -184,7 +190,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _loadItem();
       // 自動PiPを有効化 + 現在の再生状態を送信
-      _pipChannel.invokeMethod('setAutoPiP', {'enabled': true});
+      _pipChannel.invokeMethod('setAutoPiP', {'enabled': true, 'isPlaylist': _isPlaylist});
       _updatePiPPlayState();
     });
   }
@@ -1959,59 +1965,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _pipLoading = false;
 
   Widget _buildPiPView() {
-    final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
-    final duration = ref.watch(durationProvider).valueOrNull ?? Duration.zero;
-    final progress = duration > Duration.zero
-        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-        : 0.0;
-
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Column(
-        children: [
-          Expanded(
-            child: _hideVideo
-                ? const SizedBox.shrink()
-                : _pipLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Center(child: VideoPlayerWidget()),
-          ),
-          // シークバー（時間なし）
-          LinearProgressIndicator(
-            value: progress,
-            minHeight: 3,
-            backgroundColor: Colors.white24,
-            color: AppTheme.accentGreen,
-          ),
-          // 前後ボタン（プレイリストモードのみ）
-          if (_isPlaylist)
-            SizedBox(
-              height: 36,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.skip_previous,
-                        color: Colors.white, size: 22),
-                    onPressed: _pipLoading ? null : _pipPrev,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  const SizedBox(width: 32),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next,
-                        color: Colors.white, size: 22),
-                    onPressed: _pipLoading ? null : _pipNext,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+      body: _hideVideo
+          ? const SizedBox.shrink()
+          : _pipLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Center(child: VideoPlayerWidget()),
     );
   }
 

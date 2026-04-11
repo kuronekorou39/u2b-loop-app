@@ -28,6 +28,9 @@ class MainActivity : FlutterActivity() {
     private val EXPORT_CHANNEL = "com.u2bloop/export"
     private val TAG = "WaveformExtractor"
     private val ACTION_PLAY_PAUSE = "com.u2bloop.PIP_PLAY_PAUSE"
+    private val ACTION_PREV = "com.u2bloop.PIP_PREV"
+    private val ACTION_NEXT = "com.u2bloop.PIP_NEXT"
+    private var isPlaylist = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var currentJob: Job? = null
@@ -43,20 +46,45 @@ class MainActivity : FlutterActivity() {
             .setAspectRatio(Rational(16, 9))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val intent = PendingIntent.getBroadcast(
-                this, 0,
-                Intent(ACTION_PLAY_PAUSE).setPackage(packageName),
-                PendingIntent.FLAG_IMMUTABLE
-            )
-            val icon = if (isPlaying)
-                Icon.createWithResource(this, android.R.drawable.ic_media_pause)
-            else
-                Icon.createWithResource(this, android.R.drawable.ic_media_play)
-            val title = if (isPlaying) "一時停止" else "再生"
-            builder.setActions(listOf(RemoteAction(icon, title, title, intent)))
+            builder.setActions(buildPipActions())
         }
 
         return builder.build()
+    }
+
+    /// アクションリスト生成（共通化）
+    private fun buildPipActions(): List<RemoteAction> {
+        val actions = mutableListOf<RemoteAction>()
+
+        if (isPlaylist) {
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_previous),
+                "前の曲", "前の曲",
+                PendingIntent.getBroadcast(this, 1,
+                    Intent(ACTION_PREV).setPackage(packageName),
+                    PendingIntent.FLAG_IMMUTABLE)))
+        }
+
+        val ppIcon = if (isPlaying)
+            Icon.createWithResource(this, android.R.drawable.ic_media_pause)
+        else
+            Icon.createWithResource(this, android.R.drawable.ic_media_play)
+        actions.add(RemoteAction(ppIcon, if (isPlaying) "一時停止" else "再生",
+            if (isPlaying) "一時停止" else "再生",
+            PendingIntent.getBroadcast(this, 0,
+                Intent(ACTION_PLAY_PAUSE).setPackage(packageName),
+                PendingIntent.FLAG_IMMUTABLE)))
+
+        if (isPlaylist) {
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_next),
+                "次の曲", "次の曲",
+                PendingIntent.getBroadcast(this, 2,
+                    Intent(ACTION_NEXT).setPackage(packageName),
+                    PendingIntent.FLAG_IMMUTABLE)))
+        }
+
+        return actions
     }
 
     /// API 31+: setAutoEnterEnabled を含む params（setPictureInPictureParams 専用）
@@ -64,19 +92,9 @@ class MainActivity : FlutterActivity() {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
             .setAutoEnterEnabled(autoPipEnabled)
-
-        val intent = PendingIntent.getBroadcast(
-            this, 0,
-            Intent(ACTION_PLAY_PAUSE).setPackage(packageName),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        val icon = if (isPlaying)
-            Icon.createWithResource(this, android.R.drawable.ic_media_pause)
-        else
-            Icon.createWithResource(this, android.R.drawable.ic_media_play)
-        val title = if (isPlaying) "一時停止" else "再生"
-        builder.setActions(listOf(RemoteAction(icon, title, title, intent)))
-
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder.setActions(buildPipActions())
+        }
         return builder.build()
     }
 
@@ -95,15 +113,22 @@ class MainActivity : FlutterActivity() {
         // --- PiP BroadcastReceiver ---
         pipReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action == ACTION_PLAY_PAUSE) {
-                    pipChannel?.invokeMethod("onPiPAction", "playPause")
+                when (intent?.action) {
+                    ACTION_PLAY_PAUSE -> pipChannel?.invokeMethod("onPiPAction", "playPause")
+                    ACTION_PREV -> pipChannel?.invokeMethod("onPiPAction", "prev")
+                    ACTION_NEXT -> pipChannel?.invokeMethod("onPiPAction", "next")
                 }
             }
         }
+        val filter = IntentFilter().apply {
+            addAction(ACTION_PLAY_PAUSE)
+            addAction(ACTION_PREV)
+            addAction(ACTION_NEXT)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(pipReceiver, IntentFilter(ACTION_PLAY_PAUSE), Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(pipReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            registerReceiver(pipReceiver, IntentFilter(ACTION_PLAY_PAUSE))
+            registerReceiver(pipReceiver, filter)
         }
 
         // --- Waveform channel ---
@@ -162,6 +187,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "setAutoPiP" -> {
                     autoPipEnabled = call.argument<Boolean>("enabled") ?: false
+                    isPlaylist = call.argument<Boolean>("isPlaylist") ?: false
                     try { applyPipParams() } catch (_: Exception) {}
                     result.success(true)
                 }
