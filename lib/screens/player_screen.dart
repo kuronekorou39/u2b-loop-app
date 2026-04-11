@@ -123,9 +123,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             await player.playOrPause();
             _updatePiPPlayState();
           case 'next':
-            if (_isPlaylist) _pipNext();
+            if (_isPlaylist) _smoothNext();
           case 'prev':
-            if (_isPlaylist) _pipPrev();
+            if (_isPlaylist) _smoothPrev();
         }
       } else if (call.method == 'getPlayState') {
         return ref.read(playerProvider).state.playing;
@@ -347,32 +347,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } else {
       // Different item, not preloaded - full reload
       _cancelPreload();
-      _preloadCheckTimer?.cancel();
-      _loadItem();
-    }
-  }
-
-  void _advanceToPrev() {
-    final notifier = ref.read(playlistPlayerProvider.notifier);
-    final oldTrack = ref.read(playlistPlayerProvider).currentTrack;
-    final changed = notifier.prev();
-    if (!changed) return;
-    _cancelPreload();
-    _preloadCheckTimer?.cancel();
-    _switchToCurrentTrack(oldTrack);
-  }
-
-  void _switchToCurrentTrack(PlaylistTrack? oldTrack) {
-    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
-    if (newTrack == null) return;
-
-    _cancelPreload();
-    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
-      // Same LoopItem - just seek and update loop points
-      _loadTrackRegion(newTrack);
-      _startPreloadMonitor();
-    } else {
-      // Different LoopItem - full reload
       _preloadCheckTimer?.cancel();
       _loadItem();
     }
@@ -978,7 +952,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _pipLoading = false;
+      _trackLoading = false;
     });
     _consecutiveLoadErrors = 0;
 
@@ -1962,14 +1936,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     preloadNext();
   }
 
-  bool _pipLoading = false;
+  bool _trackLoading = false;
 
   Widget _buildPiPView() {
     return Scaffold(
       backgroundColor: Colors.black,
       body: _hideVideo
           ? const SizedBox.shrink()
-          : _pipLoading
+          : _trackLoading
               ? const Center(
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Colors.white))
@@ -1977,7 +1951,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  Future<void> _pipNext() async {
+  Future<void> _smoothNext() async {
     final plState = ref.read(playlistPlayerProvider);
     if (!plState.hasNext) return;
 
@@ -1994,40 +1968,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     // プリロード開始→完了まで待機
-    setState(() => _pipLoading = true);
+    setState(() => _trackLoading = true);
     if (!_isPreloading) _preloadNextTrack();
     // プリロード完了を待つ（最大30秒）
     for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
     }
-    if (mounted) setState(() => _pipLoading = false);
+    if (mounted) setState(() => _trackLoading = false);
     if (_preloadedTrackIndex != null) _advanceToNext();
   }
 
-  Future<void> _pipPrev() async {
+  Future<void> _smoothPrev() async {
     final plState = ref.read(playlistPlayerProvider);
     if (!plState.hasPrev) return;
 
-    setState(() => _pipLoading = true);
+    setState(() => _trackLoading = true);
     _cancelPreload();
     final notifier = ref.read(playlistPlayerProvider.notifier);
     final oldTrack = plState.currentTrack;
     final changed = notifier.prev();
     if (!changed) {
-      if (mounted) setState(() => _pipLoading = false);
+      if (mounted) setState(() => _trackLoading = false);
       return;
     }
     _preloadCheckTimer?.cancel();
 
     final newTrack = ref.read(playlistPlayerProvider).currentTrack;
     if (newTrack == null) {
-      if (mounted) setState(() => _pipLoading = false);
+      if (mounted) setState(() => _trackLoading = false);
       return;
     }
 
     if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
       _loadTrackRegion(newTrack);
-      if (mounted) setState(() => _pipLoading = false);
+      if (mounted) setState(() => _trackLoading = false);
       _startPreloadMonitor();
       return;
     }
@@ -2947,7 +2921,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Prev
                 IconButton(
                   icon: const Icon(Icons.skip_previous, size: AppIconSizes.xl),
-                  onPressed: plState.hasPrev ? _advanceToPrev : null,
+                  onPressed: plState.hasPrev && !_trackLoading ? _smoothPrev : null,
                   visualDensity: VisualDensity.compact,
                 ),
                 // Track info
@@ -2955,19 +2929,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   child: GestureDetector(
                     onTap: () => setState(
                         () => _showPlaylistPanel = !_showPlaylistPanel),
-                    child: Text(
-                      currentIdx != null
-                          ? '${currentIdx + 1} / ${plState.trackCount}'
-                          : '- / ${plState.trackCount}',
-                      style: textTheme.bodyMedium,
-                      textAlign: TextAlign.center,
-                    ),
+                    child: _trackLoading
+                        ? const SizedBox(
+                            height: 20, width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(
+                            currentIdx != null
+                                ? '${currentIdx + 1} / ${plState.trackCount}'
+                                : '- / ${plState.trackCount}',
+                            style: textTheme.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
                   ),
                 ),
                 // Next
                 IconButton(
                   icon: const Icon(Icons.skip_next, size: AppIconSizes.xl),
-                  onPressed: plState.hasNext ? _advanceToNext : null,
+                  onPressed: plState.hasNext && !_trackLoading ? _smoothNext : null,
                   visualDensity: VisualDensity.compact,
                 ),
                 // 1番だけモード
