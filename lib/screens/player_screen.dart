@@ -2299,36 +2299,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           ),
                         ),
                         const Spacer(),
-                        if (loop.hasBothPoints)
-                          Text(
-                            '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
-                            style: textTheme.bodySmall,
-                          ),
-                        // Edit toggle (hidden when 全体 selected)
-                        if (_activeRegionIdx >= 0) ...[
-                          const SizedBox(width: AppSpacing.xs),
+                        // 編集/保存ボタン（区間選択時のみ）
+                        if (_activeRegionIdx >= 0)
                           SizedBox(
-                            width: AppIconSizes.lg,
-                            height: AppIconSizes.lg,
-                            child: IconButton(
-                              icon: Icon(
-                                _editMode ? Icons.check : Icons.edit,
-                                size: 13,
-                                color: _editMode
-                                    ? AppTheme.accentGreen
-                                    : Colors.grey[600],
-                              ),
+                            height: 26,
+                            child: TextButton.icon(
                               onPressed: _editMode
                                   ? _finishEdit
-                                  : () => setState(
-                                      () => _editMode = true),
-                              padding: EdgeInsets.zero,
-                              tooltip: _editMode
-                                  ? '編集完了'
-                                  : 'AB区間を編集',
+                                  : () => setState(() => _editMode = true),
+                              icon: Icon(
+                                _editMode ? Icons.check : Icons.edit,
+                                size: AppIconSizes.xs,
+                                color: _editMode
+                                    ? AppTheme.accentGreen
+                                    : Colors.grey,
+                              ),
+                              label: Text(
+                                _editMode ? '保存' : '編集',
+                                style: textTheme.labelSmall!.copyWith(
+                                  color: _editMode
+                                      ? AppTheme.accentGreen
+                                      : Colors.grey,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.sm),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -2474,8 +2475,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ] else if (_activeRegionIdx == -1) ...[
-                      // --- 全体: 書き出しボタンのみ（下寄せ） ---
+                      // --- 全体 ---
                       const Spacer(),
+                      // Gap（LoopON時）
+                      if (loop.enabled) _buildGapSlider(loop, notifier, textTheme),
                       if (hasSource)
                         SizedBox(
                           width: double.infinity,
@@ -2510,6 +2513,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       _buildPointDisplay(
                           'B', AppTheme.pointBColor, loop.pointB),
                       const Spacer(),
+                      // Gap（LoopON時）
+                      if (loop.enabled) _buildGapSlider(loop, notifier, textTheme),
                       SizedBox(
                         width: double.infinity,
                         height: 28,
@@ -2534,43 +2539,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ),
                     ],
 
-                    // Gap slider (when loop enabled, non-edit mode only)
-                    if (loop.enabled && !_editMode) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      Row(
-                        children: [
-                          Text('Gap:',
-                              style: textTheme.labelSmall),
-                          Expanded(
-                            child: SliderTheme(
-                              data: const SliderThemeData(
-                                trackHeight: 2,
-                                thumbShape: RoundSliderThumbShape(
-                                    enabledThumbRadius: 6),
-                                overlayShape:
-                                    RoundSliderOverlayShape(
-                                        overlayRadius: 12),
-                              ),
-                              child: Slider(
-                                value: loop.gapSeconds,
-                                min: 0,
-                                max: 10,
-                                divisions: 20,
-                                onChanged: (v) =>
-                                    notifier.setGap(v),
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 30,
-                            child: Text(
-                              '${loop.gapSeconds.toStringAsFixed(1)}s',
-                              style: textTheme.labelSmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -2651,6 +2619,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildGapSlider(LoopState loop, LoopNotifier notifier, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Row(
+        children: [
+          Text('Gap:', style: textTheme.labelSmall),
+          Expanded(
+            child: SliderTheme(
+              data: const SliderThemeData(
+                trackHeight: 2,
+                thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
+              ),
+              child: Slider(
+                value: loop.gapSeconds,
+                min: 0,
+                max: 10,
+                divisions: 20,
+                onChanged: (v) => notifier.setGap(v),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 30,
+            child: Text('${loop.gapSeconds.toStringAsFixed(1)}s',
+                style: textTheme.labelSmall),
+          ),
+        ],
       ),
     );
   }
