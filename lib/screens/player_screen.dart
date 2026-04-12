@@ -532,7 +532,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _checkPreload() {
-    if (!mounted || !_isPlaylist) return;
+    if (!mounted || !_isPlaylist || _loading) return;
     if (_isPreloading || _preloadedTrackIndex != null) return;
 
     // 連続失敗時はバックオフ（失敗数 × 10秒）、上限5回で停止
