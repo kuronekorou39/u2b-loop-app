@@ -17,7 +17,12 @@ import 'package:u2b_loop_app/core/utils/verse_detector.dart';
 import 'package:u2b_loop_app/models/loop_state.dart';
 import 'package:u2b_loop_app/models/playlist_mode.dart' as pm;
 import 'package:u2b_loop_app/models/playlist_track.dart';
+import 'package:u2b_loop_app/models/video_source.dart';
+import 'package:u2b_loop_app/core/constants.dart';
 import 'package:u2b_loop_app/providers/data_provider.dart';
+import 'package:u2b_loop_app/providers/loading_animation_provider.dart';
+import 'package:u2b_loop_app/providers/mini_player_provider.dart';
+import 'package:u2b_loop_app/widgets/loading_animations/loading_animation.dart';
 import 'package:u2b_loop_app/providers/loop_provider.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
 import 'package:u2b_loop_app/providers/playlist_player_provider.dart';
@@ -1728,6 +1733,450 @@ void main() {
       await tester.pumpWidget(const ProviderScope(child: App()));
       await settle(tester);
       expect(false, false);
+    });
+  });
+
+  // ================================================================
+  // AA. MiniPlayerNotifier
+  // ================================================================
+  group('AA. MiniPlayer', () {
+    testWidgets('AA1. 初期状態', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = MiniPlayerNotifier();
+      expect(notifier.debugState.active, false);
+      expect(notifier.debugState.item, isNull);
+    });
+
+    testWidgets('AA2. activate / deactivate', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = MiniPlayerNotifier();
+      final item = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+
+      notifier.activate(item: item);
+      expect(notifier.debugState.active, true);
+      expect(notifier.debugState.item!.id, item.id);
+
+      notifier.deactivate();
+      expect(notifier.debugState.active, false);
+      expect(notifier.debugState.item, isNull);
+    });
+
+    testWidgets('AA3. activate with playlist', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = MiniPlayerNotifier();
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
+
+      notifier.activate(
+        item: s1,
+        playlistItems: [s1, s2],
+        initialIndex: 0,
+        playlistName: 'テストPL',
+        playlistId: 'pl1',
+      );
+      expect(notifier.debugState.active, true);
+      expect(notifier.debugState.playlistItems!.length, 2);
+      expect(notifier.debugState.playlistName, 'テストPL');
+    });
+
+    testWidgets('AA4. deactivateUI（再生情報保持）', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = MiniPlayerNotifier();
+      final item = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+
+      notifier.activate(item: item, playlistName: 'PL');
+      notifier.deactivateUI();
+      expect(notifier.debugState.active, false);
+      expect(notifier.debugState.item, isNotNull); // 情報は保持
+      expect(notifier.debugState.playlistName, 'PL');
+    });
+
+    testWidgets('AA5. updateCurrentItem', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = MiniPlayerNotifier();
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
+
+      notifier.activate(item: s1);
+      notifier.updateCurrentItem(s2);
+      expect(notifier.debugState.item!.id, s2.id);
+    });
+
+    testWidgets('AA6. updateCurrentItem（非アクティブ時は無視）', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = MiniPlayerNotifier();
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+
+      notifier.updateCurrentItem(s1); // 非アクティブ
+      expect(notifier.debugState.item, isNull);
+    });
+
+    testWidgets('AA7. clearRestoreInfo', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = MiniPlayerNotifier();
+      final item = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+
+      notifier.activate(item: item);
+      notifier.clearRestoreInfo();
+      expect(notifier.debugState.active, false);
+      expect(notifier.debugState.item, isNull);
+    });
+  });
+
+  // ================================================================
+  // AB. VideoSource モデル
+  // ================================================================
+  group('AB. VideoSource', () {
+    testWidgets('AB1. YouTubeソース', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      const src = VideoSource(
+        type: VideoSourceType.youtube,
+        uri: 'https://example.com/stream',
+        title: 'テスト',
+        videoId: 'abc123',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+      );
+      expect(src.type, VideoSourceType.youtube);
+      expect(src.videoId, 'abc123');
+      expect(src.thumbnailUrl, isNotNull);
+      expect(src.audioUri, isNull);
+    });
+
+    testWidgets('AB2. ローカルソース', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      const src = VideoSource(
+        type: VideoSourceType.local,
+        uri: '/path/to/file.mp4',
+        title: 'ローカル曲',
+      );
+      expect(src.type, VideoSourceType.local);
+      expect(src.videoId, isNull);
+    });
+
+    testWidgets('AB3. audioUri付きソース', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      const src = VideoSource(
+        type: VideoSourceType.youtube,
+        uri: 'https://example.com/stream',
+        title: 'テスト',
+        audioUri: 'https://example.com/audio',
+      );
+      expect(src.audioUri, 'https://example.com/audio');
+    });
+  });
+
+  // ================================================================
+  // AC. AppLimits 定数
+  // ================================================================
+  group('AC. AppLimits', () {
+    testWidgets('AC1. 全定数が正の値', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      expect(AppLimits.titleMaxLength, greaterThan(0));
+      expect(AppLimits.memoMaxLength, greaterThan(0));
+      expect(AppLimits.tagNameMaxLength, greaterThan(0));
+      expect(AppLimits.playlistNameMaxLength, greaterThan(0));
+      expect(AppLimits.urlMaxLength, greaterThan(0));
+      expect(AppLimits.regionNameMaxLength, greaterThan(0));
+      expect(AppLimits.maxTagsPerItem, greaterThan(0));
+      expect(AppLimits.maxRegions, greaterThan(0));
+    });
+  });
+
+  // ================================================================
+  // AD. tagsProvider CRUD
+  // ================================================================
+  group('AD. tagsProvider', () {
+    testWidgets('AD1. create / rename / delete', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(tagsProvider.notifier);
+
+      // create
+      final tag = await notifier.create('テストタグAD');
+      expect(tag.name, 'テストタグAD');
+      expect(tagBox.values.any((t) => t.name == 'テストタグAD'), true);
+
+      // rename
+      await notifier.rename(tag.id, 'テストタグAD変更');
+      expect(tagBox.get(tag.id)!.name, 'テストタグAD変更');
+
+      // delete
+      await notifier.delete(tag.id);
+      expect(tagBox.get(tag.id), isNull);
+
+      container.dispose();
+    });
+  });
+
+  // ================================================================
+  // AE. playlistsProvider CRUD
+  // ================================================================
+  group('AE. playlistsProvider', () {
+    testWidgets('AE1. add / update / delete', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(playlistsProvider.notifier);
+      final pl = app.Playlist(id: 'test_pl_ae', name: 'テストPLAE');
+
+      await notifier.add(pl);
+      expect(plBox.get('test_pl_ae'), isNotNull);
+
+      pl.name = 'テストPLAE更新';
+      await notifier.update(pl);
+      expect(plBox.get('test_pl_ae')!.name, 'テストPLAE更新');
+
+      await notifier.delete('test_pl_ae');
+      expect(plBox.get('test_pl_ae'), isNull);
+
+      container.dispose();
+    });
+
+    testWidgets('AE2. duplicate', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(playlistsProvider.notifier);
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final pl = app.Playlist(
+          id: 'test_pl_dup', name: 'テストPL複製元', itemIds: [s1.id]);
+      await notifier.add(pl);
+
+      final copy = await notifier.duplicate('test_pl_dup');
+      expect(copy.name, 'テストPL複製元 (コピー)');
+      expect(copy.itemIds, [s1.id]);
+
+      // cleanup
+      await notifier.delete('test_pl_dup');
+      await notifier.delete(copy.id);
+
+      container.dispose();
+    });
+
+    testWidgets('AE3. addItems / removeItem', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(playlistsProvider.notifier);
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
+      final pl = app.Playlist(id: 'test_pl_items', name: 'テストPLアイテム');
+      await notifier.add(pl);
+
+      await notifier.addItems('test_pl_items', [s1.id, s2.id]);
+      expect(plBox.get('test_pl_items')!.itemIds.length, 2);
+
+      // 重複追加されない
+      await notifier.addItems('test_pl_items', [s1.id]);
+      expect(plBox.get('test_pl_items')!.itemIds.length, 2);
+
+      await notifier.removeItem('test_pl_items', s1.id);
+      expect(plBox.get('test_pl_items')!.itemIds.length, 1);
+
+      await notifier.delete('test_pl_items');
+      container.dispose();
+    });
+
+    testWidgets('AE4. toggleItemEnabled', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(playlistsProvider.notifier);
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final pl = app.Playlist(
+          id: 'test_pl_toggle', name: 'テストPLトグル', itemIds: [s1.id]);
+      await notifier.add(pl);
+
+      await notifier.toggleItemEnabled('test_pl_toggle', s1.id);
+      expect(plBox.get('test_pl_toggle')!.disabledItemIds.contains(s1.id), true);
+
+      await notifier.toggleItemEnabled('test_pl_toggle', s1.id);
+      expect(plBox.get('test_pl_toggle')!.disabledItemIds.contains(s1.id), false);
+
+      await notifier.delete('test_pl_toggle');
+      container.dispose();
+    });
+
+    testWidgets('AE5. setThumbnailItem', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(playlistsProvider.notifier);
+      final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
+      final pl = app.Playlist(id: 'test_pl_thumb', name: 'テストPLサムネ');
+      await notifier.add(pl);
+
+      await notifier.setThumbnailItem('test_pl_thumb', s2.id);
+      expect(plBox.get('test_pl_thumb')!.thumbnailItemId, s2.id);
+
+      await notifier.setThumbnailItem('test_pl_thumb', null);
+      expect(plBox.get('test_pl_thumb')!.thumbnailItemId, isNull);
+
+      await notifier.delete('test_pl_thumb');
+      container.dispose();
+    });
+  });
+
+  // ================================================================
+  // AF. themeProvider / loadingAnimationProvider
+  // ================================================================
+  group('AF. 設定プロバイダー永続化', () {
+    testWidgets('AF1. loadingAnimationProvider Hive永続化', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(loadingAnimationProvider.notifier);
+      notifier.set(LoadingAnimationType.starfield);
+      final box = Hive.box('settings');
+      expect(box.get('loading_animation'), 'starfield');
+
+      notifier.set(null); // ランダムに戻す
+      expect(box.get('loading_animation'), isNull);
+
+      container.dispose();
+    });
+
+    testWidgets('AF2. perfOverlayProvider Hive永続化', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(perfOverlayProvider.notifier);
+      notifier.toggle();
+      final box = Hive.box('settings');
+      expect(box.get('perf_overlay'), true);
+
+      notifier.toggle();
+      expect(box.get('perf_overlay'), false);
+
+      container.dispose();
+    });
+  });
+
+  // ================================================================
+  // AG. ShareService 詳細
+  // ================================================================
+  group('AG. ShareService詳細', () {
+    testWidgets('AG1. タグ付きencode/decode', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'share_tag', title: 'タグ付き', uri: '', sourceType: 'youtube',
+        videoId: 'xyz789', tagIds: ['tag1', 'tag2'],
+      );
+      final url = ShareService.encode(
+        playlistName: 'タグテスト',
+        items: [item],
+        tagIdToName: {'tag1': 'ロック', 'tag2': 'ポップ'},
+      );
+      final decoded = ShareService.decode(url);
+      expect(decoded!.items.first.tags, ['ロック', 'ポップ']);
+    });
+
+    testWidgets('AG2. 複数曲encode/decode', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final items = [
+        LoopItem(id: 's1', title: '曲1', uri: '', sourceType: 'youtube', videoId: 'a'),
+        LoopItem(id: 's2', title: '曲2', uri: '', sourceType: 'youtube', videoId: 'b'),
+      ];
+      final url = ShareService.encode(
+        playlistName: '2曲PL', items: items, tagIdToName: {});
+      final decoded = ShareService.decode(url);
+      expect(decoded!.items.length, 2);
+      expect(decoded.items[0].videoId, 'a');
+      expect(decoded.items[1].videoId, 'b');
+    });
+
+    testWidgets('AG3. estimateUrlLength', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 't', title: 'test', uri: '', sourceType: 'youtube', videoId: 'x');
+      final len = ShareService.estimateUrlLength(
+        playlistName: 'test', items: [item], tagIdToName: {});
+      expect(len, greaterThan(0));
+    });
+  });
+
+  // ================================================================
+  // AH. エッジケース
+  // ================================================================
+  group('AH. エッジケース', () {
+    testWidgets('AH1. UrlUtils: 短いURL', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      expect(UrlUtils.extractVideoId('a'), isNull);
+      expect(UrlUtils.extractPlaylistId('a'), isNull);
+    });
+
+    testWidgets('AH2. TimeUtils: 大きな値', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final formatted = TimeUtils.format(const Duration(hours: 1, minutes: 30));
+      expect(formatted, '90:00.000');
+    });
+
+    testWidgets('AH3. TimeUtils: parse 境界', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      expect(TimeUtils.parse('0:00'), Duration.zero);
+      expect(TimeUtils.parse('0:00.000'), Duration.zero);
+      expect(TimeUtils.parse('99:59.999'),
+          const Duration(minutes: 99, seconds: 59, milliseconds: 999));
+    });
+
+    testWidgets('AH4. LoopRegion: null A/B のcopyWith', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final r = LoopRegion(id: 'r', name: 'n', pointAMs: 100, pointBMs: 200);
+      final r2 = r.copyWith(pointAMs: () => null);
+      expect(r2.pointAMs, isNull);
+      expect(r2.pointBMs, 200);
+    });
+
+    testWidgets('AH5. PlaylistTrack: 「区間 1」は表示名に含まない', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final item = LoopItem(id: 't', title: 'テスト', uri: '', sourceType: 'youtube');
+      final region = LoopRegion(id: 'r', name: '区間 1', pointAMs: 0, pointBMs: 100);
+      final track = PlaylistTrack(item: item, region: region, itemIndex: 0);
+      expect(track.displayName, 'テスト'); // 「区間 1」は省略される
+    });
+
+    testWidgets('AH6. VerseDetector: サンプル不足でフォールバック', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final waveform = List.generate(50, (i) => 0.5); // 100未満
+      expect(VerseDetector.findCutPoint(waveform: waveform, durationMs: 300000), 100000);
+    });
+
+    testWidgets('AH7. PlaylistPlayerNotifier: removeTrack', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final notifier = PlaylistPlayerNotifier();
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
+      notifier.loadPlaylist([s1, s2]);
+
+      final before = notifier.currentState.trackCount;
+      notifier.removeTrack(0);
+      expect(notifier.currentState.trackCount, before - 1);
+    });
+
+    testWidgets('AH8. LoopState: isInGap', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final s = const LoopState().copyWith(isInGap: true);
+      expect(s.isInGap, true);
     });
   });
 
