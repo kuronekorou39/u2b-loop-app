@@ -31,6 +31,7 @@ import '../widgets/item_tag_sheet.dart';
 import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
+import '../providers/loading_animation_provider.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/player/video_player_widget.dart';
 
@@ -2016,8 +2017,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return Stack(
       children: [
         // 背景アニメーション
-        const Positioned.fill(
-          child: LoadingAnimationView(),
+        Positioned.fill(
+          child: LoadingAnimationView(
+            type: ref.watch(loadingAnimationProvider),
+          ),
         ),
         // 前景: タイトル＋プログレス
         Padding(

@@ -21,6 +21,7 @@ void main() async {
   await Hive.openBox<LoopItem>('loop_items');
   await Hive.openBox<app.Playlist>('playlists');
   await Hive.openBox<Tag>('tags');
+  await Hive.openBox('settings');
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

@@ -26,6 +26,8 @@ class WaveAnimation extends LoadingAnimation {
   void paint(Canvas canvas, Size size) {
     final centerY = size.height * 0.5;
     final maxAmplitude = size.height * 0.18;
+    final width = size.width;
+    const step = 4.0;
 
     for (var w = _waveCount - 1; w >= 0; w--) {
       final params = _waveParams[w];
@@ -33,9 +35,10 @@ class WaveAnimation extends LoadingAnimation {
       final amp = params[1] * maxAmplitude;
       final speed = params[2];
       final phase = params[3];
+      final modulation = 0.7 + 0.3 * sin(elapsed * 0.4 + w);
 
       final color = colors[w % colors.length];
-      final paint = Paint()
+      final fillPaint = Paint()
         ..color = color.withValues(alpha: 0.15 + 0.2 * (1 - w / _waveCount))
         ..style = PaintingStyle.fill;
 
@@ -45,34 +48,30 @@ class WaveAnimation extends LoadingAnimation {
         ..strokeWidth = 1.5;
 
       final path = Path();
-      final strokePath = Path();
-      const step = 2.0;
+      final freqFactor = pi * 2 * freq;
+      final timeOffset = elapsed * speed + phase;
 
-      for (var x = 0.0; x <= size.width; x += step) {
-        final nx = x / size.width;
-        // 複数の sin を重ねて有機的な動きを作る
+      for (var x = 0.0; x <= width; x += step) {
+        final nx = x / width;
         final y = centerY +
-            amp *
-                sin(nx * pi * 2 * freq + elapsed * speed + phase) *
-                (0.7 + 0.3 * sin(elapsed * 0.4 + nx * pi + w));
+            amp * sin(nx * freqFactor + timeOffset) * modulation;
 
         if (x == 0) {
           path.moveTo(x, y);
-          strokePath.moveTo(x, y);
         } else {
           path.lineTo(x, y);
-          strokePath.lineTo(x, y);
         }
       }
 
+      // ストローク描画（パスを閉じる前）
+      canvas.drawPath(path, strokePaint);
+
       // 塗りつぶし用: 下端まで閉じる
-      final fillPath = Path.from(path)
-        ..lineTo(size.width, size.height)
+      path
+        ..lineTo(width, size.height)
         ..lineTo(0, size.height)
         ..close();
-
-      canvas.drawPath(fillPath, paint);
-      canvas.drawPath(strokePath, strokePaint);
+      canvas.drawPath(path, fillPaint);
     }
   }
 

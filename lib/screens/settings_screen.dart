@@ -13,8 +13,10 @@ import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../providers/loading_animation_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/update_service.dart';
+import '../widgets/loading_animations/loading_animation.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -422,6 +424,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
 
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.animation),
+                  title: Text('ローディングアニメーション',
+                      style: textTheme.bodyLarge),
+                  subtitle: Text(
+                    _animationLabel(ref.watch(loadingAnimationProvider)),
+                    style: textTheme.bodySmall,
+                  ),
+                  onTap: () => _showAnimationPicker(context),
+                ),
+              ),
+
               const SizedBox(height: AppSpacing.xl),
 
               // ── データ管理 ──
@@ -540,6 +556,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           letterSpacing: 0.5,
         ),
       ),
+    );
+  }
+
+  static const _animationLabels = <LoadingAnimationType?, String>{
+    null: 'ランダム',
+    LoadingAnimationType.wave: '波形 (Wave)',
+    LoadingAnimationType.mystify: 'ライン (Mystify)',
+    LoadingAnimationType.starfield: '星空 (Starfield)',
+    LoadingAnimationType.particles: 'パーティクル (Particles)',
+  };
+
+  String _animationLabel(LoadingAnimationType? type) =>
+      _animationLabels[type] ?? 'ランダム';
+
+  void _showAnimationPicker(BuildContext context) {
+    final current = ref.read(loadingAnimationProvider);
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: Text('ローディングアニメーション',
+                    style: Theme.of(ctx).textTheme.titleSmall),
+              ),
+              ..._animationLabels.entries.map((entry) {
+                final isSelected = entry.key == current;
+                return ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: isSelected
+                        ? Theme.of(ctx).colorScheme.primary
+                        : null,
+                  ),
+                  title: Text(entry.value),
+                  onTap: () {
+                    ref
+                        .read(loadingAnimationProvider.notifier)
+                        .set(entry.key);
+                    Navigator.pop(ctx);
+                  },
+                );
+              }),
+              const SizedBox(height: AppSpacing.md),
+            ],
+          ),
+        );
+      },
     );
   }
 

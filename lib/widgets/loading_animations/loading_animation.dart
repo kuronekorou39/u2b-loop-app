@@ -16,7 +16,9 @@ abstract class LoadingAnimation extends CustomPainter {
 /// アニメーションの種類
 enum LoadingAnimationType {
   wave,
-  // 将来追加: mystify, starfield, pipes, ...
+  mystify,
+  starfield,
+  particles,
 }
 
 /// アニメーション種別から対応する [CustomPainter] を生成するファクトリ。

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../../core/theme/app_theme.dart';
 import 'loading_animation.dart';
+import 'mystify_animation.dart';
+import 'particles_animation.dart';
+import 'starfield_animation.dart';
 import 'wave_animation.dart';
 
 /// ローディングアニメーションの登録テーブル。
@@ -14,6 +17,24 @@ final Map<LoadingAnimationType, LoadingAnimationFactory> _registry = {
     required List<Color> colors,
   }) =>
       WaveAnimation(elapsed: elapsed, size: size, colors: colors),
+  LoadingAnimationType.mystify: ({
+    required double elapsed,
+    required Size size,
+    required List<Color> colors,
+  }) =>
+      MystifyAnimation(elapsed: elapsed, size: size, colors: colors),
+  LoadingAnimationType.starfield: ({
+    required double elapsed,
+    required Size size,
+    required List<Color> colors,
+  }) =>
+      StarfieldAnimation(elapsed: elapsed, size: size, colors: colors),
+  LoadingAnimationType.particles: ({
+    required double elapsed,
+    required Size size,
+    required List<Color> colors,
+  }) =>
+      ParticlesAnimation(elapsed: elapsed, size: size, colors: colors),
 };
 
 /// ローディング中に背景アニメーションを描画するウィジェット。
@@ -32,7 +53,7 @@ class LoadingAnimationView extends StatefulWidget {
 class _LoadingAnimationViewState extends State<LoadingAnimationView>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
-  double _elapsed = 0;
+  final _elapsed = ValueNotifier<double>(0);
   late final LoadingAnimationType _activeType;
 
   static const _colors = [
@@ -49,7 +70,7 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
         LoadingAnimationType
             .values[Random().nextInt(LoadingAnimationType.values.length)];
     _ticker = createTicker((duration) {
-      setState(() => _elapsed = duration.inMilliseconds / 1000.0);
+      _elapsed.value = duration.inMilliseconds / 1000.0;
     })
       ..start();
   }
@@ -57,6 +78,7 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
   @override
   void dispose() {
     _ticker.dispose();
+    _elapsed.dispose();
     super.dispose();
   }
 
@@ -67,14 +89,46 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final factory = _registry[_activeType]!;
         return CustomPaint(
-          painter: factory(
-            elapsed: _elapsed,
+          painter: _RepaintablePainter(
+            repaint: _elapsed,
+            factory: factory,
             size: size,
             colors: _colors,
+            elapsed: _elapsed,
           ),
           size: size,
         );
       },
     );
   }
+}
+
+/// [ValueNotifier] の変化で repaint するだけの軽量ラッパー。
+/// setState を使わずに描画を更新���る。
+class _RepaintablePainter extends CustomPainter {
+  _RepaintablePainter({
+    required Listenable repaint,
+    required this.factory,
+    required this.size,
+    required this.colors,
+    required this.elapsed,
+  }) : super(repaint: repaint);
+
+  final LoadingAnimationFactory factory;
+  final Size size;
+  final List<Color> colors;
+  final ValueNotifier<double> elapsed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final painter = factory(
+      elapsed: elapsed.value,
+      size: size,
+      colors: colors,
+    );
+    painter.paint(canvas, size);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RepaintablePainter oldDelegate) => false;
 }
