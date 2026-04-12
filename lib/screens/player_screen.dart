@@ -2712,7 +2712,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.remove),
-                  onPressed: () => onChanged(ms - 500),
+                  onPressed: () => onChanged(ms - 1000),
                 ),
                 Text(
                   TimeUtils.formatShort(Duration(milliseconds: ms)),
@@ -2721,7 +2721,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.add),
-                  onPressed: () => onChanged(ms + 500),
+                  onPressed: () => onChanged(ms + 1000),
                 ),
               ],
             );
@@ -2740,7 +2740,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 }),
                 const SizedBox(height: AppSpacing.md),
                 timeRow('B', bMs, AppTheme.pointBColor, (v) {
-                  if (v > aMs) {
+                  if (v > aMs && (totalMs <= 0 || v <= totalMs)) {
                     loopNotifier.setPointB(Duration(milliseconds: v));
                     setDialogState(() => bMs = v);
                   }

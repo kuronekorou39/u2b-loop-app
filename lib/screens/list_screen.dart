@@ -24,7 +24,7 @@ import 'settings_screen.dart';
 /// 表示モード: リスト / 2列 / 4列
 enum _ViewMode { list, grid2, grid4 }
 
-enum _SortMode { updatedDesc, updatedAsc, titleAsc, titleDesc, createdDesc }
+enum _SortMode { updatedDesc, updatedAsc, titleAsc, titleDesc, createdDesc, playCountDesc }
 
 class ListScreen extends ConsumerStatefulWidget {
   const ListScreen({super.key});
@@ -993,6 +993,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
         items.sort((a, b) => b.title.compareTo(a.title));
       case _SortMode.createdDesc:
         items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      case _SortMode.playCountDesc:
+        items.sort((a, b) => b.playCount.compareTo(a.playCount));
     }
 
     return PopScope(
@@ -1083,6 +1085,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                     _SortMode.titleAsc, 'タイトル（A→Z）'),
                                 _sortMenuItem(
                                     _SortMode.titleDesc, 'タイトル（Z→A）'),
+                                _sortMenuItem(
+                                    _SortMode.playCountDesc, '再生回数（多→少）'),
                               ],
                             ),
                           ],
