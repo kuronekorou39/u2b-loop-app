@@ -594,15 +594,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context: context,
       builder: (ctx) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.xl),
-                child: Text('ローディングアニメーション',
-                    style: Theme.of(ctx).textTheme.titleSmall),
-              ),
-              ..._animationLabels.entries.map((entry) {
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Text('ローディングアニメーション',
+                      style: Theme.of(ctx).textTheme.titleSmall),
+                ),
+                ..._animationLabels.entries.map((entry) {
                 final isSelected = entry.key == current;
                 return ListTile(
                   leading: Icon(
@@ -622,8 +623,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   },
                 );
               }),
-              const SizedBox(height: AppSpacing.md),
-            ],
+                const SizedBox(height: AppSpacing.md),
+              ],
+            ),
           ),
         );
       },
