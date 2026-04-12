@@ -36,3 +36,19 @@ class LoadingAnimationNotifier extends StateNotifier<LoadingAnimationType?> {
     }
   }
 }
+
+/// パフォーマンスオーバーレイ設定
+final perfOverlayProvider =
+    StateNotifierProvider<PerfOverlayNotifier, bool>(
+        (ref) => PerfOverlayNotifier());
+
+class PerfOverlayNotifier extends StateNotifier<bool> {
+  PerfOverlayNotifier() : super(false) {
+    state = Hive.box('settings').get('perf_overlay', defaultValue: false) as bool;
+  }
+
+  void toggle() {
+    state = !state;
+    Hive.box('settings').put('perf_overlay', state);
+  }
+}

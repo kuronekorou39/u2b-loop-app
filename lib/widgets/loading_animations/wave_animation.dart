@@ -16,10 +16,10 @@ class WaveAnimation extends LoadingAnimation {
   static const _waveCount = 4;
   // 各波のパラメータ: [周波数倍率, 振幅倍率, 速度倍率, 位相オフセット]
   static const _waveParams = [
-    [1.0, 1.0, 1.0, 0.0],
-    [1.8, 0.6, 1.3, 0.8],
-    [2.5, 0.35, 0.7, 1.6],
-    [3.2, 0.2, 1.6, 2.4],
+    [1.0, 1.0, 0.5, 0.0],
+    [1.8, 0.6, 0.65, 0.8],
+    [2.5, 0.35, 0.35, 1.6],
+    [3.2, 0.2, 0.8, 2.4],
   ];
 
   @override
@@ -35,17 +35,17 @@ class WaveAnimation extends LoadingAnimation {
       final amp = params[1] * maxAmplitude;
       final speed = params[2];
       final phase = params[3];
-      final modulation = 0.7 + 0.3 * sin(elapsed * 0.4 + w);
+      final modulation = 0.7 + 0.3 * sin(elapsed * 0.2 + w);
 
       final color = colors[w % colors.length];
       final fillPaint = Paint()
-        ..color = color.withValues(alpha: 0.15 + 0.2 * (1 - w / _waveCount))
+        ..color = color.withValues(alpha: 0.08 + 0.1 * (1 - w / _waveCount))
         ..style = PaintingStyle.fill;
 
       final strokePaint = Paint()
-        ..color = color.withValues(alpha: 0.5 + 0.3 * (1 - w / _waveCount))
+        ..color = color.withValues(alpha: 0.25 + 0.15 * (1 - w / _waveCount))
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5;
+        ..strokeWidth = 1.2;
 
       final path = Path();
       final freqFactor = pi * 2 * freq;

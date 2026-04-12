@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
+import 'providers/loading_animation_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/list_screen.dart';
 import 'services/share_service.dart';
@@ -20,11 +21,13 @@ class App extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = ref.watch(themeProvider);
+    final showPerfOverlay = ref.watch(perfOverlayProvider);
     return MaterialApp(
       navigatorKey: appNavigatorKey,
       title: 'U2B Loop',
       theme: isDark ? AppTheme.dark : AppTheme.light,
       home: const _Home(),
+      showPerformanceOverlay: showPerfOverlay,
       debugShowCheckedModeBanner: false,
       locale: const Locale('ja', 'JP'),
       supportedLocales: const [Locale('ja', 'JP')],

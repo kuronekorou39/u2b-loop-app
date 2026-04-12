@@ -24,15 +24,15 @@ class MystifyAnimation extends LoadingAnimation {
       final color = colors[s % colors.length];
 
       for (var t = 0; t < _trailCount; t++) {
-        final age = t * 0.08;
+        final age = t * 0.12;
         final time = elapsed - age;
         if (time < 0) continue;
 
         final alpha = (1.0 - t * _trailFadeStep).clamp(0.05, 1.0);
         final paint = Paint()
-          ..color = color.withValues(alpha: alpha * 0.7)
+          ..color = color.withValues(alpha: alpha * 0.35)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = (1.5 - t * 0.15).clamp(0.5, 1.5);
+          ..strokeWidth = (1.2 - t * 0.12).clamp(0.4, 1.2);
 
         final path = Path();
         for (var v = 0; v <= _vertexCount; v++) {
@@ -51,14 +51,12 @@ class MystifyAnimation extends LoadingAnimation {
   }
 
   Offset _vertexPosition(int shape, int vertex, double time, Size size) {
-    // 各頂点に固有の速度・位相を持たせてバウンド運動を模擬
     final seed = shape * 100 + vertex * 17;
-    final sx = 0.3 + (seed % 7) * 0.08;
-    final sy = 0.25 + (seed % 5) * 0.09;
+    final sx = (0.3 + (seed % 7) * 0.08) * 0.5;
+    final sy = (0.25 + (seed % 5) * 0.09) * 0.5;
     final px = seed * 1.3;
     final py = seed * 0.7;
 
-    // sin で 0..1 を作り、画面端で折り返す動き
     final nx = (sin(time * sx + px) * 0.5 + 0.5);
     final ny = (sin(time * sy + py) * 0.5 + 0.5);
 

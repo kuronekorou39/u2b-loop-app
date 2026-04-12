@@ -52,7 +52,7 @@ class LoadingAnimationView extends StatefulWidget {
 
 class _LoadingAnimationViewState extends State<LoadingAnimationView>
     with SingleTickerProviderStateMixin {
-  late final Ticker _ticker;
+  Ticker? _ticker;
   final _elapsed = ValueNotifier<double>(0);
   late final LoadingAnimationType _activeType;
 
@@ -66,9 +66,12 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
   @override
   void initState() {
     super.initState();
+    final candidates = LoadingAnimationType.values
+        .where((e) => e != LoadingAnimationType.off)
+        .toList();
     _activeType = widget.type ??
-        LoadingAnimationType
-            .values[Random().nextInt(LoadingAnimationType.values.length)];
+        candidates[Random().nextInt(candidates.length)];
+    if (_activeType == LoadingAnimationType.off) return;
     _ticker = createTicker((duration) {
       _elapsed.value = duration.inMilliseconds / 1000.0;
     })
@@ -77,13 +80,16 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
 
   @override
   void dispose() {
-    _ticker.dispose();
+    _ticker?.dispose();
     _elapsed.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_activeType == LoadingAnimationType.off) {
+      return const SizedBox.shrink();
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);

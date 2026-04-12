@@ -19,6 +19,7 @@ enum LoadingAnimationType {
   mystify,
   starfield,
   particles,
+  off,
 }
 
 /// アニメーション種別から対応する [CustomPainter] を生成するファクトリ。

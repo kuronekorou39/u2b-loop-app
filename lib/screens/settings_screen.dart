@@ -495,6 +495,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
               const SizedBox(height: AppSpacing.xl),
 
+              // ── デバッグ ──
+              _sectionHeader('デバッグ'),
+              Card(
+                child: SwitchListTile(
+                  secondary: const Icon(Icons.speed),
+                  title: Text('パフォーマンスオーバーレイ',
+                      style: textTheme.bodyLarge),
+                  subtitle: Text('FPS・描画負荷を表示',
+                      style: textTheme.bodySmall),
+                  value: ref.watch(perfOverlayProvider),
+                  onChanged: (_) =>
+                      ref.read(perfOverlayProvider.notifier).toggle(),
+                ),
+              ),
+
+              const SizedBox(height: AppSpacing.xl),
+
               // ── アプリ情報 ──
               _sectionHeader('アプリ情報'),
               Card(
@@ -565,6 +582,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     LoadingAnimationType.mystify: 'ライン (Mystify)',
     LoadingAnimationType.starfield: '星空 (Starfield)',
     LoadingAnimationType.particles: 'パーティクル (Particles)',
+    LoadingAnimationType.off: 'オフ',
   };
 
   String _animationLabel(LoadingAnimationType? type) =>
