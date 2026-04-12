@@ -854,11 +854,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
+  /// 重い await の後に1フレーム描画の隙間を作る
+  Future<void> _yieldFrame() =>
+      Future.delayed(const Duration(milliseconds: 2));
+
   Future<void> _loadYouTube(LoopItem item) async {
     await _setProgress(0.15, 'ストリーム情報を解析中...');
     final ytService = ref.read(youtubeServiceProvider);
     final manifest =
         await ytService.getManifestWithFallback(item.videoId!);
+    await _yieldFrame();
 
     if (!mounted) return;
     await _setProgress(0.35, '最適な品質を選択中...');
@@ -890,6 +895,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await player
         .open(Media(source.uri), play: false)
         .timeout(const Duration(seconds: 30));
+    await _yieldFrame();
     ref.read(videoSourceProvider.notifier).state = source;
 
     await _finishLoading(item, source);
@@ -907,6 +913,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _setProgress(0.65, 'プレーヤーを準備中...');
     final player = ref.read(playerProvider);
     await player.open(Media(item.uri), play: false);
+    await _yieldFrame();
     ref.read(videoSourceProvider.notifier).state = source;
 
     await _finishLoading(item, source);
@@ -928,6 +935,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await player.pause();
       await player.seek(Duration.zero);
       await player.setVolume(prevVolume);
+      await _yieldFrame();
     }
 
     // Setup speed
