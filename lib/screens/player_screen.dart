@@ -2695,13 +2695,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// プレイリストモード: AB区間の微調整 + 区間登録ダイアログ
   void _showAbEditDialog() {
     final loopNotifier = ref.read(loopProvider.notifier);
+    final totalMs = ref.read(playerProvider).state.duration.inMilliseconds;
+    var aMs = ref.read(loopProvider).pointA?.inMilliseconds ?? 0;
+    var bMs = ref.read(loopProvider).pointB?.inMilliseconds ??
+        (totalMs > 0 ? totalMs : 0);
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final loop = ref.watch(loopProvider);
-          final aMs = loop.pointA?.inMilliseconds ?? 0;
-          final bMs = loop.pointB?.inMilliseconds ?? 0;
           final textTheme = Theme.of(ctx).textTheme;
 
           Widget timeRow(String label, int ms, Color color, ValueChanged<int> onChanged) {
@@ -2734,12 +2735,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 timeRow('A', aMs, AppTheme.pointAColor, (v) {
                   if (v >= 0 && v < bMs) {
                     loopNotifier.setPointA(Duration(milliseconds: v));
+                    setDialogState(() => aMs = v);
                   }
                 }),
                 const SizedBox(height: AppSpacing.md),
                 timeRow('B', bMs, AppTheme.pointBColor, (v) {
                   if (v > aMs) {
                     loopNotifier.setPointB(Duration(milliseconds: v));
+                    setDialogState(() => bMs = v);
                   }
                 }),
               ],
