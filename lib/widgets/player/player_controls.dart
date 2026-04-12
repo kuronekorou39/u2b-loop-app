@@ -9,19 +9,17 @@ class PlayerControls extends ConsumerWidget {
   const PlayerControls({super.key});
 
   static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-  static const _seekSteps = [5, 10, 30, 60];
+  static const _seekSteps = [5, 10, 30];
 
   static const _rewindIcons = <int, IconData>{
     5: Icons.replay_5,
     10: Icons.replay_10,
     30: Icons.replay_30,
-    60: Icons.replay_30,
   };
   static const _forwardIcons = <int, IconData>{
     5: Icons.forward_5,
     10: Icons.forward_10,
     30: Icons.forward_30,
-    60: Icons.forward_30,
   };
 
   void _showStepMenu(
