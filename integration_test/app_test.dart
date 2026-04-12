@@ -11,7 +11,11 @@ import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/loop_region.dart';
 import 'package:u2b_loop_app/models/playlist.dart' as app;
 import 'package:u2b_loop_app/models/tag.dart';
+import 'package:u2b_loop_app/core/utils/url_utils.dart';
+import 'package:u2b_loop_app/core/utils/time_utils.dart';
+import 'package:u2b_loop_app/core/utils/verse_detector.dart';
 import 'package:u2b_loop_app/providers/data_provider.dart';
+import 'package:u2b_loop_app/services/share_service.dart';
 
 Future<void> settle(WidgetTester tester, {int frames = 10}) async {
   for (var i = 0; i < frames; i++) {
@@ -1003,6 +1007,272 @@ void main() {
       // 削除
       final key = itemBox.keyAt(itemBox.values.toList().indexOf(dup));
       await itemBox.delete(key);
+    });
+  });
+
+  // ================================================================
+  // Q. UrlUtils テスト
+  // ================================================================
+  group('Q. UrlUtils', () {
+    testWidgets('Q1. YouTube URL各形式からvideoId抽出', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      expect(UrlUtils.extractVideoId('https://www.youtube.com/watch?v=h7ha6JMgQwk'), 'h7ha6JMgQwk');
+      expect(UrlUtils.extractVideoId('https://youtu.be/h7ha6JMgQwk'), 'h7ha6JMgQwk');
+      expect(UrlUtils.extractVideoId('https://www.youtube.com/embed/h7ha6JMgQwk'), 'h7ha6JMgQwk');
+      expect(UrlUtils.extractVideoId('https://www.youtube.com/shorts/h7ha6JMgQwk'), 'h7ha6JMgQwk');
+      expect(UrlUtils.extractVideoId('https://www.youtube.com/live/h7ha6JMgQwk'), 'h7ha6JMgQwk');
+      expect(UrlUtils.extractVideoId('invalid-url'), isNull);
+      expect(UrlUtils.extractVideoId(''), isNull);
+    });
+
+    testWidgets('Q2. プレイリストID抽出', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      expect(UrlUtils.extractPlaylistId(
+          'https://www.youtube.com/watch?v=abc&list=PLxxxxxx'), 'PLxxxxxx');
+      expect(UrlUtils.extractPlaylistId(
+          'https://www.youtube.com/playlist?list=PLyyyyyyy'), 'PLyyyyyyy');
+      expect(UrlUtils.extractPlaylistId('https://www.youtube.com/watch?v=abc'), isNull);
+    });
+
+    testWidgets('Q3. 動画+プレイリストの複合URL', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      const url = 'https://www.youtube.com/watch?v=h7ha6JMgQwk&list=PLtest123';
+      expect(UrlUtils.extractVideoId(url), 'h7ha6JMgQwk');
+      expect(UrlUtils.extractPlaylistId(url), 'PLtest123');
+    });
+  });
+
+  // ================================================================
+  // R. TimeUtils テスト
+  // ================================================================
+  group('R. TimeUtils', () {
+    testWidgets('R1. Duration → フォーマット（M:SS.mmm）', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      expect(TimeUtils.format(const Duration(minutes: 1, seconds: 30, milliseconds: 500)), '1:30.500');
+      expect(TimeUtils.format(const Duration(seconds: 5)), '0:05.000');
+      expect(TimeUtils.format(Duration.zero), '0:00.000');
+      expect(TimeUtils.format(const Duration(minutes: 10, seconds: 0)), '10:00.000');
+    });
+
+    testWidgets('R2. Duration → 短縮フォーマット（M:SS）', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      expect(TimeUtils.formatShort(const Duration(minutes: 1, seconds: 30)), '1:30');
+      expect(TimeUtils.formatShort(const Duration(seconds: 5)), '0:05');
+      expect(TimeUtils.formatShort(Duration.zero), '0:00');
+    });
+
+    testWidgets('R3. フォーマット → Duration パース', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      expect(TimeUtils.parse('1:30.500'), const Duration(minutes: 1, seconds: 30, milliseconds: 500));
+      expect(TimeUtils.parse('0:05'), const Duration(seconds: 5));
+      expect(TimeUtils.parse('10:00.000'), const Duration(minutes: 10));
+      expect(TimeUtils.parse('invalid'), isNull);
+    });
+
+    testWidgets('R4. null対応フォーマット', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      expect(TimeUtils.formatNullable(null), '--:--.---');
+      expect(TimeUtils.formatShortNullable(null), '--:--');
+      expect(TimeUtils.formatNullable(const Duration(seconds: 5)), '0:05.000');
+    });
+  });
+
+  // ================================================================
+  // S. VerseDetector テスト
+  // ================================================================
+  group('S. VerseDetector', () {
+    testWidgets('S1. 50秒未満の曲 → null（全曲再生）', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      expect(VerseDetector.findCutPoint(durationMs: 30000), isNull);
+    });
+
+    testWidgets('S2. 検索範囲内の曲 → null', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      expect(VerseDetector.findCutPoint(durationMs: 80000), isNull);
+    });
+
+    testWidgets('S3. 波形なしでフォールバック', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      expect(VerseDetector.findCutPoint(durationMs: 300000), 100000);
+    });
+
+    testWidgets('S4. 波形ありで最小振幅地点を検出', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      // 4000サンプル、300秒の曲
+      final waveform = List.generate(4000, (i) {
+        // 60秒付近（サンプル800）で音量最小
+        final dist = (i - 800).abs();
+        return dist < 50 ? 0.01 : 0.5;
+      });
+
+      final cut = VerseDetector.findCutPoint(
+        waveform: waveform,
+        durationMs: 300000,
+      );
+      expect(cut, isNotNull);
+      // 60秒付近（50000〜70000ms）に切断点がある
+      expect(cut!, greaterThanOrEqualTo(50000));
+      expect(cut, lessThanOrEqualTo(70000));
+    });
+  });
+
+  // ================================================================
+  // T. LoopRegion シリアライズ
+  // ================================================================
+  group('T. LoopRegion', () {
+    testWidgets('T1. toMap / fromMap ラウンドトリップ', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final region = LoopRegion(
+        id: 'test_r1', name: 'テスト', pointAMs: 10000, pointBMs: 30000);
+      final map = region.toMap();
+      final restored = LoopRegion.fromMap(map);
+
+      expect(restored.id, region.id);
+      expect(restored.name, region.name);
+      expect(restored.pointAMs, region.pointAMs);
+      expect(restored.pointBMs, region.pointBMs);
+    });
+
+    testWidgets('T2. copyWith', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final region = LoopRegion(
+        id: 'r1', name: '元', pointAMs: 1000, pointBMs: 5000);
+      final copied = region.copyWith(name: '変更後');
+
+      expect(copied.name, '変更後');
+      expect(copied.id, region.id);
+      expect(copied.pointAMs, region.pointAMs);
+    });
+
+    testWidgets('T3. hasA / hasB / hasPoints', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final full = LoopRegion(id: 'r', name: 'n', pointAMs: 0, pointBMs: 100);
+      expect(full.hasA, true);
+      expect(full.hasB, true);
+      expect(full.hasPoints, true);
+
+      final empty = LoopRegion(id: 'r', name: 'n');
+      expect(empty.hasA, false);
+      expect(empty.hasB, false);
+      expect(empty.hasPoints, false);
+
+      final aOnly = LoopRegion(id: 'r', name: 'n', pointAMs: 0);
+      expect(aOnly.hasA, true);
+      expect(aOnly.hasB, false);
+      expect(aOnly.hasPoints, true);
+    });
+  });
+
+  // ================================================================
+  // U. ShareService テスト
+  // ================================================================
+  group('U. ShareService', () {
+    testWidgets('U1. encode → decode ラウンドトリップ', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'test_share', title: 'テスト曲', uri: '', sourceType: 'youtube',
+        videoId: 'abc123',
+      );
+      item.regions.add(LoopRegion(
+        id: 'r0', name: 'サビ', pointAMs: 60000, pointBMs: 90000));
+
+      final url = ShareService.encode(
+        playlistName: 'テストPL',
+        items: [item],
+        tagIdToName: {},
+      );
+
+      expect(url, startsWith('u2bloop://share/'));
+
+      final decoded = ShareService.decode(url);
+      expect(decoded, isNotNull);
+      expect(decoded!.name, 'テストPL');
+      expect(decoded.items.length, 1);
+      expect(decoded.items.first.videoId, 'abc123');
+      expect(decoded.items.first.title, 'テスト曲');
+      expect(decoded.items.first.regions.length, 1);
+      expect(decoded.items.first.regions.first.name, 'サビ');
+    });
+
+    testWidgets('U2. 無効なURLのdecode → null', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      expect(ShareService.decode('https://example.com'), isNull);
+      expect(ShareService.decode('u2bloop://share/invalid!!!'), isNull);
+      expect(ShareService.decode(''), isNull);
+    });
+
+    testWidgets('U3. QRコードサイズ判定', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 't', title: 'test', uri: '', sourceType: 'youtube', videoId: 'x');
+      final canFit = ShareService.canFitInQr(
+        playlistName: 'short',
+        items: [item],
+        tagIdToName: {},
+      );
+      expect(canFit, true);
+    });
+  });
+
+  // ================================================================
+  // V. Provider操作テスト
+  // ================================================================
+  group('V. Provider操作', () {
+    testWidgets('V1. loopItemsProvider.add / delete', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final notifier = container.read(loopItemsProvider.notifier);
+      final before = itemBox.length;
+
+      final item = LoopItem(
+        id: 'test_provider_add', title: 'Provider追加テスト',
+        uri: '', sourceType: 'youtube',
+      );
+      await notifier.add(item);
+      expect(itemBox.length, before + 1);
+
+      await notifier.delete('test_provider_add');
+      expect(itemBox.length, before);
+
+      container.dispose();
+    });
+
+    testWidgets('V2. loopItemsProvider.update', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final origTitle = s1.title;
+
+      s1.title = 'Provider更新テスト';
+      await container.read(loopItemsProvider.notifier).update(s1);
+
+      final updated = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      expect(updated.title, 'Provider更新テスト');
+
+      // 復元
+      s1.title = origTitle;
+      await container.read(loopItemsProvider.notifier).update(s1);
+      container.dispose();
     });
   });
 
