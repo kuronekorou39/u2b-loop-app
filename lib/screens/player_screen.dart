@@ -64,8 +64,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   static const _pipChannel = MethodChannel('com.u2bloop/pip');
 
   bool _loading = true;
-  String _loadingStatus = '準備中...';
-  double _loadingProgress = 0;
+  final _loadingStatus = ValueNotifier<String>('準備中...');
+  final _loadingProgress = ValueNotifier<double>(0);
   DateTime _lastStepTime = DateTime.now();
   String? _loadError;
   String? _cachedAudioPath;
@@ -199,6 +199,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   void dispose() {
+    _loadingProgress.dispose();
+    _loadingStatus.dispose();
     _cancelFade();
     _preloadCheckTimer?.cancel();
     // 自動PiPを無効化
@@ -802,18 +804,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     if (!mounted) return;
     _lastStepTime = DateTime.now();
-    setState(() {
-      _loadingProgress = progress;
-      _loadingStatus = status;
-    });
+    _loadingProgress.value = progress;
+    _loadingStatus.value = status;
   }
 
   Future<void> _loadItem() async {
+    _loadingProgress.value = 0;
+    _loadingStatus.value = '準備中...';
     setState(() {
       _loading = true;
       _loadError = null;
-      _loadingProgress = 0;
-      _loadingStatus = '準備中...';
       _lastStepTime = DateTime.now();
       _activeRegionIdx = -1;
     });
@@ -2014,15 +2014,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Widget _buildLoadingView() {
     final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
     return Stack(
       children: [
         // 背景アニメーション
         Positioned.fill(
           child: LoadingAnimationView(
-            type: ref.watch(loadingAnimationProvider),
+            type: ref.read(loadingAnimationProvider),
           ),
         ),
-        // 前景: タイトル＋プログレス
+        // 前景: タイトル＋プログレス（ValueListenableBuilderで局所更新）
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Center(
@@ -2033,44 +2034,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   _currentItem.title,
                   style: textTheme.titleSmall!.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.7),
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: AppSpacing.xxl),
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: _loadingProgress),
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeInOut,
-                  builder: (context, value, _) {
-                    return Column(
-                      children: [
-                        ClipRRect(
+                ValueListenableBuilder<double>(
+                  valueListenable: _loadingProgress,
+                  builder: (context, progress, _) {
+                    return TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: progress),
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeInOut,
+                      builder: (context, value, _) {
+                        return ClipRRect(
                           borderRadius: AppRadius.borderXs,
                           child: LinearProgressIndicator(
                             value: value,
                             minHeight: 6,
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
+                            backgroundColor:
+                                colorScheme.surfaceContainerHighest,
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        Text(
-                          _loadingStatus,
-                          style: textTheme.bodyMedium!.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ],
+                        );
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                ValueListenableBuilder<String>(
+                  valueListenable: _loadingStatus,
+                  builder: (context, status, _) {
+                    return Text(
+                      status,
+                      style: textTheme.bodyMedium!.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
                     );
                   },
                 ),
