@@ -31,6 +31,7 @@ import '../widgets/item_tag_sheet.dart';
 import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
+import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/player/video_player_widget.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
@@ -2012,60 +2013,69 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Widget _buildLoadingView() {
     final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _currentItem.title,
-              style: textTheme.titleSmall!.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: AppSpacing.xxl),
-            TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: _loadingProgress),
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOut,
-              builder: (context, value, _) {
-                return Column(
-                  children: [
-                    ClipRRect(
-                      borderRadius: AppRadius.borderXs,
-                      child: LinearProgressIndicator(
-                        value: value,
-                        minHeight: 6,
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      _loadingStatus,
-                      style: textTheme.bodyMedium!.copyWith(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
+    return Stack(
+      children: [
+        // 背景アニメーション
+        const Positioned.fill(
+          child: LoadingAnimationView(),
         ),
-      ),
+        // 前景: タイトル＋プログレス
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _currentItem.title,
+                  style: textTheme.titleSmall!.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.7),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: AppSpacing.xxl),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: _loadingProgress),
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut,
+                  builder: (context, value, _) {
+                    return Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: AppRadius.borderXs,
+                          child: LinearProgressIndicator(
+                            value: value,
+                            minHeight: 6,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        Text(
+                          _loadingStatus,
+                          style: textTheme.bodyMedium!.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
