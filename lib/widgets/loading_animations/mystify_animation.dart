@@ -7,7 +7,6 @@ import 'loading_animation.dart';
 class MystifyAnimation extends LoadingAnimation {
   MystifyAnimation({
     required super.elapsed,
-    required super.size,
     required this.colors,
   });
 

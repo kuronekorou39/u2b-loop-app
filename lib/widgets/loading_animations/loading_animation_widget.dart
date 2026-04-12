@@ -13,28 +13,24 @@ import 'wave_animation.dart';
 final Map<LoadingAnimationType, LoadingAnimationFactory> _registry = {
   LoadingAnimationType.wave: ({
     required double elapsed,
-    required Size size,
     required List<Color> colors,
   }) =>
-      WaveAnimation(elapsed: elapsed, size: size, colors: colors),
+      WaveAnimation(elapsed: elapsed, colors: colors),
   LoadingAnimationType.mystify: ({
     required double elapsed,
-    required Size size,
     required List<Color> colors,
   }) =>
-      MystifyAnimation(elapsed: elapsed, size: size, colors: colors),
+      MystifyAnimation(elapsed: elapsed, colors: colors),
   LoadingAnimationType.starfield: ({
     required double elapsed,
-    required Size size,
     required List<Color> colors,
   }) =>
-      StarfieldAnimation(elapsed: elapsed, size: size, colors: colors),
+      StarfieldAnimation(elapsed: elapsed, colors: colors),
   LoadingAnimationType.particles: ({
     required double elapsed,
-    required Size size,
     required List<Color> colors,
   }) =>
-      ParticlesAnimation(elapsed: elapsed, size: size, colors: colors),
+      ParticlesAnimation(elapsed: elapsed, colors: colors),
 };
 
 /// ローディング中に背景アニメーションを描画するウィジェット。
@@ -98,7 +94,6 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
           painter: _RepaintablePainter(
             repaint: _elapsed,
             factory: factory,
-            size: size,
             colors: _colors,
             elapsed: _elapsed,
           ),
@@ -110,18 +105,16 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
 }
 
 /// [ValueNotifier] の変化で repaint するだけの軽量ラッパー。
-/// setState を使わずに描画を更新���る。
+/// setState を使わずに描画を更新する。
 class _RepaintablePainter extends CustomPainter {
   _RepaintablePainter({
     required Listenable repaint,
     required this.factory,
-    required this.size,
     required this.colors,
     required this.elapsed,
   }) : super(repaint: repaint);
 
   final LoadingAnimationFactory factory;
-  final Size size;
   final List<Color> colors;
   final ValueNotifier<double> elapsed;
 
@@ -129,7 +122,6 @@ class _RepaintablePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final painter = factory(
       elapsed: elapsed.value,
-      size: size,
       colors: colors,
     );
     painter.paint(canvas, size);

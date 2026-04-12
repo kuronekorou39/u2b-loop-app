@@ -4,13 +4,10 @@ import 'package:flutter/material.dart';
 /// 新しいアニメーションを追加するには、このクラスを継承して
 /// [paint] と [shouldRepaint] を実装する。
 abstract class LoadingAnimation extends CustomPainter {
-  LoadingAnimation({required this.elapsed, required this.size});
+  LoadingAnimation({required this.elapsed});
 
   /// アニメーション開始からの経過時間
   final double elapsed;
-
-  /// 描画領域のサイズ
-  final Size size;
 }
 
 /// アニメーションの種類
@@ -26,6 +23,5 @@ enum LoadingAnimationType {
 /// [colors] でアプリテーマの色を渡す。
 typedef LoadingAnimationFactory = LoadingAnimation Function({
   required double elapsed,
-  required Size size,
   required List<Color> colors,
 });

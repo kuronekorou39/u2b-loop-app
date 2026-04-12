@@ -6,7 +6,6 @@ import 'loading_animation.dart';
 class ParticlesAnimation extends LoadingAnimation {
   ParticlesAnimation({
     required super.elapsed,
-    required super.size,
     required this.colors,
   });
 

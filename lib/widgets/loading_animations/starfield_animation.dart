@@ -6,7 +6,6 @@ import 'loading_animation.dart';
 class StarfieldAnimation extends LoadingAnimation {
   StarfieldAnimation({
     required super.elapsed,
-    required super.size,
     required this.colors,
   });
 

@@ -7,7 +7,6 @@ import 'loading_animation.dart';
 class WaveAnimation extends LoadingAnimation {
   WaveAnimation({
     required super.elapsed,
-    required super.size,
     required this.colors,
   });
 
