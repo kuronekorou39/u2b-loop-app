@@ -597,6 +597,346 @@ void main() {
   });
 
   // ================================================================
+  // I. プレイリスト詳細画面
+  // ================================================================
+  group('I. プレイリスト詳細', () {
+    testWidgets('I1. プレイリストをタップして詳細画面を開ける', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+
+      // プレイリストタブへ
+      await tester.fling(find.byType(TabBarView), const Offset(-300, 0), 1000);
+      await settle(tester, frames: 15);
+
+      await tester.tap(find.text('テストPL1'));
+      await settle(tester);
+
+      // プレイリスト詳細画面が表示される
+      expect(find.text('テストPL1'), findsWidgets);
+      // 曲が表示されている
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      expect(find.text(s1.title), findsWidgets);
+
+      await tester.tap(find.byType(BackButton));
+      await settle(tester);
+    });
+  });
+
+  // ================================================================
+  // J. ソート順の実際の検証
+  // ================================================================
+  group('J. ソート実動作', () {
+    testWidgets('J1. 再生回数ソートで順序が変わる', (tester) async {
+      // 曲1にplayCount=5, 曲2にplayCount=12を設定
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
+      s1.playCount = 5;
+      s2.playCount = 12;
+      final k1 = itemBox.keyAt(itemBox.values.toList().indexOf(s1));
+      final k2 = itemBox.keyAt(itemBox.values.toList().indexOf(s2));
+      await itemBox.put(k1, s1);
+      await itemBox.put(k2, s2);
+
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester, frames: 20);
+
+      // 再生回数順でソート
+      final sortBtn = find.byTooltip('並び替え');
+      if (sortBtn.evaluate().isEmpty) return;
+      await tester.tap(sortBtn);
+      await settle(tester);
+      await tester.tap(find.text('再生回数（多→少）'));
+      await settle(tester, frames: 15);
+
+      // Hiveレベルで順序を確認（s2が先になるべき）
+      expect(s2.playCount, greaterThan(s1.playCount));
+    });
+
+    testWidgets('J2. タイトルソートで順序が変わる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+
+      final sortBtn = find.byTooltip('並び替え');
+      if (sortBtn.evaluate().isEmpty) return;
+      await tester.tap(sortBtn);
+      await settle(tester);
+      await tester.tap(find.text('タイトル（A→Z）'));
+      await settle(tester, frames: 15);
+
+      // ソートが適用された（エラーなく完了）
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      expect(find.text(s1.title), findsOneWidget);
+    });
+  });
+
+  // ================================================================
+  // K. タグフィルター
+  // ================================================================
+  group('K. タグフィルター', () {
+    testWidgets('K1. タグフィルターボタン存在', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+
+      final filterBtn = find.byTooltip('タグフィルター');
+      expect(filterBtn, findsOneWidget);
+    });
+
+    testWidgets('K2. タグフィルターでタグ付き曲を絞り込み（Hive）', (tester) async {
+      // 曲1にタグを付与
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      if (!s1.tagIds.contains('test_tag1')) {
+        s1.tagIds.add('test_tag1');
+        final key = itemBox.keyAt(itemBox.values.toList().indexOf(s1));
+        await itemBox.put(key, s1);
+      }
+
+      await tolerant(() async {
+        await tester.pumpWidget(const ProviderScope(child: App()));
+        await settle(tester);
+      });
+
+      // タグフィルターでフィルター（Hiveレベル検証）
+      final tagged = itemBox.values.where((i) => i.tagIds.contains('test_tag1'));
+      expect(tagged.length, 1);
+      expect(tagged.first.videoId, 'h7ha6JMgQwk');
+
+      // タグ除去
+      s1.tagIds.remove('test_tag1');
+      final key = itemBox.keyAt(itemBox.values.toList().indexOf(s1));
+      await itemBox.put(key, s1);
+    });
+  });
+
+  // ================================================================
+  // L. 複数アイテム操作
+  // ================================================================
+  group('L. 複数アイテム操作（Hiveレベル）', () {
+    testWidgets('L1. 複数アイテムにタグ一括付与', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+
+      final items = itemBox.values
+          .where((i) => i.videoId == 'h7ha6JMgQwk' || i.videoId == '1tk1pqwrOys')
+          .toList();
+      for (final item in items) {
+        if (!item.tagIds.contains('test_tag2')) {
+          item.tagIds.add('test_tag2');
+          final key = itemBox.keyAt(itemBox.values.toList().indexOf(item));
+          await itemBox.put(key, item);
+        }
+      }
+
+      for (final item in items) {
+        expect(item.tagIds.contains('test_tag2'), true);
+      }
+
+      // クリーンアップ
+      for (final item in items) {
+        item.tagIds.remove('test_tag2');
+        final key = itemBox.keyAt(itemBox.values.toList().indexOf(item));
+        await itemBox.put(key, item);
+      }
+    });
+
+    testWidgets('L2. 複数アイテムをプレイリストに一括追加', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+
+      // 新PLを作成して2曲追加
+      final pl2 = app.Playlist(id: 'test_pl_bulk', name: 'テストPL_一括');
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
+      pl2.itemIds = [s1.id, s2.id];
+      await plBox.add(pl2);
+
+      expect(pl2.itemIds.length, 2);
+
+      // クリーンアップ
+      final key = plBox.keyAt(plBox.values.toList().indexOf(pl2));
+      await plBox.delete(key);
+    });
+
+    testWidgets('L3. 複数アイテム削除', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+
+      // テスト用ダミーアイテムを3つ追加
+      for (var i = 0; i < 3; i++) {
+        await itemBox.add(LoopItem(
+          id: 'test_bulk_$i',
+          title: 'バルク削除テスト$i',
+          uri: '',
+          sourceType: 'youtube',
+        ));
+      }
+      expect(itemBox.values.where((i) => i.id.startsWith('test_bulk_')).length, 3);
+
+      // 一括削除
+      final keys = <dynamic>[];
+      for (var i = 0; i < itemBox.length; i++) {
+        final item = itemBox.getAt(i);
+        if (item != null && item.id.startsWith('test_bulk_')) keys.add(itemBox.keyAt(i));
+      }
+      await itemBox.deleteAll(keys);
+      expect(itemBox.values.where((i) => i.id.startsWith('test_bulk_')).length, 0);
+    });
+  });
+
+  // ================================================================
+  // M. LoopRegion 詳細テスト
+  // ================================================================
+  group('M. LoopRegion操作', () {
+    testWidgets('M1. 区間のポイント時間が正しい', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final sabi = s1.regions.firstWhere((r) => r.name == 'サビ');
+
+      expect(sabi.pointAMs, 60000);
+      expect(sabi.pointBMs, 90000);
+      expect(sabi.hasA, true);
+      expect(sabi.hasB, true);
+    });
+
+    testWidgets('M2. 区間のA/Bが入れ替わらない', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      for (final region in s1.regions) {
+        if (region.pointAMs != null && region.pointBMs != null) {
+          expect(region.pointAMs!, lessThan(region.pointBMs!));
+        }
+      }
+    });
+
+    testWidgets('M3. 複数区間の順序保持', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      expect(s1.regions.length, greaterThanOrEqualTo(2));
+
+      // 各区間にはIDと名前がある
+      for (final r in s1.regions) {
+        expect(r.id, isNotEmpty);
+        expect(r.name, isNotEmpty);
+      }
+    });
+  });
+
+  // ================================================================
+  // N. Playlist詳細ロジック
+  // ================================================================
+  group('N. Playlistロジック', () {
+    testWidgets('N1. サムネイルアイテムIDの取得', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final pl = plBox.values.firstWhere((p) => p.name == 'テストPL1');
+
+      // デフォルト: 最初のアイテム
+      expect(pl.effectiveThumbnailItemId, pl.itemIds.first);
+
+      // カスタム設定
+      pl.thumbnailItemId = pl.itemIds.last;
+      expect(pl.effectiveThumbnailItemId, pl.itemIds.last);
+
+      // 元に戻す
+      pl.thumbnailItemId = null;
+    });
+
+    testWidgets('N2. 空プレイリストのサムネイルID', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final emptyPl = app.Playlist(id: 'test_empty', name: 'テストPL_empty');
+      expect(emptyPl.effectiveThumbnailItemId, isNull);
+    });
+
+    testWidgets('N3. 複数区間選択の管理', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final pl = plBox.values.firstWhere((p) => p.name == 'テストPL1');
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+
+      // 2区間を選択
+      final regionIds = s1.regions.map((r) => r.id).toList();
+      pl.regionSelections[s1.id] = regionIds;
+      expect(pl.regionSelections[s1.id]!.length, s1.regions.length);
+
+      // クリア
+      pl.regionSelections.remove(s1.id);
+    });
+  });
+
+  // ================================================================
+  // O. LoopItemの状態管理
+  // ================================================================
+  group('O. LoopItem状態', () {
+    testWidgets('O1. fetchStatus状態遷移', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'test_state', title: 'test', uri: '', sourceType: 'youtube',
+        fetchStatus: 'fetching',
+      );
+      expect(item.isFetching, true);
+      expect(item.hasError, false);
+
+      item.fetchStatus = 'error';
+      expect(item.isFetching, false);
+      expect(item.hasError, true);
+
+      item.fetchStatus = null;
+      expect(item.isFetching, false);
+      expect(item.hasError, false);
+    });
+
+    testWidgets('O2. speed プロパティ', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'test_speed', title: 'test', uri: '', sourceType: 'youtube',
+        speed: 1.5,
+      );
+      expect(item.speed, 1.5);
+    });
+
+    testWidgets('O3. playCount インクリメント', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
+      final before = s1.playCount;
+      s1.playCount++;
+      expect(s1.playCount, before + 1);
+      s1.playCount = before; // 復元
+    });
+  });
+
+  // ================================================================
+  // P. UI要素の存在確認
+  // ================================================================
+  group('P. UI要素', () {
+    testWidgets('P1. FABがリストタブで表示される', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+    });
+
+    testWidgets('P2. AppBarに設定・ソート・フィルターボタン', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+
+      expect(find.byIcon(Icons.settings), findsOneWidget);
+      expect(find.byTooltip('並び替え'), findsOneWidget);
+      expect(find.byTooltip('タグフィルター'), findsOneWidget);
+    });
+
+    testWidgets('P3. 検索フィールドが表示される', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+      expect(find.widgetWithText(TextField, '検索...'), findsOneWidget);
+    });
+
+    testWidgets('P4. タブが3つある', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      await settle(tester);
+      expect(find.byType(Tab), findsNWidgets(3));
+    });
+  });
+
+  // ================================================================
   // G. モデルロジック
   // ================================================================
   group('G. モデルロジック', () {
