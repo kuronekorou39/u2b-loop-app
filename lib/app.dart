@@ -11,6 +11,7 @@ import 'screens/list_screen.dart';
 import 'services/share_service.dart';
 import 'services/update_service.dart';
 import 'widgets/mini_player.dart';
+import 'widgets/perf_overlay.dart';
 import 'widgets/share_import_dialog.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
@@ -27,7 +28,6 @@ class App extends ConsumerWidget {
       title: 'U2B Loop',
       theme: isDark ? AppTheme.dark : AppTheme.light,
       home: const _Home(),
-      showPerformanceOverlay: showPerfOverlay,
       debugShowCheckedModeBanner: false,
       locale: const Locale('ja', 'JP'),
       supportedLocales: const [Locale('ja', 'JP')],
@@ -39,7 +39,14 @@ class App extends ConsumerWidget {
       builder: (context, child) {
         return Column(
           children: [
-            Expanded(child: child!),
+            Expanded(
+              child: Stack(
+                children: [
+                  child!,
+                  if (showPerfOverlay) const PerfOverlay(),
+                ],
+              ),
+            ),
             const MiniPlayerBar(),
           ],
         );
