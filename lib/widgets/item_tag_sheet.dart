@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
@@ -55,10 +56,12 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: AppLimits.tagNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'タグ名',
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),

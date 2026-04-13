@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/constants.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
@@ -326,7 +327,8 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   Future<void> addTagToItems(List<String> itemIds, String tagId) async {
     for (final id in itemIds) {
       final item = _box.get(id);
-      if (item != null && !item.tagIds.contains(tagId)) {
+      if (item != null && !item.tagIds.contains(tagId) &&
+          item.tagIds.length < AppLimits.maxTagsPerItem) {
         item.tagIds.add(tagId);
         await _box.put(id, item);
       }
@@ -379,12 +381,14 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       if (existing != null) {
         itemIds.add(existing.id);
         for (final sr in si.regions) {
+          if (existing.regions.length >= AppLimits.maxRegions) break;
           if (!existing.regions.any((r) => r.name == sr.name)) {
             existing.regions
                 .add(sr.toLoopRegion('${existing.id}_r${existing.regions.length}'));
           }
         }
         for (final tagName in si.tags) {
+          if (existing.tagIds.length >= AppLimits.maxTagsPerItem) break;
           final tagId = tagNameToId[tagName];
           if (tagId != null && !existing.tagIds.contains(tagId)) {
             existing.tagIds.add(tagId);
@@ -398,6 +402,8 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       final tagIds =
           si.tags.map((name) => tagNameToId[name]).whereType<String>().toList();
       final regions = si.regions
+          .take(AppLimits.maxRegions)
+          .toList()
           .asMap()
           .entries
           .map((e) => e.value.toLoopRegion('${id}_r${e.key}'))

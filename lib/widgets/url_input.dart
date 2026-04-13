@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
+import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/url_utils.dart';
 import '../models/video_source.dart';
@@ -195,10 +196,12 @@ class _UrlInputState extends ConsumerState<UrlInput> {
               Expanded(
                 child: TextField(
                   controller: _controller,
+                  maxLength: AppLimits.urlMaxLength,
                   decoration: const InputDecoration(
                     hintText: 'YouTube URLを入力',
                     prefixIcon: Icon(Icons.link, size: AppIconSizes.md),
                     isDense: true,
+                    counterText: '',
                   ),
                   onSubmitted: (_) => _loadYoutube(),
                 ),

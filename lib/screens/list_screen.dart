@@ -869,10 +869,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: AppLimits.playlistNameMaxLength,
           decoration: const InputDecoration(
             hintText: 'プレイリスト名',
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
@@ -37,9 +38,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: AppLimits.playlistNameMaxLength,
           decoration: const InputDecoration(
             isDense: true,
             border: OutlineInputBorder(),
+            counterText: '',
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
