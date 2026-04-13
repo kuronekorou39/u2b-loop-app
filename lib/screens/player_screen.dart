@@ -528,6 +528,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
+    // ロード中は新規読み込みを受け付けない
+    if (_trackLoading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('読込中です...'),
+          duration: Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     // 異なるアイテム → 現在のプレイヤーで直接ロード（ローディング画面なし）
     _cancelFade();
     _cancelPreload();
@@ -1730,8 +1742,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 if (isCurrent) {
                   statusWidget = const Icon(Icons.play_arrow,
                       color: AppTheme.accentGreen, size: AppIconSizes.s);
-                } else if (_isPreloading &&
-                    _preloadingTargetIndex == i) {
+                } else if (_preloadingTargetIndex == i) {
                   statusWidget = const SizedBox(
                     width: AppIconSizes.xs,
                     height: AppIconSizes.xs,
