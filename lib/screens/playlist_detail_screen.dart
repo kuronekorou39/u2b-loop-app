@@ -105,6 +105,18 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       tagIdToName: tagIdToName,
     );
 
+    const maxShareLength = 9500;
+    if (url.length > maxShareLength) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '共有データが大きすぎます（${youtubeItems.length}曲/${url.length}文字）。目安150曲以下に減らしてください。'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
     final canQr = url.length <= 2000;
 
     showModalBottomSheet(
