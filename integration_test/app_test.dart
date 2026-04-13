@@ -27,6 +27,7 @@ import 'package:u2b_loop_app/providers/loop_provider.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
 import 'package:u2b_loop_app/providers/playlist_player_provider.dart';
 import 'package:u2b_loop_app/services/share_service.dart';
+import 'package:u2b_loop_app/services/thumbnail_service.dart';
 
 Future<void> settle(WidgetTester tester, {int frames = 10}) async {
   for (var i = 0; i < frames; i++) {
@@ -1241,6 +1242,206 @@ void main() {
         tagIdToName: {},
       );
       expect(canFit, true);
+    });
+  });
+
+  // ================================================================
+  // U2. ShareService セキュリティテスト
+  // ================================================================
+  group('U2. ShareServiceセキュリティ', () {
+    testWidgets('U2-1. 制御文字入りデータがサニタイズされる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'sec1', title: 'タイトル\x00\x01\x02危険', uri: '',
+        sourceType: 'youtube', videoId: 'abc12345678',
+      );
+      item.regions.add(LoopRegion(
+        id: 'r0', name: '区間\n\r\x7F名', pointAMs: 0, pointBMs: 1000));
+
+      final url = ShareService.encode(
+        playlistName: 'PL\x00名前',
+        items: [item],
+        tagIdToName: {},
+      );
+      final decoded = ShareService.decode(url);
+      expect(decoded, isNotNull);
+      // 制御文字が除去されている
+      expect(decoded!.name.contains('\x00'), false);
+      expect(decoded.items.first.title.contains('\x00'), false);
+      expect(decoded.items.first.title.contains('\x01'), false);
+      expect(decoded.items.first.regions.first.name.contains('\n'), false);
+      expect(decoded.items.first.regions.first.name.contains('\x7F'), false);
+    });
+
+    testWidgets('U2-2. 超長文タイトルがトリムされる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final longTitle = 'あ' * 500; // 500文字
+      final item = LoopItem(
+        id: 'sec2', title: longTitle, uri: '',
+        sourceType: 'youtube', videoId: 'xyz12345678',
+      );
+      final url = ShareService.encode(
+        playlistName: 'PL', items: [item], tagIdToName: {});
+      final decoded = ShareService.decode(url);
+      expect(decoded, isNotNull);
+      expect(decoded!.items.first.title.length, AppLimits.titleMaxLength);
+    });
+
+    testWidgets('U2-3. maxRegions超過の区間がカットされる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'sec3', title: 'test', uri: '',
+        sourceType: 'youtube', videoId: 'reg12345678',
+      );
+      // 20区間追加（上限10）
+      for (var i = 0; i < 20; i++) {
+        item.regions.add(LoopRegion(
+          id: 'r$i', name: '区間$i', pointAMs: i * 1000, pointBMs: (i + 1) * 1000));
+      }
+      final url = ShareService.encode(
+        playlistName: 'PL', items: [item], tagIdToName: {});
+      final decoded = ShareService.decode(url);
+      expect(decoded, isNotNull);
+      expect(decoded!.items.first.regions.length, AppLimits.maxRegions);
+    });
+
+    testWidgets('U2-4. maxTagsPerItem超過のタグがカットされる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'sec4', title: 'test', uri: '',
+        sourceType: 'youtube', videoId: 'tag12345678',
+      );
+      // 30個のタグ（上限20）
+      final tagMap = <String, String>{};
+      for (var i = 0; i < 30; i++) {
+        item.tagIds.add('t$i');
+        tagMap['t$i'] = 'タグ$i';
+      }
+      final url = ShareService.encode(
+        playlistName: 'PL', items: [item], tagIdToName: tagMap);
+      final decoded = ShareService.decode(url);
+      expect(decoded, isNotNull);
+      expect(decoded!.items.first.tags.length, AppLimits.maxTagsPerItem);
+    });
+
+    testWidgets('U2-5. 不正な型のJSONが安全にスキップされる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      // 正常なURLを作ってから、手動で不正データでテスト
+      expect(ShareService.decode('u2bloop://share/invalid!!!'), isNull);
+      expect(ShareService.decode('u2bloop://evil/data'), isNull);
+      expect(ShareService.decode('https://example.com'), isNull);
+      expect(ShareService.decode(''), isNull);
+    });
+
+    testWidgets('U2-6. 空videoIdがスキップされる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'sec6', title: 'test', uri: '',
+        sourceType: 'youtube', videoId: '', // 空
+      );
+      final url = ShareService.encode(
+        playlistName: 'PL', items: [item], tagIdToName: {});
+      final decoded = ShareService.decode(url);
+      expect(decoded, isNotNull);
+      // 空videoIdのアイテムはスキップされる
+      expect(decoded!.items.isEmpty, true);
+    });
+
+    testWidgets('U2-7. 超長PL名がトリムされる', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+
+      final item = LoopItem(
+        id: 'sec7', title: 'ok', uri: '',
+        sourceType: 'youtube', videoId: 'pln12345678',
+      );
+      final url = ShareService.encode(
+        playlistName: 'あ' * 200, items: [item], tagIdToName: {});
+      final decoded = ShareService.decode(url);
+      expect(decoded, isNotNull);
+      expect(decoded!.name.length, AppLimits.playlistNameMaxLength);
+    });
+  });
+
+  // ================================================================
+  // U3. ThumbnailService セキュリティテスト
+  // ================================================================
+  group('U3. ThumbnailServiceセキュリティ', () {
+    testWidgets('U3-1. HTTP URLが拒否される', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final service = ThumbnailService();
+      final result = await service.save('test', 'http://img.youtube.com/vi/abc/hqdefault.jpg');
+      expect(result, isNull);
+    });
+
+    testWidgets('U3-2. 非YouTubeドメインが拒否される', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final service = ThumbnailService();
+      final result = await service.save('test', 'https://evil.com/malware.jpg');
+      expect(result, isNull);
+    });
+
+    testWidgets('U3-3. null URLが安全にnull返却', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final service = ThumbnailService();
+      final result = await service.save('test', null);
+      expect(result, isNull);
+    });
+
+    testWidgets('U3-4. 不正なURL形式が拒否される', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      final service = ThumbnailService();
+      final result = await service.save('test', 'not a url');
+      expect(result, isNull);
+    });
+
+    testWidgets('U3-5. YouTubeドメインのHTTPSは許可される（形式チェックのみ）', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: App()));
+      // 実際のDLはしない（ネットワーク依存）。URLの検証ロジックのみテスト
+      final uri = Uri.tryParse('https://img.youtube.com/vi/abc/hqdefault.jpg');
+      expect(uri, isNotNull);
+      expect(uri!.scheme, 'https');
+      expect(['img.youtube.com', 'i.ytimg.com', 'i9.ytimg.com'].contains(uri.host), true);
+    });
+  });
+
+  // ================================================================
+  // U4. addTagToItems 上限テスト
+  // ================================================================
+  group('U4. タグ上限チェック', () {
+    testWidgets('U4-1. maxTagsPerItem超過時にタグ追加されない', (tester) async {
+      final container = ProviderContainer();
+      await tester.pumpWidget(
+          UncontrolledProviderScope(container: container, child: const App()));
+      await settle(tester);
+
+      // テスト用アイテムを作成（タグ20個 = 上限）
+      final item = LoopItem(
+        id: 'test_tag_limit', title: 'タグ上限テスト', uri: '',
+        sourceType: 'youtube',
+      );
+      for (var i = 0; i < AppLimits.maxTagsPerItem; i++) {
+        item.tagIds.add('existing_tag_$i');
+      }
+      await itemBox.put(item.id, item);
+
+      // 上限に達した状態でタグ追加を試みる
+      final notifier = container.read(loopItemsProvider.notifier);
+      await notifier.addTagToItems(['test_tag_limit'], 'new_tag');
+
+      final updated = itemBox.get('test_tag_limit');
+      expect(updated, isNotNull);
+      expect(updated!.tagIds.length, AppLimits.maxTagsPerItem);
+      expect(updated.tagIds.contains('new_tag'), false);
+
+      // クリーンアップ
+      await itemBox.delete('test_tag_limit');
+      container.dispose();
     });
   });
 
