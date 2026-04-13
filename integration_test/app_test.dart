@@ -2187,14 +2187,29 @@ void main() {
   // ================================================================
   group('AI. 再生画面', () {
     testWidgets('AI1. 詳細→再生→PlayerScreen遷移→ローディング画面表示', (tester) async {
-      final s1 = itemBox.values.where((i) => i.videoId == 'h7ha6JMgQwk').firstOrNull;
-      if (s1 == null || s1.fetchStatus == 'fetching') return;
+      // データがなければ自前で追加
+      var s1 = itemBox.values.where((i) => i.videoId == 'h7ha6JMgQwk').firstOrNull;
+      if (s1 == null) {
+        final container = ProviderContainer();
+        await tester.pumpWidget(
+            UncontrolledProviderScope(container: container, child: const App()));
+        await settle(tester);
+        await container.read(loopItemsProvider.notifier).addYouTubeAndFetch(
+            'h7ha6JMgQwk', 'https://www.youtube.com/watch?v=h7ha6JMgQwk');
+        await waitFor(tester, () {
+          s1 = itemBox.values.where((i) => i.videoId == 'h7ha6JMgQwk').firstOrNull;
+          return s1 != null && s1!.fetchStatus == null;
+        }, maxFrames: 300);
+        container.dispose();
+      }
+      final song = s1;
+      if (song == null || song.fetchStatus == 'fetching') return;
 
       await tolerant(() async {
         await tester.pumpWidget(const ProviderScope(child: App()));
         await settle(tester, frames: 20);
 
-        final titleFinder = find.text(s1.title);
+        final titleFinder = find.text(song.title);
         if (titleFinder.evaluate().isEmpty) return;
         await tester.tap(titleFinder.first);
         await settle(tester);
@@ -2204,8 +2219,8 @@ void main() {
         await tester.tap(playBtn);
         await settle(tester, frames: 30);
 
-        // PlayerScreenに遷移した（タイトルがAppBarに表示）
-        expect(find.text(s1.title), findsWidgets);
+        // PlayerScreenに遷移した
+        expect(find.text(song.title), findsWidgets);
 
         // ローディング画面が表示されている
         final hasLoadingUI =
