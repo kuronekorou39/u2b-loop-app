@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../core/constants.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 
@@ -61,6 +62,14 @@ class ShareService {
     return '$_scheme://$_host/$b64';
   }
 
+  static final _controlChars = RegExp(r'[\x00-\x1F\x7F-\x9F]');
+
+  /// 制御文字を除去してトリムする
+  static String _sanitize(String s, int maxLen) {
+    final cleaned = s.replaceAll(_controlChars, '').trim();
+    return cleaned.length > maxLen ? cleaned.substring(0, maxLen) : cleaned;
+  }
+
   /// URLをデコードして共有データを返す
   static ShareData? decode(String url) {
     try {
@@ -68,30 +77,58 @@ class ShareService {
       if (uri.scheme != _scheme || uri.host != _host) return null;
 
       final b64 = uri.pathSegments.first;
+      // 圧縮爆弾対策: base64サイズ上限
+      if (b64.length > 50000) return null;
+
       final compressed = base64Url.decode(b64);
       final jsonStr = utf8.decode(gzip.decode(compressed));
       final data = jsonDecode(jsonStr) as Map<String, dynamic>;
 
-      final name = data['n'] as String? ?? 'Shared Playlist';
+      final name = _sanitize(
+          data['n'] as String? ?? 'Shared Playlist',
+          AppLimits.playlistNameMaxLength);
+
       final items = (data['i'] as List? ?? []).map((j) {
-        final m = j as Map<String, dynamic>;
+        if (j is! Map<String, dynamic>) return null;
+        final m = j;
+
+        final videoId = (m['v'] as String? ?? '').trim();
+        if (videoId.isEmpty || videoId.length > 20) return null;
+
+        final title = _sanitize(
+            m['t'] as String? ?? '', AppLimits.titleMaxLength);
+
         final regions = (m['r'] as List? ?? [])
+            .take(AppLimits.maxRegions)
             .map((r) {
-              final rm = r as Map<String, dynamic>;
+              if (r is! Map<String, dynamic>) return null;
               return ShareRegion(
-                name: rm['n'] as String? ?? '区間',
-                pointAMs: rm['a'] as int?,
-                pointBMs: rm['b'] as int?,
+                name: _sanitize(
+                    r['n'] as String? ?? '区間', AppLimits.regionNameMaxLength),
+                pointAMs: r['a'] as int?,
+                pointBMs: r['b'] as int?,
               );
             })
+            .whereType<ShareRegion>()
             .toList();
+
+        final tags = (m['g'] as List? ?? [])
+            .take(AppLimits.maxTagsPerItem)
+            .map((t) {
+              if (t is! String) return null;
+              final s = _sanitize(t, AppLimits.tagNameMaxLength);
+              return s.isEmpty ? null : s;
+            })
+            .whereType<String>()
+            .toList();
+
         return ShareItem(
-          videoId: m['v'] as String? ?? '',
-          title: m['t'] as String? ?? '',
+          videoId: videoId,
+          title: title,
           regions: regions,
-          tags: (m['g'] as List? ?? []).cast<String>(),
+          tags: tags,
         );
-      }).toList();
+      }).whereType<ShareItem>().toList();
 
       return ShareData(name: name, items: items);
     } catch (_) {

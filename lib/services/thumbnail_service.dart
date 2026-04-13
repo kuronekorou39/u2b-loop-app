@@ -5,8 +5,21 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 class ThumbnailService {
+  static const _allowedHosts = [
+    'img.youtube.com',
+    'i.ytimg.com',
+    'i9.ytimg.com',
+  ];
+  static const _maxBytes = 2 * 1024 * 1024; // 2MB
+
   Future<String?> save(String id, String? thumbnailUrl) async {
     if (thumbnailUrl == null) return null;
+
+    // HTTPS + YouTubeドメインのみ許可
+    final uri = Uri.tryParse(thumbnailUrl);
+    if (uri == null || uri.scheme != 'https') return null;
+    if (!_allowedHosts.any((h) => uri.host == h)) return null;
+
     try {
       final dir = await getApplicationDocumentsDirectory();
       final thumbDir = Directory('${dir.path}/thumbnails');
@@ -17,11 +30,16 @@ class ThumbnailService {
 
       final client = HttpClient();
       try {
-        final request = await client.getUrl(Uri.parse(thumbnailUrl));
+        final request = await client.getUrl(uri);
         final response = await request.close();
         if (response.statusCode != 200) return null;
-        final bytes = await response.fold<List<int>>(
-            [], (prev, chunk) => prev..addAll(chunk));
+
+        var total = 0;
+        final bytes = await response.fold<List<int>>([], (prev, chunk) {
+          total += chunk.length;
+          if (total > _maxBytes) throw Exception('Too large');
+          return prev..addAll(chunk);
+        });
         await file.writeAsBytes(bytes);
         return file.path;
       } finally {
