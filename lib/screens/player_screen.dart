@@ -98,6 +98,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isFading = false;
   bool _pendingFadeIn = false;
 
+  // smoothNext/Prev のキャンセル用
+  int _smoothNavGeneration = 0;
+
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
 
@@ -489,6 +492,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   /// パネルからのトラック選択：プリロード済みなら即切替、未準備なら裏読み込み開始
   void _requestTrack(int trackIndex) {
+    _smoothNavGeneration++; // smoothNext/Prevの待機をキャンセル
     final plState = ref.read(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
 
@@ -1995,17 +1999,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     // プリロード開始→完了まで待機
+    final gen = ++_smoothNavGeneration;
     setState(() => _trackLoading = true);
     if (!_isPreloading) _preloadNextTrack();
-    // プリロード完了を待つ（最大30秒）
+    // プリロード完了を待つ（最大30秒、キャンセル対応）
     for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
+      if (gen != _smoothNavGeneration) {
+        // 別の操作が入ったのでキャンセル
+        if (mounted) setState(() => _trackLoading = false);
+        return;
+      }
     }
     if (mounted) setState(() => _trackLoading = false);
-    if (_preloadedTrackIndex != null) _advanceToNext();
+    if (gen == _smoothNavGeneration && _preloadedTrackIndex != null) {
+      _advanceToNext();
+    }
   }
 
   Future<void> _smoothPrev() async {
+    _smoothNavGeneration++; // smoothNextの待機をキャンセル
     final plState = ref.read(playlistPlayerProvider);
     if (!plState.hasPrev) return;
 
@@ -2944,9 +2957,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ? AppTheme.accentGreen
                         : Colors.grey,
                   ),
-                  onPressed: () => ref
-                      .read(playlistPlayerProvider.notifier)
-                      .toggleShuffle(),
+                  onPressed: () {
+                    _smoothNavGeneration++;
+                    ref.read(playlistPlayerProvider.notifier).toggleShuffle();
+                  },
                   tooltip: 'シャッフル',
                   visualDensity: VisualDensity.compact,
                 ),
