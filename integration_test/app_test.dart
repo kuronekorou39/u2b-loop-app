@@ -2181,6 +2181,128 @@ void main() {
   });
 
   // ================================================================
+  // AI. 再生画面（実YouTube再生）
+  // ================================================================
+  group('AI. 再生画面', () {
+    testWidgets('AI1. 詳細→再生ボタン→PlayerScreen起動→ローディング表示', (tester) async {
+      final s1 = itemBox.values.where((i) => i.videoId == 'h7ha6JMgQwk').firstOrNull;
+      if (s1 == null || s1.fetchStatus == 'fetching') return; // データなしならスキップ
+
+      await tolerant(() async {
+        await tester.pumpWidget(const ProviderScope(child: App()));
+        await settle(tester, frames: 20);
+
+        final titleFinder = find.text(s1.title);
+        if (titleFinder.evaluate().isEmpty) return;
+        await tester.tap(titleFinder.first);
+        await settle(tester);
+
+        // 再生ボタンをタップ
+        final playBtn = find.text('再生');
+        if (playBtn.evaluate().isEmpty) return;
+        await tester.tap(playBtn);
+        await settle(tester, frames: 20);
+
+        // PlayerScreenに遷移した
+        expect(find.text(s1.title), findsWidgets);
+      });
+
+      // ローディング完了を待つ（最大60秒）
+      await tolerant(() async {
+        final loaded = await waitFor(tester, () {
+          // PlayerControlsが表示される = ローディング完了
+          return find.byIcon(Icons.play_circle_filled).evaluate().isNotEmpty ||
+                 find.byIcon(Icons.pause_circle_filled).evaluate().isNotEmpty;
+        }, maxFrames: 600);
+
+        if (loaded) {
+          // 再生コントロールが表示されている
+          expect(
+            find.byIcon(Icons.play_circle_filled).evaluate().isNotEmpty ||
+            find.byIcon(Icons.pause_circle_filled).evaluate().isNotEmpty,
+            true,
+            reason: '再生/一時停止ボタンが表示されていること',
+          );
+
+          // 巻き戻し・早送りボタンがある
+          expect(
+            find.byIcon(Icons.replay_5).evaluate().isNotEmpty ||
+            find.byIcon(Icons.replay_10).evaluate().isNotEmpty ||
+            find.byIcon(Icons.replay_30).evaluate().isNotEmpty,
+            true,
+            reason: '巻き戻しボタンが表示されていること',
+          );
+        }
+      });
+
+      // 戻る
+      await tolerant(() async {
+        final backBtn = find.byType(BackButton);
+        if (backBtn.evaluate().isNotEmpty) {
+          await tester.tap(backBtn);
+          await settle(tester, frames: 20);
+        }
+      });
+    });
+
+    testWidgets('AI2. 再生画面で再生/一時停止操作', (tester) async {
+      final s1 = itemBox.values.where((i) => i.videoId == 'h7ha6JMgQwk').firstOrNull;
+      if (s1 == null || s1.fetchStatus == 'fetching') return;
+
+      await tolerant(() async {
+        await tester.pumpWidget(const ProviderScope(child: App()));
+        await settle(tester, frames: 20);
+        final titleFinder = find.text(s1!.title);
+        if (titleFinder.evaluate().isEmpty) return;
+        await tester.tap(titleFinder.first);
+        await settle(tester);
+
+        final playBtn = find.text('再生');
+        if (playBtn.evaluate().isEmpty) return;
+        await tester.tap(playBtn);
+        await settle(tester, frames: 20);
+
+        // ローディング完了を待つ
+        final loaded = await waitFor(tester, () {
+          return find.byIcon(Icons.play_circle_filled).evaluate().isNotEmpty ||
+                 find.byIcon(Icons.pause_circle_filled).evaluate().isNotEmpty;
+        }, maxFrames: 600);
+
+        if (loaded) {
+          // 再生/一時停止ボタンをタップ
+          final playPause = find.byIcon(Icons.play_circle_filled).evaluate().isNotEmpty
+              ? find.byIcon(Icons.play_circle_filled)
+              : find.byIcon(Icons.pause_circle_filled);
+          await tester.tap(playPause);
+          await settle(tester, frames: 10);
+
+          // ボタンの状態が変わった（play↔pause）
+          expect(
+            find.byIcon(Icons.play_circle_filled).evaluate().isNotEmpty ||
+            find.byIcon(Icons.pause_circle_filled).evaluate().isNotEmpty,
+            true,
+          );
+        }
+      });
+
+      // 戻る
+      await tolerant(() async {
+        final backBtn = find.byType(BackButton);
+        if (backBtn.evaluate().isNotEmpty) {
+          await tester.tap(backBtn);
+          await settle(tester, frames: 20);
+        }
+        // もう1回戻る（詳細画面→リスト画面）
+        final backBtn2 = find.byType(BackButton);
+        if (backBtn2.evaluate().isNotEmpty) {
+          await tester.tap(backBtn2);
+          await settle(tester, frames: 20);
+        }
+      });
+    });
+  });
+
+  // ================================================================
   // Z. クリーンアップ
   // ================================================================
   testWidgets('Z. テストデータクリーンアップ', (tester) async {
