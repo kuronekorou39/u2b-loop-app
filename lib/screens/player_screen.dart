@@ -3043,11 +3043,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   child: GestureDetector(
                     onTap: () => setState(
                         () => _showPlaylistPanel = !_showPlaylistPanel),
-                    child: _trackLoading
-                        ? const SizedBox(
-                            height: 20, width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : Text(
+                    child: Text(
                             currentIdx != null
                                 ? '${currentIdx + 1} / ${plState.trackCount}'
                                 : '- / ${plState.trackCount}',
