@@ -96,6 +96,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // First verse fade
   Timer? _fadeTimer;
   bool _isFading = false;
+  bool _pendingFadeIn = false;
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -308,12 +309,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _lastAdvanceTime = now;
 
     final plState = ref.read(playlistPlayerProvider);
-    final shouldFadeIn = plState.firstVerseMode && _isFading;
+    final shouldFadeIn = plState.firstVerseMode;
+    final wasFading = _isFading;
     _cancelFade();
-    // ボリュームを即リセット（フェードアウト中だった場合）
-    try {
-      ref.read(playerProvider).setVolume(100);
-    } catch (_) {}
+    // フェード中だった場合のみ音量を即リセット
+    if (wasFading) {
+      try {
+        ref.read(playerProvider).setVolume(100);
+      } catch (_) {}
+    }
 
     final notifier = ref.read(playlistPlayerProvider.notifier);
     final oldTrack = plState.currentTrack;
@@ -352,6 +356,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Different item, not preloaded - full reload
       _cancelPreload();
       _preloadCheckTimer?.cancel();
+      _pendingFadeIn = shouldFadeIn;
       _loadItem();
     }
   }
@@ -443,7 +448,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       try {
         ref.read(playerProvider).setVolume(volume * 100);
       } catch (_) {}
-      if (step >= steps) _fadeTimer?.cancel();
+      if (step >= steps) {
+        _fadeTimer?.cancel();
+        _isFading = false;
+      }
     });
   }
 
@@ -809,6 +817,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _loadItem() async {
+    _cancelFade();
     _loadingProgress.value = 0;
     _loadingStatus.value = '準備中...';
     setState(() {
@@ -971,6 +980,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // Auto-play
     player.play();
+
+    // フルリロードパスでのフェードイン（_advanceToNextから来た場合）
+    if (_pendingFadeIn) {
+      _pendingFadeIn = false;
+      _startFadeIn();
+    }
 
     // Start preload monitor for playlist mode
     _startPreloadMonitor();
@@ -1381,11 +1396,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  Future<void> _tryDownloadAudio(
+  Future<bool> _tryDownloadAudio(
       StreamManifest manifest, dynamic ytService) async {
     try {
       final muxed = manifest.muxed.sortByVideoQuality();
-      if (muxed.isEmpty) return;
+      if (muxed.isEmpty) return false;
       final streamInfo = muxed.first;
 
       final tempDir = await getTemporaryDirectory();
@@ -1399,65 +1414,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         bytes += chunk.length;
       });
       try {
-        await sub.asFuture<void>().timeout(const Duration(seconds: 15));
+        await sub.asFuture<void>().timeout(const Duration(seconds: 30));
       } on TimeoutException {
-        // pass
+        // タイムアウトしてもDL済みバイト数で判定
       } finally {
-        try {
-          await sub.cancel().timeout(const Duration(seconds: 2));
-        } catch (_) {}
-        try {
-          await sink.flush().timeout(const Duration(seconds: 2));
-        } catch (_) {}
-        try {
-          await sink.close().timeout(const Duration(seconds: 2));
-        } catch (_) {}
+        try { await sub.cancel().timeout(const Duration(seconds: 2)); } catch (_) {}
+        try { await sink.flush().timeout(const Duration(seconds: 2)); } catch (_) {}
+        try { await sink.close().timeout(const Duration(seconds: 2)); } catch (_) {}
       }
 
       if (bytes > 100000) {
         _cachedAudioPath = tempFile.path;
+        return true;
       } else {
-        try {
-          await tempFile.delete();
-        } catch (_) {}
+        try { await tempFile.delete(); } catch (_) {}
+        return false;
       }
-    } catch (_) {}
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<List<double>?> _generateYouTubeWaveform(
       VideoSource source, WaveformService service) async {
+    // キャッシュ済み音声ファイルがあればそれを使う
     if (_cachedAudioPath != null) {
       final path = _cachedAudioPath!;
       _cachedAudioPath = null;
       try {
         return await service.generateForLocalFile(path, 4000);
       } finally {
-        try {
-          await File(path).delete();
-        } catch (_) {}
+        try { await File(path).delete(); } catch (_) {}
       }
     }
 
+    // マニフェストを再取得して音声DL（リトライ時もここを通る）
     final ytService = ref.read(youtubeServiceProvider);
-    try {
-      final manifest = await ytService
-          .getManifestWithFallback(source.videoId!)
-          .timeout(const Duration(seconds: 10));
-      await _tryDownloadAudio(manifest, ytService);
-    } catch (_) {}
+    final manifest = await ytService
+        .getManifestWithFallback(source.videoId!)
+        .timeout(const Duration(seconds: 30));
+    final ok = await _tryDownloadAudio(manifest, ytService);
+    if (!ok) return null;
 
-    if (_cachedAudioPath != null) {
-      final path = _cachedAudioPath!;
-      _cachedAudioPath = null;
-      try {
-        return await service.generateForLocalFile(path, 4000);
-      } finally {
-        try {
-          await File(path).delete();
-        } catch (_) {}
-      }
+    final path = _cachedAudioPath!;
+    _cachedAudioPath = null;
+    try {
+      return await service.generateForLocalFile(path, 4000);
+    } finally {
+      try { await File(path).delete(); } catch (_) {}
     }
-    return null;
   }
 
   // --- Track context menu ---

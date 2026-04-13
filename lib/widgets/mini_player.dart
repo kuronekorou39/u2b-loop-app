@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:hive_flutter/hive_flutter.dart';
+
 import '../app.dart';
 import '../core/theme/app_theme.dart';
+import '../models/loop_item.dart';
+import '../models/playlist.dart' as app;
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../screens/player_screen.dart';
@@ -92,17 +96,38 @@ class MiniPlayerBar extends ConsumerWidget {
     // ミニプレイヤーUIを消す（Videoウィジェットを除去）
     ref.read(miniPlayerProvider.notifier).deactivateUI();
 
+    // プレイリストIDがある場合、Hiveから最新データを取得
+    List<LoopItem>? playlistItems = state.playlistItems;
+    Map<String, List<String>>? regionSelections = state.regionSelections;
+    Set<String>? disabledItemIds = state.disabledItemIds;
+    String? playlistName = state.playlistName;
+
+    if (state.playlistId != null) {
+      final plBox = Hive.box<app.Playlist>('playlists');
+      final itemBox = Hive.box<LoopItem>('loop_items');
+      final pl = plBox.get(state.playlistId);
+      if (pl != null) {
+        playlistItems = pl.itemIds
+            .map((id) => itemBox.get(id))
+            .whereType<LoopItem>()
+            .toList();
+        regionSelections = pl.regionSelections;
+        disabledItemIds = pl.disabledItemIds;
+        playlistName = pl.name;
+      }
+    }
+
     // navigatorKeyでルート操作（builder外のcontextではNavigatorにアクセスできない）
     WidgetsBinding.instance.addPostFrameCallback((_) {
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
             item: state.item!,
-            playlistItems: state.playlistItems,
+            playlistItems: playlistItems,
             initialIndex: state.initialIndex,
-            regionSelections: state.regionSelections,
-            disabledItemIds: state.disabledItemIds,
-            playlistName: state.playlistName,
+            regionSelections: regionSelections,
+            disabledItemIds: disabledItemIds,
+            playlistName: playlistName,
             playlistId: state.playlistId,
           ),
         ),

@@ -389,11 +389,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     }
   }
 
-  Future<void> _tryDownloadAudio(
+  Future<bool> _tryDownloadAudio(
       StreamManifest manifest, dynamic ytService) async {
     try {
       final muxed = manifest.muxed.sortByVideoQuality();
-      if (muxed.isEmpty) return;
+      if (muxed.isEmpty) return false;
       final streamInfo = muxed.first;
 
       final tempDir = await getTemporaryDirectory();
@@ -407,30 +407,24 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         bytes += chunk.length;
       });
       try {
-        await sub.asFuture<void>().timeout(const Duration(seconds: 15));
+        await sub.asFuture<void>().timeout(const Duration(seconds: 30));
       } on TimeoutException {
-        // pass
+        // タイムアウトしてもDL済みバイト数で判定
       } finally {
-        try {
-          await sub.cancel().timeout(const Duration(seconds: 2));
-        } catch (_) {}
-        try {
-          await sink.flush().timeout(const Duration(seconds: 2));
-        } catch (_) {}
-        try {
-          await sink.close().timeout(const Duration(seconds: 2));
-        } catch (_) {}
+        try { await sub.cancel().timeout(const Duration(seconds: 2)); } catch (_) {}
+        try { await sink.flush().timeout(const Duration(seconds: 2)); } catch (_) {}
+        try { await sink.close().timeout(const Duration(seconds: 2)); } catch (_) {}
       }
 
       if (bytes > 100000) {
         _cachedAudioPath = tempFile.path;
+        return true;
       } else {
-        try {
-          await tempFile.delete();
-        } catch (_) {}
+        try { await tempFile.delete(); } catch (_) {}
+        return false;
       }
     } catch (_) {
-      // 波形DL失敗は無視（波形なしで動作可能）
+      return false;
     }
   }
 
@@ -440,34 +434,26 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final path = _cachedAudioPath!;
       _cachedAudioPath = null;
       try {
-        return await service.generateFromUrl(path, 4000);
+        return await service.generateForLocalFile(path, 4000);
       } finally {
-        try {
-          await File(path).delete();
-        } catch (_) {}
+        try { await File(path).delete(); } catch (_) {}
       }
     }
 
     final ytService = ref.read(youtubeServiceProvider);
-    try {
-      final manifest = await ytService
-          .getManifestWithFallback(source.videoId!)
-          .timeout(const Duration(seconds: 10));
-      await _tryDownloadAudio(manifest, ytService);
-    } catch (_) {}
+    final manifest = await ytService
+        .getManifestWithFallback(source.videoId!)
+        .timeout(const Duration(seconds: 30));
+    final ok = await _tryDownloadAudio(manifest, ytService);
+    if (!ok) return null;
 
-    if (_cachedAudioPath != null) {
-      final path = _cachedAudioPath!;
-      _cachedAudioPath = null;
-      try {
-        return await service.generateFromUrl(path, 4000);
-      } finally {
-        try {
-          await File(path).delete();
-        } catch (_) {}
-      }
+    final path = _cachedAudioPath!;
+    _cachedAudioPath = null;
+    try {
+      return await service.generateForLocalFile(path, 4000);
+    } finally {
+      try { await File(path).delete(); } catch (_) {}
     }
-    return null;
   }
 
   // --- Save ---

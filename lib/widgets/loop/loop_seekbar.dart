@@ -36,6 +36,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   bool _retrying = false;
   Timer? _retryTimer;
   String? _lastError;
+  int _retryCount = 0;
+  static const _maxRetries = 3;
 
   // Zoom / pan
   double _zoomLevel = 1.0;
@@ -82,11 +84,14 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   }
 
   void _scheduleRetry(String error) {
-    if (_retrying || _lastError == error) return;
+    if (_retrying || _lastError == error || _retryCount >= _maxRetries) return;
     _lastError = error;
     _retryTimer?.cancel();
-    _retryTimer = Timer(const Duration(seconds: 3), () {
+    // リトライ間隔: 3秒, 6秒, 12秒（バックオフ）
+    final delaySec = 3 * (1 << _retryCount);
+    _retryTimer = Timer(Duration(seconds: delaySec), () {
       if (!mounted) return;
+      _retryCount++;
       setState(() => _retrying = true);
       widget.onRetryWaveform?.call();
     });
@@ -115,6 +120,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
       _retryTimer?.cancel();
       _retrying = false;
       _lastError = null;
+      _retryCount = 0;
     }
 
     // Auto-follow: keep position near 30% from left edge of viewport
