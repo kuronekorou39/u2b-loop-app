@@ -531,7 +531,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 異なるアイテム → 現在のプレイヤーで直接ロード（ローディング画面なし）
     _cancelFade();
     _cancelPreload();
-    setState(() => _trackLoading = true);
+    setState(() {
+      _trackLoading = true;
+      _preloadingTargetIndex = trackIndex;
+    });
 
     try {
       final item = targetTrack.item;
@@ -586,7 +589,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } catch (_) {
       // ネットワークエラー等は無視（次のタップで再試行される）
     } finally {
-      if (mounted) setState(() => _trackLoading = false);
+      if (mounted) {
+        setState(() {
+          _trackLoading = false;
+          _preloadingTargetIndex = null;
+        });
+      }
     }
   }
 
