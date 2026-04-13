@@ -490,13 +490,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _isFading = false;
   }
 
-  /// パネルからのトラック選択：プリロード済みなら即切替、未準備なら裏読み込み開始
-  void _requestTrack(int trackIndex) {
-    _smoothNavGeneration++; // smoothNext/Prevの待機をキャンセル
+  /// パネルからのトラック選択
+  /// プリロード済み→即スワップ、同一アイテム→シーク、それ以外→直接ロード
+  Future<void> _requestTrack(int trackIndex) async {
+    _smoothNavGeneration++;
+    final gen = _smoothNavGeneration;
     final plState = ref.read(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
 
-    // 再生中のトラック
     if (trackIndex == currentIdx) return;
 
     // プリロード済み → 即スワップ
@@ -509,7 +510,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _loadTrackRegion(newTrack);
         _setupPlaylistCallbacks();
         _startPreloadMonitor();
-        // 次曲を即座にプリロード開始
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
             _preloadNextTrack();
@@ -523,16 +523,71 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final targetTrack = plState.tracks[trackIndex];
     final currentTrack = plState.currentTrack;
     if (currentTrack != null && targetTrack.isSameItem(currentTrack)) {
-      final notifier = ref.read(playlistPlayerProvider.notifier);
-      notifier.jumpTo(trackIndex);
-      _loadTrackRegion(
-          ref.read(playlistPlayerProvider).currentTrack!);
+      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
+      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack!);
       return;
     }
 
-    // 未準備 → 既存プリロードをキャンセルして裏で読み込み開始
+    // 異なるアイテム → 現在のプレイヤーで直接ロード（ローディング画面なし）
+    _cancelFade();
     _cancelPreload();
-    _preloadNextTrack(trackIndex);
+    setState(() => _trackLoading = true);
+
+    try {
+      final item = targetTrack.item;
+      final player = ref.read(playerProvider);
+
+      if (item.sourceType == 'youtube' && item.videoId != null) {
+        final ytService = ref.read(youtubeServiceProvider);
+        final manifest = await ytService.getManifestWithFallback(item.videoId!)
+            .timeout(const Duration(seconds: 30));
+        if (gen != _smoothNavGeneration) return; // 別操作が入った
+        final muxed = manifest.muxed.sortByVideoQuality();
+        String streamUrl;
+        if (muxed.isNotEmpty) {
+          streamUrl = muxed.last.url.toString();
+        } else {
+          final videoOnly = manifest.videoOnly.sortByVideoQuality();
+          if (videoOnly.isEmpty) throw Exception('ストリームなし');
+          streamUrl = videoOnly.last.url.toString();
+        }
+        if (gen != _smoothNavGeneration) return;
+        await player.open(Media(streamUrl), play: false)
+            .timeout(const Duration(seconds: 30));
+        if (gen != _smoothNavGeneration) return;
+        ref.read(videoSourceProvider.notifier).state = VideoSource(
+          type: VideoSourceType.youtube, uri: streamUrl,
+          title: item.title, videoId: item.videoId,
+          thumbnailUrl: item.thumbnailUrl,
+        );
+      } else {
+        await player.open(Media(item.uri), play: false);
+        if (gen != _smoothNavGeneration) return;
+        ref.read(videoSourceProvider.notifier).state = VideoSource(
+          type: VideoSourceType.local, uri: item.uri, title: item.title,
+        );
+      }
+
+      if (!mounted || gen != _smoothNavGeneration) return;
+      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
+      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack!);
+      _setupPlaylistCallbacks();
+      ref.read(loopProvider.notifier).setCurrentItem(item.id);
+      player.play();
+      _startPreloadMonitor();
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
+          _preloadNextTrack();
+        }
+      });
+
+      final source = ref.read(videoSourceProvider);
+      if (source != null) _generateWaveform(source);
+    } catch (_) {
+      // ネットワークエラー等は無視（次のタップで再試行される）
+    } finally {
+      if (mounted) setState(() => _trackLoading = false);
+    }
   }
 
   // --- Preload ---
