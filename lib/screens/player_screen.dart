@@ -352,6 +352,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _loadTrackRegion(newTrack);
       _startPreloadMonitor();
       if (shouldFadeIn) _startFadeIn();
+      // 次曲を即座にプリロード開始
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
+          _preloadNextTrack();
+        }
+      });
     } else {
       // Different item, not preloaded - full reload
       _cancelPreload();
@@ -499,6 +505,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _loadTrackRegion(newTrack);
         _setupPlaylistCallbacks();
         _startPreloadMonitor();
+        // 次曲を即座にプリロード開始
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
+            _preloadNextTrack();
+          }
+        });
       }
       return;
     }
@@ -1998,6 +2010,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (!plState.hasPrev) return;
 
     setState(() => _trackLoading = true);
+    _cancelFade();
     _cancelPreload();
     final notifier = ref.read(playlistPlayerProvider.notifier);
     final oldTrack = plState.currentTrack;
@@ -2021,8 +2034,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // フルリロード
-    await _loadItem();
+    // 異なるアイテム: ローディング画面なしで直接ロード
+    try {
+      final item = newTrack.item;
+      final player = ref.read(playerProvider);
+
+      if (item.sourceType == 'youtube' && item.videoId != null) {
+        final ytService = ref.read(youtubeServiceProvider);
+        final manifest = await ytService.getManifestWithFallback(item.videoId!)
+            .timeout(const Duration(seconds: 30));
+        final muxed = manifest.muxed.sortByVideoQuality();
+        String streamUrl;
+        if (muxed.isNotEmpty) {
+          streamUrl = muxed.last.url.toString();
+        } else {
+          final videoOnly = manifest.videoOnly.sortByVideoQuality();
+          if (videoOnly.isEmpty) throw Exception('ストリームなし');
+          streamUrl = videoOnly.last.url.toString();
+        }
+        await player.open(Media(streamUrl), play: false)
+            .timeout(const Duration(seconds: 30));
+        ref.read(videoSourceProvider.notifier).state = VideoSource(
+          type: VideoSourceType.youtube, uri: streamUrl,
+          title: item.title, videoId: item.videoId,
+          thumbnailUrl: item.thumbnailUrl,
+        );
+      } else {
+        await player.open(Media(item.uri), play: false);
+        ref.read(videoSourceProvider.notifier).state = VideoSource(
+          type: VideoSourceType.local, uri: item.uri, title: item.title,
+        );
+      }
+
+      if (!mounted) return;
+      _loadTrackRegion(newTrack);
+      _setupPlaylistCallbacks();
+      ref.read(loopProvider.notifier).setCurrentItem(item.id);
+      player.play();
+      _startPreloadMonitor();
+      // 次曲を即座にプリロード開始
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
+          _preloadNextTrack();
+        }
+      });
+
+      // 波形
+      final source = ref.read(videoSourceProvider);
+      if (source != null) _generateWaveform(source);
+    } catch (e) {
+      // 失敗時はフルリロードにフォールバック
+      if (mounted) await _loadItem();
+    } finally {
+      if (mounted) setState(() => _trackLoading = false);
+    }
   }
 
   Widget _buildLoadingView() {
