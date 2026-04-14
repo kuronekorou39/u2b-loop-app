@@ -385,13 +385,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     // プリロード待ち（スピナー表示、ローディング画面なし）
+    final startTrackIdx = ps.currentTrackIndex;
     setState(() => _trackLoading = true);
     if (!_isPreloading) _preloadNextTrack();
     for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
+      // 自動遷移(onBPointReached)が先に実行された場合はキャンセル
+      if (ref.read(playlistPlayerProvider).currentTrackIndex != startTrackIdx) {
+        if (mounted) setState(() => _trackLoading = false);
+        return;
+      }
     }
     if (mounted) setState(() => _trackLoading = false);
-    if (_preloadedTrackIndex != null && mounted) _autoAdvance();
+    // 自動遷移がまだ実行されていない場合のみ進む
+    if (_preloadedTrackIndex != null && mounted &&
+        ref.read(playlistPlayerProvider).currentTrackIndex == startTrackIdx) {
+      _autoAdvance();
+    }
   }
 
   /// 手動: 前のトラックへ
@@ -2955,6 +2965,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                   onPressed: () {
                     ref.read(playlistPlayerProvider.notifier).toggleShuffle();
+                    _cancelPreload();
+                    _preloadNextTrack();
                   },
                   tooltip: 'シャッフル',
                   visualDensity: VisualDensity.compact,
@@ -2962,9 +2974,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Repeat mode
                 IconButton(
                   icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
-                  onPressed: () => ref
-                      .read(playlistPlayerProvider.notifier)
-                      .cycleRepeatMode(),
+                  onPressed: () {
+                    ref.read(playlistPlayerProvider.notifier).cycleRepeatMode();
+                    _cancelPreload();
+                    _preloadNextTrack();
+                  },
                   tooltip: switch (plState.repeatMode) {
                     pl.RepeatMode.none => 'リピートなし',
                     pl.RepeatMode.all => '全曲リピート',
