@@ -67,6 +67,23 @@ class PlaylistPlayerState {
     return null;
   }
 
+  /// 前のトラックのインデックスを返す（状態を変更しない）
+  int? peekPrevTrackIndex() {
+    final enabledIndices = _enabledOrderIndices;
+    if (enabledIndices.isEmpty) return null;
+
+    final currentPos = enabledIndices.indexOf(currentOrderIndex);
+    if (currentPos < 0) return null;
+
+    if (currentPos > 0) {
+      return playOrder[enabledIndices[currentPos - 1]];
+    }
+    if (repeatMode == RepeatMode.all && enabledIndices.isNotEmpty) {
+      return playOrder[enabledIndices.last];
+    }
+    return null;
+  }
+
   List<int> get _enabledOrderIndices {
     final result = <int>[];
     for (var i = 0; i < playOrder.length; i++) {

@@ -395,28 +395,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   /// 手動: 前のトラックへ
+  /// _manualNext と対称な構造: peekしてから判断し、状態変更はロード完了後
   Future<void> _manualPrev() async {
     if (_guardManualOp()) return;
     final ps = ref.read(playlistPlayerProvider);
     if (!ps.hasPrev) return;
 
-    final oldTrack = ps.currentTrack;
-    final changed = ref.read(playlistPlayerProvider.notifier).prev();
-    if (!changed) return;
+    final prevIdx = ps.peekPrevTrackIndex();
+    if (prevIdx == null) return;
+    final prevTrack = ps.tracks[prevIdx];
+    final current = ps.currentTrack;
+    final sameItem = current != null && prevTrack.isSameItem(current);
 
-    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
-    if (newTrack == null) return;
-
-    // 同一アイテム → シークのみ
-    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
+    if (sameItem) {
+      // 同一アイテム → prev()で即移動+シーク（即座に完了）
+      ref.read(playlistPlayerProvider.notifier).prev();
+      final track = ref.read(playlistPlayerProvider).currentTrack;
+      if (track == null) return;
       _cancelFade();
-      _loadTrackRegion(newTrack);
-      _afterTrackSwitch(newTrack);
+      _loadTrackRegion(track);
+      _afterTrackSwitch(track);
       return;
     }
 
-    // 異なるアイテム → 直接ロード
-    await _directLoadTrack(newTrack);
+    // 異なるアイテム → 直接ロード（ロード完了後にprev()で状態変更）
+    await _directLoadTrack(prevTrack, prevIdx);
   }
 
   /// 手動: トラック選択（パネルからタップ）
@@ -438,27 +441,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // 同一アイテム → シークのみ
+    // 同一アイテム → シークのみ（即座に完了）
     if (current != null && targetTrack.isSameItem(current)) {
       ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
-      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack!);
+      final track = ref.read(playlistPlayerProvider).currentTrack!;
+      _loadTrackRegion(track);
+      _afterTrackSwitch(track);
       return;
     }
 
-    // 異なるアイテム → 直接ロード
-    ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
-    await _directLoadTrack(ref.read(playlistPlayerProvider).currentTrack!);
+    // 異なるアイテム → 直接ロード（jumpToはロード完了後）
+    await _directLoadTrack(targetTrack, trackIndex);
   }
 
   // ----- 共通: 直接ロード（前曲 / トラック選択で使用） -----
 
-  Future<void> _directLoadTrack(PlaylistTrack track) async {
+  Future<void> _directLoadTrack(PlaylistTrack track, [int? jumpToIndex]) async {
     _cancelFade();
     _cancelPreload();
-    final trackIdx = ref.read(playlistPlayerProvider).currentTrackIndex;
     setState(() {
       _trackLoading = true;
-      _preloadingTargetIndex = trackIdx;
+      _preloadingTargetIndex = jumpToIndex ?? ref.read(playlistPlayerProvider).currentTrackIndex;
     });
 
     try {
@@ -495,9 +498,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
       }
 
-      _loadTrackRegion(track);
+      if (jumpToIndex != null) {
+        ref.read(playlistPlayerProvider.notifier).jumpTo(jumpToIndex);
+      }
+      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack ?? track);
       ref.read(playerProvider).play();
-      _afterTrackSwitch(track);
+      _afterTrackSwitch(ref.read(playlistPlayerProvider).currentTrack ?? track);
     } catch (_) {
       // 失敗は無視（次のタップで再試行される）
     } finally {
