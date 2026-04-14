@@ -81,6 +81,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // Preload state
   int? _preloadedTrackIndex;
+  int? _pendingJumpIndex; // 手動選択時: 次の自動遷移でjumpToするインデックス
   bool _isPreloading = false;
   Timer? _preloadCheckTimer;
   int _preloadGeneration = 0; // レース条件防止用の世代カウンタ
@@ -99,6 +100,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _pendingFadeIn = false;
 
   bool _trackLoading = false;
+  bool _loadingSnackShowing = false;
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -256,11 +258,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (ps.repeatMode == pl.RepeatMode.single) return false;
 
       final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null) return false;
-      final nextTrack = ps.tracks[nextIdx];
+      if (nextIdx == null && _pendingJumpIndex == null) return false;
       final current = ps.currentTrack;
-      final sameItem = current != null && nextTrack.isSameItem(current);
-      final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
+      final sameItem = nextIdx != null && current != null &&
+          ps.tracks[nextIdx].isSameItem(current);
+      final ready = _preloadedTrackIndex != null &&
+          (_pendingJumpIndex == _preloadedTrackIndex ||
+           nextIdx == _preloadedTrackIndex);
 
       if (sameItem || ready) {
         _autoAdvance();
@@ -274,11 +278,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     loopNotifier.onTrackEnd = () {
       final ps = ref.read(playlistPlayerProvider);
       final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null) return;
-      final nextTrack = ps.tracks[nextIdx];
+      if (nextIdx == null && _pendingJumpIndex == null) return;
       final current = ps.currentTrack;
-      final sameItem = current != null && nextTrack.isSameItem(current);
-      final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
+      final sameItem = nextIdx != null && current != null &&
+          ps.tracks[nextIdx].isSameItem(current);
+      final ready = _preloadedTrackIndex != null &&
+          (_pendingJumpIndex == _preloadedTrackIndex ||
+           nextIdx == _preloadedTrackIndex);
 
       if (sameItem || ready) {
         _autoAdvance();
@@ -316,10 +322,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final plState = ref.read(playlistPlayerProvider);
     final oldTrack = plState.currentTrack;
-    final nextIdx = plState.peekNextTrackIndex();
+    final notifier = ref.read(playlistPlayerProvider.notifier);
+
+    // 手動選択のキューがある場合はjumpTo、なければnext()
+    final pendingJump = _pendingJumpIndex;
+    _pendingJumpIndex = null;
+
+    final nextIdx = pendingJump ?? plState.peekNextTrackIndex();
     final isPreloaded = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
 
-    final changed = ref.read(playlistPlayerProvider.notifier).next();
+    bool changed;
+    if (pendingJump != null) {
+      notifier.jumpTo(pendingJump);
+      changed = true;
+    } else {
+      changed = notifier.next();
+    }
     if (!changed) {
       // 単曲リピート → 先頭にシーク
       final track = ref.read(playlistPlayerProvider).currentTrack;
@@ -353,13 +371,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// 手動操作の共通ガード。ロード中なら拒否してtrue返却。
   bool _guardManualOp() {
     if (_trackLoading) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('読込中です...'),
-          duration: Duration(seconds: 1),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (!_loadingSnackShowing) {
+        _loadingSnackShowing = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('読込中です...'),
+            duration: Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        ).closed.then((_) => _loadingSnackShowing = false);
+      }
       return true;
     }
     return false;
@@ -460,8 +481,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // 異なるアイテム → 直接ロード（jumpToはロード完了後）
-    await _directLoadTrack(targetTrack, trackIndex);
+    // 異なるアイテム → 次曲としてプリロード（自動遷移時にスワップ再生）
+    _cancelPreload();
+    _pendingJumpIndex = trackIndex;
+    _preloadNextTrack(trackIndex);
   }
 
   // ----- 共通: 直接ロード（前曲 / トラック選択で使用） -----
@@ -530,6 +553,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _afterTrackSwitch(PlaylistTrack track, {bool shouldFadeIn = false}) {
     _preloadedTrackIndex = null;
+    _pendingJumpIndex = null;
     _setupPlaylistCallbacks();
     ref.read(loopProvider.notifier).setCurrentItem(track.item.id);
     _startPreloadMonitor();
@@ -2965,6 +2989,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                   onPressed: () {
                     ref.read(playlistPlayerProvider.notifier).toggleShuffle();
+                    _pendingJumpIndex = null;
                     _cancelPreload();
                     _preloadNextTrack();
                   },
@@ -2976,6 +3001,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
                   onPressed: () {
                     ref.read(playlistPlayerProvider.notifier).cycleRepeatMode();
+                    _pendingJumpIndex = null;
                     _cancelPreload();
                     _preloadNextTrack();
                   },
