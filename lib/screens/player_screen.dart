@@ -312,15 +312,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _lastAdvanceTime = now;
 
     final plState = ref.read(playlistPlayerProvider);
-    final shouldFadeIn = plState.firstVerseMode;
-    final wasFading = _isFading;
+    final shouldFadeIn = plState.firstVerseMode && _isFading;
     _cancelFade();
-    // フェード中だった場合のみ音量を即リセット
-    if (wasFading) {
-      try {
-        ref.read(playerProvider).setVolume(100);
-      } catch (_) {}
-    }
+    // 音量を確実にリセット
+    try {
+      ref.read(playerProvider).setVolume(100);
+    } catch (_) {}
 
     final notifier = ref.read(playlistPlayerProvider.notifier);
     final oldTrack = plState.currentTrack;
@@ -347,12 +344,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Same item - just seek to new region
       _preloadedTrackIndex = null;
       _loadTrackRegion(newTrack);
+      _setupPlaylistCallbacks();
       _startPreloadMonitor();
       if (shouldFadeIn) _startFadeIn();
     } else if (isPreloaded) {
       // Different item, preloaded - swap players!
       _swapToPreloaded(newTrack);
       _loadTrackRegion(newTrack);
+      _setupPlaylistCallbacks();
       _startPreloadMonitor();
       if (shouldFadeIn) _startFadeIn();
       // 次曲を即座にプリロード開始
