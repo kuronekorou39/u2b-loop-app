@@ -98,8 +98,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isFading = false;
   bool _pendingFadeIn = false;
 
-  // smoothNext/Prev のキャンセル用
-  int _smoothNavGeneration = 0;
+  bool _trackLoading = false;
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -129,9 +128,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             await player.playOrPause();
             _updatePiPPlayState();
           case 'next':
-            if (_isPlaylist) _smoothNext();
+            if (_isPlaylist) _manualNext();
           case 'prev':
-            if (_isPlaylist) _smoothPrev();
+            if (_isPlaylist) _manualPrev();
         }
       } else if (call.method == 'getPlayState') {
         return ref.read(playerProvider).state.playing;
@@ -233,11 +232,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.dispose();
   }
 
-  // --- Playlist callbacks ---
+  // =====================================================================
+  // プレイリスト再生制御（統一設計）
+  //
+  // 思想:
+  // - 再生が止まることは最悪の事態。どんな状態でも再生を継続する。
+  // - プリロードは最適化であって必須ではない。
+  // - 全てのトラック遷移は共通の後処理（_afterTrackSwitch）を通す。
+  // - ユーザー操作は _trackLoading で排他制御。自動遷移はブロックしない。
+  // =====================================================================
 
+  /// コールバック設定（PlayerScreen表示中 + ミニプレイヤー中 共通）
   void _setupPlaylistCallbacks() {
     final loopNotifier = ref.read(loopProvider.notifier);
-
     if (!_isPlaylist) {
       loopNotifier.onBPointReached = null;
       loopNotifier.onTrackEnd = null;
@@ -245,91 +252,76 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     loopNotifier.onBPointReached = () {
-      final plState = ref.read(playlistPlayerProvider);
-      if (plState.repeatMode == pl.RepeatMode.single) {
-        return false; // Normal AB loop
-      }
+      final ps = ref.read(playlistPlayerProvider);
+      if (ps.repeatMode == pl.RepeatMode.single) return false;
 
-      final nextIdx = plState.peekNextTrackIndex();
+      final nextIdx = ps.peekNextTrackIndex();
       if (nextIdx == null) return false;
+      final nextTrack = ps.tracks[nextIdx];
+      final current = ps.currentTrack;
+      final sameItem = current != null && nextTrack.isSameItem(current);
+      final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
 
-      // 同一アイテム → シークだけなのでそのまま進む
-      final nextTrack = plState.tracks[nextIdx];
-      final currentTrack = plState.currentTrack;
-      if (currentTrack != null && nextTrack.isSameItem(currentTrack)) {
-        _advanceToNext();
+      if (sameItem || ready) {
+        _autoAdvance();
         return true;
       }
-
-      // プリロード済み → 進む
-      if (_preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex) {
-        _advanceToNext();
-        return true;
-      }
-
-      // 未準備 → 現在のトラックをループ、プリロードを確保
+      // 未準備 → ABループ継続、プリロード確保
       if (!_isPreloading) _preloadNextTrack();
       return false;
     };
 
     loopNotifier.onTrackEnd = () {
-      if (!_isPlaylist) return;
-      final plState = ref.read(playlistPlayerProvider);
-      final nextIdx = plState.peekNextTrackIndex();
+      final ps = ref.read(playlistPlayerProvider);
+      final nextIdx = ps.peekNextTrackIndex();
       if (nextIdx == null) return;
-
-      final nextTrack = plState.tracks[nextIdx];
-      final currentTrack = plState.currentTrack;
-      final sameItem = currentTrack != null && nextTrack.isSameItem(currentTrack);
+      final nextTrack = ps.tracks[nextIdx];
+      final current = ps.currentTrack;
+      final sameItem = current != null && nextTrack.isSameItem(current);
       final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
 
       if (sameItem || ready) {
-        _advanceToNext();
+        _autoAdvance();
       } else {
-        // 未準備 → 先頭に戻して再生継続（終端停止後はplay()も必要）
-        final p = ref.read(playerProvider);
-        p.seek(Duration.zero);
-        p.play();
+        // 未準備 → 先頭に戻して再生継続
+        try {
+          ref.read(playerProvider)
+            ..seek(Duration.zero)
+            ..play();
+        } catch (_) {}
         if (!_isPreloading) _preloadNextTrack();
       }
     };
   }
 
-  void _advanceToNext() {
-    // 連続エラー上限チェック
+  // ----- 自動遷移（B点到達 / 曲終了） -----
+
+  void _autoAdvance() {
     if (_consecutiveLoadErrors >= _maxConsecutiveErrors) return;
 
     // 高速遷移の抑制
     final now = DateTime.now();
     if (_lastAdvanceTime != null &&
         now.difference(_lastAdvanceTime!) < _minAdvanceInterval) {
-      final wait = _minAdvanceInterval - now.difference(_lastAdvanceTime!);
-      Future.delayed(wait, () {
-        if (mounted) _advanceToNext();
+      Future.delayed(_minAdvanceInterval - now.difference(_lastAdvanceTime!), () {
+        if (mounted) _autoAdvance();
       });
       return;
     }
     _lastAdvanceTime = now;
 
-    final plState = ref.read(playlistPlayerProvider);
-    final shouldFadeIn = plState.firstVerseMode && _isFading;
+    final shouldFadeIn = ref.read(playlistPlayerProvider).firstVerseMode && _isFading;
     _cancelFade();
-    // 音量を確実にリセット
-    try {
-      ref.read(playerProvider).setVolume(100);
-    } catch (_) {}
+    try { ref.read(playerProvider).setVolume(100); } catch (_) {}
 
-    final notifier = ref.read(playlistPlayerProvider.notifier);
+    final plState = ref.read(playlistPlayerProvider);
     final oldTrack = plState.currentTrack;
-
-    // Check preload BEFORE advancing (next() changes state)
     final nextIdx = plState.peekNextTrackIndex();
-    final isPreloaded =
-        _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
+    final isPreloaded = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
 
-    final changed = notifier.next();
+    final changed = ref.read(playlistPlayerProvider.notifier).next();
     if (!changed) {
-      // Single repeat - seek back to start of current track
+      // 単曲リピート → 先頭にシーク
       final track = ref.read(playlistPlayerProvider).currentTrack;
       if (track != null) {
         ref.read(playerProvider).seek(Duration(milliseconds: track.startMs ?? 0));
@@ -341,32 +333,198 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (newTrack == null) return;
 
     if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
-      // Same item - just seek to new region
-      _preloadedTrackIndex = null;
       _loadTrackRegion(newTrack);
-      _setupPlaylistCallbacks();
-      _startPreloadMonitor();
-      if (shouldFadeIn) _startFadeIn();
+      _afterTrackSwitch(newTrack, shouldFadeIn: shouldFadeIn);
     } else if (isPreloaded) {
-      // Different item, preloaded - swap players!
       _swapToPreloaded(newTrack);
       _loadTrackRegion(newTrack);
-      _setupPlaylistCallbacks();
-      _startPreloadMonitor();
-      if (shouldFadeIn) _startFadeIn();
-      // 次曲を即座にプリロード開始
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
-          _preloadNextTrack();
-        }
-      });
+      _afterTrackSwitch(newTrack, shouldFadeIn: shouldFadeIn);
     } else {
-      // Different item, not preloaded - full reload
+      // 未プリロード → フルリロード（自動遷移なのでローディング画面OK）
       _cancelPreload();
       _preloadCheckTimer?.cancel();
       _pendingFadeIn = shouldFadeIn;
       _loadItem();
     }
+  }
+
+  // ----- 手動操作: 次曲 / 前曲 / トラック選択 -----
+
+  /// 手動操作の共通ガード。ロード中なら拒否してtrue返却。
+  bool _guardManualOp() {
+    if (_trackLoading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('読込中です...'),
+          duration: Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /// 手動: 次のトラックへ
+  Future<void> _manualNext() async {
+    if (_guardManualOp()) return;
+    final ps = ref.read(playlistPlayerProvider);
+    if (!ps.hasNext) return;
+
+    final nextIdx = ps.peekNextTrackIndex();
+    if (nextIdx == null) return;
+    final nextTrack = ps.tracks[nextIdx];
+    final current = ps.currentTrack;
+    final sameItem = current != null && nextTrack.isSameItem(current);
+    final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
+
+    if (sameItem || ready) {
+      // 即遷移可能
+      _autoAdvance();
+      return;
+    }
+
+    // プリロード待ち（スピナー表示、ローディング画面なし）
+    setState(() => _trackLoading = true);
+    if (!_isPreloading) _preloadNextTrack();
+    for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    if (mounted) setState(() => _trackLoading = false);
+    if (_preloadedTrackIndex != null && mounted) _autoAdvance();
+  }
+
+  /// 手動: 前のトラックへ
+  Future<void> _manualPrev() async {
+    if (_guardManualOp()) return;
+    final ps = ref.read(playlistPlayerProvider);
+    if (!ps.hasPrev) return;
+
+    final oldTrack = ps.currentTrack;
+    final changed = ref.read(playlistPlayerProvider.notifier).prev();
+    if (!changed) return;
+
+    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
+    if (newTrack == null) return;
+
+    // 同一アイテム → シークのみ
+    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
+      _cancelFade();
+      _loadTrackRegion(newTrack);
+      _afterTrackSwitch(newTrack);
+      return;
+    }
+
+    // 異なるアイテム → 直接ロード
+    await _directLoadTrack(newTrack);
+  }
+
+  /// 手動: トラック選択（パネルからタップ）
+  Future<void> _selectTrack(int trackIndex) async {
+    if (_guardManualOp()) return;
+    final ps = ref.read(playlistPlayerProvider);
+    if (trackIndex == ps.currentTrackIndex) return;
+
+    final targetTrack = ps.tracks[trackIndex];
+    final current = ps.currentTrack;
+
+    // プリロード済み → 即スワップ
+    if (_preloadedTrackIndex == trackIndex) {
+      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
+      final track = ref.read(playlistPlayerProvider).currentTrack!;
+      _swapToPreloaded(track);
+      _loadTrackRegion(track);
+      _afterTrackSwitch(track);
+      return;
+    }
+
+    // 同一アイテム → シークのみ
+    if (current != null && targetTrack.isSameItem(current)) {
+      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
+      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack!);
+      return;
+    }
+
+    // 異なるアイテム → 直接ロード
+    ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
+    await _directLoadTrack(ref.read(playlistPlayerProvider).currentTrack!);
+  }
+
+  // ----- 共通: 直接ロード（前曲 / トラック選択で使用） -----
+
+  Future<void> _directLoadTrack(PlaylistTrack track) async {
+    _cancelFade();
+    _cancelPreload();
+    final trackIdx = ref.read(playlistPlayerProvider).currentTrackIndex;
+    setState(() {
+      _trackLoading = true;
+      _preloadingTargetIndex = trackIdx;
+    });
+
+    try {
+      final item = track.item;
+      final player = ref.read(playerProvider);
+
+      if (item.sourceType == 'youtube' && item.videoId != null) {
+        final ytService = ref.read(youtubeServiceProvider);
+        final manifest = await ytService.getManifestWithFallback(item.videoId!)
+            .timeout(const Duration(seconds: 30));
+        final muxed = manifest.muxed.sortByVideoQuality();
+        String streamUrl;
+        if (muxed.isNotEmpty) {
+          streamUrl = muxed.last.url.toString();
+        } else {
+          final videoOnly = manifest.videoOnly.sortByVideoQuality();
+          if (videoOnly.isEmpty) throw Exception('ストリームなし');
+          streamUrl = videoOnly.last.url.toString();
+        }
+        if (!mounted) return;
+        await player.open(Media(streamUrl), play: false)
+            .timeout(const Duration(seconds: 30));
+        if (!mounted) return;
+        ref.read(videoSourceProvider.notifier).state = VideoSource(
+          type: VideoSourceType.youtube, uri: streamUrl,
+          title: item.title, videoId: item.videoId,
+          thumbnailUrl: item.thumbnailUrl,
+        );
+      } else {
+        await player.open(Media(item.uri), play: false);
+        if (!mounted) return;
+        ref.read(videoSourceProvider.notifier).state = VideoSource(
+          type: VideoSourceType.local, uri: item.uri, title: item.title,
+        );
+      }
+
+      _loadTrackRegion(track);
+      ref.read(playerProvider).play();
+      _afterTrackSwitch(track);
+    } catch (_) {
+      // 失敗は無視（次のタップで再試行される）
+    } finally {
+      if (mounted) {
+        setState(() {
+          _trackLoading = false;
+          _preloadingTargetIndex = null;
+        });
+      }
+    }
+  }
+
+  // ----- 共通: トラック切替後の後処理 -----
+
+  void _afterTrackSwitch(PlaylistTrack track, {bool shouldFadeIn = false}) {
+    _preloadedTrackIndex = null;
+    _setupPlaylistCallbacks();
+    ref.read(loopProvider.notifier).setCurrentItem(track.item.id);
+    _startPreloadMonitor();
+    if (shouldFadeIn) _startFadeIn();
+    _consecutiveLoadErrors = 0;
+    // 1秒後に次曲プリロード開始
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
+        _preloadNextTrack();
+      }
+    });
   }
 
   void _loadTrackRegion(PlaylistTrack track) {
@@ -487,126 +645,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _isFading = false;
-  }
-
-  /// パネルからのトラック選択
-  /// プリロード済み→即スワップ、同一アイテム→シーク、それ以外→直接ロード
-  Future<void> _requestTrack(int trackIndex) async {
-    _smoothNavGeneration++;
-    final gen = _smoothNavGeneration;
-    final plState = ref.read(playlistPlayerProvider);
-    final currentIdx = plState.currentTrackIndex;
-
-    if (trackIndex == currentIdx) return;
-
-    // プリロード済み → 即スワップ
-    if (_preloadedTrackIndex == trackIndex) {
-      final notifier = ref.read(playlistPlayerProvider.notifier);
-      notifier.jumpTo(trackIndex);
-      final newTrack = ref.read(playlistPlayerProvider).currentTrack;
-      if (newTrack != null) {
-        _swapToPreloaded(newTrack);
-        _loadTrackRegion(newTrack);
-        _setupPlaylistCallbacks();
-        _startPreloadMonitor();
-        Future.delayed(const Duration(seconds: 1), () {
-          if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
-            _preloadNextTrack();
-          }
-        });
-      }
-      return;
-    }
-
-    // 同じアイテム（異なるリージョン）→ 直接ジャンプ
-    final targetTrack = plState.tracks[trackIndex];
-    final currentTrack = plState.currentTrack;
-    if (currentTrack != null && targetTrack.isSameItem(currentTrack)) {
-      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
-      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack!);
-      return;
-    }
-
-    // ロード中は新規読み込みを受け付けない
-    if (_trackLoading) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('読込中です...'),
-          duration: Duration(seconds: 1),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
-    // 異なるアイテム → 現在のプレイヤーで直接ロード（ローディング画面なし）
-    _cancelFade();
-    _cancelPreload();
-    setState(() {
-      _trackLoading = true;
-      _preloadingTargetIndex = trackIndex;
-    });
-
-    try {
-      final item = targetTrack.item;
-      final player = ref.read(playerProvider);
-
-      if (item.sourceType == 'youtube' && item.videoId != null) {
-        final ytService = ref.read(youtubeServiceProvider);
-        final manifest = await ytService.getManifestWithFallback(item.videoId!)
-            .timeout(const Duration(seconds: 30));
-        if (gen != _smoothNavGeneration) return; // 別操作が入った
-        final muxed = manifest.muxed.sortByVideoQuality();
-        String streamUrl;
-        if (muxed.isNotEmpty) {
-          streamUrl = muxed.last.url.toString();
-        } else {
-          final videoOnly = manifest.videoOnly.sortByVideoQuality();
-          if (videoOnly.isEmpty) throw Exception('ストリームなし');
-          streamUrl = videoOnly.last.url.toString();
-        }
-        if (gen != _smoothNavGeneration) return;
-        await player.open(Media(streamUrl), play: false)
-            .timeout(const Duration(seconds: 30));
-        if (gen != _smoothNavGeneration) return;
-        ref.read(videoSourceProvider.notifier).state = VideoSource(
-          type: VideoSourceType.youtube, uri: streamUrl,
-          title: item.title, videoId: item.videoId,
-          thumbnailUrl: item.thumbnailUrl,
-        );
-      } else {
-        await player.open(Media(item.uri), play: false);
-        if (gen != _smoothNavGeneration) return;
-        ref.read(videoSourceProvider.notifier).state = VideoSource(
-          type: VideoSourceType.local, uri: item.uri, title: item.title,
-        );
-      }
-
-      if (!mounted || gen != _smoothNavGeneration) return;
-      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
-      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack!);
-      _setupPlaylistCallbacks();
-      ref.read(loopProvider.notifier).setCurrentItem(item.id);
-      player.play();
-      _startPreloadMonitor();
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
-          _preloadNextTrack();
-        }
-      });
-
-      final source = ref.read(videoSourceProvider);
-      if (source != null) _generateWaveform(source);
-    } catch (_) {
-      // ネットワークエラー等は無視（次のタップで再試行される）
-    } finally {
-      if (mounted) {
-        setState(() {
-          _trackLoading = false;
-          _preloadingTargetIndex = null;
-        });
-      }
-    }
   }
 
   // --- Preload ---
@@ -945,7 +983,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _consecutiveLoadErrors++;
           if (_consecutiveLoadErrors < _maxConsecutiveErrors) {
             Future.delayed(const Duration(seconds: 3), () {
-              if (mounted && _loadError != null) _advanceToNext();
+              if (mounted && _loadError != null) _autoAdvance();
             });
           }
         }
@@ -1582,7 +1620,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 title: const Text('この曲にスキップ'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _requestTrack(trackIndex);
+                  _selectTrack(trackIndex);
                 },
               ),
             ListTile(
@@ -1760,7 +1798,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 }
 
                 return InkWell(
-                  onTap: () => _requestTrack(i),
+                  onTap: () => _selectTrack(i),
                   onLongPress: () => _showTrackMenu(i, track),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -2040,8 +2078,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     preloadNext();
   }
 
-  bool _trackLoading = false;
-
   Widget _buildPiPView() {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -2055,126 +2091,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  Future<void> _smoothNext() async {
-    final plState = ref.read(playlistPlayerProvider);
-    if (!plState.hasNext) return;
-
-    final nextIdx = plState.peekNextTrackIndex();
-    if (nextIdx == null) return;
-    final nextTrack = plState.tracks[nextIdx];
-    final currentTrack = plState.currentTrack;
-    final sameItem = currentTrack != null && nextTrack.isSameItem(currentTrack);
-    final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
-
-    if (sameItem || ready) {
-      _advanceToNext();
-      return;
-    }
-
-    // プリロード開始→完了まで待機
-    final gen = ++_smoothNavGeneration;
-    setState(() => _trackLoading = true);
-    if (!_isPreloading) _preloadNextTrack();
-    // プリロード完了を待つ（最大30秒、キャンセル対応）
-    for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (gen != _smoothNavGeneration) {
-        // 別の操作が入ったのでキャンセル
-        if (mounted) setState(() => _trackLoading = false);
-        return;
-      }
-    }
-    if (mounted) setState(() => _trackLoading = false);
-    if (gen == _smoothNavGeneration && _preloadedTrackIndex != null) {
-      _advanceToNext();
-    }
-  }
-
-  Future<void> _smoothPrev() async {
-    _smoothNavGeneration++; // smoothNextの待機をキャンセル
-    final plState = ref.read(playlistPlayerProvider);
-    if (!plState.hasPrev) return;
-
-    setState(() => _trackLoading = true);
-    _cancelFade();
-    _cancelPreload();
-    final notifier = ref.read(playlistPlayerProvider.notifier);
-    final oldTrack = plState.currentTrack;
-    final changed = notifier.prev();
-    if (!changed) {
-      if (mounted) setState(() => _trackLoading = false);
-      return;
-    }
-    _preloadCheckTimer?.cancel();
-
-    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
-    if (newTrack == null) {
-      if (mounted) setState(() => _trackLoading = false);
-      return;
-    }
-
-    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
-      _loadTrackRegion(newTrack);
-      if (mounted) setState(() => _trackLoading = false);
-      _startPreloadMonitor();
-      return;
-    }
-
-    // 異なるアイテム: ローディング画面なしで直接ロード
-    try {
-      final item = newTrack.item;
-      final player = ref.read(playerProvider);
-
-      if (item.sourceType == 'youtube' && item.videoId != null) {
-        final ytService = ref.read(youtubeServiceProvider);
-        final manifest = await ytService.getManifestWithFallback(item.videoId!)
-            .timeout(const Duration(seconds: 30));
-        final muxed = manifest.muxed.sortByVideoQuality();
-        String streamUrl;
-        if (muxed.isNotEmpty) {
-          streamUrl = muxed.last.url.toString();
-        } else {
-          final videoOnly = manifest.videoOnly.sortByVideoQuality();
-          if (videoOnly.isEmpty) throw Exception('ストリームなし');
-          streamUrl = videoOnly.last.url.toString();
-        }
-        await player.open(Media(streamUrl), play: false)
-            .timeout(const Duration(seconds: 30));
-        ref.read(videoSourceProvider.notifier).state = VideoSource(
-          type: VideoSourceType.youtube, uri: streamUrl,
-          title: item.title, videoId: item.videoId,
-          thumbnailUrl: item.thumbnailUrl,
-        );
-      } else {
-        await player.open(Media(item.uri), play: false);
-        ref.read(videoSourceProvider.notifier).state = VideoSource(
-          type: VideoSourceType.local, uri: item.uri, title: item.title,
-        );
-      }
-
-      if (!mounted) return;
-      _loadTrackRegion(newTrack);
-      _setupPlaylistCallbacks();
-      ref.read(loopProvider.notifier).setCurrentItem(item.id);
-      player.play();
-      _startPreloadMonitor();
-      // 次曲を即座にプリロード開始
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
-          _preloadNextTrack();
-        }
-      });
-
-      // 波形
-      final source = ref.read(videoSourceProvider);
-      if (source != null) _generateWaveform(source);
-    } catch (e) {
-      // 失敗時はフルリロードにフォールバック
-      if (mounted) await _loadItem();
-    } finally {
-      if (mounted) setState(() => _trackLoading = false);
-    }
-  }
+  // （旧 _smoothNext / _smoothPrev は _manualNext / _manualPrev に統合済み）
 
   Widget _buildLoadingView() {
     final textTheme = Theme.of(context).textTheme;
@@ -2287,7 +2204,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               OutlinedButton.icon(
                 onPressed: () {
                   _consecutiveLoadErrors = 0;
-                  _advanceToNext();
+                  _autoAdvance();
                 },
                 icon: const Icon(Icons.skip_next, size: AppIconSizes.sm),
                 label: const Text('次の曲へスキップ'),
@@ -3031,7 +2948,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         : Colors.grey,
                   ),
                   onPressed: () {
-                    _smoothNavGeneration++;
                     ref.read(playlistPlayerProvider.notifier).toggleShuffle();
                   },
                   tooltip: 'シャッフル',
@@ -3053,7 +2969,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Prev
                 IconButton(
                   icon: const Icon(Icons.skip_previous, size: AppIconSizes.xl),
-                  onPressed: plState.hasPrev && !_trackLoading ? _smoothPrev : null,
+                  onPressed: plState.hasPrev && !_trackLoading ? _manualPrev : null,
                   visualDensity: VisualDensity.compact,
                 ),
                 // Track info
@@ -3073,7 +2989,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Next
                 IconButton(
                   icon: const Icon(Icons.skip_next, size: AppIconSizes.xl),
-                  onPressed: plState.hasNext && !_trackLoading ? _smoothNext : null,
+                  onPressed: plState.hasNext && !_trackLoading ? _manualNext : null,
                   visualDensity: VisualDensity.compact,
                 ),
                 // 1番だけモード
