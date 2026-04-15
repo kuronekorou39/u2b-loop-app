@@ -1804,22 +1804,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               itemBuilder: (ctx, i) {
                 final track = plState.tracks[i];
                 final isCurrent = i == currentIdx;
+                final isPreloading = _preloadingTargetIndex == i;
+                final isPreloaded = _preloadedTrackIndex == i;
+                final isHighlighted = isCurrent || isPreloading || isPreloaded;
 
                 // Status indicator
                 Widget statusWidget;
                 if (isCurrent) {
                   statusWidget = const Icon(Icons.play_arrow,
-                      color: AppTheme.accentGreen, size: AppIconSizes.s);
-                } else if (_preloadingTargetIndex == i) {
+                      color: AppTheme.accentGreen, size: AppIconSizes.md);
+                } else if (isPreloading) {
                   statusWidget = const SizedBox(
-                    width: AppIconSizes.xs,
-                    height: AppIconSizes.xs,
+                    width: AppIconSizes.s,
+                    height: AppIconSizes.s,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.orange),
                   );
-                } else if (_preloadedTrackIndex == i) {
+                } else if (isPreloaded) {
                   statusWidget = const Icon(Icons.check_circle_outline,
-                      color: AppTheme.accentGreen, size: AppIconSizes.s);
+                      color: AppTheme.accentGreen, size: AppIconSizes.md);
                 } else {
                   statusWidget = Text(
                     '${i + 1}',
@@ -1828,6 +1831,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   );
                 }
 
+                if (isHighlighted) {
+                  // 再生中・プリロード中/済み: 拡大行
+                  return InkWell(
+                    onTap: () => _selectTrack(i),
+                    onLongPress: () => _showTrackMenu(i, track),
+                    child: Container(
+                      color: isCurrent
+                          ? Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.08)
+                          : Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg, vertical: AppSpacing.lg),
+                      child: Row(
+                        children: [
+                          SizedBox(width: AppIconSizes.xl, child: Center(child: statusWidget)),
+                          const SizedBox(width: AppSpacing.lg),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  track.displayName,
+                                  style: Theme.of(ctx).textTheme.bodyMedium!.copyWith(
+                                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                    color: isCurrent
+                                        ? AppTheme.accentGreen
+                                        : track.enabled ? null : Colors.grey,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                Row(
+                                  children: [
+                                    if (track.hasRegion)
+                                      Text(
+                                        '${track.startMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.startMs!)) : '--:--'}'
+                                        ' - '
+                                        '${track.endMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.endMs!)) : '--:--'}',
+                                        style: Theme.of(ctx).textTheme.labelSmall,
+                                      ),
+                                    if (track.hasRegion && track.item.tagIds.isNotEmpty)
+                                      const SizedBox(width: AppSpacing.md),
+                                    ..._buildTrackTags(ctx, track, tagMap),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                // 通常行
                 return InkWell(
                   onTap: () => _selectTrack(i),
                   onLongPress: () => _showTrackMenu(i, track),
@@ -2990,11 +3048,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Repeat mode
                 IconButton(
                   icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
-                  onPressed: _isPreloading ? null : () {
+                  onPressed: () {
                     ref.read(playlistPlayerProvider.notifier).cycleRepeatMode();
-                    _pendingJumpIndex = null;
-                    _cancelPreload();
-                    _preloadNextTrack();
+                    // プリロード済みの次曲が変わった場合のみ再プリロード
+                    // （_checkPreloadの定期チェックで自然に対応される）
+                    final nextIdx = ref.read(playlistPlayerProvider).peekNextTrackIndex();
+                    if (_preloadedTrackIndex != null && _preloadedTrackIndex != nextIdx) {
+                      _cancelPreload();
+                    }
                   },
                   tooltip: switch (plState.repeatMode) {
                     pl.RepeatMode.none => 'リピートなし',
