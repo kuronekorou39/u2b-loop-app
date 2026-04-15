@@ -690,10 +690,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // --- Preload ---
 
   void _cancelPreload() {
-    _preloadGeneration++; // 実行中のプリロードを無効化
+    _preloadGeneration++;
     _preloadedTrackIndex = null;
     _preloadingTargetIndex = null;
     _isPreloading = false;
+    // プリロードプレイヤーの実行中の操作を確実に中断
+    try { ref.read(preloadPlayerProvider).stop(); } catch (_) {}
   }
 
   void _startPreloadMonitor() {
@@ -847,7 +849,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (!_waveformCache.containsKey(itemId)) {
         _preloadWaveform(nextTrack, manifest, gen);
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Preload] 失敗: $e');
       if (gen == _preloadGeneration) {
         _preloadedTrackIndex = null;
         _preloadFailCount++;
