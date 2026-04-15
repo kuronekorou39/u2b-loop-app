@@ -95,7 +95,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   static const _minAdvanceInterval = Duration(seconds: 3);
 
   // First verse fade
-  Timer? _fadeTimer;
+  Timer? _fadeTimer;     // フェードアウト監視 + 実行用
+  Timer? _fadeInTimer;   // フェードイン用（監視タイマーと独立）
   bool _isFading = false;
   bool _pendingFadeIn = false;
 
@@ -590,7 +591,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// 1番だけモード: 波形から切断点を計算してB点にセット
   /// AB設定済みの区間トラックには適用しない（_loadTrackRegionで分岐済み）
   void _applyFirstVerseCut(PlaylistTrack track, [int retryCount = 0]) {
-    _cancelFade();
+    // フェードアウト監視のみキャンセル（フェードインは中断しない）
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _isFading = false;
     final plState = ref.read(playlistPlayerProvider);
     if (!plState.firstVerseMode) return;
 
@@ -623,11 +627,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  /// B点の3秒前からフェードアウトを開始する監視
+  /// B点の3秒前からフェードアウトを開始する監視。
+  /// ABループでA点に戻った場合も自動的にリセットして次パスで再フェードする。
   void _startFadeOutMonitor(int cutMs) {
     _cancelFade();
     final fadeStartMs = cutMs - 3000;
     if (fadeStartMs <= 0) return;
+
+    var fadeStep = 0;
+    const fadeSteps = 15; // 200ms × 15 = 3秒
 
     _fadeTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted) {
@@ -636,47 +644,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       final posMs =
           ref.read(playerProvider).state.position.inMilliseconds;
-      if (posMs >= fadeStartMs && !_isFading) {
-        _isFading = true;
-        _startFadeOut(cutMs);
-      }
-    });
-  }
 
-  /// 3秒かけてフェードアウト
-  void _startFadeOut(int cutMs) {
-    _fadeTimer?.cancel();
-    const steps = 15; // 200ms × 15 = 3秒
-    var step = 0;
-    _fadeTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
-      step++;
-      final volume = (1.0 - step / steps).clamp(0.0, 1.0);
-      try {
-        ref.read(playerProvider).setVolume(volume * 100);
-      } catch (_) {}
-      if (step >= steps) {
-        _fadeTimer?.cancel();
-        _isFading = false;
+      if (posMs < fadeStartMs) {
+        // フェードゾーン外（A点にシークされた等）→ 状態リセット
+        if (_isFading) {
+          _isFading = false;
+          fadeStep = 0;
+          try { ref.read(playerProvider).setVolume(100); } catch (_) {}
+        }
+        return;
+      }
+
+      // フェードゾーン内
+      if (!_isFading) {
+        _isFading = true;
+        fadeStep = 0;
+      }
+      fadeStep++;
+      if (fadeStep <= fadeSteps) {
+        final volume = (1.0 - fadeStep / fadeSteps).clamp(0.0, 1.0);
+        try {
+          ref.read(playerProvider).setVolume(volume * 100);
+        } catch (_) {}
       }
     });
   }
 
   /// フェードイン（次曲開始時に呼ぶ）
+  /// フェードアウト監視タイマー(_fadeTimer)とは独立して動作する。
   void _startFadeIn() {
-    _cancelFade();
+    _fadeInTimer?.cancel();
     const steps = 5; // 200ms × 5 = 1秒
     var step = 0;
     ref.read(playerProvider).setVolume(0);
-    _fadeTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+    _fadeInTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       step++;
       final volume = (step / steps).clamp(0.0, 1.0);
       try {
         ref.read(playerProvider).setVolume(volume * 100);
       } catch (_) {}
       if (step >= steps) {
-        _fadeTimer?.cancel();
-        _fadeTimer = null;
-        _isFading = false;
+        _fadeInTimer?.cancel();
+        _fadeInTimer = null;
       }
     });
   }
@@ -684,6 +693,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _cancelFade() {
     _fadeTimer?.cancel();
     _fadeTimer = null;
+    _fadeInTimer?.cancel();
+    _fadeInTimer = null;
     _isFading = false;
   }
 
