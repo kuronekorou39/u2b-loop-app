@@ -370,7 +370,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   /// 手動操作の共通ガード。ロード中なら拒否してtrue返却。
   bool _guardManualOp() {
-    if (_trackLoading) {
+    if (_trackLoading || _isPreloading) {
       if (!_loadingSnackShowing) {
         _loadingSnackShowing = true;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1579,41 +1579,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<bool> _tryDownloadAudio(
       StreamManifest manifest, dynamic ytService) async {
-    try {
-      final muxed = manifest.muxed.sortByVideoQuality();
-      if (muxed.isEmpty) return false;
-      final streamInfo = muxed.first;
-
-      final tempDir = await getTemporaryDirectory();
-      final tempFile = File('${tempDir.path}/u2b_waveform_audio.tmp');
-      final dataStream = ytService.yt.videos.streamsClient.get(streamInfo)
-          as Stream<List<int>>;
-      final sink = tempFile.openWrite();
-      var bytes = 0;
-      final sub = dataStream.listen((chunk) {
-        sink.add(chunk);
-        bytes += chunk.length;
-      });
-      try {
-        await sub.asFuture<void>().timeout(const Duration(seconds: 30));
-      } on TimeoutException {
-        // タイムアウトしてもDL済みバイト数で判定
-      } finally {
-        try { await sub.cancel().timeout(const Duration(seconds: 2)); } catch (_) {}
-        try { await sink.flush().timeout(const Duration(seconds: 2)); } catch (_) {}
-        try { await sink.close().timeout(const Duration(seconds: 2)); } catch (_) {}
-      }
-
-      if (bytes > 100000) {
-        _cachedAudioPath = tempFile.path;
-        return true;
-      } else {
-        try { await tempFile.delete(); } catch (_) {}
-        return false;
-      }
-    } catch (_) {
-      return false;
+    final muxed = manifest.muxed.sortByVideoQuality();
+    if (muxed.isEmpty) return false;
+    final dataStream = ytService.yt.videos.streamsClient.get(muxed.first)
+        as Stream<List<int>>;
+    final path = await WaveformService().downloadAudioToTemp(dataStream);
+    if (path != null) {
+      _cachedAudioPath = path;
+      return true;
     }
+    return false;
   }
 
   Future<List<double>?> _generateYouTubeWaveform(
@@ -1622,11 +1597,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_cachedAudioPath != null) {
       final path = _cachedAudioPath!;
       _cachedAudioPath = null;
-      try {
-        return await service.generateForLocalFile(path, 4000);
-      } finally {
-        try { await File(path).delete(); } catch (_) {}
-      }
+      return await service.generateFromCachedAudio(path);
     }
 
     // マニフェストを再取得して音声DL（リトライ時もここを通る）
@@ -1639,11 +1610,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final path = _cachedAudioPath!;
     _cachedAudioPath = null;
-    try {
-      return await service.generateForLocalFile(path, 4000);
-    } finally {
-      try { await File(path).delete(); } catch (_) {}
-    }
+    return await service.generateFromCachedAudio(path);
   }
 
   // --- Track context menu ---
@@ -3000,7 +2967,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ? AppTheme.accentGreen
                         : Colors.grey,
                   ),
-                  onPressed: () {
+                  onPressed: _isPreloading ? null : () {
                     ref.read(playlistPlayerProvider.notifier).toggleShuffle();
                     _pendingJumpIndex = null;
                     _cancelPreload();
@@ -3012,7 +2979,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Repeat mode
                 IconButton(
                   icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
-                  onPressed: () {
+                  onPressed: _isPreloading ? null : () {
                     ref.read(playlistPlayerProvider.notifier).cycleRepeatMode();
                     _pendingJumpIndex = null;
                     _cancelPreload();

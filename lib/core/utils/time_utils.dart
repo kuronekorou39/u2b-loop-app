@@ -9,7 +9,7 @@ class TimeUtils {
 
   /// Format duration as M:SS.mmm
   static String format(Duration d) {
-    final total = d.inMilliseconds.clamp(0, d.inMilliseconds);
+    final total = d.inMilliseconds < 0 ? 0 : d.inMilliseconds;
     final minutes = total ~/ 60000;
     final seconds = (total ~/ 1000) % 60;
     final millis = total % 1000;
@@ -18,7 +18,7 @@ class TimeUtils {
 
   /// Format duration as M:SS
   static String formatShort(Duration d) {
-    final total = d.inSeconds.clamp(0, d.inSeconds);
+    final total = d.inSeconds < 0 ? 0 : d.inSeconds;
     final minutes = total ~/ 60;
     final seconds = total % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';

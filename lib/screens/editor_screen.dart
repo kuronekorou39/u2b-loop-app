@@ -4,7 +4,6 @@ import 'dart:math';
 
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -94,6 +93,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     try {
       ref.read(playerProvider).stop();
     } catch (_) {}
+    if (_cachedAudioPath != null) {
+      try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
+    }
     super.dispose();
   }
 
@@ -391,41 +393,16 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   Future<bool> _tryDownloadAudio(
       StreamManifest manifest, dynamic ytService) async {
-    try {
-      final muxed = manifest.muxed.sortByVideoQuality();
-      if (muxed.isEmpty) return false;
-      final streamInfo = muxed.first;
-
-      final tempDir = await getTemporaryDirectory();
-      final tempFile = File('${tempDir.path}/u2b_waveform_audio.tmp');
-      final dataStream = ytService.yt.videos.streamsClient.get(streamInfo)
-          as Stream<List<int>>;
-      final sink = tempFile.openWrite();
-      var bytes = 0;
-      final sub = dataStream.listen((chunk) {
-        sink.add(chunk);
-        bytes += chunk.length;
-      });
-      try {
-        await sub.asFuture<void>().timeout(const Duration(seconds: 30));
-      } on TimeoutException {
-        // タイムアウトしてもDL済みバイト数で判定
-      } finally {
-        try { await sub.cancel().timeout(const Duration(seconds: 2)); } catch (_) {}
-        try { await sink.flush().timeout(const Duration(seconds: 2)); } catch (_) {}
-        try { await sink.close().timeout(const Duration(seconds: 2)); } catch (_) {}
-      }
-
-      if (bytes > 100000) {
-        _cachedAudioPath = tempFile.path;
-        return true;
-      } else {
-        try { await tempFile.delete(); } catch (_) {}
-        return false;
-      }
-    } catch (_) {
-      return false;
+    final muxed = manifest.muxed.sortByVideoQuality();
+    if (muxed.isEmpty) return false;
+    final dataStream = ytService.yt.videos.streamsClient.get(muxed.first)
+        as Stream<List<int>>;
+    final path = await WaveformService().downloadAudioToTemp(dataStream);
+    if (path != null) {
+      _cachedAudioPath = path;
+      return true;
     }
+    return false;
   }
 
   Future<List<double>?> _generateYouTubeWaveform(
@@ -433,11 +410,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     if (_cachedAudioPath != null) {
       final path = _cachedAudioPath!;
       _cachedAudioPath = null;
-      try {
-        return await service.generateForLocalFile(path, 4000);
-      } finally {
-        try { await File(path).delete(); } catch (_) {}
-      }
+      return await service.generateFromCachedAudio(path);
     }
 
     final ytService = ref.read(youtubeServiceProvider);
@@ -449,11 +422,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
     final path = _cachedAudioPath!;
     _cachedAudioPath = null;
-    try {
-      return await service.generateForLocalFile(path, 4000);
-    } finally {
-      try { await File(path).delete(); } catch (_) {}
-    }
+    return await service.generateFromCachedAudio(path);
   }
 
   // --- Save ---

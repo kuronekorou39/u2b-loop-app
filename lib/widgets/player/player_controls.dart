@@ -47,7 +47,7 @@ class PlayerControls extends ConsumerWidget {
           .toList(),
     );
     if (result != null) {
-      ref.read(seekStepProvider.notifier).state = result;
+      ref.read(seekStepProvider.notifier).value = result;
     }
   }
 
@@ -56,7 +56,13 @@ class PlayerControls extends ConsumerWidget {
     await showDialog(
       context: context,
       barrierColor: Colors.transparent,
-      builder: (ctx) => _VolumeDialog(player: player, anchor: position, ref: ref),
+      builder: (ctx) => _VolumeDialog(
+        player: player,
+        anchor: position,
+        previousVolume: ref.read(previousVolumeProvider),
+        onPreviousVolumeChanged: (v) =>
+            ref.read(previousVolumeProvider.notifier).state = v,
+      ),
     );
   }
 
@@ -225,9 +231,14 @@ class PlayerControls extends ConsumerWidget {
 class _VolumeDialog extends StatefulWidget {
   final Player player;
   final Offset anchor;
-  final WidgetRef ref;
-  const _VolumeDialog(
-      {required this.player, required this.anchor, required this.ref});
+  final double previousVolume;
+  final ValueChanged<double> onPreviousVolumeChanged;
+  const _VolumeDialog({
+    required this.player,
+    required this.anchor,
+    required this.previousVolume,
+    required this.onPreviousVolumeChanged,
+  });
 
   @override
   State<_VolumeDialog> createState() => _VolumeDialogState();
@@ -265,15 +276,12 @@ class _VolumeDialogState extends State<_VolumeDialog> {
                   GestureDetector(
                     onTap: () {
                       if (_volume > 0) {
-                        widget.ref
-                            .read(previousVolumeProvider.notifier)
-                            .state = _volume;
+                        widget.onPreviousVolumeChanged(_volume);
                         widget.player.setVolume(0);
                         setState(() => _volume = 0);
                       } else {
-                        final prev =
-                            widget.ref.read(previousVolumeProvider);
-                        final restored = prev > 0 ? prev : 100.0;
+                        final restored =
+                            widget.previousVolume > 0 ? widget.previousVolume : 100.0;
                         widget.player.setVolume(restored);
                         setState(() => _volume = restored);
                       }

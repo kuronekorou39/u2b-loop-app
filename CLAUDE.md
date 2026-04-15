@@ -11,7 +11,7 @@ YouTubeとローカル動画のAB区間ループ再生アプリ（Flutter/Androi
 - 動画再生は media_kit を使う
 - YouTube URL抽出は youtube_explode_dart を使う
 - UIのカラーはWebアプリ版に揃える（ダーク: bg=#1A1A2E, accent=#4ECCA3/#E94560）
-- AB地点の色: A=#FF6B6B（赤系）, B=#4ECCA3（緑系）
+- AB地点の色: A=#FF6B6B（赤系）, B=#4FC3F7（水色系）
 
 ## バージョン管理
 

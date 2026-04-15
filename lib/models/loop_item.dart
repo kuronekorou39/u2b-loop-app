@@ -72,19 +72,19 @@ class LoopItem {
   String? get errorMessage =>
       hasError ? fetchStatus!.substring('error:'.length) : null;
 
-  /// regions が空でレガシーAB値がある場合のみデフォルト区間を生成（後方互換）
+  /// regions が空でレガシーAB値がある場合はregionsに昇格してから返す（後方互換）
   /// それ以外は空リスト（= 全体再生）
   List<LoopRegion> get effectiveRegions {
     if (regions.isNotEmpty) return regions;
     if (pointAMs > 0 || pointBMs > 0) {
-      return [
-        LoopRegion(
-          id: 'default',
-          name: '区間 1',
-          pointAMs: pointAMs > 0 ? pointAMs : null,
-          pointBMs: pointBMs > 0 ? pointBMs : null,
-        )
-      ];
+      // レガシーAB値をregionsに昇格（以後はregionsが使われる）
+      regions.add(LoopRegion(
+        id: 'default',
+        name: '区間 1',
+        pointAMs: pointAMs > 0 ? pointAMs : null,
+        pointBMs: pointBMs > 0 ? pointBMs : null,
+      ));
+      return regions;
     }
     return [];
   }

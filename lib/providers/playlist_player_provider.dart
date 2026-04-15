@@ -12,7 +12,7 @@ class PlaylistPlayerState {
   final bool shuffle;
   final bool firstVerseMode;
 
-  const PlaylistPlayerState({
+  PlaylistPlayerState({
     this.tracks = const [],
     this.playOrder = const [],
     this.currentOrderIndex = 0,
@@ -84,7 +84,12 @@ class PlaylistPlayerState {
     return null;
   }
 
+  List<int>? _cachedEnabledOrderIndices;
   List<int> get _enabledOrderIndices {
+    return _cachedEnabledOrderIndices ??= _computeEnabledOrderIndices();
+  }
+
+  List<int> _computeEnabledOrderIndices() {
     final result = <int>[];
     for (var i = 0; i < playOrder.length; i++) {
       if (tracks[playOrder[i]].enabled) result.add(i);
@@ -132,7 +137,7 @@ final playlistPlayerProvider =
 });
 
 class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
-  PlaylistPlayerNotifier() : super(const PlaylistPlayerState());
+  PlaylistPlayerNotifier() : super(PlaylistPlayerState());
 
   final _random = Random();
 
@@ -356,6 +361,6 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
   }
 
   void clear() {
-    state = const PlaylistPlayerState();
+    state = PlaylistPlayerState();
   }
 }

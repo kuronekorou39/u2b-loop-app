@@ -35,7 +35,7 @@ class LoopRegion {
         'pointBMs': pointBMs,
       };
 
-  factory LoopRegion.fromMap(Map map) => LoopRegion(
+  factory LoopRegion.fromMap(Map<String, dynamic> map) => LoopRegion(
         id: map['id'] as String,
         name: map['name'] as String,
         pointAMs: map['pointAMs'] as int?,

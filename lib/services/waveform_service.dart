@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -190,6 +191,53 @@ class WaveformService {
       smoothed[i] = (prev + peaks[i] + next) / 3;
     }
     return smoothed;
+  }
+
+  // --- 音声DL + 波形生成（PlayerScreen/EditorScreen共通） ---
+
+  /// 音声ストリームを一時ファイルにダウンロードし、パスを返す。
+  /// タイムアウトしても100KB超ならパスを返す。失敗時はnull。
+  Future<String?> downloadAudioToTemp(
+    Stream<List<int>> audioStream, {
+    String fileName = 'u2b_waveform_audio.tmp',
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/$fileName');
+      final sink = tempFile.openWrite();
+      var bytes = 0;
+      final sub = audioStream.listen((chunk) {
+        sink.add(chunk);
+        bytes += chunk.length;
+      });
+      try {
+        await sub.asFuture<void>().timeout(timeout);
+      } on TimeoutException {
+        // タイムアウトしてもDL済みバイト数で判定
+      } finally {
+        try { await sub.cancel().timeout(const Duration(seconds: 2)); } catch (_) {}
+        try { await sink.flush().timeout(const Duration(seconds: 2)); } catch (_) {}
+        try { await sink.close().timeout(const Duration(seconds: 2)); } catch (_) {}
+      }
+      if (bytes > 100000) return tempFile.path;
+      try { await tempFile.delete(); } catch (_) {}
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// キャッシュ済み音声ファイルから波形を生成し、ファイルを削除して返す。
+  Future<List<double>?> generateFromCachedAudio(
+    String audioPath, {
+    int targetSamples = 4000,
+  }) async {
+    try {
+      return await generateForLocalFile(audioPath, targetSamples);
+    } finally {
+      try { await File(audioPath).delete(); } catch (_) {}
+    }
   }
 
   // --- 共通ユーティリティ ---

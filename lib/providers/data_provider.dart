@@ -66,6 +66,16 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   Future<void> delete(String id) async {
     await _box.delete(id);
     await ThumbnailService().delete(id);
+    // プレイリストから孤立参照を除去
+    final plBox = Hive.box<app.Playlist>('playlists');
+    for (final pl in plBox.values) {
+      if (pl.itemIds.remove(id)) {
+        pl.regionSelections.remove(id);
+        pl.disabledItemIds.remove(id);
+        if (pl.thumbnailItemId == id) pl.thumbnailItemId = null;
+        await plBox.put(pl.id, pl);
+      }
+    }
     _refresh();
   }
 
@@ -121,6 +131,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   Future<void> _fetchYouTubeInfo(LoopItem item, {int retry = 0}) async {
     final yt = YoutubeExplode();
+    var shouldRetry = false;
     try {
       final video = await yt.videos.get(item.videoId!)
           .timeout(const Duration(seconds: 30));
@@ -140,17 +151,20 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         item.fetchStatus = 'fetching';
         await update(item);
         await Future.delayed(Duration(seconds: waitSec));
-        yt.close();
-        return _fetchYouTubeInfo(item, retry: retry + 1);
+        shouldRetry = true;
+      } else {
+        item.fetchStatus = 'error:レート制限。しばらく待ってからリトライしてください';
+        await update(item);
       }
-      item.fetchStatus = 'error:レート制限。しばらく待ってからリトライしてください';
-      await update(item);
     } catch (e) {
       item.fetchStatus =
           'error:${e.toString().length > 80 ? e.toString().substring(0, 80) : e}';
       await update(item);
     } finally {
       yt.close();
+    }
+    if (shouldRetry) {
+      await _fetchYouTubeInfo(item, retry: retry + 1);
     }
   }
 

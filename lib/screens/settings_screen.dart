@@ -69,6 +69,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Map<String, dynamic> _tagToJson(Tag tag) => {
         'id': tag.id,
         'name': tag.name,
+        'colorIndex': tag.colorIndex,
       };
 
   Future<void> _exportData() async {
@@ -164,6 +165,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Tag _tagFromJson(Map<String, dynamic> j) => Tag(
         id: j['id'] as String,
         name: j['name'] as String,
+        colorIndex: j['colorIndex'] as int? ?? 0,
       );
 
   Future<void> _importData() async {
@@ -420,7 +422,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       style: textTheme.bodyLarge),
                   value: isDark,
                   onChanged: (v) =>
-                      ref.read(themeProvider.notifier).state = v,
+                      ref.read(themeProvider.notifier).value = v,
                 ),
               ),
 

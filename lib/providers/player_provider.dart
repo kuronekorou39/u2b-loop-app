@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../models/video_source.dart';
@@ -83,7 +84,21 @@ final rateProvider = StreamProvider<double>((ref) {
   return ref.watch(playerProvider).stream.rate;
 });
 
-final seekStepProvider = StateProvider<int>((ref) => 5);
+final seekStepProvider =
+    StateNotifierProvider<SeekStepNotifier, int>((ref) => SeekStepNotifier());
+
+class SeekStepNotifier extends StateNotifier<int> {
+  static const _key = 'seek_step';
+
+  SeekStepNotifier() : super(5) {
+    state = Hive.box('settings').get(_key, defaultValue: 5) as int;
+  }
+
+  set value(int v) {
+    state = v;
+    Hive.box('settings').put(_key, v);
+  }
+}
 final flipHorizontalProvider = StateProvider<bool>((ref) => false);
 final flipVerticalProvider = StateProvider<bool>((ref) => false);
 final previousVolumeProvider = StateProvider<double>((ref) => 100.0);
