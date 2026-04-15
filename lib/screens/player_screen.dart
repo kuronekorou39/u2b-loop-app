@@ -559,8 +559,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _startPreloadMonitor();
     if (shouldFadeIn) _startFadeIn();
     _consecutiveLoadErrors = 0;
-    // 1秒後に次曲プリロード開始
-    Future.delayed(const Duration(seconds: 1), () {
+    // 2秒後に次曲プリロード開始（再生を安定させてから）
+    Future.delayed(const Duration(seconds: 2), () {
       if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
         _preloadNextTrack();
       }
@@ -1158,8 +1158,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _startFadeIn();
     }
 
-    // Start preload monitor for playlist mode
-    _startPreloadMonitor();
+    // Start preload monitor for playlist mode（2秒後に開始、再生を安定させてから）
+    if (_isPlaylist) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
+          _startPreloadMonitor();
+          _preloadNextTrack();
+        }
+      });
+    }
 
     // Waveform
     if (source.type == VideoSourceType.local || _cachedAudioPath != null) {
