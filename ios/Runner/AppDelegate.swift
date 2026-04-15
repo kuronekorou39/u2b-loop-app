@@ -104,17 +104,17 @@ import AVFoundation
     let timeRange = CMTimeRange(start: startTime, end: endTime)
 
     // Choose export preset
-    let preset = audioOnly
-      ? AVAssetExportSession.Preset.appleM4A
-      : AVAssetExportSession.Preset.passthrough
+    let presetName = audioOnly
+      ? AVAssetExportPresetAppleM4A
+      : AVAssetExportPresetPassthrough
 
-    guard let exportSession = AVAssetExportSession(asset: asset, presetName: preset.rawValue) else {
+    guard let exportSession = AVAssetExportSession(asset: asset, presetName: presetName) else {
       result(["success": false, "error": "エクスポートセッションを作成できません"])
       return
     }
 
     exportSession.outputURL = URL(fileURLWithPath: outputPath)
-    exportSession.outputFileType = audioOnly ? .m4a : .mp4
+    exportSession.outputFileType = audioOnly ? AVFileType.m4a : AVFileType.mp4
     exportSession.timeRange = timeRange
 
     exportSession.exportAsynchronously {
