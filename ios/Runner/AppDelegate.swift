@@ -4,11 +4,14 @@ import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var waveformTask: Task<Void, Never>?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     if let controller = window?.rootViewController as? FlutterViewController {
+      // --- Export channel ---
       let exportChannel = FlutterMethodChannel(
         name: "com.u2bloop/export",
         binaryMessenger: controller.binaryMessenger
@@ -17,6 +20,28 @@ import AVFoundation
         if call.method == "exportRegion" {
           self?.handleExportRegion(call: call, result: result)
         } else {
+          result(FlutterMethodNotImplemented)
+        }
+      }
+
+      // --- Waveform channel ---
+      let waveformChannel = FlutterMethodChannel(
+        name: "com.u2bloop/waveform",
+        binaryMessenger: controller.binaryMessenger
+      )
+      waveformChannel.setMethodCallHandler { [weak self] call, result in
+        switch call.method {
+        case "extractAmplitudes":
+          guard let args = call.arguments as? [String: Any],
+                let url = args["url"] as? String else {
+            result(FlutterError(code: "INVALID", message: "URL is null", details: nil))
+            return
+          }
+          self?.startExtraction(url: url, result: result)
+        case "cancelExtraction":
+          self?.cancelExtraction()
+          result(nil)
+        default:
           result(FlutterMethodNotImplemented)
         }
       }
@@ -107,5 +132,92 @@ import AVFoundation
         }
       }
     }
+  }
+
+  // MARK: - Waveform Extraction
+
+  private func startExtraction(url: String, result: @escaping FlutterResult) {
+    waveformTask?.cancel()
+    waveformTask = Task.detached { [weak self] in
+      do {
+        let amplitudes = try await self?.extractAudioAmplitudes(url: url) ?? []
+        await MainActor.run { result(amplitudes) }
+      } catch is CancellationError {
+        await MainActor.run { result([Int]()) }
+      } catch {
+        await MainActor.run {
+          result(FlutterError(code: "EXTRACT_ERROR", message: error.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+
+  private func cancelExtraction() {
+    waveformTask?.cancel()
+    waveformTask = nil
+  }
+
+  private func extractAudioAmplitudes(url: String) async throws -> [Int] {
+    let assetURL: URL
+    if url.hasPrefix("http://") || url.hasPrefix("https://") {
+      guard let u = URL(string: url) else { return [] }
+      assetURL = u
+    } else if url.hasPrefix("file://") {
+      guard let u = URL(string: url) else { return [] }
+      assetURL = u
+    } else {
+      assetURL = URL(fileURLWithPath: url)
+    }
+
+    let asset = AVURLAsset(url: assetURL)
+    guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
+      return []
+    }
+
+    let reader = try AVAssetReader(asset: asset)
+    let outputSettings: [String: Any] = [
+      AVFormatIDKey: kAudioFormatLinearPCM,
+      AVLinearPCMBitDepthKey: 16,
+      AVLinearPCMIsFloatKey: false,
+      AVLinearPCMIsBigEndianKey: false,
+      AVLinearPCMIsNonInterleaved: false,
+    ]
+    let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
+    reader.add(output)
+    reader.startReading()
+    defer { reader.cancelReading() }
+
+    var amplitudes = [Int]()
+    let maxAmplitudes = 100_000
+
+    while reader.status == .reading && amplitudes.count < maxAmplitudes {
+      try Task.checkCancellation()
+
+      guard let sampleBuffer = output.copyNextSampleBuffer() else { break }
+      guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
+
+      let length = CMBlockBufferGetDataLength(blockBuffer)
+      let sampleCount = length / 2
+      guard sampleCount > 0 else { continue }
+
+      var data = Data(count: length)
+      data.withUnsafeMutableBytes { ptr in
+        CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length,
+                                   destination: ptr.baseAddress!)
+      }
+
+      var sumSquares: Int64 = 0
+      data.withUnsafeBytes { rawBuffer in
+        let samples = rawBuffer.bindMemory(to: Int16.self)
+        for i in 0..<sampleCount {
+          let s = Int64(samples[i])
+          sumSquares += s * s
+        }
+      }
+      let rms = Int(sqrt(Double(sumSquares) / Double(sampleCount)))
+      amplitudes.append(rms)
+    }
+
+    return amplitudes
   }
 }

@@ -558,7 +558,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _setupPlaylistCallbacks();
     ref.read(loopProvider.notifier).setCurrentItem(track.item.id);
     _startPreloadMonitor();
-    if (shouldFadeIn) _startFadeIn();
+    if (shouldFadeIn) {
+      _startFadeIn();
+    } else {
+      // スワップ後のボリュームストリーム同期
+      // （旧プレイヤーのフェードアウト値が残らないよう新プレイヤーに明示設定）
+      try { ref.read(playerProvider).setVolume(100); } catch (_) {}
+    }
     _consecutiveLoadErrors = 0;
     // 2秒後に次曲プリロード開始（再生を安定させてから）
     Future.delayed(const Duration(seconds: 2), () {
