@@ -923,8 +923,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _swapToPreloaded(PlaylistTrack newTrack) {
-    // 実行中のプリロードを無効化（スワップ後にプレーヤーを触らせない）
-    _cancelPreload();
+    // プリロード状態をクリア（プレイヤーはstopしない — これからスワップして使う）
+    _preloadGeneration++;
+    _preloadedTrackIndex = null;
+    _preloadingTargetIndex = null;
+    _isPreloading = false;
 
     // Save reference to old player before swap
     final oldPlayer = ref.read(playerProvider);
