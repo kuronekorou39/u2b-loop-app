@@ -161,7 +161,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
-        _pipChannel.invokeMethod('setAutoPiP', {'enabled': true, 'isPlaylist': _isPlaylist});
+        _pipChannel.invokeMethod('setAutoPiP', {
+          'enabled': true, 'isPlaylist': _isPlaylist,
+          'thumbnailUrl': _currentItem.thumbnailUrl,
+          'thumbnailPath': _currentItem.thumbnailPath,
+        });
         _updatePiPPlayState();
         _startPreloadMonitor();
         // iOS: トランジション中にmpvが自動pauseするため、遷移前の状態に基づいて復元
@@ -203,7 +207,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _loadItem();
       // 自動PiPを有効化 + 現在の再生状態を送信
-      _pipChannel.invokeMethod('setAutoPiP', {'enabled': true, 'isPlaylist': _isPlaylist});
+      _pipChannel.invokeMethod('setAutoPiP', {
+        'enabled': true, 'isPlaylist': _isPlaylist,
+        'thumbnailUrl': _currentItem.thumbnailUrl,
+        'thumbnailPath': _currentItem.thumbnailPath,
+      });
       _updatePiPPlayState();
     });
   }
@@ -1411,7 +1419,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _enterPiP() async {
     _updatePiPPlayState(); // PiP突入前に再生状態を同期
     try {
-      await _pipChannel.invokeMethod('enterPiP');
+      await _pipChannel.invokeMethod('enterPiP', {
+        'thumbnailUrl': _currentItem.thumbnailUrl,
+        'thumbnailPath': _currentItem.thumbnailPath,
+      });
     } catch (_) {}
   }
 
@@ -1988,7 +1999,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               onPressed: () => setState(() => _hideVideo = !_hideVideo),
               tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
             ),
-          if (Platform.isAndroid)
+          if (Platform.isAndroid || Platform.isIOS)
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt, size: AppIconSizes.ml),
               onPressed: _enterPiP,

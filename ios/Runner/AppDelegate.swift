@@ -1,10 +1,12 @@
 import Flutter
 import UIKit
 import AVFoundation
+import AVKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var waveformTask: Task<Void, Never>?
+  var pipManager: PiPManager?
 
   override func application(
     _ application: UIApplication,
@@ -41,6 +43,50 @@ import AVFoundation
         case "cancelExtraction":
           self?.cancelExtraction()
           result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+
+      // --- PiP channel ---
+      let pipChannel = FlutterMethodChannel(
+        name: "com.u2bloop/pip",
+        binaryMessenger: controller.binaryMessenger
+      )
+      if let window = self.window {
+        let manager = PiPManager()
+        manager.setup(in: window, channel: pipChannel)
+        self.pipManager = manager
+      }
+      pipChannel.setMethodCallHandler { [weak self] call, result in
+        guard let manager = self?.pipManager else {
+          result(false)
+          return
+        }
+        switch call.method {
+        case "enterPiP":
+          let args = call.arguments as? [String: Any]
+          manager.updateThumbnail(
+            url: args?["thumbnailUrl"] as? String,
+            localPath: args?["thumbnailPath"] as? String
+          )
+          let ok = manager.enterPiP()
+          result(ok)
+        case "setAutoPiP":
+          let args = call.arguments as? [String: Any] ?? [:]
+          let enabled = args["enabled"] as? Bool ?? false
+          let isPlaylist = args["isPlaylist"] as? Bool ?? false
+          manager.setAutoPiP(enabled: enabled, isPlaylist: isPlaylist)
+          manager.updateThumbnail(
+            url: args["thumbnailUrl"] as? String,
+            localPath: args["thumbnailPath"] as? String
+          )
+          result(true)
+        case "updatePiPPlayState":
+          let args = call.arguments as? [String: Any] ?? [:]
+          let playing = args["playing"] as? Bool ?? false
+          manager.updatePlayState(playing: playing)
+          result(true)
         default:
           result(FlutterMethodNotImplemented)
         }
@@ -227,5 +273,205 @@ import AVFoundation
     }
 
     return amplitudes
+  }
+}
+
+// MARK: - PiP Manager
+
+class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
+                  AVPictureInPictureSampleBufferPlaybackDelegate {
+  private var pipController: AVPictureInPictureController?
+  private var displayLayer: AVSampleBufferDisplayLayer?
+  private var pipView: UIView?
+  private weak var channel: FlutterMethodChannel?
+
+  private var autoPipEnabled = false
+  private(set) var isPlaying = false
+  private var isPlaylist = false
+
+  func setup(in window: UIWindow, channel: FlutterMethodChannel) {
+    self.channel = channel
+    guard AVPictureInPictureController.isPictureInPictureSupported else { return }
+
+    let layer = AVSampleBufferDisplayLayer()
+    layer.videoGravity = .resizeAspect
+    self.displayLayer = layer
+
+    // PiP には view hierarchy に追加された layer が必要
+    let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+    view.alpha = 0
+    view.layer.addSublayer(layer)
+    layer.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+    window.rootViewController?.view.addSubview(view)
+    self.pipView = view
+
+    let contentSource = AVPictureInPictureController.ContentSource(
+      sampleBufferDisplayLayer: layer,
+      playbackDelegate: self
+    )
+    let controller = AVPictureInPictureController(contentSource: contentSource)
+    controller.delegate = self
+    controller.canStartPictureInPictureAutomaticallyFromInline = false
+    self.pipController = controller
+  }
+
+  func enterPiP() -> Bool {
+    guard let pip = pipController,
+          AVPictureInPictureController.isPictureInPictureSupported else { return false }
+    if pip.isPictureInPictureActive { return true }
+    pip.startPictureInPicture()
+    return true
+  }
+
+  func setAutoPiP(enabled: Bool, isPlaylist: Bool) {
+    self.autoPipEnabled = enabled
+    self.isPlaylist = isPlaylist
+  }
+
+  func updatePlayState(playing: Bool) {
+    self.isPlaying = playing
+    pipController?.invalidatePlaybackState()
+  }
+
+  /// SceneDelegate から呼ばれる: バックグラウンド遷移時の自動 PiP
+  func startPiPIfNeeded() {
+    guard autoPipEnabled, isPlaying,
+          let pip = pipController,
+          !pip.isPictureInPictureActive,
+          AVPictureInPictureController.isPictureInPictureSupported else { return }
+    pip.startPictureInPicture()
+  }
+
+  // MARK: - Thumbnail
+
+  func updateThumbnail(url: String?, localPath: String?) {
+    if let path = localPath, let image = UIImage(contentsOfFile: path) {
+      enqueuePosterFrame(image)
+    } else if let urlString = url, let url = URL(string: urlString) {
+      URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+        guard let data = data, let image = UIImage(data: data) else { return }
+        DispatchQueue.main.async { self?.enqueuePosterFrame(image) }
+      }.resume()
+    }
+  }
+
+  private func enqueuePosterFrame(_ image: UIImage) {
+    guard let layer = displayLayer,
+          let pixelBuffer = pixelBufferFromImage(image) else { return }
+
+    var formatDesc: CMVideoFormatDescription?
+    CMVideoFormatDescriptionCreateForImageBuffer(
+      allocator: kCFAllocatorDefault,
+      imageBuffer: pixelBuffer,
+      formatDescriptionOut: &formatDesc
+    )
+    guard let format = formatDesc else { return }
+
+    var timing = CMSampleTimingInfo(
+      duration: CMTime(value: 1, timescale: 1),
+      presentationTimeStamp: .zero,
+      decodeTimeStamp: .invalid
+    )
+    var sampleBuffer: CMSampleBuffer?
+    CMSampleBufferCreateForImageBuffer(
+      allocator: kCFAllocatorDefault,
+      imageBuffer: pixelBuffer,
+      dataReady: true,
+      makeDataReadyCallback: nil,
+      refcon: nil,
+      formatDescription: format,
+      sampleTiming: &timing,
+      sampleBufferOut: &sampleBuffer
+    )
+    guard let buffer = sampleBuffer else { return }
+
+    layer.flush()
+    layer.enqueue(buffer)
+  }
+
+  private func pixelBufferFromImage(_ image: UIImage) -> CVPixelBuffer? {
+    guard let cgImage = image.cgImage else { return nil }
+    let width = cgImage.width
+    let height = cgImage.height
+
+    var pixelBuffer: CVPixelBuffer?
+    let attrs: [String: Any] = [
+      kCVPixelBufferCGImageCompatibilityKey as String: true,
+      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+    ]
+    let status = CVPixelBufferCreate(
+      kCFAllocatorDefault, width, height,
+      kCVPixelFormatType_32BGRA, attrs as CFDictionary, &pixelBuffer
+    )
+    guard status == kCVReturnSuccess, let pb = pixelBuffer else { return nil }
+
+    CVPixelBufferLockBaseAddress(pb, [])
+    defer { CVPixelBufferUnlockBaseAddress(pb, []) }
+
+    guard let ctx = CGContext(
+      data: CVPixelBufferGetBaseAddress(pb),
+      width: width, height: height,
+      bitsPerComponent: 8,
+      bytesPerRow: CVPixelBufferGetBytesPerRow(pb),
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue |
+                  CGBitmapInfo.byteOrder32Little.rawValue
+    ) else { return nil }
+
+    ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return pb
+  }
+
+  // MARK: - AVPictureInPictureControllerDelegate
+
+  func pictureInPictureControllerWillStartPictureInPicture(
+    _ controller: AVPictureInPictureController
+  ) {
+    channel?.invokeMethod("onPiPChanged", arguments: true)
+  }
+
+  func pictureInPictureControllerDidStopPictureInPicture(
+    _ controller: AVPictureInPictureController
+  ) {
+    channel?.invokeMethod("onPiPChanged", arguments: false)
+  }
+
+  // MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
+
+  func pictureInPictureController(
+    _ controller: AVPictureInPictureController,
+    setPlaying playing: Bool
+  ) {
+    channel?.invokeMethod("onPiPAction", arguments: "playPause")
+  }
+
+  func pictureInPictureController(
+    _ controller: AVPictureInPictureController,
+    skipByInterval interval: CMTime,
+    completionHandler: @escaping () -> Void
+  ) {
+    let action = interval.seconds > 0 ? "next" : "prev"
+    channel?.invokeMethod("onPiPAction", arguments: action)
+    completionHandler()
+  }
+
+  func pictureInPictureControllerTimeRangeForPlayback(
+    _ controller: AVPictureInPictureController
+  ) -> CMTimeRange {
+    // 長時間の範囲を返してスクラバーを無効化
+    return CMTimeRange(start: .zero, duration: CMTime(value: 36000, timescale: 1))
+  }
+
+  func pictureInPictureControllerIsPlaybackPaused(
+    _ controller: AVPictureInPictureController
+  ) -> Bool {
+    return !isPlaying
+  }
+
+  func pictureInPictureController(
+    _ controller: AVPictureInPictureController,
+    didTransitionToRenderSize newRenderSize: CMVideoDimensions
+  ) {
+    // no-op
   }
 }
