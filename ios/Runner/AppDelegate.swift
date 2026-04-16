@@ -293,17 +293,24 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     self.channel = channel
     guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
 
+    // PiP にはアクティブな .playback オーディオセッションが必要
+    let session = AVAudioSession.sharedInstance()
+    try? session.setCategory(.playback, mode: .moviePlayback)
+    try? session.setActive(true)
+
     let layer = AVSampleBufferDisplayLayer()
     layer.videoGravity = .resizeAspect
     self.displayLayer = layer
 
-    // PiP には view hierarchy に追加された layer が必要
-    let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
-    view.alpha = 0
+    // PiP には view hierarchy に追加された layer が必要（非表示でOKだがサイズは必要）
+    let view = UIView(frame: CGRect(x: -1, y: -1, width: 1, height: 1))
     view.layer.addSublayer(layer)
-    layer.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+    layer.frame = CGRect(x: 0, y: 0, width: 300, height: 169)
     window.rootViewController?.view.addSubview(view)
     self.pipView = view
+
+    // デフォルトの黒フレームを投入（サムネイル未ロード時のフォールバック）
+    enqueueBlackFrame(width: 300, height: 169)
 
     let contentSource = AVPictureInPictureController.ContentSource(
       sampleBufferDisplayLayer: layer,
@@ -316,11 +323,47 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   }
 
   func enterPiP() -> Bool {
-    guard let pip = pipController,
-          AVPictureInPictureController.isPictureInPictureSupported() else { return false }
+    guard let pip = pipController else { return false }
     if pip.isPictureInPictureActive { return true }
+    if !pip.isPictureInPicturePossible { return false }
     pip.startPictureInPicture()
     return true
+  }
+
+  private func enqueueBlackFrame(width: Int, height: Int) {
+    guard let layer = displayLayer else { return }
+    var pixelBuffer: CVPixelBuffer?
+    CVPixelBufferCreate(kCFAllocatorDefault, width, height,
+                        kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+    guard let pb = pixelBuffer else { return }
+
+    // ゼロクリア（黒）
+    CVPixelBufferLockBaseAddress(pb, [])
+    let base = CVPixelBufferGetBaseAddress(pb)
+    memset(base, 0, CVPixelBufferGetDataSize(pb))
+    CVPixelBufferUnlockBaseAddress(pb, [])
+
+    var formatDesc: CMVideoFormatDescription?
+    CMVideoFormatDescriptionCreateForImageBuffer(
+      allocator: kCFAllocatorDefault, imageBuffer: pb, formatDescriptionOut: &formatDesc
+    )
+    guard let format = formatDesc else { return }
+
+    var timing = CMSampleTimingInfo(
+      duration: CMTime(value: 1, timescale: 1),
+      presentationTimeStamp: .zero,
+      decodeTimeStamp: .invalid
+    )
+    var sampleBuffer: CMSampleBuffer?
+    CMSampleBufferCreateForImageBuffer(
+      allocator: kCFAllocatorDefault, imageBuffer: pb, dataReady: true,
+      makeDataReadyCallback: nil, refcon: nil,
+      formatDescription: format, sampleTiming: &timing,
+      sampleBufferOut: &sampleBuffer
+    )
+    guard let buffer = sampleBuffer else { return }
+    layer.flush()
+    layer.enqueue(buffer)
   }
 
   func setAutoPiP(enabled: Bool, isPlaylist: Bool) {
