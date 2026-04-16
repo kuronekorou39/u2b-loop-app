@@ -24,13 +24,14 @@ import AVKit
 
     // Scene ベースのライフサイクルでは didFinishLaunchingWithOptions 時点で
     // window が nil のため、エンジン初期化完了後にチャネルを登録する
-    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "U2BLoopChannels")
-    let messenger = registrar.messenger()
+    guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "U2BLoopChannels")
+    else { return }
+    let messenger: FlutterBinaryMessenger = registrar.messenger()
 
     // --- Export channel ---
     let ec = FlutterMethodChannel(name: "com.u2bloop/export", binaryMessenger: messenger)
     self.exportChannel = ec
-    ec.setMethodCallHandler { [weak self] call, result in
+    ec.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       if call.method == "exportRegion" {
         self?.handleExportRegion(call: call, result: result)
       } else {
@@ -41,7 +42,7 @@ import AVKit
     // --- Waveform channel ---
     let wc = FlutterMethodChannel(name: "com.u2bloop/waveform", binaryMessenger: messenger)
     self.waveformChannel = wc
-    wc.setMethodCallHandler { [weak self] call, result in
+    wc.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       switch call.method {
       case "extractAmplitudes":
         guard let args = call.arguments as? [String: Any],
@@ -52,7 +53,7 @@ import AVKit
         self?.startExtraction(url: url, result: result)
       case "cancelExtraction":
         self?.cancelExtraction()
-        result(nil)
+        result(nil as Any?)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -61,9 +62,9 @@ import AVKit
     // --- PiP channel ---
     let pc = FlutterMethodChannel(name: "com.u2bloop/pip", binaryMessenger: messenger)
     self.pipChannel = pc
-    pc.setMethodCallHandler { [weak self] call, result in
+    pc.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard let manager = self?.pipManager else {
-        result(["error": "pipManager is nil", "hasWindow": self?.window != nil])
+        result(["error": "pipManager is nil", "hasWindow": self?.window != nil] as [String: Any])
         return
       }
       switch call.method {
