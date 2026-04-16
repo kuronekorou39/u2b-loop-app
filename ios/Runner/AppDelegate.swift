@@ -16,88 +16,92 @@ import AVKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    if let controller = window?.rootViewController as? FlutterViewController {
-      let messenger = controller.binaryMessenger
-
-      // --- Export channel ---
-      let ec = FlutterMethodChannel(name: "com.u2bloop/export", binaryMessenger: messenger)
-      self.exportChannel = ec
-      ec.setMethodCallHandler { [weak self] call, result in
-        if call.method == "exportRegion" {
-          self?.handleExportRegion(call: call, result: result)
-        } else {
-          result(FlutterMethodNotImplemented)
-        }
-      }
-
-      // --- Waveform channel ---
-      let wc = FlutterMethodChannel(name: "com.u2bloop/waveform", binaryMessenger: messenger)
-      self.waveformChannel = wc
-      wc.setMethodCallHandler { [weak self] call, result in
-        switch call.method {
-        case "extractAmplitudes":
-          guard let args = call.arguments as? [String: Any],
-                let url = args["url"] as? String else {
-            result(FlutterError(code: "INVALID", message: "URL is null", details: nil))
-            return
-          }
-          self?.startExtraction(url: url, result: result)
-        case "cancelExtraction":
-          self?.cancelExtraction()
-          result(nil)
-        default:
-          result(FlutterMethodNotImplemented)
-        }
-      }
-
-      // --- PiP channel ---
-      let pc = FlutterMethodChannel(name: "com.u2bloop/pip", binaryMessenger: messenger)
-      self.pipChannel = pc
-      if let window = self.window {
-        let manager = PiPManager()
-        manager.setup(in: window, channel: pc)
-        self.pipManager = manager
-      }
-      pc.setMethodCallHandler { [weak self] call, result in
-        guard let manager = self?.pipManager else {
-          // pipManager 未初期化の診断情報を返す
-          result(["error": "pipManager is nil", "hasWindow": self?.window != nil])
-          return
-        }
-        switch call.method {
-        case "enterPiP":
-          let args = call.arguments as? [String: Any]
-          manager.updateThumbnail(
-            url: args?["thumbnailUrl"] as? String,
-            localPath: args?["thumbnailPath"] as? String
-          )
-          let diag = manager.enterPiPWithDiag()
-          result(diag)
-        case "setAutoPiP":
-          let args = call.arguments as? [String: Any] ?? [:]
-          let enabled = args["enabled"] as? Bool ?? false
-          let isPlaylist = args["isPlaylist"] as? Bool ?? false
-          manager.setAutoPiP(enabled: enabled, isPlaylist: isPlaylist)
-          manager.updateThumbnail(
-            url: args["thumbnailUrl"] as? String,
-            localPath: args["thumbnailPath"] as? String
-          )
-          result(true)
-        case "updatePiPPlayState":
-          let args = call.arguments as? [String: Any] ?? [:]
-          let playing = args["playing"] as? Bool ?? false
-          manager.updatePlayState(playing: playing)
-          result(true)
-        default:
-          result(FlutterMethodNotImplemented)
-        }
-      }
-    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    // Scene ベースのライフサイクルでは didFinishLaunchingWithOptions 時点で
+    // window が nil のため、エンジン初期化完了後にチャネルを登録する
+    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "U2BLoopChannels")
+    let messenger = registrar.messenger()
+
+    // --- Export channel ---
+    let ec = FlutterMethodChannel(name: "com.u2bloop/export", binaryMessenger: messenger)
+    self.exportChannel = ec
+    ec.setMethodCallHandler { [weak self] call, result in
+      if call.method == "exportRegion" {
+        self?.handleExportRegion(call: call, result: result)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // --- Waveform channel ---
+    let wc = FlutterMethodChannel(name: "com.u2bloop/waveform", binaryMessenger: messenger)
+    self.waveformChannel = wc
+    wc.setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "extractAmplitudes":
+        guard let args = call.arguments as? [String: Any],
+              let url = args["url"] as? String else {
+          result(FlutterError(code: "INVALID", message: "URL is null", details: nil))
+          return
+        }
+        self?.startExtraction(url: url, result: result)
+      case "cancelExtraction":
+        self?.cancelExtraction()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // --- PiP channel ---
+    let pc = FlutterMethodChannel(name: "com.u2bloop/pip", binaryMessenger: messenger)
+    self.pipChannel = pc
+    pc.setMethodCallHandler { [weak self] call, result in
+      guard let manager = self?.pipManager else {
+        result(["error": "pipManager is nil", "hasWindow": self?.window != nil])
+        return
+      }
+      switch call.method {
+      case "enterPiP":
+        let args = call.arguments as? [String: Any]
+        manager.updateThumbnail(
+          url: args?["thumbnailUrl"] as? String,
+          localPath: args?["thumbnailPath"] as? String
+        )
+        let diag = manager.enterPiPWithDiag()
+        result(diag)
+      case "setAutoPiP":
+        let args = call.arguments as? [String: Any] ?? [:]
+        let enabled = args["enabled"] as? Bool ?? false
+        let isPlaylist = args["isPlaylist"] as? Bool ?? false
+        manager.setAutoPiP(enabled: enabled, isPlaylist: isPlaylist)
+        manager.updateThumbnail(
+          url: args["thumbnailUrl"] as? String,
+          localPath: args["thumbnailPath"] as? String
+        )
+        result(true)
+      case "updatePiPPlayState":
+        let args = call.arguments as? [String: Any] ?? [:]
+        let playing = args["playing"] as? Bool ?? false
+        manager.updatePlayState(playing: playing)
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // PiPManager のセットアップ（window が利用可能になった後）
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, let window = self.window else { return }
+      let manager = PiPManager()
+      manager.setup(in: window, channel: pc)
+      self.pipManager = manager
+    }
   }
 
   // MARK: - Export Region
