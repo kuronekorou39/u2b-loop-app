@@ -70,8 +70,8 @@ import AVKit
             url: args?["thumbnailUrl"] as? String,
             localPath: args?["thumbnailPath"] as? String
           )
-          let ok = manager.enterPiP()
-          result(ok)
+          let diag = manager.enterPiPWithDiag()
+          result(diag)
         case "setAutoPiP":
           let args = call.arguments as? [String: Any] ?? [:]
           let enabled = args["enabled"] as? Bool ?? false
@@ -328,6 +328,41 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     if !pip.isPictureInPicturePossible { return false }
     pip.startPictureInPicture()
     return true
+  }
+
+  /// 診断情報付き enterPiP（デバッグ用）
+  func enterPiPWithDiag() -> [String: Any] {
+    let supported = AVPictureInPictureController.isPictureInPictureSupported()
+    let hasController = pipController != nil
+    let hasLayer = displayLayer != nil
+    let possible = pipController?.isPictureInPicturePossible ?? false
+    let active = pipController?.isPictureInPictureActive ?? false
+    let layerReady = displayLayer?.isReadyForMoreMediaData ?? false
+    let layerStatus = displayLayer?.status.rawValue ?? -1
+
+    var diag: [String: Any] = [
+      "supported": supported,
+      "hasController": hasController,
+      "hasLayer": hasLayer,
+      "possible": possible,
+      "active": active,
+      "layerReady": layerReady,
+      "layerStatus": layerStatus,
+    ]
+
+    if !supported {
+      diag["error"] = "PiP not supported on this device"
+    } else if !hasController {
+      diag["error"] = "PiP controller not initialized"
+    } else if active {
+      diag["ok"] = true
+    } else if !possible {
+      diag["error"] = "PiP not possible (isPictureInPicturePossible=false)"
+    } else {
+      pipController!.startPictureInPicture()
+      diag["ok"] = true
+    }
+    return diag
   }
 
   private func enqueueBlackFrame(width: Int, height: Int) {

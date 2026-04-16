@@ -1419,11 +1419,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _enterPiP() async {
     _updatePiPPlayState(); // PiP突入前に再生状態を同期
     try {
-      await _pipChannel.invokeMethod('enterPiP', {
+      final result = await _pipChannel.invokeMethod('enterPiP', {
         'thumbnailUrl': _currentItem.thumbnailUrl,
         'thumbnailPath': _currentItem.thumbnailPath,
       });
-    } catch (_) {}
+      // デバッグ: PiP診断結果を表示
+      if (result is Map && result['error'] != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PiP: $result'), duration: const Duration(seconds: 5)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PiP error: $e'), duration: const Duration(seconds: 5)),
+        );
+      }
+    }
   }
 
   void _updatePiPPlayState() {
