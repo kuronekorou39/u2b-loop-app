@@ -16,6 +16,8 @@ class MiniPlayerState {
   final Set<String>? disabledItemIds;
   final String? playlistName;
   final String? playlistId;
+  /// 遷移前の再生状態（iOS: トランジション中にmpvが自動pauseするため保存が必要）
+  final bool wasPlaying;
 
   const MiniPlayerState({
     this.active = false,
@@ -26,6 +28,7 @@ class MiniPlayerState {
     this.disabledItemIds,
     this.playlistName,
     this.playlistId,
+    this.wasPlaying = false,
   });
 }
 
@@ -60,7 +63,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
   }
 
   /// フルスクリーン復帰時: UIのみ非表示、再生情報は保持（復帰判定用）
-  void deactivateUI() {
+  void deactivateUI({bool wasPlaying = false}) {
     state = MiniPlayerState(
       active: false,
       item: state.item,
@@ -70,6 +73,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
       disabledItemIds: state.disabledItemIds,
       playlistName: state.playlistName,
       playlistId: state.playlistId,
+      wasPlaying: wasPlaying,
     );
   }
 

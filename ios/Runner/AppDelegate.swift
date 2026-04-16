@@ -189,6 +189,8 @@ import AVFoundation
 
     var amplitudes = [Int]()
     let maxAmplitudes = 100_000
+    // Android の MediaCodec 出力と同等の粒度（AACの1フレーム ≒ 1024サンプル）
+    let samplesPerWindow = 1024
 
     while reader.status == .reading && amplitudes.count < maxAmplitudes {
       try Task.checkCancellation()
@@ -197,8 +199,8 @@ import AVFoundation
       guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
 
       let length = CMBlockBufferGetDataLength(blockBuffer)
-      let sampleCount = length / 2
-      guard sampleCount > 0 else { continue }
+      let totalSamples = length / 2
+      guard totalSamples > 0 else { continue }
 
       var data = Data(count: length)
       data.withUnsafeMutableBytes { ptr in
@@ -206,16 +208,22 @@ import AVFoundation
                                    destination: ptr.baseAddress!)
       }
 
-      var sumSquares: Int64 = 0
       data.withUnsafeBytes { rawBuffer in
         let samples = rawBuffer.bindMemory(to: Int16.self)
-        for i in 0..<sampleCount {
-          let s = Int64(samples[i])
-          sumSquares += s * s
+        var offset = 0
+        while offset < totalSamples && amplitudes.count < maxAmplitudes {
+          let windowEnd = min(offset + samplesPerWindow, totalSamples)
+          var sumSquares: Int64 = 0
+          for i in offset..<windowEnd {
+            let s = Int64(samples[i])
+            sumSquares += s * s
+          }
+          let count = windowEnd - offset
+          let rms = Int(sqrt(Double(sumSquares) / Double(count)))
+          amplitudes.append(rms)
+          offset = windowEnd
         }
       }
-      let rms = Int(sqrt(Double(sumSquares) / Double(sampleCount)))
-      amplitudes.append(rms)
     }
 
     return amplitudes

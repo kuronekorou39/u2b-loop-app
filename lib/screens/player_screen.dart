@@ -156,13 +156,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           && miniState.playlistId == widget.playlistId;
 
       if (isSameContext) {
-        // 同一コンテキスト: ロードスキップ、再生状態をそのまま引き継ぐ
+        // 同一コンテキスト: ロードスキップ、再生状態を復元
+        final wasPlaying = miniState.wasPlaying;
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
         _pipChannel.invokeMethod('setAutoPiP', {'enabled': true, 'isPlaylist': _isPlaylist});
         _updatePiPPlayState();
         _startPreloadMonitor();
+        // iOS: トランジション中にmpvが自動pauseするため、遷移前の状態に基づいて復元
+        if (wasPlaying) {
+          ref.read(playerProvider).play();
+        }
         setState(() {
           _loading = false;
           _loadError = null;
@@ -963,14 +968,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // Swap active slot
     final currentSlot = ref.read(activeSlotProvider);
-    ref.read(activeSlotProvider.notifier).state =
-        currentSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
+    final newSlot = currentSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
+    ref.read(activeSlotProvider.notifier).state = newSlot;
+
+    // 新しいプレイヤーを直接参照（プロバイダ経由だと更新が遅れる場合がある）
+    final newPlayer = newSlot == ActiveSlot.a
+        ? ref.read(playerAProvider)
+        : ref.read(playerBProvider);
 
     // Stop old player (now the preload player)
     oldPlayer.stop();
 
     // Play new active player
-    ref.read(playerProvider).play();
+    newPlayer.play();
 
     // 再生カウント: トラック切替
     ref.read(loopProvider.notifier).setCurrentItem(item.id);

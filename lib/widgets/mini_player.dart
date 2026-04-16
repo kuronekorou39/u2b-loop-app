@@ -93,8 +93,10 @@ class MiniPlayerBar extends ConsumerWidget {
   }
 
   void _openFullPlayer(WidgetRef ref, MiniPlayerState state) {
+    // 遷移前の再生状態を保存（iOS: トランジション中にmpvが自動pauseする）
+    final wasPlaying = ref.read(playerProvider).state.playing;
     // ミニプレイヤーUIを消す（Videoウィジェットを除去）
-    ref.read(miniPlayerProvider.notifier).deactivateUI();
+    ref.read(miniPlayerProvider.notifier).deactivateUI(wasPlaying: wasPlaying);
 
     // プレイリストIDがある場合、Hiveから最新データを取得
     List<LoopItem>? playlistItems = state.playlistItems;

@@ -432,7 +432,11 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 // Current time (left)
                 Text(
                   TimeUtils.format(position),
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontFeatures: [FontFeature('tnum')],
+                  ),
                 ),
                 const Spacer(),
                 // Zoom controls (center)
@@ -514,7 +518,11 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 // Total duration (right)
                 Text(
                   TimeUtils.format(duration),
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontFeatures: [FontFeature('tnum')],
+                  ),
                 ),
                 // Compact toggle
                 if (widget.onToggleCompact != null) ...[
@@ -546,7 +554,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
         children: [
           Text(
             TimeUtils.format(position),
-            style: Theme.of(context).textTheme.labelSmall,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontFeatures: const [FontFeature('tnum')],
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
