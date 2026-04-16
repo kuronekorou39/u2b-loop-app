@@ -7,18 +7,22 @@ import AVKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var waveformTask: Task<Void, Never>?
   var pipManager: PiPManager?
+  // チャネルをインスタンスで保持（ARC でハンドラが解除されるのを防ぐ）
+  private var exportChannel: FlutterMethodChannel?
+  private var waveformChannel: FlutterMethodChannel?
+  private var pipChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     if let controller = window?.rootViewController as? FlutterViewController {
+      let messenger = controller.binaryMessenger
+
       // --- Export channel ---
-      let exportChannel = FlutterMethodChannel(
-        name: "com.u2bloop/export",
-        binaryMessenger: controller.binaryMessenger
-      )
-      exportChannel.setMethodCallHandler { [weak self] call, result in
+      let ec = FlutterMethodChannel(name: "com.u2bloop/export", binaryMessenger: messenger)
+      self.exportChannel = ec
+      ec.setMethodCallHandler { [weak self] call, result in
         if call.method == "exportRegion" {
           self?.handleExportRegion(call: call, result: result)
         } else {
@@ -27,11 +31,9 @@ import AVKit
       }
 
       // --- Waveform channel ---
-      let waveformChannel = FlutterMethodChannel(
-        name: "com.u2bloop/waveform",
-        binaryMessenger: controller.binaryMessenger
-      )
-      waveformChannel.setMethodCallHandler { [weak self] call, result in
+      let wc = FlutterMethodChannel(name: "com.u2bloop/waveform", binaryMessenger: messenger)
+      self.waveformChannel = wc
+      wc.setMethodCallHandler { [weak self] call, result in
         switch call.method {
         case "extractAmplitudes":
           guard let args = call.arguments as? [String: Any],
@@ -49,18 +51,17 @@ import AVKit
       }
 
       // --- PiP channel ---
-      let pipChannel = FlutterMethodChannel(
-        name: "com.u2bloop/pip",
-        binaryMessenger: controller.binaryMessenger
-      )
+      let pc = FlutterMethodChannel(name: "com.u2bloop/pip", binaryMessenger: messenger)
+      self.pipChannel = pc
       if let window = self.window {
         let manager = PiPManager()
-        manager.setup(in: window, channel: pipChannel)
+        manager.setup(in: window, channel: pc)
         self.pipManager = manager
       }
-      pipChannel.setMethodCallHandler { [weak self] call, result in
+      pc.setMethodCallHandler { [weak self] call, result in
         guard let manager = self?.pipManager else {
-          result(false)
+          // pipManager 未初期化の診断情報を返す
+          result(["error": "pipManager is nil", "hasWindow": self?.window != nil])
           return
         }
         switch call.method {

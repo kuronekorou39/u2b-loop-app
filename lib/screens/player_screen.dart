@@ -1423,16 +1423,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         'thumbnailUrl': _currentItem.thumbnailUrl,
         'thumbnailPath': _currentItem.thumbnailPath,
       });
-      // デバッグ: PiP診断結果を表示
-      if (result is Map && result['error'] != null && mounted) {
+      // デバッグ: PiP診断結果を常に表示
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('PiP: $result'), duration: const Duration(seconds: 5)),
+          SnackBar(content: Text('PiP: $result'), duration: const Duration(seconds: 8)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('PiP error: $e'), duration: const Duration(seconds: 5)),
+          SnackBar(content: Text('PiP exception: $e'), duration: const Duration(seconds: 8)),
         );
       }
     }
