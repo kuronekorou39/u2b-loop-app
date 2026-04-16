@@ -291,7 +291,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
 
   func setup(in window: UIWindow, channel: FlutterMethodChannel) {
     self.channel = channel
-    guard AVPictureInPictureController.isPictureInPictureSupported else { return }
+    guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
 
     let layer = AVSampleBufferDisplayLayer()
     layer.videoGravity = .resizeAspect
@@ -317,7 +317,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
 
   func enterPiP() -> Bool {
     guard let pip = pipController,
-          AVPictureInPictureController.isPictureInPictureSupported else { return false }
+          AVPictureInPictureController.isPictureInPictureSupported() else { return false }
     if pip.isPictureInPictureActive { return true }
     pip.startPictureInPicture()
     return true
@@ -338,7 +338,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     guard autoPipEnabled, isPlaying,
           let pip = pipController,
           !pip.isPictureInPictureActive,
-          AVPictureInPictureController.isPictureInPictureSupported else { return }
+          AVPictureInPictureController.isPictureInPictureSupported() else { return }
     pip.startPictureInPicture()
   }
 
@@ -448,11 +448,11 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   func pictureInPictureController(
     _ controller: AVPictureInPictureController,
     skipByInterval interval: CMTime,
-    completionHandler: @escaping () -> Void
+    completion: @escaping () -> Void
   ) {
     let action = interval.seconds > 0 ? "next" : "prev"
     channel?.invokeMethod("onPiPAction", arguments: action)
-    completionHandler()
+    completion()
   }
 
   func pictureInPictureControllerTimeRangeForPlayback(
