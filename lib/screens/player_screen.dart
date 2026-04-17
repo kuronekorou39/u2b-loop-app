@@ -231,17 +231,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // ミニプレイヤー有効時は再生状態を温存
     final miniActive = ref.read(miniPlayerProvider).active;
 
-    // 自動PiP: ミニプレイヤー有効時はPiP許可だがautoEnter無効
-    // （ホーム押下時にFlutterナビゲーション→PiP突入の手順を踏む）
-    try {
-      if (miniActive) {
-        _pipChannel.invokeMethod('setAutoPiP', {
-          'enabled': true, 'isPlaylist': _isPlaylist, 'autoEnter': false,
-        });
-      } else {
+    // 自動PiP: ミニプレイヤー有効時は維持（PiP突入後にPlayerScreenに遷移する）
+    if (!miniActive) {
+      try {
         _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
     if (!miniActive) {
       try {
         ref.read(loopProvider.notifier).setCurrentItem(null);
@@ -254,14 +249,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       } catch (_) {}
     }
 
-    // PiPハンドラ: ミニプレイヤー中のnavigateForPiP用
+    // PiPハンドラ: ミニプレイヤー中にPiP突入→PlayerScreenに自動遷移
     if (miniActive) {
       final miniState = ref.read(miniPlayerProvider);
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
       _pipChannel.setMethodCallHandler((call) async {
-        if (call.method == 'navigateForPiP') {
+        if (call.method == 'onPiPChanged' && call.arguments == true) {
+          // PiP突入検知 → PlayerScreenに遷移（PiP内表示が動画に切り替わる）
           miniNotifier.deactivateUI();
-          // Hiveから最新データ取得（MiniPlayerBar._openFullPlayerと同じ）
           var playlistItems = miniState.playlistItems;
           var regionSelections = miniState.regionSelections;
           var disabledItemIds = miniState.disabledItemIds;
