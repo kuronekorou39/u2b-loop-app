@@ -1800,21 +1800,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _removeTrackFromPlaylist(int trackIndex, PlaylistTrack track) async {
+    final isCurrent =
+        ref.read(playlistPlayerProvider).currentTrackIndex == trackIndex;
+
     final removed = ref
         .read(playlistPlayerProvider.notifier)
         .removeTrack(trackIndex);
-    if (removed && widget.playlistId != null) {
+    if (!removed) return;
+
+    // プリロード状態をリセット（インデックスがずれるため）
+    _cancelPreload();
+
+    if (widget.playlistId != null) {
       await ref
           .read(playlistsProvider.notifier)
           .removeItem(widget.playlistId!, track.item.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('「${track.item.title}」を削除しました'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+    }
+
+    // 再生中トラックを削除した場合: 次のトラックにスキップ
+    if (isCurrent) {
+      final newTrack = ref.read(playlistPlayerProvider).currentTrack;
+      if (newTrack != null) {
+        _cancelFade();
+        _loadItem();
       }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('「${track.item.title}」を削除しました'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -1875,6 +1893,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final currentIdx = plState.currentTrackIndex;
     final allTags = ref.watch(tagsProvider);
     final tagMap = {for (final t in allTags) t.id: t};
+    // タグ変更時にトラック一覧を再描画するために監視
+    ref.watch(loopItemsProvider);
 
     return Container(
       decoration: BoxDecoration(
