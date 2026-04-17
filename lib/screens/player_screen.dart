@@ -1909,7 +1909,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           // Track list
           Flexible(
             child: ListView.builder(
-              padding: EdgeInsets.only(bottom: bottomInset),
+              padding: EdgeInsets.only(bottom: bottomInset + AppSpacing.xxl),
               itemCount: plState.tracks.length,
               itemBuilder: (ctx, i) {
                 final track = plState.tracks[i];
