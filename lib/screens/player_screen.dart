@@ -222,13 +222,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _loadingStatus.dispose();
     _cancelFade();
     _preloadCheckTimer?.cancel();
-    // 自動PiPを無効化
-    try {
-      _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
-    } catch (_) {}
 
     // ミニプレイヤー有効時は再生状態を温存
     final miniActive = ref.read(miniPlayerProvider).active;
+
+    // 自動PiP: ミニプレイヤー有効時は維持、それ以外は無効化
+    if (!miniActive) {
+      try {
+        _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
+      } catch (_) {}
+    }
     if (!miniActive) {
       try {
         ref.read(loopProvider.notifier).setCurrentItem(null);

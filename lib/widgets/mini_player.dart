@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -11,6 +12,8 @@ import '../models/playlist.dart' as app;
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../screens/player_screen.dart';
+
+const _pipChannel = MethodChannel('com.u2bloop/pip');
 
 class MiniPlayerBar extends ConsumerWidget {
   const MiniPlayerBar({super.key});
@@ -79,6 +82,10 @@ class MiniPlayerBar extends ConsumerWidget {
                       onPressed: () {
                         player.stop();
                         ref.read(miniPlayerProvider.notifier).deactivate();
+                        // 自動PiPを無効化
+                        try {
+                          _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
+                        } catch (_) {}
                       },
                     ),
                     const SizedBox(width: AppSpacing.xs),
