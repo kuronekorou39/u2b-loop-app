@@ -19,8 +19,10 @@ import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/loading_animation_provider.dart';
 import '../services/export_service.dart';
 import '../services/waveform_service.dart';
+import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
@@ -731,64 +733,66 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   Widget _buildLoadingView() {
     final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _item.title,
-              style: textTheme.titleSmall!.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: AppSpacing.xxl),
-            TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: _loadingProgress),
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOut,
-              builder: (context, value, _) {
-                return Column(
-                  children: [
-                    ClipRRect(
-                      borderRadius: AppRadius.borderXs,
-                      child: LinearProgressIndicator(
-                        value: value,
-                        minHeight: 6,
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      child: Text(
-                        _loadingStatus,
-                        key: ValueKey(_loadingStatus),
-                        style: textTheme.bodyMedium!.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: LoadingAnimationView(
+            type: ref.read(loadingAnimationProvider),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _item.title,
+                  style: textTheme.titleSmall!.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: AppSpacing.xxl),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: _loadingProgress),
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut,
+                  builder: (context, value, _) {
+                    return Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: AppRadius.borderXs,
+                          child: LinearProgressIndicator(
+                            value: value,
+                            minHeight: 6,
+                            backgroundColor: colorScheme.surfaceContainerHighest,
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
-                );
+                        const SizedBox(height: AppSpacing.lg),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: Text(
+                            _loadingStatus,
+                            key: ValueKey(_loadingStatus),
+                            style: textTheme.bodyMedium!.copyWith(
+                              color: colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
               },
             ),
           ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 

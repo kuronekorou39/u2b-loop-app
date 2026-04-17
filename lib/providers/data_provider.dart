@@ -493,7 +493,8 @@ class TagsNotifier extends StateNotifier<List<Tag>> {
 
 // --- タグフィルター ---
 
-final tagFilterProvider = StateProvider<Set<String>>((ref) => {});
+/// タグフィルター: キー=タグID, 値=true(含む)/false(除外)
+final tagFilterProvider = StateProvider<Map<String, bool>>((ref) => {});
 
 // --- Playlist ---
 

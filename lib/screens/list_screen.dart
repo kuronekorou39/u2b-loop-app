@@ -961,15 +961,27 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
     // 検索フィルター
     const untaggedId = '__untagged__';
-    final hasUntaggedFilter = filterTagIds.contains(untaggedId);
-    final tagOnlyFilter =
-        filterTagIds.where((id) => id != untaggedId).toSet();
+    final includeTags = filterTagIds.entries
+        .where((e) => e.value && e.key != untaggedId)
+        .map((e) => e.key)
+        .toSet();
+    final excludeTags = filterTagIds.entries
+        .where((e) => !e.value && e.key != untaggedId)
+        .map((e) => e.key)
+        .toSet();
+    final includeUntagged = filterTagIds[untaggedId] == true;
+    final excludeUntagged = filterTagIds[untaggedId] == false;
     var filtered = filterTagIds.isEmpty
         ? allItems
         : allItems.where((i) {
-            if (hasUntaggedFilter && i.tagIds.isEmpty) return true;
-            if (tagOnlyFilter.isNotEmpty) {
-              return tagOnlyFilter.every((tid) => i.tagIds.contains(tid));
+            // 除外判定（1つでも該当すれば除外）
+            if (excludeUntagged && i.tagIds.isEmpty) return false;
+            if (excludeTags.any((tid) => i.tagIds.contains(tid))) return false;
+            // 包含判定
+            if (includeTags.isEmpty && !includeUntagged) return true;
+            if (includeUntagged && i.tagIds.isEmpty) return true;
+            if (includeTags.isNotEmpty) {
+              return includeTags.every((tid) => i.tagIds.contains(tid));
             }
             return false;
           }).toList();
@@ -1244,7 +1256,62 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   // === タグフィルターバー ===
 
-  Widget _buildTagFilterButton(List<Tag> tags, Set<String> filterTagIds) {
+  /// 3ステートタグフィルター: null→true(含む)→false(除外)→null
+  void _cycleTagFilter(
+      Map<String, bool?> selected, String id, void Function(void Function()) setSheetState) {
+    setSheetState(() {
+      final current = selected[id];
+      if (current == null) {
+        selected[id] = true;   // off → 含む
+      } else if (current) {
+        selected[id] = false;  // 含む → 除外
+      } else {
+        selected.remove(id);   // 除外 → off
+      }
+    });
+    final result = <String, bool>{};
+    for (final e in selected.entries) {
+      if (e.value != null) result[e.key] = e.value!;
+    }
+    ref.read(tagFilterProvider.notifier).state = result;
+  }
+
+  Widget _buildTagFilterTile({
+    required String id,
+    required String title,
+    required Map<String, bool?> selected,
+    required void Function(void Function()) setSheetState,
+    Widget? leading,
+  }) {
+    final state = selected[id]; // null=off, true=含む, false=除外
+    final Icon icon;
+    final Color? titleColor;
+    if (state == true) {
+      icon = const Icon(Icons.check_circle, color: AppTheme.accentGreen, size: AppIconSizes.md);
+      titleColor = null;
+    } else if (state == false) {
+      icon = Icon(Icons.remove_circle, color: AppTheme.accentRed, size: AppIconSizes.md);
+      titleColor = AppTheme.accentRed;
+    } else {
+      icon = Icon(Icons.radio_button_unchecked, color: Colors.grey.shade600, size: AppIconSizes.md);
+      titleColor = null;
+    }
+
+    return ListTile(
+      leading: leading,
+      title: Text(
+        title,
+        style: Theme.of(context).textTheme.bodyLarge!.copyWith(
+          color: titleColor,
+          decoration: state == false ? TextDecoration.lineThrough : null,
+        ),
+      ),
+      trailing: icon,
+      onTap: () => _cycleTagFilter(selected, id, setSheetState),
+    );
+  }
+
+  Widget _buildTagFilterButton(List<Tag> tags, Map<String, bool> filterTagIds) {
     const untaggedId = '__untagged__';
     return Stack(
       children: [
@@ -1252,7 +1319,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           icon: const Icon(Icons.label_outline, size: AppIconSizes.ml),
           tooltip: 'タグフィルター',
           onPressed: () {
-            var selected = Set<String>.from(filterTagIds);
+            final selected = Map<String, bool?>.from(filterTagIds);
             _showSheet(builder: (ctx) => StatefulBuilder(
                 builder: (ctx, setSheetState) => SafeArea(
                   child: Column(
@@ -1279,45 +1346,40 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           ],
                         ),
                       ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: AppTheme.accentGreen, size: AppIconSizes.xs),
+                            Text(' 含む', style: Theme.of(context).textTheme.labelSmall),
+                            const SizedBox(width: AppSpacing.lg),
+                            Icon(Icons.remove_circle, color: AppTheme.accentRed, size: AppIconSizes.xs),
+                            Text(' 除外', style: Theme.of(context).textTheme.labelSmall),
+                            const SizedBox(width: AppSpacing.lg),
+                            Icon(Icons.radio_button_unchecked, color: Colors.grey.shade600, size: AppIconSizes.xs),
+                            Text(' なし', style: Theme.of(context).textTheme.labelSmall),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
                       const Divider(height: 1),
                       Flexible(
                         child: ListView(
                           shrinkWrap: true,
                           children: [
-                            CheckboxListTile(
-                              title: Text('未分類',
-                                  style: Theme.of(context).textTheme.bodyLarge),
-                              secondary:
-                                  const Icon(Icons.label_off, size: AppIconSizes.md),
-                              value: selected.contains(untaggedId),
-                              onChanged: (_) {
-                                setSheetState(() {
-                                  if (selected.contains(untaggedId)) {
-                                    selected.remove(untaggedId);
-                                  } else {
-                                    selected.add(untaggedId);
-                                  }
-                                });
-                                ref.read(tagFilterProvider.notifier).state =
-                                    Set.from(selected);
-                              },
+                            _buildTagFilterTile(
+                              id: untaggedId,
+                              title: '未分類',
+                              selected: selected,
+                              setSheetState: setSheetState,
+                              leading: const Icon(Icons.label_off, size: AppIconSizes.md),
                             ),
                             for (final tag in tags)
-                              CheckboxListTile(
-                                title: Text(tag.name,
-                                    style: Theme.of(context).textTheme.bodyLarge),
-                                value: selected.contains(tag.id),
-                                onChanged: (_) {
-                                  setSheetState(() {
-                                    if (selected.contains(tag.id)) {
-                                      selected.remove(tag.id);
-                                    } else {
-                                      selected.add(tag.id);
-                                    }
-                                  });
-                                  ref.read(tagFilterProvider.notifier).state =
-                                      Set.from(selected);
-                                },
+                              _buildTagFilterTile(
+                                id: tag.id,
+                                title: tag.name,
+                                selected: selected,
+                                setSheetState: setSheetState,
                               ),
                           ],
                         ),
@@ -1350,7 +1412,36 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  Widget _buildSelectedTagBar(List<Tag> tags, Set<String> filterTagIds) {
+  Widget _buildFilterChip(String id, String label, bool isInclude, {Widget? avatar}) {
+    final isExclude = !isInclude;
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.sm),
+      child: Chip(
+        avatar: isExclude
+            ? Icon(Icons.remove_circle, size: AppIconSizes.xs, color: AppTheme.accentRed)
+            : avatar,
+        label: Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall!.copyWith(
+            color: isExclude ? AppTheme.accentRed : null,
+            decoration: isExclude ? TextDecoration.lineThrough : null,
+          ),
+        ),
+        onDeleted: () {
+          ref.read(tagFilterProvider.notifier).update((s) {
+            final next = Map<String, bool>.from(s);
+            next.remove(id);
+            return next;
+          });
+        },
+        deleteIconColor: Colors.grey,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    );
+  }
+
+  Widget _buildSelectedTagBar(List<Tag> tags, Map<String, bool> filterTagIds) {
     const untaggedId = '__untagged__';
     return SizedBox(
       height: 36,
@@ -1358,44 +1449,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
         children: [
-          if (filterTagIds.contains(untaggedId))
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpacing.sm),
-              child: Chip(
-                avatar: const Icon(Icons.label_off, size: AppIconSizes.xs),
-                label:
-                    Text('未分類', style: Theme.of(context).textTheme.labelSmall),
-                onDeleted: () {
-                  ref.read(tagFilterProvider.notifier).update((s) {
-                    final next = Set<String>.from(s);
-                    next.remove(untaggedId);
-                    return next;
-                  });
-                },
-                deleteIconColor: Colors.grey,
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
+          if (filterTagIds.containsKey(untaggedId))
+            _buildFilterChip(
+              untaggedId, '未分類', filterTagIds[untaggedId]!,
+              avatar: const Icon(Icons.label_off, size: AppIconSizes.xs),
             ),
           for (final tag in tags)
-            if (filterTagIds.contains(tag.id))
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.sm),
-                child: Chip(
-                  label:
-                      Text(tag.name, style: Theme.of(context).textTheme.labelSmall),
-                  onDeleted: () {
-                    ref.read(tagFilterProvider.notifier).update((s) {
-                      final next = Set<String>.from(s);
-                      next.remove(tag.id);
-                      return next;
-                    });
-                  },
-                  deleteIconColor: Colors.grey,
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
+            if (filterTagIds.containsKey(tag.id))
+              _buildFilterChip(tag.id, tag.name, filterTagIds[tag.id]!),
           Padding(
             padding: const EdgeInsets.only(right: AppSpacing.sm),
             child: ActionChip(
@@ -1799,7 +1860,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               style: Theme.of(context).textTheme.bodySmall),
           onTap: () {
             // 曲リストタブに移動してこのタグでフィルター
-            ref.read(tagFilterProvider.notifier).state = {tag.id};
+            ref.read(tagFilterProvider.notifier).state = {tag.id: true};
             _tabController.animateTo(1);
           },
           onLongPress: () => _showTagMenu(tag),
@@ -1871,7 +1932,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               onTap: () {
                 Navigator.pop(ctx);
                 ref.read(tagFilterProvider.notifier).update(
-                    (s) => {...s}..remove(tag.id));
+                    (s) => Map<String, bool>.from(s)..remove(tag.id));
                 ref.read(tagsProvider.notifier).delete(tag.id);
                 ref.read(loopItemsProvider.notifier).removeTagFromAll(tag.id);
               },
