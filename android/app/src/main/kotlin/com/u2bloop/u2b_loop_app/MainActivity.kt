@@ -14,6 +14,8 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.util.Rational
 import io.flutter.embedding.android.FlutterActivity
@@ -37,6 +39,7 @@ class MainActivity : FlutterActivity() {
     @Volatile private var currentExtractor: MediaExtractor? = null
     private var pipChannel: MethodChannel? = null
     private var autoPipEnabled = false
+    private var autoEnterPip = false   // setAutoEnterEnabled用（PlayerScreen表示中のみtrue）
     private var isPlaying = false
     private var pipReceiver: BroadcastReceiver? = null
     private var pipEnteredByHint = false
@@ -91,7 +94,7 @@ class MainActivity : FlutterActivity() {
     private fun buildPipParamsAutoEnter(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
-            .setAutoEnterEnabled(autoPipEnabled)
+            .setAutoEnterEnabled(autoEnterPip)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder.setActions(buildPipActions())
         }
@@ -188,6 +191,8 @@ class MainActivity : FlutterActivity() {
                 "setAutoPiP" -> {
                     autoPipEnabled = call.argument<Boolean>("enabled") ?: false
                     isPlaylist = call.argument<Boolean>("isPlaylist") ?: false
+                    // autoEnter: 省略時はenabledと同値（PlayerScreen表示中はtrue）
+                    autoEnterPip = call.argument<Boolean>("autoEnter") ?: autoPipEnabled
                     try { applyPipParams() } catch (_: Exception) {}
                     result.success(true)
                 }
@@ -250,6 +255,18 @@ class MainActivity : FlutterActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (!autoPipEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        if (!autoEnterPip) {
+            // ミニプレイヤー中: FlutterにPlayerScreen遷移を指示→遅延PiP
+            pipChannel?.invokeMethod("navigateForPiP", null)
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!isInPictureInPictureMode) {
+                    try { enterPictureInPictureMode(buildPipParams()) } catch (_: Exception) {}
+                    syncPlayState()
+                }
+            }, 400)
+            return
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // API 31+: setAutoEnterEnabled がPiP突入を担当。手動enterしない。

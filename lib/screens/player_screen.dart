@@ -5,10 +5,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../app.dart';
 import '../core/constants.dart';
 import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
@@ -17,6 +19,7 @@ import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 import '../models/tag.dart';
 import '../models/loop_state.dart';
+import '../models/playlist.dart' as app;
 import '../models/playlist_mode.dart' as pl;
 import '../models/playlist_track.dart';
 import '../models/video_source.dart';
@@ -27,7 +30,9 @@ import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
 import '../services/export_service.dart';
 import '../services/waveform_service.dart';
+import '../widgets/equalizer_icon.dart';
 import '../widgets/item_tag_sheet.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
@@ -226,12 +231,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // ミニプレイヤー有効時は再生状態を温存
     final miniActive = ref.read(miniPlayerProvider).active;
 
-    // 自動PiP: ミニプレイヤー有効時は維持、それ以外は無効化
-    if (!miniActive) {
-      try {
+    // 自動PiP: ミニプレイヤー有効時はPiP許可だがautoEnter無効
+    // （ホーム押下時にFlutterナビゲーション→PiP突入の手順を踏む）
+    try {
+      if (miniActive) {
+        _pipChannel.invokeMethod('setAutoPiP', {
+          'enabled': true, 'isPlaylist': _isPlaylist, 'autoEnter': false,
+        });
+      } else {
         _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
     if (!miniActive) {
       try {
         ref.read(loopProvider.notifier).setCurrentItem(null);
@@ -244,7 +254,50 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       } catch (_) {}
     }
 
-    _pipChannel.setMethodCallHandler(null);
+    // PiPハンドラ: ミニプレイヤー中のnavigateForPiP用
+    if (miniActive) {
+      final miniState = ref.read(miniPlayerProvider);
+      final miniNotifier = ref.read(miniPlayerProvider.notifier);
+      _pipChannel.setMethodCallHandler((call) async {
+        if (call.method == 'navigateForPiP') {
+          miniNotifier.deactivateUI();
+          // Hiveから最新データ取得（MiniPlayerBar._openFullPlayerと同じ）
+          var playlistItems = miniState.playlistItems;
+          var regionSelections = miniState.regionSelections;
+          var disabledItemIds = miniState.disabledItemIds;
+          var playlistName = miniState.playlistName;
+          if (miniState.playlistId != null) {
+            try {
+              final plBox = Hive.box<app.Playlist>('playlists');
+              final itemBox = Hive.box<LoopItem>('loop_items');
+              final pl = plBox.get(miniState.playlistId);
+              if (pl != null) {
+                playlistItems = pl.itemIds
+                    .map((id) => itemBox.get(id))
+                    .whereType<LoopItem>()
+                    .toList();
+                regionSelections = pl.regionSelections;
+                disabledItemIds = pl.disabledItemIds;
+                playlistName = pl.name;
+              }
+            } catch (_) {}
+          }
+          appNavigatorKey.currentState?.push(MaterialPageRoute(
+            builder: (_) => PlayerScreen(
+              item: miniState.item!,
+              playlistItems: playlistItems,
+              initialIndex: miniState.initialIndex,
+              regionSelections: regionSelections,
+              disabledItemIds: disabledItemIds,
+              playlistName: playlistName,
+              playlistId: miniState.playlistId,
+            ),
+          ));
+        }
+      });
+    } else {
+      _pipChannel.setMethodCallHandler(null);
+    }
     if (_cachedAudioPath != null) {
       try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
     }
@@ -1853,8 +1906,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 // Status indicator
                 Widget statusWidget;
                 if (isCurrent) {
-                  statusWidget = const Icon(Icons.play_arrow,
-                      color: AppTheme.accentGreen, size: AppIconSizes.md);
+                  statusWidget = const EqualizerIcon(
+                      color: AppTheme.accentGreen, size: 18);
                 } else if (isPreloading) {
                   statusWidget = const SizedBox(
                     width: AppIconSizes.s,
@@ -1875,6 +1928,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
                 if (isHighlighted) {
                   // 再生中・プリロード中/済み: 拡大行
+                  final titleStyle = Theme.of(ctx).textTheme.bodyMedium!.copyWith(
+                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                    color: isCurrent
+                        ? AppTheme.accentGreen
+                        : track.enabled ? null : Colors.grey,
+                  );
                   return InkWell(
                     onTap: () => _selectTrack(i),
                     onLongPress: () => _showTrackMenu(i, track),
@@ -1892,35 +1951,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  track.displayName,
-                                  style: Theme.of(ctx).textTheme.bodyMedium!.copyWith(
-                                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                                    color: isCurrent
-                                        ? AppTheme.accentGreen
-                                        : track.enabled ? null : Colors.grey,
+                                // 再生中: マーキー、それ以外: 通常テキスト
+                                if (isCurrent)
+                                  MarqueeText(
+                                    text: track.displayName,
+                                    style: titleStyle,
+                                  )
+                                else
+                                  Text(
+                                    track.displayName,
+                                    style: titleStyle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: AppSpacing.xs),
-                                Row(
-                                  children: [
-                                    if (track.hasRegion)
-                                      Text(
-                                        '${track.startMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.startMs!)) : '--:--'}'
-                                        ' - '
-                                        '${track.endMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.endMs!)) : '--:--'}',
-                                        style: Theme.of(ctx).textTheme.labelSmall,
-                                      ),
-                                    if (track.hasRegion && track.item.tagIds.isNotEmpty)
-                                      const SizedBox(width: AppSpacing.md),
-                                    ..._buildTrackTags(ctx, track, tagMap),
-                                  ],
-                                ),
+                                if (track.hasRegion) ...[
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(
+                                    '${track.startMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.startMs!)) : '--:--'}'
+                                    ' - '
+                                    '${track.endMs != null ? TimeUtils.formatShort(Duration(milliseconds: track.endMs!)) : '--:--'}',
+                                    style: Theme.of(ctx).textTheme.labelSmall,
+                                  ),
+                                ],
                               ],
                             ),
                           ),
+                          // タグ: 右端に配置
+                          ..._buildTrackTags(ctx, track, tagMap),
                         ],
                       ),
                     ),
