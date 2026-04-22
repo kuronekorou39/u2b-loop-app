@@ -18,6 +18,7 @@ import '../providers/loading_animation_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/update_service.dart';
 import '../widgets/loading_animations/loading_animation.dart';
+import '../widgets/loading_animations/loading_animation_widget.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -627,53 +628,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _getAnimationLabels()[type] ?? 'ランダム';
 
   void _showAnimationPicker(BuildContext context) {
-    final current = ref.read(loadingAnimationProvider);
     final labels = _getAnimationLabels();
     showModalBottomSheet(
       context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Text('ローディングアニメーション',
-                      style: Theme.of(ctx).textTheme.titleSmall),
-                ),
-                ...labels.entries.map((entry) {
-                final isSelected = entry.key == current;
-                final isOff = entry.key == LoadingAnimationType.off;
-                return _AnimPickerTile(
-                  label: entry.value,
-                  isSelected: isSelected,
-                  enableLongPress: isOff,
-                  onTap: () {
-                    ref.read(loadingAnimationProvider.notifier).set(entry.key);
-                    Navigator.pop(ctx);
-                  },
-                  onLongPressUnlock: () {
-                    Navigator.pop(ctx);
-                    final unlocked = ref
-                        .read(easterEggProvider.notifier)
-                        .unlockCassette();
-                    if (unlocked) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('🎵 隠しアニメーション「カセット」がアンロックされました！'),
-                        ),
-                      );
-                    }
-                  },
-                );
-              }),
-                const SizedBox(height: AppSpacing.md),
-              ],
-            ),
-          ),
-        );
-      },
+      isScrollControlled: true,
+      builder: (ctx) => _AnimPickerSheet(
+        labels: labels,
+        initial: ref.read(loadingAnimationProvider),
+        onSelect: (type) {
+          ref.read(loadingAnimationProvider.notifier).set(type);
+        },
+        onCassetteUnlock: () {
+          final unlocked = ref.read(easterEggProvider.notifier).unlockCassette();
+          if (unlocked && mounted) {
+            // シートを閉じてからSnackBar
+            Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎵 隠しアニメーション「カセット」がアンロックされました！'),
+              ),
+            );
+          }
+        },
+      ),
     );
   }
 
@@ -792,71 +769,129 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 }
 
-/// 5秒長押しでアンロックを発動するListTile
-class _AnimPickerTile extends StatefulWidget {
-  final String label;
-  final bool isSelected;
-  final bool enableLongPress;
-  final VoidCallback onTap;
-  final VoidCallback onLongPressUnlock;
+/// アニメーションピッカー: プレビュー付きボトムシート
+class _AnimPickerSheet extends StatefulWidget {
+  final Map<LoadingAnimationType?, String> labels;
+  final LoadingAnimationType? initial;
+  final ValueChanged<LoadingAnimationType?> onSelect;
+  final VoidCallback onCassetteUnlock;
 
-  const _AnimPickerTile({
-    required this.label,
-    required this.isSelected,
-    required this.enableLongPress,
-    required this.onTap,
-    required this.onLongPressUnlock,
+  const _AnimPickerSheet({
+    required this.labels,
+    required this.initial,
+    required this.onSelect,
+    required this.onCassetteUnlock,
   });
 
   @override
-  State<_AnimPickerTile> createState() => _AnimPickerTileState();
+  State<_AnimPickerSheet> createState() => _AnimPickerSheetState();
 }
 
-class _AnimPickerTileState extends State<_AnimPickerTile> {
-  DateTime? _pressStart;
-  bool _holding = false;
+class _AnimPickerSheetState extends State<_AnimPickerSheet> {
+  late LoadingAnimationType? _selected;
+  bool _holdingOff = false;
 
-  void _onPressStart() {
-    if (!widget.enableLongPress) return;
-    _pressStart = DateTime.now();
-    setState(() => _holding = true);
-    // 5秒後にチェック
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initial;
+  }
+
+  void _onOffPressStart() {
+    setState(() => _holdingOff = true);
     Future.delayed(const Duration(seconds: 5), () {
-      if (_holding && _pressStart != null && mounted) {
-        widget.onLongPressUnlock();
-        setState(() => _holding = false);
+      if (_holdingOff && mounted) {
+        setState(() => _holdingOff = false);
+        widget.onCassetteUnlock();
       }
     });
   }
 
-  void _onPressEnd() {
-    _pressStart = null;
-    setState(() => _holding = false);
+  void _onOffPressEnd() {
+    setState(() => _holdingOff = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: widget.enableLongPress ? (_) => _onPressStart() : null,
-      onTapUp: widget.enableLongPress ? (_) => _onPressEnd() : null,
-      onTapCancel: widget.enableLongPress ? _onPressEnd : null,
-      child: ListTile(
-        leading: Icon(
-          widget.isSelected
-              ? Icons.radio_button_checked
-              : Icons.radio_button_unchecked,
-          color: widget.isSelected
-              ? Theme.of(context).colorScheme.primary
-              : null,
-        ),
-        title: Text(widget.label),
-        trailing: _holding
-            ? const SizedBox(
-                width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2))
-            : null,
-        onTap: widget.onTap,
+    final textTheme = Theme.of(context).textTheme;
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Text('ローディングアニメーション',
+                style: textTheme.titleSmall),
+          ),
+          // プレビュー
+          Container(
+            height: 160,
+            margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A2E),
+              borderRadius: AppRadius.borderMd,
+            ),
+            child: _selected == LoadingAnimationType.off || _selected == null && false
+                ? Center(
+                    child: Text('プレビューなし',
+                        style: textTheme.bodySmall!
+                            .copyWith(color: Colors.grey)),
+                  )
+                : LoadingAnimationView(
+                    key: ValueKey(_selected),
+                    type: _selected,
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // 選択肢
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final entry in widget.labels.entries)
+                    _buildTile(entry.key, entry.value),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildTile(LoadingAnimationType? type, String label) {
+    final isSelected = type == _selected;
+    final isOff = type == LoadingAnimationType.off;
+
+    Widget tile = ListTile(
+      leading: Icon(
+        isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        color: isSelected ? Theme.of(context).colorScheme.primary : null,
+      ),
+      title: Text(label),
+      trailing: isOff && _holdingOff
+          ? const SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : null,
+      onTap: () {
+        setState(() => _selected = type);
+        widget.onSelect(type);
+      },
+    );
+
+    if (isOff) {
+      tile = GestureDetector(
+        onLongPressStart: (_) => _onOffPressStart(),
+        onLongPressEnd: (_) => _onOffPressEnd(),
+        onLongPressCancel: _onOffPressEnd,
+        child: tile,
+      );
+    }
+
+    return tile;
   }
 }
