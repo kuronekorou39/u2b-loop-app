@@ -2,7 +2,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../../core/theme/app_theme.dart';
+import 'cassette_animation.dart';
 import 'loading_animation.dart';
+import 'matrix_animation.dart';
 import 'mystify_animation.dart';
 import 'particles_animation.dart';
 import 'starfield_animation.dart';
@@ -31,6 +33,16 @@ final Map<LoadingAnimationType, LoadingAnimationFactory> _registry = {
     required List<Color> colors,
   }) =>
       ParticlesAnimation(elapsed: elapsed, colors: colors),
+  LoadingAnimationType.cassette: ({
+    required double elapsed,
+    required List<Color> colors,
+  }) =>
+      CassetteAnimation(elapsed: elapsed),
+  LoadingAnimationType.matrix: ({
+    required double elapsed,
+    required List<Color> colors,
+  }) =>
+      MatrixAnimation(elapsed: elapsed),
 };
 
 /// ローディング中に背景アニメーションを描画するウィジェット。

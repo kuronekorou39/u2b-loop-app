@@ -13,7 +13,10 @@ import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../providers/easter_egg_provider.dart';
 import '../services/share_service.dart';
+import '../widgets/loading_animations/loading_animation_widget.dart';
+import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/share_import_dialog.dart';
 
 import 'detail_screen.dart';
@@ -46,6 +49,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   _SortMode _sortMode = _SortMode.updatedDesc;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode(skipTraversal: true);
+  bool _matrixActive = false;
 
   @override
   void initState() {
@@ -64,6 +68,22 @@ class _ListScreenState extends ConsumerState<ListScreen>
     ).then((result) {
       _searchFocusNode.unfocus();
       return result;
+    });
+  }
+
+  void _triggerMatrixEasterEgg() {
+    if (_matrixActive) return;
+    final unlocked = ref.read(easterEggProvider.notifier).unlockMatrix();
+    setState(() => _matrixActive = true);
+    if (unlocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('💊 マトリックスモードがアンロックされました！'),
+        ),
+      );
+    }
+    Future.delayed(const Duration(seconds: 10), () {
+      if (mounted) setState(() => _matrixActive = false);
     });
   }
 
@@ -1018,7 +1038,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
       },
       child: Scaffold(
         appBar: _buildNormalAppBar(isDataTab, items),
-        body: GestureDetector(
+        body: Stack(
+          children: [
+            GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
           behavior: HitTestBehavior.translucent,
           child: Column(
@@ -1076,8 +1098,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                     ),
                                   ),
                                   style: Theme.of(context).textTheme.bodyMedium,
-                                  onChanged: (v) =>
-                                      setState(() => _searchQuery = v),
+                                  onChanged: (v) {
+                                      setState(() => _searchQuery = v);
+                                      if (v.toLowerCase() == 'matrix') {
+                                        _triggerMatrixEasterEgg();
+                                      }
+                                    },
                                 ),
                               ),
                             ),
@@ -1132,6 +1158,16 @@ class _ListScreenState extends ConsumerState<ListScreen>
             ),
           ],
         )),
+            if (_matrixActive)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: LoadingAnimationView(
+                    type: LoadingAnimationType.matrix,
+                  ),
+                ),
+              ),
+          ],
+        ),
         floatingActionButton: _isSelecting
             ? null
             : _tabController.index == 0

@@ -13,6 +13,7 @@ import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../providers/easter_egg_provider.dart';
 import '../providers/loading_animation_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/update_service.dart';
@@ -27,6 +28,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
+  int _versionTapCount = 0;
 
   // ─── Data stats ───
 
@@ -538,12 +540,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       future: PackageInfo.fromPlatform(),
                       builder: (ctx, snap) {
                         final version = snap.data?.version ?? '...';
+                        final ee = ref.watch(easterEggProvider);
                         return ListTile(
                           leading: const Icon(Icons.info_outline),
                           title: Text('バージョン',
                               style: textTheme.bodyLarge),
-                          subtitle: Text('v$version',
+                          subtitle: Text(
+                              ee.statsUnlocked
+                                  ? 'v$version (${ee.unlockedCount}/3)'
+                                  : 'v$version',
                               style: textTheme.bodySmall),
+                          onTap: () {
+                            _versionTapCount++;
+                            if (_versionTapCount >= 5) {
+                              _versionTapCount = 0;
+                              final unlocked = ref
+                                  .read(easterEggProvider.notifier)
+                                  .unlockStats();
+                              if (unlocked) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('🎉 隠しステータスがアンロックされました！'),
+                                  ),
+                                );
+                              }
+                              _showStatsScreen();
+                            }
+                          },
                         );
                       },
                     ),
@@ -578,20 +601,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  static const _animationLabels = <LoadingAnimationType?, String>{
-    null: 'ランダム',
-    LoadingAnimationType.wave: '波形 (Wave)',
-    LoadingAnimationType.mystify: 'ライン (Mystify)',
-    LoadingAnimationType.starfield: '星空 (Starfield)',
-    LoadingAnimationType.particles: 'パーティクル (Particles)',
-    LoadingAnimationType.off: 'オフ',
-  };
+  Map<LoadingAnimationType?, String> _getAnimationLabels() {
+    final ee = ref.read(easterEggProvider);
+    return {
+      null: 'ランダム',
+      LoadingAnimationType.wave: '波形 (Wave)',
+      LoadingAnimationType.mystify: 'ライン (Mystify)',
+      LoadingAnimationType.starfield: '星空 (Starfield)',
+      LoadingAnimationType.particles: 'パーティクル (Particles)',
+      if (ee.cassetteUnlocked)
+        LoadingAnimationType.cassette: 'カセット (Cassette)',
+      if (ee.matrixUnlocked)
+        LoadingAnimationType.matrix: 'マトリックス (Matrix)',
+      LoadingAnimationType.off: 'オフ',
+    };
+  }
 
   String _animationLabel(LoadingAnimationType? type) =>
-      _animationLabels[type] ?? 'ランダム';
+      _getAnimationLabels()[type] ?? 'ランダム';
 
   void _showAnimationPicker(BuildContext context) {
     final current = ref.read(loadingAnimationProvider);
+    final labels = _getAnimationLabels();
     showModalBottomSheet(
       context: context,
       builder: (ctx) {
@@ -605,23 +636,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Text('ローディングアニメーション',
                       style: Theme.of(ctx).textTheme.titleSmall),
                 ),
-                ..._animationLabels.entries.map((entry) {
+                ...labels.entries.map((entry) {
                 final isSelected = entry.key == current;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    color: isSelected
-                        ? Theme.of(ctx).colorScheme.primary
-                        : null,
-                  ),
-                  title: Text(entry.value),
+                final isOff = entry.key == LoadingAnimationType.off;
+                return _AnimPickerTile(
+                  label: entry.value,
+                  isSelected: isSelected,
+                  enableLongPress: isOff,
                   onTap: () {
-                    ref
-                        .read(loadingAnimationProvider.notifier)
-                        .set(entry.key);
+                    ref.read(loadingAnimationProvider.notifier).set(entry.key);
                     Navigator.pop(ctx);
+                  },
+                  onLongPressUnlock: () {
+                    Navigator.pop(ctx);
+                    final unlocked = ref
+                        .read(easterEggProvider.notifier)
+                        .unlockCassette();
+                    if (unlocked) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('🎵 隠しアニメーション「カセット」がアンロックされました！'),
+                        ),
+                      );
+                    }
                   },
                 );
               }),
@@ -655,6 +692,164 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 style: textTheme.labelSmall!.copyWith(fontSize: 10)),
           ],
         ),
+      ),
+    );
+  }
+
+  // ─── 隠しステータス画面 ───
+
+  void _showStatsScreen() {
+    final items = Hive.box<LoopItem>('loop_items').values.toList();
+    final playlists = Hive.box<app.Playlist>('playlists').values.toList();
+    final tags = Hive.box<Tag>('tags').values.toList();
+
+    // 集計
+    final totalItems = items.length;
+    final totalPlaylists = playlists.length;
+    final totalTags = tags.length;
+    final totalPlayCount =
+        items.fold<int>(0, (sum, i) => sum + i.playCount);
+    final totalRegions =
+        items.fold<int>(0, (sum, i) => sum + i.regions.length);
+    final youtubeCount =
+        items.where((i) => i.sourceType == 'youtube').length;
+    final localCount = items.where((i) => i.sourceType == 'local').length;
+
+    // 最もリピートした曲
+    LoopItem? mostPlayed;
+    if (items.isNotEmpty) {
+      mostPlayed = items.reduce(
+          (a, b) => a.playCount >= b.playCount ? a : b);
+    }
+
+    // 最古のアイテム
+    LoopItem? oldest;
+    if (items.isNotEmpty) {
+      oldest = items.reduce(
+          (a, b) => a.createdAt.isBefore(b.createdAt) ? a : b);
+    }
+
+    // 総再生時間の推定（再生カウント × 平均3分）
+    final estimatedMinutes = totalPlayCount * 3;
+
+    final textTheme = Theme.of(context).textTheme;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.analytics_outlined, size: 20),
+            const SizedBox(width: 8),
+            Text('隠しステータス', style: textTheme.titleMedium),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _statLine('登録曲数', '$totalItems 曲（YouTube: $youtubeCount / ローカル: $localCount）'),
+              _statLine('プレイリスト', '$totalPlaylists 個'),
+              _statLine('タグ', '$totalTags 個'),
+              _statLine('AB区間', '$totalRegions 個'),
+              _statLine('総再生回数', '$totalPlayCount 回'),
+              _statLine('推定練習時間', '約${estimatedMinutes ~/ 60}時間${estimatedMinutes % 60}分'),
+              if (mostPlayed != null && mostPlayed.playCount > 0)
+                _statLine('最多リピート', '${mostPlayed.title}（${mostPlayed.playCount}回）'),
+              if (oldest != null)
+                _statLine('最古の登録', '${oldest.createdAt.year}/${oldest.createdAt.month}/${oldest.createdAt.day}'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('閉じる'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statLine(String label, String value) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: textTheme.labelSmall),
+          Text(value, style: textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+/// 5秒長押しでアンロックを発動するListTile
+class _AnimPickerTile extends StatefulWidget {
+  final String label;
+  final bool isSelected;
+  final bool enableLongPress;
+  final VoidCallback onTap;
+  final VoidCallback onLongPressUnlock;
+
+  const _AnimPickerTile({
+    required this.label,
+    required this.isSelected,
+    required this.enableLongPress,
+    required this.onTap,
+    required this.onLongPressUnlock,
+  });
+
+  @override
+  State<_AnimPickerTile> createState() => _AnimPickerTileState();
+}
+
+class _AnimPickerTileState extends State<_AnimPickerTile> {
+  DateTime? _pressStart;
+  bool _holding = false;
+
+  void _onPressStart() {
+    if (!widget.enableLongPress) return;
+    _pressStart = DateTime.now();
+    setState(() => _holding = true);
+    // 5秒後にチェック
+    Future.delayed(const Duration(seconds: 5), () {
+      if (_holding && _pressStart != null && mounted) {
+        widget.onLongPressUnlock();
+        setState(() => _holding = false);
+      }
+    });
+  }
+
+  void _onPressEnd() {
+    _pressStart = null;
+    setState(() => _holding = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: widget.enableLongPress ? (_) => _onPressStart() : null,
+      onTapUp: widget.enableLongPress ? (_) => _onPressEnd() : null,
+      onTapCancel: widget.enableLongPress ? _onPressEnd : null,
+      child: ListTile(
+        leading: Icon(
+          widget.isSelected
+              ? Icons.radio_button_checked
+              : Icons.radio_button_unchecked,
+          color: widget.isSelected
+              ? Theme.of(context).colorScheme.primary
+              : null,
+        ),
+        title: Text(widget.label),
+        trailing: _holding
+            ? const SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : null,
+        onTap: widget.onTap,
       ),
     );
   }

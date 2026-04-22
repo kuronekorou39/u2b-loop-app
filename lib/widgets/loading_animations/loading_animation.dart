@@ -16,6 +16,8 @@ enum LoadingAnimationType {
   mystify,
   starfield,
   particles,
+  cassette, // 隠し: カセットテープ
+  matrix,   // 隠し: マトリックス
   off,
 }
 
