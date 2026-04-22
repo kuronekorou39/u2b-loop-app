@@ -74,8 +74,12 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
   @override
   void initState() {
     super.initState();
+    // 隠しアニメーションはランダム候補から除外（明示指定のみ表示）
     final candidates = LoadingAnimationType.values
-        .where((e) => e != LoadingAnimationType.off)
+        .where((e) =>
+            e != LoadingAnimationType.off &&
+            e != LoadingAnimationType.cassette &&
+            e != LoadingAnimationType.matrix)
         .toList();
     _activeType = widget.type ??
         candidates[Random().nextInt(candidates.length)];
