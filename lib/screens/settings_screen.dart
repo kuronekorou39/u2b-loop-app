@@ -351,10 +351,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await Hive.box<LoopItem>('loop_items').clear();
       await Hive.box<app.Playlist>('playlists').clear();
       await Hive.box<Tag>('tags').clear();
+      // イースターエッグもリセット
+      final settingsBox = Hive.box('settings');
+      await settingsBox.delete('ee_stats');
+      await settingsBox.delete('ee_cassette');
+      await settingsBox.delete('ee_matrix');
 
       ref.invalidate(loopItemsProvider);
       ref.invalidate(playlistsProvider);
       ref.invalidate(tagsProvider);
+      ref.invalidate(easterEggProvider);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

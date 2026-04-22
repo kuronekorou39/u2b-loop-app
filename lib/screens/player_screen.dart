@@ -108,7 +108,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   bool _trackLoading = false;
   bool _loadingSnackShowing = false;
-  String _tip = getRandomTip();
+  final _tipNotifier = ValueNotifier<String>(getRandomTip());
+  Timer? _tipTimer;
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -227,6 +228,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void dispose() {
     _loadingProgress.dispose();
     _loadingStatus.dispose();
+    _tipNotifier.dispose();
+    _tipTimer?.cancel();
     _cancelFade();
     _preloadCheckTimer?.cancel();
 
@@ -1094,8 +1097,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ref.read(preloadPlayerProvider).stop();
     } catch (_) {}
 
-    // Tip更新
-    _tip = getRandomTip();
+    // Tip: 8秒ごとに自動切替
+    _tipNotifier.value = getRandomTip();
+    _tipTimer?.cancel();
+    _tipTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      _tipNotifier.value = getRandomTip();
+    });
 
     // Reset player state
     ref.read(videoSourceProvider.notifier).state = null;
@@ -1232,6 +1239,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _setProgress(1.0, '読み込み完了！');
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
+    _tipTimer?.cancel();
     setState(() {
       _loading = false;
       _trackLoading = false;
@@ -2362,16 +2370,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   },
                 ),
                 const SizedBox(height: AppSpacing.xxl),
-                // Tip
-                Text(
-                  'Tip: $_tip',
-                  style: textTheme.bodySmall!.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.35),
-                    fontStyle: FontStyle.italic,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                // Tip（8秒ごとにフェード切替）
+                ValueListenableBuilder<String>(
+                  valueListenable: _tipNotifier,
+                  builder: (context, tip, _) {
+                    return AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 600),
+                      child: Text(
+                        'Tip: $tip',
+                        key: ValueKey(tip),
+                        style: textTheme.bodySmall!.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.35),
+                          fontStyle: FontStyle.italic,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
