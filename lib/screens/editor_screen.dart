@@ -11,6 +11,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
+import '../core/tips.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
@@ -785,6 +786,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       ],
                     );
               },
+            ),
+            const SizedBox(height: AppSpacing.xxl),
+            Text(
+              'Tip: ${getRandomTip()}',
+              style: textTheme.bodySmall!.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.35),
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
             ),

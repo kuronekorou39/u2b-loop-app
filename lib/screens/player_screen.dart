@@ -12,6 +12,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../app.dart';
 import '../core/constants.dart';
+import '../core/tips.dart';
 import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
@@ -107,6 +108,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   bool _trackLoading = false;
   bool _loadingSnackShowing = false;
+  String _tip = getRandomTip();
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -1091,6 +1093,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     try {
       ref.read(preloadPlayerProvider).stop();
     } catch (_) {}
+
+    // Tip更新
+    _tip = getRandomTip();
 
     // Reset player state
     ref.read(videoSourceProvider.notifier).state = null;
@@ -2355,6 +2360,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       ),
                     );
                   },
+                ),
+                const SizedBox(height: AppSpacing.xxl),
+                // Tip
+                Text(
+                  'Tip: $_tip',
+                  style: textTheme.bodySmall!.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.35),
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
