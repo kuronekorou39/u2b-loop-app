@@ -1135,7 +1135,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _yieldFrame();
 
     if (!mounted) return;
-    await _setProgress(0.35, '最適な品質を選択中...');
     final muxed = manifest.muxed.sortByVideoQuality();
     String streamUrl;
     if (muxed.isNotEmpty) {
@@ -1146,10 +1145,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       streamUrl = videoOnly.last.url.toString();
     }
 
-    if (!mounted) return;
-    await _setProgress(0.50, '波形用データを取得中...');
-    await _tryDownloadAudio(manifest, ytService);
-
     final source = VideoSource(
       type: VideoSourceType.youtube,
       uri: streamUrl,
@@ -1159,11 +1154,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
 
     if (!mounted) return;
-    await _setProgress(0.75, 'プレーヤーを準備中...');
+    await _setProgress(0.50, 'プレーヤーを準備中...');
     final player = ref.read(playerProvider);
     await player
         .open(Media(source.uri), play: false)
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 60));
+
+    // 波形用音声DLは再生開始後にバックグラウンドで実行
+    _tryDownloadAudio(manifest, ytService);
     await _yieldFrame();
     ref.read(videoSourceProvider.notifier).state = source;
 

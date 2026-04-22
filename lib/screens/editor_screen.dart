@@ -254,8 +254,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final manifest =
         await ytService.getManifestWithFallback(_item.videoId!);
 
-    if (!mounted) return;
-    await _setProgress(0.35, '最適な品質を選択中...');
     final muxed = manifest.muxed.sortByVideoQuality();
     String streamUrl;
     if (muxed.isNotEmpty) {
@@ -267,8 +265,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     }
 
     if (!mounted) return;
-    await _setProgress(0.50, '音声データを取得中...');
-    await _tryDownloadAudio(manifest, ytService);
+    await _setProgress(0.50, 'プレーヤーを準備中...');
+
+    // 波形用音声DLは再生開始後にバックグラウンドで実行
+    _tryDownloadAudio(manifest, ytService);
 
     final source = VideoSource(
       type: VideoSourceType.youtube,
@@ -278,8 +278,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       thumbnailUrl: _item.thumbnailUrl,
     );
 
-    if (!mounted) return;
-    await _setProgress(0.75, 'プレーヤーを準備中...');
     final player = ref.read(playerProvider);
     await player.open(Media(source.uri), play: false);
     ref.read(videoSourceProvider.notifier).state = source;
