@@ -80,6 +80,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isInPiP = false;
   bool _compactSeekbar = false;
   bool _showPlaylistPanel = false;
+
+  // 横画面
+  bool _isFullscreen = false;
+  bool _showFullscreenOverlay = true;
+  bool _showRightDrawer = false;
+  Timer? _overlayHideTimer;
   bool _hideVideo = false;
   bool _editMode = false;
   double _editStep = 0.1;
@@ -230,7 +236,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _loadingStatus.dispose();
     _tipNotifier.dispose();
     _tipTimer?.cancel();
+    _overlayHideTimer?.cancel();
     _cancelFade();
+    // 全画面モード解除
+    if (_isFullscreen) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     _preloadCheckTimer?.cancel();
 
     // ミニプレイヤー有効時は再生状態を温存
@@ -2067,7 +2078,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (didPop) _activateMiniPlayer();
       },
       child: Scaffold(
-      appBar: AppBar(
+      appBar: _isFullscreen ? null : AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2451,7 +2462,235 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
+  // =====================================================================
+  // 横画面レイアウト
+  // =====================================================================
+
+  void _enterFullscreen() {
+    setState(() {
+      _isFullscreen = true;
+      _showFullscreenOverlay = true;
+    });
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    _resetOverlayTimer();
+  }
+
+  void _exitFullscreen() {
+    setState(() {
+      _isFullscreen = false;
+      _showRightDrawer = false;
+    });
+    _overlayHideTimer?.cancel();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
+  void _toggleFullscreenOverlay() {
+    setState(() => _showFullscreenOverlay = !_showFullscreenOverlay);
+    if (_showFullscreenOverlay) _resetOverlayTimer();
+  }
+
+  void _resetOverlayTimer() {
+    _overlayHideTimer?.cancel();
+    _overlayHideTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _showFullscreenOverlay = false);
+    });
+  }
+
+  /// 横画面 通常（2分割）
+  Widget _buildLandscapeView(double bottomInset) {
+    return Row(
+      children: [
+        // === 左半分: 動画 + 波形 ===
+        Expanded(
+          child: Column(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onDoubleTap: _enterFullscreen,
+                  child: const VideoPlayerWidget(useAspectRatio: false),
+                ),
+              ),
+              const PlayerControls(),
+              LoopSeekbar(
+                compact: _compactSeekbar,
+                onToggleCompact: () =>
+                    setState(() => _compactSeekbar = !_compactSeekbar),
+                allowMarkerDrag: !_isPlaylist && _editMode,
+                onRetryWaveform: _retryWaveform,
+              ),
+            ],
+          ),
+        ),
+        VerticalDivider(
+          width: 1,
+          color: Colors.grey.shade800,
+        ),
+        // === 右半分: モード別 ===
+        Expanded(
+          child: _buildLandscapeRightPanel(bottomInset),
+        ),
+      ],
+    );
+  }
+
+  /// 横画面 右パネル（モード別）
+  Widget _buildLandscapeRightPanel(double bottomInset) {
+    if (_isPlaylist) {
+      return Column(
+        children: [
+          _buildPlaylistControls(),
+          Expanded(child: _buildPlaylistPanel(bottomInset)),
+        ],
+      );
+    }
+
+    // 単体再生: リージョン + ループパネル
+    final regions = _currentItem.effectiveRegions;
+    final loop = ref.watch(loopProvider);
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(bottom: bottomInset + AppSpacing.xxl),
+      child: _buildRegionAndLoopPanel(regions, loop),
+    );
+  }
+
+  /// 横画面 全画面モード
+  Widget _buildFullscreenView(double bottomInset) {
+    final drawerWidth = MediaQuery.sizeOf(context).width * 0.4;
+    return GestureDetector(
+      onTap: _toggleFullscreenOverlay,
+      onDoubleTap: _exitFullscreen,
+      child: Stack(
+        children: [
+          // 動画（全画面）
+          const Positioned.fill(
+            child: VideoPlayerWidget(useAspectRatio: false),
+          ),
+          // オーバーレイ（コントロール）
+          Positioned.fill(
+            child: AnimatedOpacity(
+              opacity: _showFullscreenOverlay ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: IgnorePointer(
+                ignoring: !_showFullscreenOverlay,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black54,
+                        Colors.transparent,
+                        Colors.transparent,
+                        Colors.black54,
+                      ],
+                      stops: [0.0, 0.2, 0.7, 1.0],
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // 上部バー
+                      SafeArea(
+                        bottom: false,
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.fullscreen_exit,
+                                  color: Colors.white),
+                              onPressed: _exitFullscreen,
+                            ),
+                            Expanded(
+                              child: Text(
+                                _isPlaylist
+                                    ? (ref.read(playlistPlayerProvider)
+                                            .currentTrack
+                                            ?.displayName ??
+                                        _currentItem.title)
+                                    : _currentItem.title,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge!
+                                    .copyWith(color: Colors.white),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            // 右パネル開閉
+                            IconButton(
+                              icon: Icon(
+                                _showRightDrawer
+                                    ? Icons.chevron_right
+                                    : Icons.menu,
+                                color: Colors.white,
+                              ),
+                              onPressed: () {
+                                setState(() =>
+                                    _showRightDrawer = !_showRightDrawer);
+                                _resetOverlayTimer();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      // 下部コントロール
+                      SafeArea(
+                        top: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.xl),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              LoopSeekbar(
+                                compact: true,
+                                allowMarkerDrag: false,
+                                onRetryWaveform: _retryWaveform,
+                              ),
+                              const PlayerControls(),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // 右ドロワー
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            right: _showRightDrawer ? 0 : -drawerWidth,
+            top: 0,
+            bottom: 0,
+            width: drawerWidth,
+            child: GestureDetector(
+              onTap: () {}, // タップ透過防止
+              child: Material(
+                color: Theme.of(context)
+                    .scaffoldBackgroundColor
+                    .withValues(alpha: 0.95),
+                elevation: 8,
+                child: _buildLandscapeRightPanel(bottomInset),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPlayerView(double bottomInset) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    if (isLandscape && _isFullscreen) {
+      return _buildFullscreenView(bottomInset);
+    }
+    if (isLandscape) {
+      return _buildLandscapeView(bottomInset);
+    }
+
     final regions = _currentItem.effectiveRegions;
     final loop = ref.watch(loopProvider);
 

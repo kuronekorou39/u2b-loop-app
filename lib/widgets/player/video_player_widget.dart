@@ -7,7 +7,8 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/player_provider.dart';
 
 class VideoPlayerWidget extends ConsumerStatefulWidget {
-  const VideoPlayerWidget({super.key});
+  final bool useAspectRatio;
+  const VideoPlayerWidget({super.key, this.useAspectRatio = true});
 
   @override
   ConsumerState<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
@@ -48,7 +49,9 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         child: Center(
           child: Text(
             '動画を読み込んでください',
-            style: Theme.of(context).textTheme.bodyLarge!
+            style: Theme.of(context)
+                .textTheme
+                .bodyLarge!
                 .copyWith(color: Colors.grey),
           ),
         ),
@@ -70,43 +73,45 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       );
     }
 
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: GestureDetector(
-        onTap: source != null ? _toggleOverlay : null,
-        child: Stack(
-          children: [
-            Positioned.fill(child: videoWidget),
-            if (source != null && _showOverlay)
-              Positioned(
-                right: 4,
-                top: 4,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _FlipButton(
-                      icon: Icons.flip,
-                      active: flipH,
-                      onTap: () => ref
-                          .read(flipHorizontalProvider.notifier)
-                          .state = !flipH,
-                    ),
-                    const SizedBox(width: 2),
-                    _FlipButton(
-                      icon: Icons.flip,
-                      active: flipV,
-                      rotate: true,
-                      onTap: () => ref
-                          .read(flipVerticalProvider.notifier)
-                          .state = !flipV,
-                    ),
-                  ],
-                ),
+    final content = GestureDetector(
+      onTap: source != null ? _toggleOverlay : null,
+      child: Stack(
+        children: [
+          Positioned.fill(child: videoWidget),
+          if (source != null && _showOverlay)
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _FlipButton(
+                    icon: Icons.flip,
+                    active: flipH,
+                    onTap: () => ref
+                        .read(flipHorizontalProvider.notifier)
+                        .state = !flipH,
+                  ),
+                  const SizedBox(width: 2),
+                  _FlipButton(
+                    icon: Icons.flip,
+                    active: flipV,
+                    rotate: true,
+                    onTap: () => ref
+                        .read(flipVerticalProvider.notifier)
+                        .state = !flipV,
+                  ),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
+
+    if (widget.useAspectRatio) {
+      return AspectRatio(aspectRatio: 16 / 9, child: content);
+    }
+    return content;
   }
 }
 
