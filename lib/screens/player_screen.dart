@@ -2624,11 +2624,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         bottom: false,
                         child: Row(
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.fullscreen_exit,
-                                  color: Colors.white),
-                              onPressed: _exitFullscreen,
-                            ),
+                            const SizedBox(width: AppSpacing.md),
                             Expanded(
                               child: Text(
                                 _isPlaylist
@@ -2707,6 +2703,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
             ),
           ),
+          // フルスクリーン解除ボタン（右下、フルスクリーンボタンと同じ位置）
+          if (_showFullscreenOverlay)
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: SafeArea(
+                child: GestureDetector(
+                  onTap: _exitFullscreen,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      borderRadius: AppRadius.borderXs,
+                    ),
+                    child: const Icon(Icons.fullscreen_exit,
+                        color: Colors.white, size: AppIconSizes.lg),
+                  ),
+                ),
+              ),
+            ),
         ],
       );
   }
