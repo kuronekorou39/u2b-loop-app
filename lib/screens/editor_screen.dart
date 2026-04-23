@@ -48,9 +48,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _loading = true;
   bool _saving = false;
 
-  // 横画面フルスクリーン
+  // 横画面
   bool _isFullscreen = false;
   bool _showFullscreenOverlay = true;
+  bool _showLandscapePanel = true;
   Timer? _overlayHideTimer;
   String _loadingStatus = '準備中...';
   double _loadingProgress = 0;
@@ -907,20 +908,16 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   /// フルスクリーンボタン（動画右下に配置、共通）
   Widget _buildFullscreenButton(VoidCallback onTap) {
-    return Positioned(
-      right: 4,
-      bottom: 4,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.5),
-            borderRadius: AppRadius.borderXs,
-          ),
-          child: const Icon(Icons.fullscreen,
-              color: Colors.white, size: AppIconSizes.md),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          borderRadius: AppRadius.borderXs,
         ),
+        child: const Icon(Icons.fullscreen,
+            color: Colors.white, size: AppIconSizes.md),
       ),
     );
   }
@@ -940,7 +937,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     return SafeArea(
       child: Row(
         children: [
-          // === 左半分: 動画 + コントロール + 波形 ===
+          // === 左: 動画 + コントロール + 波形 ===
           Expanded(
             child: Column(
               children: [
@@ -951,7 +948,35 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         onDoubleTap: _enterFullscreen,
                         child: const VideoPlayerWidget(useAspectRatio: false),
                       ),
-                      _buildFullscreenButton(_enterFullscreen),
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () => setState(() =>
+                                  _showLandscapePanel = !_showLandscapePanel),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: AppRadius.borderXs,
+                                ),
+                                child: Icon(
+                                  _showLandscapePanel
+                                      ? Icons.chevron_right
+                                      : Icons.chevron_left,
+                                  color: Colors.white,
+                                  size: AppIconSizes.md,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            _buildFullscreenButton(_enterFullscreen),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -960,17 +985,19 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               ],
             ),
           ),
-          VerticalDivider(
-            width: 1,
-            color: Colors.grey.shade800,
-          ),
-          // === 右半分: リージョン + ABコントロール ===
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: _buildUnifiedPanel(),
+          // === 右パネル ===
+          if (_showLandscapePanel) ...[
+            VerticalDivider(
+              width: 1,
+              color: Colors.grey.shade800,
             ),
-          ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: _buildUnifiedPanel(),
+              ),
+            ),
+          ],
         ],
       ),
     );

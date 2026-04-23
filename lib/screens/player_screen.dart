@@ -85,6 +85,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isFullscreen = false;
   bool _showFullscreenOverlay = true;
   bool _showRightDrawer = false;
+  bool _showLandscapePanel = true; // 通常横画面の右パネル表示
   Timer? _overlayHideTimer;
   bool _hideVideo = false;
   bool _editMode = false;
@@ -2504,7 +2505,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return SafeArea(
       child: Row(
         children: [
-          // === 左半分: 動画 + コントロール + 波形 ===
+          // === 左: 動画 + コントロール + 波形 ===
           Expanded(
             child: Column(
               children: [
@@ -2515,21 +2516,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         onDoubleTap: _enterFullscreen,
                         child: const VideoPlayerWidget(useAspectRatio: false),
                       ),
-                      // フルスクリーンボタン
+                      // 右下ボタン群
                       Positioned(
                         right: 4,
                         bottom: 4,
-                        child: GestureDetector(
-                          onTap: _enterFullscreen,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              borderRadius: AppRadius.borderXs,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // パネル表示/非表示
+                            GestureDetector(
+                              onTap: () => setState(() =>
+                                  _showLandscapePanel = !_showLandscapePanel),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: AppRadius.borderXs,
+                                ),
+                                child: Icon(
+                                  _showLandscapePanel
+                                      ? Icons.chevron_right
+                                      : Icons.chevron_left,
+                                  color: Colors.white,
+                                  size: AppIconSizes.md,
+                                ),
+                              ),
                             ),
-                            child: const Icon(Icons.fullscreen,
-                                color: Colors.white, size: AppIconSizes.md),
-                          ),
+                            const SizedBox(width: 4),
+                            // フルスクリーン
+                            GestureDetector(
+                              onTap: _enterFullscreen,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: AppRadius.borderXs,
+                                ),
+                                child: const Icon(Icons.fullscreen,
+                                    color: Colors.white, size: AppIconSizes.md),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -2546,14 +2573,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ],
             ),
           ),
-          VerticalDivider(
-            width: 1,
-            color: Colors.grey.shade800,
-          ),
-          // === 右半分: モード別 ===
-          Expanded(
-            child: _buildLandscapeRightPanel(bottomInset),
-          ),
+          // === 右パネル ===
+          if (_showLandscapePanel) ...[
+            VerticalDivider(
+              width: 1,
+              color: Colors.grey.shade800,
+            ),
+            Expanded(
+              child: _buildLandscapeRightPanel(bottomInset),
+            ),
+          ],
         ],
       ),
     );
