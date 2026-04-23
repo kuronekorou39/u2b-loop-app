@@ -2078,7 +2078,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (didPop) _activateMiniPlayer();
       },
       child: Scaffold(
-      appBar: _isFullscreen ? null : AppBar(
+      appBar: _isFullscreen &&
+              MediaQuery.orientationOf(context) == Orientation.landscape
+          ? null
+          : AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2579,15 +2582,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// 横画面 全画面モード
   Widget _buildFullscreenView(double bottomInset) {
     final drawerWidth = MediaQuery.sizeOf(context).width * 0.4;
-    return GestureDetector(
-      onTap: _toggleFullscreenOverlay,
-      onDoubleTap: _exitFullscreen,
-      child: Stack(
-        children: [
-          // 動画（全画面）
-          const Positioned.fill(
-            child: VideoPlayerWidget(useAspectRatio: false),
+    return Stack(
+      children: [
+        // 動画（全画面）+ タップ検知を上に被せる
+        const Positioned.fill(
+          child: VideoPlayerWidget(useAspectRatio: false),
+        ),
+        // タップ検知レイヤー（VideoPlayerWidgetの上に被せてタップを拾う）
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _toggleFullscreenOverlay,
+            onDoubleTap: _exitFullscreen,
           ),
+        ),
           // オーバーレイ（コントロール）
           Positioned.fill(
             child: AnimatedOpacity(
@@ -2700,8 +2708,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ),
           ),
         ],
-      ),
-    );
+      );
   }
 
   Widget _buildPlayerView(double bottomInset) {
@@ -2709,6 +2716,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         MediaQuery.orientationOf(context) == Orientation.landscape;
     if (isLandscape && _isFullscreen) {
       return _buildFullscreenView(bottomInset);
+    }
+    // 縦に戻ったらフルスクリーン自動解除
+    if (!isLandscape && _isFullscreen) {
+      _isFullscreen = false;
+      _showRightDrawer = false;
+      _overlayHideTimer?.cancel();
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     if (isLandscape) {
       return _buildLandscapeView(bottomInset);
