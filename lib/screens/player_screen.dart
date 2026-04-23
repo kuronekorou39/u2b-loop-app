@@ -2498,38 +2498,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   /// 横画面 通常（2分割）
   Widget _buildLandscapeView(double bottomInset) {
-    return Row(
-      children: [
-        // === 左半分: 動画 + 波形 ===
-        Expanded(
-          child: Column(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onDoubleTap: _enterFullscreen,
-                  child: const VideoPlayerWidget(useAspectRatio: false),
+    return SafeArea(
+      child: Row(
+        children: [
+          // === 左半分: 動画 + コントロール + 波形 ===
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    children: [
+                      GestureDetector(
+                        onDoubleTap: _enterFullscreen,
+                        child: const VideoPlayerWidget(useAspectRatio: false),
+                      ),
+                      // フルスクリーンボタン
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: GestureDetector(
+                          onTap: _enterFullscreen,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              borderRadius: AppRadius.borderXs,
+                            ),
+                            child: const Icon(Icons.fullscreen,
+                                color: Colors.white, size: AppIconSizes.md),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const PlayerControls(),
-              LoopSeekbar(
-                compact: _compactSeekbar,
-                onToggleCompact: () =>
-                    setState(() => _compactSeekbar = !_compactSeekbar),
-                allowMarkerDrag: !_isPlaylist && _editMode,
-                onRetryWaveform: _retryWaveform,
-              ),
-            ],
+                const PlayerControls(),
+                LoopSeekbar(
+                  compact: _compactSeekbar,
+                  onToggleCompact: () =>
+                      setState(() => _compactSeekbar = !_compactSeekbar),
+                  allowMarkerDrag: !_isPlaylist && _editMode,
+                  onRetryWaveform: _retryWaveform,
+                ),
+              ],
+            ),
           ),
-        ),
-        VerticalDivider(
-          width: 1,
-          color: Colors.grey.shade800,
-        ),
-        // === 右半分: モード別 ===
-        Expanded(
-          child: _buildLandscapeRightPanel(bottomInset),
-        ),
-      ],
+          VerticalDivider(
+            width: 1,
+            color: Colors.grey.shade800,
+          ),
+          // === 右半分: モード別 ===
+          Expanded(
+            child: _buildLandscapeRightPanel(bottomInset),
+          ),
+        ],
+      ),
     );
   }
 

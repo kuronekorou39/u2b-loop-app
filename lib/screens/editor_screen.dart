@@ -844,6 +844,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   Widget _buildEditorView(double bottomInset) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    if (isLandscape) {
+      return _buildLandscapeEditorView(bottomInset);
+    }
+
     return Column(
       children: [
         const VideoPlayerWidget(),
@@ -857,6 +863,38 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildLandscapeEditorView(double bottomInset) {
+    return SafeArea(
+      child: Row(
+        children: [
+          // === 左半分: 動画 + コントロール + 波形 ===
+          Expanded(
+            child: Column(
+              children: [
+                const Expanded(
+                  child: VideoPlayerWidget(useAspectRatio: false),
+                ),
+                const PlayerControls(),
+                const LoopSeekbar(),
+              ],
+            ),
+          ),
+          VerticalDivider(
+            width: 1,
+            color: Colors.grey.shade800,
+          ),
+          // === 右半分: リージョン + ABコントロール ===
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: _buildUnifiedPanel(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
