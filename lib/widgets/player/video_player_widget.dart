@@ -8,7 +8,12 @@ import '../../providers/player_provider.dart';
 
 class VideoPlayerWidget extends ConsumerStatefulWidget {
   final bool useAspectRatio;
-  const VideoPlayerWidget({super.key, this.useAspectRatio = true});
+  final VoidCallback? onFullscreen;
+  const VideoPlayerWidget({
+    super.key,
+    this.useAspectRatio = true,
+    this.onFullscreen,
+  });
 
   @override
   ConsumerState<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
@@ -78,7 +83,8 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       child: Stack(
         children: [
           Positioned.fill(child: videoWidget),
-          if (source != null && _showOverlay)
+          if (source != null && _showOverlay) ...[
+            // フリップボタン（右上）
             Positioned(
               right: 4,
               top: 4,
@@ -104,6 +110,18 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                 ],
               ),
             ),
+            // フルスクリーンボタン（右下）
+            if (widget.onFullscreen != null)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: _FlipButton(
+                  icon: Icons.fullscreen,
+                  active: false,
+                  onTap: widget.onFullscreen!,
+                ),
+              ),
+          ],
         ],
       ),
     );

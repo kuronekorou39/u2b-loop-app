@@ -2471,6 +2471,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // =====================================================================
 
   void _enterFullscreen() {
+    final isPortrait =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+    if (isPortrait) {
+      // 縦→横回転してフルスクリーン
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
     setState(() {
       _isFullscreen = true;
       _showFullscreenOverlay = true;
@@ -2486,6 +2495,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
     _overlayHideTimer?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // 回転制限を解除（全方向許可に戻す）
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
   void _toggleFullscreenOverlay() {
@@ -2780,7 +2795,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isPlaylist && _showPlaylistPanel) {
       return Column(
         children: [
-          if (!_hideVideo) const VideoPlayerWidget(),
+          if (!_hideVideo) VideoPlayerWidget(onFullscreen: _enterFullscreen),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,
@@ -2799,7 +2814,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          if (!(_isPlaylist && _hideVideo)) const VideoPlayerWidget(),
+          if (!(_isPlaylist && _hideVideo))
+            VideoPlayerWidget(onFullscreen: _enterFullscreen),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,

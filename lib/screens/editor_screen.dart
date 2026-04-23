@@ -865,7 +865,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
     return Column(
       children: [
-        const VideoPlayerWidget(),
+        VideoPlayerWidget(onFullscreen: _enterFullscreen),
         const PlayerControls(),
         const LoopSeekbar(),
         // Unified region + AB controls panel
@@ -880,6 +880,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   void _enterFullscreen() {
+    final isPortrait =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+    if (isPortrait) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
     setState(() {
       _isFullscreen = true;
       _showFullscreenOverlay = true;
@@ -892,6 +900,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     setState(() => _isFullscreen = false);
     _overlayHideTimer?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
   void _toggleFullscreenOverlay() {
