@@ -2515,13 +2515,58 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
+  /// 横画面のオーバーレイボタン群（パネル開閉 + フルスクリーン）
+  Widget _buildLandscapeOverlayButtons() {
+    return Positioned(
+      right: 4,
+      bottom: 4,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () => setState(() =>
+                _showLandscapePanel = !_showLandscapePanel),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: AppRadius.borderXs,
+              ),
+              child: Icon(
+                _showLandscapePanel
+                    ? Icons.chevron_right
+                    : Icons.chevron_left,
+                color: Colors.white,
+                size: AppIconSizes.md,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: _enterFullscreen,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: AppRadius.borderXs,
+              ),
+              child: const Icon(Icons.fullscreen,
+                  color: Colors.white, size: AppIconSizes.md),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 横画面 通常（2分割）
   Widget _buildLandscapeView(double bottomInset) {
     return SafeArea(
       child: Row(
         children: [
-          // === 左: 動画 + コントロール + 波形 ===
+          // === 左（60%）: 動画 + コントロール + 波形 ===
           Expanded(
+            flex: _showLandscapePanel ? 3 : 1,
             child: Column(
               children: [
                 Expanded(
@@ -2531,70 +2576,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         onDoubleTap: _enterFullscreen,
                         child: const VideoPlayerWidget(useAspectRatio: false),
                       ),
-                      // 右下ボタン群
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // パネル表示/非表示
-                            GestureDetector(
-                              onTap: () => setState(() =>
-                                  _showLandscapePanel = !_showLandscapePanel),
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  borderRadius: AppRadius.borderXs,
-                                ),
-                                child: Icon(
-                                  _showLandscapePanel
-                                      ? Icons.chevron_right
-                                      : Icons.chevron_left,
-                                  color: Colors.white,
-                                  size: AppIconSizes.md,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            // フルスクリーン
-                            GestureDetector(
-                              onTap: _enterFullscreen,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  borderRadius: AppRadius.borderXs,
-                                ),
-                                child: const Icon(Icons.fullscreen,
-                                    color: Colors.white, size: AppIconSizes.md),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _buildLandscapeOverlayButtons(),
                     ],
                   ),
                 ),
-                const PlayerControls(),
+                // コンパクトなコントロール（横画面用）
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs, vertical: 2),
+                  child: const PlayerControls(),
+                ),
                 LoopSeekbar(
-                  compact: _compactSeekbar,
-                  onToggleCompact: () =>
-                      setState(() => _compactSeekbar = !_compactSeekbar),
-                  allowMarkerDrag: !_isPlaylist && _editMode,
+                  compact: true,
                   onRetryWaveform: _retryWaveform,
                 ),
               ],
             ),
           ),
-          // === 右パネル ===
+          // === 右パネル（40%） ===
           if (_showLandscapePanel) ...[
-            VerticalDivider(
-              width: 1,
-              color: Colors.grey.shade800,
-            ),
+            VerticalDivider(width: 1, color: Colors.grey.shade800),
             Expanded(
+              flex: 2,
               child: _buildLandscapeRightPanel(bottomInset),
             ),
           ],
@@ -2614,12 +2617,148 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
     }
 
-    // 単体再生: リージョン + ループパネル
+    // 単体再生: 横画面専用レイアウト（縦にフル活用）
     final regions = _currentItem.effectiveRegions;
     final loop = ref.watch(loopProvider);
-    return SingleChildScrollView(
-      padding: EdgeInsets.only(bottom: bottomInset + AppSpacing.xxl),
-      child: _buildRegionAndLoopPanel(regions, loop),
+    final notifier = ref.read(loopProvider.notifier);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+
+    return Column(
+      children: [
+        // ループON/OFF + 編集ボタン
+        Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+          child: Row(
+            children: [
+              SizedBox(
+                height: 28,
+                child: FilledButton.icon(
+                  onPressed: hasSource
+                      ? () => notifier.toggleEnabled()
+                      : null,
+                  icon: Icon(
+                    loop.enabled ? Icons.repeat_on : Icons.repeat,
+                    size: AppIconSizes.s,
+                  ),
+                  label: Text(loop.enabled ? 'ON' : 'OFF'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: loop.enabled
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.surfaceContainerHighest,
+                    foregroundColor: loop.enabled
+                        ? Colors.black
+                        : Colors.grey,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: Size.zero,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (_activeRegionIdx >= 0)
+                SizedBox(
+                  height: 26,
+                  child: TextButton.icon(
+                    onPressed: _editMode
+                        ? _finishEdit
+                        : () => setState(() => _editMode = true),
+                    icon: Icon(
+                      _editMode ? Icons.check : Icons.edit,
+                      size: AppIconSizes.xs,
+                      color: _editMode ? AppTheme.accentGreen : Colors.grey,
+                    ),
+                    label: Text(
+                      _editMode ? '保存' : '編集',
+                      style: textTheme.labelSmall!.copyWith(
+                        color: _editMode ? AppTheme.accentGreen : Colors.grey,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+              SizedBox(
+                height: 26,
+                child: OutlinedButton.icon(
+                  onPressed: () => _showExportDialog(
+                      fullTrack: !loop.hasBothPoints),
+                  icon: const Icon(Icons.file_download_outlined,
+                      size: AppIconSizes.xs),
+                  label: Text('書出し', style: textTheme.labelSmall),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.grey.shade700),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        // 区間リスト（Expandedでフル利用）
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            children: [
+              _buildRegionTile(
+                name: '全体',
+                isActive: _activeRegionIdx == -1,
+                pointAMs: null,
+                pointBMs: null,
+                onTap: _clearRegion,
+                theme: theme,
+              ),
+              Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.3)),
+              for (var i = 0; i < regions.length; i++) ...[
+                _buildRegionTile(
+                  name: regions[i].name,
+                  isActive: i == _activeRegionIdx,
+                  pointAMs: regions[i].pointAMs,
+                  pointBMs: regions[i].pointBMs,
+                  onTap: () => _selectRegion(i),
+                  onLongPress: () => _showRegionMenu(i),
+                  theme: theme,
+                ),
+                if (i < regions.length - 1)
+                  Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.3)),
+              ],
+              const SizedBox(height: AppSpacing.sm),
+              if (regions.length < _maxRegions)
+                SizedBox(
+                  width: double.infinity,
+                  height: 28,
+                  child: OutlinedButton.icon(
+                    onPressed: _addRegion,
+                    icon: const Icon(Icons.add, size: AppIconSizes.xs),
+                    label: Text('区間追加', style: textTheme.labelSmall),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey.shade700),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // AB表示（選択中の区間）
+        if (_activeRegionIdx >= 0)
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                _buildPointDisplay('A', AppTheme.pointAColor, loop.pointA),
+                const SizedBox(width: AppSpacing.xl),
+                _buildPointDisplay('B', AppTheme.pointBColor, loop.pointB),
+              ],
+            ),
+          ),
+      ],
     );
   }
 

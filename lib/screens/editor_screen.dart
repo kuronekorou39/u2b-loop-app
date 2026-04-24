@@ -950,8 +950,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     return SafeArea(
       child: Row(
         children: [
-          // === 左: 動画 + コントロール + 波形 ===
+          // === 左（60%）: 動画 + コントロール + 波形 ===
           Expanded(
+            flex: _showLandscapePanel ? 3 : 1,
             child: Column(
               children: [
                 Expanded(
@@ -993,18 +994,20 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                     ],
                   ),
                 ),
-                const PlayerControls(),
-                const LoopSeekbar(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs, vertical: 2),
+                  child: const PlayerControls(),
+                ),
+                const LoopSeekbar(compact: true),
               ],
             ),
           ),
-          // === 右パネル ===
+          // === 右パネル（40%） ===
           if (_showLandscapePanel) ...[
-            VerticalDivider(
-              width: 1,
-              color: Colors.grey.shade800,
-            ),
+            VerticalDivider(width: 1, color: Colors.grey.shade800),
             Expanded(
+              flex: 2,
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _buildUnifiedPanel(),
