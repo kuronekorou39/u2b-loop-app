@@ -85,7 +85,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isFullscreen = false;
   bool _showFullscreenOverlay = true;
   bool _showRightDrawer = false;
-  bool _showLandscapePanel = true; // 通常横画面の右パネル表示
   Timer? _overlayHideTimer;
   bool _hideVideo = false;
   bool _editMode = false;
@@ -2079,8 +2078,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (didPop) _activateMiniPlayer();
       },
       child: Scaffold(
-      appBar: _isFullscreen &&
-              MediaQuery.orientationOf(context) == Orientation.landscape
+      appBar: MediaQuery.orientationOf(context) == Orientation.landscape
           ? null
           : AppBar(
         title: Column(
@@ -2495,12 +2493,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
     _overlayHideTimer?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    // 回転制限を解除（全方向許可に戻す）
+    // 縦に戻す → 少し待ってから全方向許可に戻す
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
     ]);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    });
   }
 
   void _toggleFullscreenOverlay() {
@@ -2515,98 +2518,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
-  /// 横画面のオーバーレイボタン群（パネル開閉 + フルスクリーン）
-  Widget _buildLandscapeOverlayButtons() {
-    return Positioned(
-      right: 4,
-      bottom: 4,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() =>
-                _showLandscapePanel = !_showLandscapePanel),
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: AppRadius.borderXs,
-              ),
-              child: Icon(
-                _showLandscapePanel
-                    ? Icons.chevron_right
-                    : Icons.chevron_left,
-                color: Colors.white,
-                size: AppIconSizes.md,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: _enterFullscreen,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: AppRadius.borderXs,
-              ),
-              child: const Icon(Icons.fullscreen,
-                  color: Colors.white, size: AppIconSizes.md),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 横画面 通常（2分割）
-  Widget _buildLandscapeView(double bottomInset) {
-    return SafeArea(
-      child: Row(
-        children: [
-          // === 左（60%）: 動画 + コントロール + 波形 ===
-          Expanded(
-            flex: _showLandscapePanel ? 3 : 1,
-            child: Column(
-              children: [
-                Expanded(
-                  child: Stack(
-                    children: [
-                      GestureDetector(
-                        onDoubleTap: _enterFullscreen,
-                        child: const VideoPlayerWidget(useAspectRatio: false),
-                      ),
-                      _buildLandscapeOverlayButtons(),
-                    ],
-                  ),
-                ),
-                // コンパクトなコントロール（横画面用）
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs, vertical: 2),
-                  child: const PlayerControls(),
-                ),
-                LoopSeekbar(
-                  compact: true,
-                  onRetryWaveform: _retryWaveform,
-                ),
-              ],
-            ),
-          ),
-          // === 右パネル（40%） ===
-          if (_showLandscapePanel) ...[
-            VerticalDivider(width: 1, color: Colors.grey.shade800),
-            Expanded(
-              flex: 2,
-              child: _buildLandscapeRightPanel(bottomInset),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// 横画面 右パネル（モード別）
+  /// 横画面 右ドロワーパネル（モード別）
   Widget _buildLandscapeRightPanel(double bottomInset) {
     if (_isPlaylist) {
       return Column(
@@ -2913,18 +2825,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Widget _buildPlayerView(double bottomInset) {
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    if (isLandscape && _isFullscreen) {
+    // 横画面 = フルスクリーンビュー直行
+    if (isLandscape) {
+      if (!_isFullscreen) {
+        _isFullscreen = true;
+        _showFullscreenOverlay = true;
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        _resetOverlayTimer();
+      }
       return _buildFullscreenView(bottomInset);
     }
     // 縦に戻ったらフルスクリーン自動解除
-    if (!isLandscape && _isFullscreen) {
+    if (_isFullscreen) {
       _isFullscreen = false;
       _showRightDrawer = false;
       _overlayHideTimer?.cancel();
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    }
-    if (isLandscape) {
-      return _buildLandscapeView(bottomInset);
     }
 
     final regions = _currentItem.effectiveRegions;
