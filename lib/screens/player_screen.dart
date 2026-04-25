@@ -2736,20 +2736,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            // 右パネル開閉
-                            IconButton(
-                              icon: Icon(
-                                _showRightDrawer
-                                    ? Icons.chevron_right
-                                    : Icons.menu,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                setState(() =>
-                                    _showRightDrawer = !_showRightDrawer);
-                                _resetOverlayTimer();
-                              },
-                            ),
                           ],
                         ),
                       ),
@@ -2779,7 +2765,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
             ),
           ),
-          // 右ドロワー
+          // 右ドロワー（半透明）
           AnimatedPositioned(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
@@ -2792,9 +2778,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               child: Material(
                 color: Theme.of(context)
                     .scaffoldBackgroundColor
-                    .withValues(alpha: 0.95),
+                    .withValues(alpha: 0.75),
                 elevation: 8,
                 child: _buildLandscapeRightPanel(bottomInset),
+              ),
+            ),
+          ),
+          // ドロワー開閉タブ（常時表示、右端に張り付き）
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            right: _showRightDrawer ? drawerWidth : 0,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() => _showRightDrawer = !_showRightDrawer);
+                },
+                child: Container(
+                  width: 24,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.7),
+                    borderRadius: const BorderRadius.horizontal(
+                        left: Radius.circular(8)),
+                  ),
+                  child: Icon(
+                    _showRightDrawer
+                        ? Icons.chevron_right
+                        : Icons.chevron_left,
+                    color: Colors.white,
+                    size: AppIconSizes.sm,
+                  ),
+                ),
               ),
             ),
           ),
