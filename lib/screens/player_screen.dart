@@ -1621,7 +1621,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     if (!result.success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('書き出し失敗: ${result.error}')),
+        SnackBar(
+          content: Text('書き出し失敗: ${result.error}'),
+          duration: const Duration(seconds: 8),
+        ),
       );
       return;
     }
@@ -1860,6 +1863,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // --- Playlist panel (inline) ---
 
+  Widget _buildTrackThumb(PlaylistTrack track, {double width = 40, double height = 30}) {
+    final path = track.item.thumbnailPath;
+    return ClipRRect(
+      borderRadius: AppRadius.borderXs,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: path != null
+            ? Image.file(File(path), fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _trackThumbPlaceholder(track))
+            : _trackThumbPlaceholder(track),
+      ),
+    );
+  }
+
+  Widget _trackThumbPlaceholder(PlaylistTrack track) {
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Icon(
+        track.item.sourceType == 'youtube'
+            ? Icons.play_circle_outline
+            : Icons.video_file_outlined,
+        size: AppIconSizes.s,
+        color: Colors.grey,
+      ),
+    );
+  }
+
   Widget _buildTrackTitleText(BuildContext ctx, PlaylistTrack track,
       bool isCurrent) {
     return Text(
@@ -1910,7 +1941,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     ];
   }
 
-  Widget _buildPlaylistPanel(double bottomInset) {
+  Widget _buildPlaylistPanel(double bottomInset, {bool transparent = false}) {
     final plState = ref.watch(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
     final allTags = ref.watch(tagsProvider);
@@ -1919,12 +1950,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     ref.watch(loopItemsProvider);
 
     return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(
-          top: BorderSide(color: Colors.grey.shade800, width: 0.5),
-        ),
-      ),
+      decoration: transparent
+          ? null
+          : BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              border: Border(
+                top: BorderSide(color: Colors.grey.shade800, width: 0.5),
+              ),
+            ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1983,7 +2016,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       child: Row(
                         children: [
                           SizedBox(width: AppIconSizes.xl, child: Center(child: statusWidget)),
-                          const SizedBox(width: AppSpacing.lg),
+                          const SizedBox(width: AppSpacing.md),
+                          _buildTrackThumb(track, width: 48, height: 36),
+                          const SizedBox(width: AppSpacing.md),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2031,7 +2066,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     child: Row(
                       children: [
                         SizedBox(width: AppIconSizes.lg, child: statusWidget),
-                        const SizedBox(width: AppSpacing.md),
+                        const SizedBox(width: AppSpacing.sm),
+                        _buildTrackThumb(track),
+                        const SizedBox(width: AppSpacing.sm),
                         Expanded(
                           child: _buildTrackTitleText(ctx, track, isCurrent),
                         ),
@@ -2062,7 +2099,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isInPiP) return _buildPiPView();
+    // PiP判定: コールバック到着前でもウィンドウサイズで検知
+    final windowSize = MediaQuery.sizeOf(context);
+    if (_isInPiP || (windowSize.shortestSide < 250)) {
+      if (!_isInPiP) _isInPiP = true;
+      return _buildPiPView();
+    }
     final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
 
@@ -2524,7 +2566,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return Column(
         children: [
           _buildPlaylistControls(),
-          Expanded(child: _buildPlaylistPanel(bottomInset)),
+          Expanded(child: _buildPlaylistPanel(bottomInset, transparent: true)),
         ],
       );
     }
@@ -2780,7 +2822,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     .scaffoldBackgroundColor
                     .withValues(alpha: 0.75),
                 elevation: 8,
-                child: _buildLandscapeRightPanel(bottomInset),
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    cardTheme: CardThemeData(
+                      color: Colors.transparent,
+                      elevation: 0,
+                    ),
+                  ),
+                  child: _buildLandscapeRightPanel(bottomInset),
+                ),
               ),
             ),
           ),
@@ -2870,7 +2920,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isPlaylist && _showPlaylistPanel) {
       return Column(
         children: [
-          if (!_hideVideo) VideoPlayerWidget(onFullscreen: _enterFullscreen),
+          Offstage(
+            offstage: _hideVideo,
+            child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
+          ),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,
@@ -2889,8 +2942,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          if (!(_isPlaylist && _hideVideo))
-            VideoPlayerWidget(onFullscreen: _enterFullscreen),
+          Offstage(
+            offstage: _isPlaylist && _hideVideo,
+            child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
+          ),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,

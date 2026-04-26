@@ -324,8 +324,16 @@ class MainActivity : FlutterActivity() {
                 val fis = java.io.FileInputStream(file)
                 try {
                     extractor.setDataSource(fis.fd)
-                } finally {
+                } catch (e: Exception) {
                     fis.close()
+                    Log.e("Export", "setDataSource failed for local file: ${e.message}")
+                    throw Exception(
+                        "ファイルを読み取れません\n" +
+                        "${file.name}\n" +
+                        "理由: ${e.message ?: "不明なエラー"}"
+                    )
+                } finally {
+                    try { fis.close() } catch (_: Exception) {}
                 }
             } else {
                 extractor.setDataSource(inputUri)

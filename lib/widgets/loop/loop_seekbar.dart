@@ -112,7 +112,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final loop = ref.watch(loopProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
     final waveform = ref.watch(waveformDataProvider);
-    ref.watch(waveformLoadingProvider);
+    final waveformLoading = ref.watch(waveformLoadingProvider);
     final waveformError = ref.watch(waveformErrorProvider);
 
     // 波形取得成功時にリトライ状態をリセット
@@ -300,66 +300,96 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             viewEnd: viewEnd,
                           ),
                         ),
-                        if (waveformError != null && waveform == null) ...[
+                        // 波形: 読込中表示
+                        if (waveformLoading && waveform == null)
+                          Positioned(
+                            left: 0, right: 0, bottom: 2,
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: AppRadius.borderXs,
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      width: 10, height: 10,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.5, color: Colors.white70),
+                                    ),
+                                    SizedBox(width: AppSpacing.xs),
+                                    Text('波形を読込中...',
+                                      style: TextStyle(fontSize: 10, color: Colors.white70)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        // 波形: エラー + リトライボタン
+                        if (waveformError != null && waveform == null && !waveformLoading) ...[
                           Builder(builder: (_) {
                             _scheduleRetry(waveformError);
                             return Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 2,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: AppRadius.borderXs,
-                                    ),
-                                    child: Text(
-                                      '波形: $waveformError',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                  ),
-                                  if (_retrying) ...[
-                                    const SizedBox(width: AppSpacing.xs),
+                              left: 0, right: 0, bottom: 2,
+                              child: Center(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: AppSpacing.sm, vertical: 2),
+                                          horizontal: 8, vertical: 2),
                                       decoration: BoxDecoration(
                                         color: Colors.black54,
                                         borderRadius: AppRadius.borderXs,
                                       ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          SizedBox(
-                                            width: 10,
-                                            height: 10,
-                                            child:
-                                                CircularProgressIndicator(
-                                              strokeWidth: 1.5,
-                                              color: Colors.white70,
-                                            ),
-                                          ),
-                                          SizedBox(width: AppSpacing.xs),
-                                          Text(
-                                            '再取得中...',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.white70,
-                                            ),
-                                          ),
-                                        ],
+                                      child: Text(
+                                        '波形: $waveformError',
+                                        style: const TextStyle(
+                                          fontSize: 10, color: Colors.white70),
                                       ),
                                     ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    if (_retrying)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: AppSpacing.sm, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius: AppRadius.borderXs,
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 10, height: 10,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 1.5, color: Colors.white70),
+                                            ),
+                                            SizedBox(width: AppSpacing.xs),
+                                            Text('再取得中...',
+                                              style: TextStyle(fontSize: 10, color: Colors.white70)),
+                                          ],
+                                        ),
+                                      )
+                                    else if (widget.onRetryWaveform != null)
+                                      GestureDetector(
+                                        onTap: widget.onRetryWaveform,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: AppSpacing.sm, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.accentGreen.withValues(alpha: 0.8),
+                                            borderRadius: AppRadius.borderXs,
+                                          ),
+                                          child: const Text('リトライ',
+                                            style: TextStyle(fontSize: 10, color: Colors.white)),
+                                        ),
+                                      ),
                                   ],
-                                ],
+                                ),
                               ),
                             );
                           }),
