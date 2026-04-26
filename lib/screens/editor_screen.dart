@@ -49,10 +49,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _saving = false;
 
   // 横画面
-  bool _isFullscreen = false;
-  bool _showFullscreenOverlay = true;
   bool _showLandscapePanel = true;
-  Timer? _overlayHideTimer;
   String _loadingStatus = '準備中...';
   double _loadingProgress = 0;
   DateTime _lastStepTime = DateTime.now();
@@ -99,10 +96,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   @override
   void dispose() {
-    _overlayHideTimer?.cancel();
-    if (_isFullscreen) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    }
     try {
       ref.read(playerProvider).stop();
     } catch (_) {}
@@ -660,10 +653,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         }
       },
       child: Scaffold(
-        appBar: _isFullscreen &&
-                MediaQuery.orientationOf(context) == Orientation.landscape
-            ? null
-            : AppBar(
+        appBar: AppBar(
           title: Text(
             'AB設定 - ${_item.title}',
             style: textTheme.bodyLarge,
@@ -865,7 +855,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
     return Column(
       children: [
-        VideoPlayerWidget(onFullscreen: _enterFullscreen),
+        const VideoPlayerWidget(),
         const PlayerControls(),
         const LoopSeekbar(),
         // Unified region + AB controls panel
@@ -879,73 +869,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
-  void _enterFullscreen() {
-    final isPortrait =
-        MediaQuery.orientationOf(context) == Orientation.portrait;
-    if (isPortrait) {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    }
-    setState(() {
-      _isFullscreen = true;
-      _showFullscreenOverlay = true;
-    });
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _resetOverlayTimer();
-  }
-
-  void _exitFullscreen() {
-    setState(() => _isFullscreen = false);
-    _overlayHideTimer?.cancel();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-  }
-
-  void _toggleFullscreenOverlay() {
-    setState(() => _showFullscreenOverlay = !_showFullscreenOverlay);
-    if (_showFullscreenOverlay) _resetOverlayTimer();
-  }
-
-  void _resetOverlayTimer() {
-    _overlayHideTimer?.cancel();
-    _overlayHideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _showFullscreenOverlay = false);
-    });
-  }
-
-  /// フルスクリーンボタン（動画右下に配置、共通）
-  Widget _buildFullscreenButton(VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.5),
-          borderRadius: AppRadius.borderXs,
-        ),
-        child: const Icon(Icons.fullscreen,
-            color: Colors.white, size: AppIconSizes.md),
-      ),
-    );
-  }
 
   Widget _buildLandscapeEditorView(double bottomInset) {
-    if (_isFullscreen) return _buildFullscreenEditorView();
-
-    // 縦に戻ったらフルスクリーン解除
-    final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    if (!isLandscape && _isFullscreen) {
-      _isFullscreen = false;
-      _overlayHideTimer?.cancel();
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    }
 
     return SafeArea(
       child: Row(
@@ -958,37 +883,27 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 Expanded(
                   child: Stack(
                     children: [
-                      GestureDetector(
-                        onDoubleTap: _enterFullscreen,
-                        child: const VideoPlayerWidget(useAspectRatio: false),
-                      ),
+                      const VideoPlayerWidget(useAspectRatio: false),
                       Positioned(
                         right: 4,
                         bottom: 4,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            GestureDetector(
-                              onTap: () => setState(() =>
-                                  _showLandscapePanel = !_showLandscapePanel),
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  borderRadius: AppRadius.borderXs,
-                                ),
-                                child: Icon(
-                                  _showLandscapePanel
-                                      ? Icons.chevron_right
-                                      : Icons.chevron_left,
-                                  color: Colors.white,
-                                  size: AppIconSizes.md,
-                                ),
-                              ),
+                        child: GestureDetector(
+                          onTap: () => setState(() =>
+                              _showLandscapePanel = !_showLandscapePanel),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              borderRadius: AppRadius.borderXs,
                             ),
-                            const SizedBox(width: 4),
-                            _buildFullscreenButton(_enterFullscreen),
-                          ],
+                            child: Icon(
+                              _showLandscapePanel
+                                  ? Icons.chevron_right
+                                  : Icons.chevron_left,
+                              color: Colors.white,
+                              size: AppIconSizes.md,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -1019,86 +934,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
-  Widget _buildFullscreenEditorView() {
-    return Stack(
-      children: [
-        const Positioned.fill(
-          child: VideoPlayerWidget(useAspectRatio: false),
-        ),
-        // タップ検知レイヤー
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _toggleFullscreenOverlay,
-            onDoubleTap: _exitFullscreen,
-          ),
-        ),
-        // オーバーレイ
-        Positioned.fill(
-          child: AnimatedOpacity(
-            opacity: _showFullscreenOverlay ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 300),
-            child: IgnorePointer(
-              ignoring: !_showFullscreenOverlay,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black54, Colors.transparent,
-                      Colors.transparent, Colors.black54,
-                    ],
-                    stops: [0.0, 0.2, 0.7, 1.0],
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    const Spacer(),
-                    // 下部コントロール
-                    SafeArea(
-                      top: false,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xl),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const LoopSeekbar(compact: true),
-                            const PlayerControls(),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        // フルスクリーン解除ボタン（右下）
-        if (_showFullscreenOverlay)
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: SafeArea(
-              child: GestureDetector(
-                onTap: _exitFullscreen,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    borderRadius: AppRadius.borderXs,
-                  ),
-                  child: const Icon(Icons.fullscreen_exit,
-                      color: Colors.white, size: AppIconSizes.lg),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
 
   Widget _buildUnifiedPanel() {
     final loop = ref.watch(loopProvider);
