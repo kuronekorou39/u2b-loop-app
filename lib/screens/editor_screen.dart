@@ -48,8 +48,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _loading = true;
   bool _saving = false;
 
-  // 横画面
-  bool _showLandscapePanel = true;
   String _loadingStatus = '準備中...';
   double _loadingProgress = 0;
   DateTime _lastStepTime = DateTime.now();
@@ -877,37 +875,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         children: [
           // === 左（60%）: 動画 + コントロール + 波形 ===
           Expanded(
-            flex: _showLandscapePanel ? 3 : 1,
+            flex: 3,
             child: Column(
               children: [
-                Expanded(
-                  child: Stack(
-                    children: [
-                      const VideoPlayerWidget(useAspectRatio: false),
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: GestureDetector(
-                          onTap: () => setState(() =>
-                              _showLandscapePanel = !_showLandscapePanel),
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              borderRadius: AppRadius.borderXs,
-                            ),
-                            child: Icon(
-                              _showLandscapePanel
-                                  ? Icons.chevron_right
-                                  : Icons.chevron_left,
-                              color: Colors.white,
-                              size: AppIconSizes.md,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                const Expanded(
+                  child: VideoPlayerWidget(useAspectRatio: false),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -918,22 +890,226 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               ],
             ),
           ),
-          // === 右パネル（40%） ===
-          if (_showLandscapePanel) ...[
-            VerticalDivider(width: 1, color: Colors.grey.shade800),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: _buildUnifiedPanel(),
-              ),
-            ),
-          ],
+          VerticalDivider(width: 1, color: Colors.grey.shade800),
+          // === 右パネル（40%）: 縦並びレイアウト ===
+          Expanded(
+            flex: 2,
+            child: _buildLandscapeEditorPanel(),
+          ),
         ],
       ),
     );
   }
 
+  /// 横画面右パネル: 縦並び（上: リージョンリスト、下: ABコントロール）
+  Widget _buildLandscapeEditorPanel() {
+    final loop = ref.watch(loopProvider);
+    final loopNotifier = ref.read(loopProvider.notifier);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+
+    // リアルタイム同期
+    if (_regions.isNotEmpty) {
+      _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
+        pointAMs: () => loop.pointA?.inMilliseconds,
+        pointBMs: () => loop.pointB?.inMilliseconds,
+      );
+    }
+
+    final stepLabel = loop.adjustStep < 1
+        ? '${loop.adjustStep}s'
+        : '${loop.adjustStep.toInt()}s';
+
+    return Column(
+      children: [
+        // ループON/OFF + 書出し
+        Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+          child: Row(
+            children: [
+              SizedBox(
+                height: 28,
+                child: FilledButton.icon(
+                  onPressed: hasSource
+                      ? () => loopNotifier.toggleEnabled()
+                      : null,
+                  icon: Icon(
+                    loop.enabled ? Icons.repeat_on : Icons.repeat,
+                    size: AppIconSizes.s,
+                  ),
+                  label: Text(loop.enabled ? 'ON' : 'OFF'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: loop.enabled
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.surfaceContainerHighest,
+                    foregroundColor: loop.enabled ? Colors.black : Colors.grey,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: Size.zero,
+                  ),
+                ),
+              ),
+              if (loop.hasBothPoints) ...[
+                const SizedBox(width: AppSpacing.md),
+                Text(
+                  '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
+                  style: textTheme.bodySmall!.copyWith(color: Colors.grey),
+                ),
+              ],
+              const Spacer(),
+              SizedBox(
+                height: 26,
+                child: TextButton.icon(
+                  onPressed: loop.hasBothPoints ? _showExportDialog : null,
+                  icon: const Icon(Icons.file_download, size: AppIconSizes.xs),
+                  label: Text('書出し', style: textTheme.labelSmall),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: AppTheme.accentGreen,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        // リージョンリスト
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            children: [
+              for (var i = 0; i < _regions.length; i++) ...[
+                _buildRegionTile(i),
+                if (i < _regions.length - 1)
+                  Divider(height: 1,
+                      color: theme.dividerColor.withValues(alpha: 0.3)),
+              ],
+              const SizedBox(height: AppSpacing.sm),
+              if (_regions.length < _maxRegions)
+                SizedBox(
+                  width: double.infinity,
+                  height: 28,
+                  child: OutlinedButton.icon(
+                    onPressed: _addRegion,
+                    icon: const Icon(Icons.add, size: AppIconSizes.xs),
+                    label: Text('区間追加', style: textTheme.labelSmall),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey.shade700),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        // ABコントロール
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LoopControls.buildPointRow(
+                label: 'A',
+                color: AppTheme.pointAColor,
+                time: loop.pointA,
+                stepLabel: stepLabel,
+                onSet: hasSource
+                    ? () => loopNotifier.setPointAToCurrentPosition()
+                    : null,
+                onTimeTap: loop.hasA
+                    ? () => ref.read(playerProvider).seek(loop.pointA!)
+                    : null,
+                onMinus: () => loopNotifier.adjustPointA(-1),
+                onPlus: () => loopNotifier.adjustPointA(1),
+              ),
+              if (loop.hasBothPoints &&
+                  loop.pointA!.compareTo(loop.pointB!) > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: SizedBox(
+                    height: 24,
+                    child: TextButton.icon(
+                      onPressed: () => loopNotifier.swapPoints(),
+                      icon: Icon(Icons.swap_vert,
+                          size: AppIconSizes.xs, color: Colors.amber.shade300),
+                      label: Text('A⇔B',
+                          style: textTheme.labelSmall!.copyWith(
+                              fontSize: 10, color: Colors.amber.shade300)),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                const SizedBox(height: AppSpacing.sm),
+              LoopControls.buildPointRow(
+                label: 'B',
+                color: AppTheme.pointBColor,
+                time: loop.pointB,
+                stepLabel: stepLabel,
+                onSet: hasSource
+                    ? () => loopNotifier.setPointBToCurrentPosition()
+                    : null,
+                onTimeTap: loop.hasB
+                    ? () => ref.read(playerProvider).seek(loop.pointB!)
+                    : null,
+                onMinus: () => loopNotifier.adjustPointB(-1),
+                onPlus: () => loopNotifier.adjustPointB(1),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              // ステップ選択
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text('Step',
+                      style: textTheme.labelSmall!.copyWith(
+                          fontSize: 9, fontWeight: FontWeight.w500,
+                          color: Colors.grey)),
+                  const SizedBox(width: 5),
+                  ...LoopControls.steps.map((s) {
+                    final isSelected = loop.adjustStep == s;
+                    final label = s < 1 ? '${s}s' : '${s.toInt()}s';
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 3),
+                      child: GestureDetector(
+                        onTap: () => loopNotifier.setStep(s),
+                        child: Container(
+                          height: 22,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.grey.shade800
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(label,
+                            style: textTheme.labelSmall!.copyWith(
+                              fontFamily: 'monospace',
+                              color: isSelected
+                                  ? Colors.grey.shade300
+                                  : Colors.grey.shade600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildUnifiedPanel() {
     final loop = ref.watch(loopProvider);
