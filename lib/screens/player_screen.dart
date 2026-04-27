@@ -1183,8 +1183,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         .open(Media(source.uri), play: false)
         .timeout(const Duration(seconds: 60));
 
-    // 波形用音声DLは再生開始後にバックグラウンドで実行
-    _tryDownloadAudio(manifest, ytService);
+    // 波形用音声DLは再生開始後にバックグラウンドで実行→完了後に波形生成
+    _tryDownloadAudio(manifest, ytService).then((ok) {
+      if (ok && mounted) _generateWaveform(source);
+    });
     await _yieldFrame();
     ref.read(videoSourceProvider.notifier).state = source;
 

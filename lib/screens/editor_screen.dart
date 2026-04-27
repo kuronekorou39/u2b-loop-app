@@ -269,9 +269,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     if (!mounted) return;
     await _setProgress(0.50, 'プレーヤーを準備中...');
 
-    // 波形用音声DLは再生開始後にバックグラウンドで実行
-    _tryDownloadAudio(manifest, ytService);
-
     final source = VideoSource(
       type: VideoSourceType.youtube,
       uri: streamUrl,
@@ -279,6 +276,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       videoId: _item.videoId,
       thumbnailUrl: _item.thumbnailUrl,
     );
+
+    // 波形用音声DLをバックグラウンド開始→完了後に波形生成
+    _tryDownloadAudio(manifest, ytService).then((ok) {
+      if (ok && mounted) _generateWaveform(source);
+    });
 
     final player = ref.read(playerProvider);
     await player.open(Media(source.uri), play: false);
