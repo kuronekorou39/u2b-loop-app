@@ -2702,18 +2702,148 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ],
           ),
         ),
-        // AB表示（選択中の区間）
-        if (_activeRegionIdx >= 0)
+        // ABコントロール（選択中の区間）
+        if (_activeRegionIdx >= 0) ...[
+          const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
-            child: Row(
-              children: [
-                _buildPointDisplay('A', AppTheme.pointAColor, loop.pointA),
-                const SizedBox(width: AppSpacing.xl),
-                _buildPointDisplay('B', AppTheme.pointBColor, loop.pointB),
-              ],
-            ),
+            child: _editMode
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      LoopControls.buildPointRow(
+                        label: 'A',
+                        color: AppTheme.pointAColor,
+                        time: loop.pointA,
+                        stepLabel: _editStep < 1
+                            ? '${_editStep}s'
+                            : '${_editStep.toInt()}s',
+                        onSet: hasSource
+                            ? () => notifier.setPointA(
+                                ref.read(playerProvider).state.position)
+                            : null,
+                        onTimeTap: loop.hasA
+                            ? () => ref.read(playerProvider).seek(loop.pointA!)
+                            : null,
+                        onMinus: () {
+                          if (loop.hasA) {
+                            notifier.setPointA(loop.pointA! -
+                                Duration(milliseconds: (_editStep * 1000).round()));
+                          }
+                        },
+                        onPlus: () {
+                          if (loop.hasA) {
+                            notifier.setPointA(loop.pointA! +
+                                Duration(milliseconds: (_editStep * 1000).round()));
+                          }
+                        },
+                      ),
+                      if (loop.hasBothPoints &&
+                          loop.pointA!.compareTo(loop.pointB!) > 0)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: SizedBox(
+                            height: 24,
+                            child: TextButton.icon(
+                              onPressed: () => notifier.swapPoints(),
+                              icon: Icon(Icons.swap_vert,
+                                  size: AppIconSizes.xs,
+                                  color: Colors.amber.shade300),
+                              label: Text('A⇔B',
+                                  style: textTheme.labelSmall!.copyWith(
+                                      fontSize: 10,
+                                      color: Colors.amber.shade300)),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.sm),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox(height: AppSpacing.sm),
+                      LoopControls.buildPointRow(
+                        label: 'B',
+                        color: AppTheme.pointBColor,
+                        time: loop.pointB,
+                        stepLabel: _editStep < 1
+                            ? '${_editStep}s'
+                            : '${_editStep.toInt()}s',
+                        onSet: hasSource
+                            ? () => notifier.setPointB(
+                                ref.read(playerProvider).state.position)
+                            : null,
+                        onTimeTap: loop.hasB
+                            ? () => ref.read(playerProvider).seek(loop.pointB!)
+                            : null,
+                        onMinus: () {
+                          if (loop.hasB) {
+                            notifier.setPointB(loop.pointB! -
+                                Duration(milliseconds: (_editStep * 1000).round()));
+                          }
+                        },
+                        onPlus: () {
+                          if (loop.hasB) {
+                            notifier.setPointB(loop.pointB! +
+                                Duration(milliseconds: (_editStep * 1000).round()));
+                          }
+                        },
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text('Step',
+                              style: textTheme.labelSmall!.copyWith(
+                                  fontSize: 9, fontWeight: FontWeight.w500,
+                                  color: Colors.grey)),
+                          const SizedBox(width: 5),
+                          ...LoopControls.steps.map((s) {
+                            final isSelected = _editStep == s;
+                            final label = s < 1 ? '${s}s' : '${s.toInt()}s';
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 3),
+                              child: GestureDetector(
+                                onTap: () => setState(() => _editStep = s),
+                                child: Container(
+                                  height: 22,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.sm),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? Colors.grey.shade800
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(label,
+                                    style: textTheme.labelSmall!.copyWith(
+                                      fontFamily: 'monospace',
+                                      color: isSelected
+                                          ? Colors.grey.shade300
+                                          : Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildPointDisplay('A', AppTheme.pointAColor, loop.pointA),
+                      const SizedBox(height: AppSpacing.sm),
+                      _buildPointDisplay('B', AppTheme.pointBColor, loop.pointB),
+                    ],
+                  ),
           ),
+        ],
       ],
     );
   }
