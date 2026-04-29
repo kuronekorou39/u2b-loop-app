@@ -255,13 +255,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
       allowMultiple: true,
     );
     if (result == null || result.files.isEmpty) return;
-    var count = 0;
-    for (final file in result.files) {
-      final path = file.path;
-      if (path == null) continue;
-      ref.read(loopItemsProvider.notifier).addLocalFile(path, file.name);
-      count++;
-    }
+    final files = result.files
+        .where((f) => f.path != null)
+        .map((f) => (path: f.path!, name: f.name))
+        .toList();
+    if (files.isEmpty) return;
+
+    final count = await ref.read(loopItemsProvider.notifier).addLocalFiles(files);
     if (mounted && count > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
