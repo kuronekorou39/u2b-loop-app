@@ -250,16 +250,24 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   Future<void> _addLocalFile() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.video);
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      allowMultiple: true,
+    );
     if (result == null || result.files.isEmpty) return;
-    final file = result.files.first;
-    final path = file.path;
-    if (path == null) return;
-    ref.read(loopItemsProvider.notifier).addLocalFile(path, file.name);
-    if (mounted) {
+    var count = 0;
+    for (final file in result.files) {
+      final path = file.path;
+      if (path == null) continue;
+      ref.read(loopItemsProvider.notifier).addLocalFile(path, file.name);
+      count++;
+    }
+    if (mounted && count > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('追加しました'), duration: Duration(seconds: 2)),
+        SnackBar(
+          content: Text('$count件追加しました'),
+          duration: const Duration(seconds: 2),
+        ),
       );
     }
   }
