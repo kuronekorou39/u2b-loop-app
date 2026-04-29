@@ -261,11 +261,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
         .toList();
     if (files.isEmpty) return;
 
-    final count = await ref.read(loopItemsProvider.notifier).addLocalFiles(files);
+    // 即座にHive登録→UI反映（サムネはバックグラウンド）
+    final count = ref.read(loopItemsProvider.notifier).addLocalFilesSync(files);
     if (mounted && count > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('$count件追加しました'),
+          content: Text('$count件追加しました（サムネイル取得中...）'),
           duration: const Duration(seconds: 2),
         ),
       );

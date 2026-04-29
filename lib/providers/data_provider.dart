@@ -246,26 +246,24 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _generateLocalThumbnail(item);
   }
 
-  /// ローカルファイルを一括追加（1回のみUI更新）
-  Future<int> addLocalFiles(List<({String path, String name})> files) async {
-    var count = 0;
-    final addedItems = <LoopItem>[];
+  /// ローカルファイルを一括追加（即座にUI反映→サムネは順次バックグラウンド）
+  int addLocalFilesSync(List<({String path, String name})> files) {
+    final entries = <String, LoopItem>{};
     for (final f in files) {
       final id = _generateId();
-      final item = LoopItem(
+      entries[id] = LoopItem(
         id: id,
         title: f.name,
         uri: f.path,
         sourceType: 'local',
       );
-      await _box.put(id, item);
-      addedItems.add(item);
-      count++;
     }
-    if (count > 0) _refresh();
+    if (entries.isEmpty) return 0;
+    _box.putAll(entries);
+    _refresh();
     // サムネイルをバックグラウンドで順次生成
-    _generateLocalThumbnailsBatch(addedItems);
-    return count;
+    _generateLocalThumbnailsBatch(entries.values.toList());
+    return entries.length;
   }
 
   void _generateLocalThumbnailsBatch(List<LoopItem> items) async {
