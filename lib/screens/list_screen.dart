@@ -255,13 +255,16 @@ class _ListScreenState extends ConsumerState<ListScreen>
       allowMultiple: true,
     );
     if (result == null || result.files.isEmpty) return;
-    final files = result.files
-        .where((f) => f.path != null)
-        .map((f) => (path: f.path!, name: f.name))
-        .toList();
+
+    // path（ファイルパス）またはidentifier（content:// URI）を使用
+    final files = <({String path, String name})>[];
+    for (final f in result.files) {
+      final uri = f.path ?? f.identifier;
+      if (uri == null || uri.isEmpty) continue;
+      files.add((path: uri, name: f.name));
+    }
     if (files.isEmpty) return;
 
-    // 即座にHive登録→UI反映（サムネはバックグラウンド）
     final count = ref.read(loopItemsProvider.notifier).addLocalFilesSync(files);
     if (mounted && count > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
