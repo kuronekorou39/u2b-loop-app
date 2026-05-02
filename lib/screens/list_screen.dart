@@ -1612,6 +1612,28 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   ),
               ],
             ),
+            // 字幕バッジ
+            if (item.hasSubtitles == true)
+              Positioned(
+                left: 4,
+                bottom: compact ? 4 : null,
+                top: compact ? null : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: AppRadius.borderXs,
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.subtitles, size: 10, color: Colors.white70),
+                      SizedBox(width: 2),
+                      Text('CC', style: TextStyle(fontSize: 9, color: Colors.white70)),
+                    ],
+                  ),
+                ),
+              ),
             if (item.isFetching || item.hasError)
               Positioned.fill(child: _buildStatusOverlay(item)),
             if (selected)
@@ -1720,6 +1742,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       color: Colors.black54,
                       child: const Icon(Icons.error_outline,
                           size: AppIconSizes.sm, color: Colors.orange),
+                    ),
+                  if (item.hasSubtitles == true)
+                    const Positioned(
+                      left: 2,
+                      bottom: 2,
+                      child: Icon(Icons.subtitles, size: 10, color: Colors.white70),
                     ),
                 ],
               ),

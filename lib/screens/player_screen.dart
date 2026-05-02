@@ -1304,9 +1304,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final subs = await SubtitleService.fetchSubtitles(videoId);
       if (mounted) {
         ref.read(subtitleDataProvider.notifier).state = subs;
-        // 字幕があれば自動でONにする
-        if (subs != null && subs.isNotEmpty) {
+        final hasSubs = subs != null && subs.isNotEmpty;
+        if (hasSubs) {
           ref.read(subtitleVisibleProvider.notifier).state = true;
+        }
+        // 結果をLoopItemに保存（一覧表示用）
+        final item = _currentItem;
+        if (item.hasSubtitles == null || item.hasSubtitles != hasSubs) {
+          item.hasSubtitles = hasSubs;
+          ref.read(loopItemsProvider.notifier).update(item);
         }
       }
     } catch (_) {

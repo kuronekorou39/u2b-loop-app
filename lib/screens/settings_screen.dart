@@ -58,6 +58,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'regions': item.regions.map((r) => r.toMap()).toList(),
         'playCount': item.playCount,
         'accumulatedPlayMs': item.accumulatedPlayMs,
+        'hasSubtitles': item.hasSubtitles,
       };
 
   Map<String, dynamic> _playlistToJson(app.Playlist pl) => {
@@ -145,6 +146,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             [],
         playCount: j['playCount'] as int? ?? 0,
         accumulatedPlayMs: j['accumulatedPlayMs'] as int? ?? 0,
+        hasSubtitles: j['hasSubtitles'] as bool?,
       );
 
   app.Playlist _playlistFromJson(Map<String, dynamic> j) {

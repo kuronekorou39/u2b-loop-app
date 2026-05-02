@@ -34,6 +34,9 @@ class LoopItem {
   /// 未カウント分の累積再生時間（ミリ秒）
   int accumulatedPlayMs;
 
+  /// 字幕の有無（null=未チェック, true=あり, false=なし）
+  bool? hasSubtitles;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -54,6 +57,7 @@ class LoopItem {
     List<LoopRegion>? regions,
     this.playCount = 0,
     this.accumulatedPlayMs = 0,
+    this.hasSubtitles,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
@@ -120,6 +124,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
           [],
       playCount: fields[17] as int? ?? 0,
       accumulatedPlayMs: fields[18] as int? ?? 0,
+      hasSubtitles: fields[19] as bool?,
     );
   }
 
@@ -145,6 +150,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       16: obj.regions.map((r) => r.toMap()).toList(),
       17: obj.playCount,
       18: obj.accumulatedPlayMs,
+      19: obj.hasSubtitles,
     });
   }
 }
