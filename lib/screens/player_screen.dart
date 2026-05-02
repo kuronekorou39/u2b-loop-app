@@ -1298,10 +1298,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _fetchSubtitles(String videoId) async {
+    debugPrint('[Subtitle] 取得開始: $videoId');
     ref.read(subtitleLoadingProvider.notifier).state = true;
     ref.read(subtitleDataProvider.notifier).state = null;
     try {
       final subs = await SubtitleService.fetchSubtitles(videoId);
+      debugPrint('[Subtitle] 結果: ${subs?.length ?? 'null'}件');
       if (mounted) {
         ref.read(subtitleDataProvider.notifier).state = subs;
         final hasSubs = subs != null && subs.isNotEmpty;
@@ -1315,7 +1317,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ref.read(loopItemsProvider.notifier).update(item);
         }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Subtitle] エラー: $e');
     } finally {
       if (mounted) {
         ref.read(subtitleLoadingProvider.notifier).state = false;
