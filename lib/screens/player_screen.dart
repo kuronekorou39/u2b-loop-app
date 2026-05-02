@@ -30,8 +30,11 @@ import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
 import '../services/export_service.dart';
+import '../providers/subtitle_provider.dart';
+import '../services/subtitle_service.dart';
 import '../services/waveform_service.dart';
 import '../widgets/equalizer_icon.dart';
+import '../widgets/karaoke_subtitle.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/loop/loop_controls.dart';
@@ -1285,6 +1288,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (source.type == VideoSourceType.local || _cachedAudioPath != null) {
       _generateWaveform(source);
     }
+
+    // 字幕取得（YouTube動画のみ、バックグラウンド）
+    if (source.type == VideoSourceType.youtube && source.videoId != null) {
+      _fetchSubtitles(source.videoId!);
+    } else {
+      ref.read(subtitleDataProvider.notifier).state = null;
+    }
+  }
+
+  Future<void> _fetchSubtitles(String videoId) async {
+    ref.read(subtitleLoadingProvider.notifier).state = true;
+    ref.read(subtitleDataProvider.notifier).state = null;
+    try {
+      final subs = await SubtitleService.fetchSubtitles(videoId);
+      if (mounted) {
+        ref.read(subtitleDataProvider.notifier).state = subs;
+        // 字幕があれば自動でONにする
+        if (subs != null && subs.isNotEmpty) {
+          ref.read(subtitleVisibleProvider.notifier).state = true;
+        }
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) {
+        ref.read(subtitleLoadingProvider.notifier).state = false;
+      }
+    }
   }
 
   void _setupRegions(LoopItem item) {
@@ -2154,6 +2184,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               onPressed: () => setState(() => _hideVideo = !_hideVideo),
               tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
             ),
+          // 字幕トグル
+          Consumer(builder: (_, ref, _) {
+            final subs = ref.watch(subtitleDataProvider);
+            final visible = ref.watch(subtitleVisibleProvider);
+            final loading = ref.watch(subtitleLoadingProvider);
+            if (loading) {
+              return const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              );
+            }
+            if (subs == null || subs.isEmpty) return const SizedBox.shrink();
+            return IconButton(
+              icon: Icon(
+                visible ? Icons.subtitles : Icons.subtitles_off,
+                size: AppIconSizes.md,
+                color: visible ? AppTheme.accentGreen : Colors.grey,
+              ),
+              onPressed: () => ref.read(subtitleVisibleProvider.notifier).state = !visible,
+              tooltip: visible ? '字幕OFF' : '字幕ON',
+            );
+          }),
           if (Platform.isAndroid || Platform.isIOS)
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt, size: AppIconSizes.ml),
@@ -3056,6 +3111,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             offstage: _hideVideo,
             child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
           ),
+          const KaraokeSubtitle(),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,
@@ -3078,6 +3134,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             offstage: _isPlaylist && _hideVideo,
             child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
           ),
+          const KaraokeSubtitle(),
           const PlayerControls(),
           LoopSeekbar(
             compact: _compactSeekbar,
