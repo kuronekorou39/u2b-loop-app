@@ -246,7 +246,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
           ],
         ),
       ),
-    ).then((_) => urlController.dispose());
+    ).then((_) {
+      // ダイアログのアニメーション完了後にdispose
+      Future.delayed(const Duration(milliseconds: 300), () {
+        urlController.dispose();
+      });
+    });
   }
 
   Future<void> _addLocalFile() async {

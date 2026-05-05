@@ -158,14 +158,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // PiPの再生/一時停止ボタンを同期
-      ref.listen(playingProvider, (_, next) {
-        final playing = next.valueOrNull ?? false;
-        try {
-          _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
-        } catch (_) {}
-      });
-
       // ミニプレイヤーからの復帰判定
       final miniState = ref.read(miniPlayerProvider);
       final isSameContext = miniState.item != null
@@ -1298,19 +1290,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _fetchSubtitles(String videoId) async {
-    debugPrint('[Subtitle] 取得開始: $videoId');
     ref.read(subtitleLoadingProvider.notifier).state = true;
     ref.read(subtitleDataProvider.notifier).state = null;
     try {
       final subs = await SubtitleService.fetchSubtitles(videoId);
-      debugPrint('[Subtitle] 結果: ${subs?.length ?? 'null'}件');
       if (mounted) {
         ref.read(subtitleDataProvider.notifier).state = subs;
         final hasSubs = subs != null && subs.isNotEmpty;
         if (hasSubs) {
           ref.read(subtitleVisibleProvider.notifier).state = true;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('字幕: ${subs.length}件取得'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
         }
-        // 結果をLoopItemに保存（一覧表示用）
         final item = _currentItem;
         if (item.hasSubtitles == null || item.hasSubtitles != hasSubs) {
           item.hasSubtitles = hasSubs;
@@ -1318,7 +1313,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         }
       }
     } catch (e) {
-      debugPrint('[Subtitle] エラー: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('字幕取得エラー: $e'),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         ref.read(subtitleLoadingProvider.notifier).state = false;
@@ -2140,6 +2142,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // PiPの再生/一時停止ボタンを同期（buildメソッド内でのみref.listen可能）
+    ref.listen(playingProvider, (_, next) {
+      final playing = next.valueOrNull ?? false;
+      try {
+        _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
+      } catch (_) {}
+    });
+
     // PiP判定: コールバック到着前でもウィンドウサイズで検知
     final windowSize = MediaQuery.sizeOf(context);
     if (_isInPiP || (windowSize.shortestSide < 250)) {
