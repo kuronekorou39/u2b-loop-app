@@ -1292,19 +1292,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _fetchSubtitles(String videoId) async {
     ref.read(subtitleLoadingProvider.notifier).state = true;
     ref.read(subtitleDataProvider.notifier).state = null;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('[DEBUG] 字幕取得開始: $videoId'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
     try {
       final subs = await SubtitleService.fetchSubtitles(videoId);
       if (mounted) {
         ref.read(subtitleDataProvider.notifier).state = subs;
         final hasSubs = subs != null && subs.isNotEmpty;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(hasSubs
+                ? '字幕: ${subs.length}件取得'
+                : '字幕なし（この動画に字幕データがありません）'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
         if (hasSubs) {
           ref.read(subtitleVisibleProvider.notifier).state = true;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('字幕: ${subs.length}件取得'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
         }
         final item = _currentItem;
         if (item.hasSubtitles == null || item.hasSubtitles != hasSubs) {
