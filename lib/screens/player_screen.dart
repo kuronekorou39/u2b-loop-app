@@ -1301,7 +1301,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
     }
     try {
-      final subs = await SubtitleService.fetchSubtitles(videoId);
+      final result = await SubtitleService.fetchSubtitles(videoId);
+      final subs = result.subs;
       if (mounted) {
         ref.read(subtitleDataProvider.notifier).state = subs;
         final hasSubs = subs != null && subs.isNotEmpty;
@@ -1309,8 +1310,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           SnackBar(
             content: Text(hasSubs
                 ? '字幕: ${subs.length}件取得'
-                : '字幕なし（この動画に字幕データがありません）'),
-            duration: const Duration(seconds: 3),
+                : '字幕なし [${result.debug}]'),
+            duration: const Duration(seconds: 5),
           ),
         );
         if (hasSubs) {
