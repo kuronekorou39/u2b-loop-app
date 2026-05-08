@@ -110,7 +110,8 @@ class SubtitleService {
         // XMLパース失敗 → 生テキストで取得して自前パース
         final raw = await yt.videos.closedCaptions.getSubTitles(selectedTrack);
         subs = _parseRawSubtitles(raw);
-        debug += ' (fallback)';
+        final preview = raw.length > 150 ? raw.substring(0, 150) : raw;
+        debug += ' (fallback, raw=${raw.length}chars: $preview)';
       }
       return (subs: subs.isNotEmpty ? subs : null,
           debug: '$debug selected=$selected captions=${subs.length}');
