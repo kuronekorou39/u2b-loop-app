@@ -105,18 +105,20 @@ class SubtitleService {
   }
 
   /// 字幕データを取得
-  static Future<({List<SubtitleEntry>? subs, String debug})> fetchSubtitles(
+  static Future<({
+    List<SubtitleEntry>? subs,
+    List<SubtitleTrackInfo> tracks,
+    String? selectedLanguage,
+    String debug,
+  })> fetchSubtitles(
     String videoId, {
     String? preferredLanguage,
   }) async {
     try {
       final tracks = await _getCaptionTracks(videoId);
       if (tracks.isEmpty) {
-        return (subs: null, debug: 'tracks=0');
+        return (subs: null, tracks: tracks, selectedLanguage: null, debug: 'tracks=0');
       }
-
-      final trackSummary =
-          tracks.map((t) => '${t.languageCode}(${t.languageName})').join(', ');
 
       // トラック選択
       SubtitleTrackInfo? selected;
@@ -135,11 +137,12 @@ class SubtitleService {
       final count = subs?.length ?? 0;
       return (
         subs: (count > 0) ? subs : null,
-        debug:
-            'tracks=${tracks.length} [$trackSummary] selected=${selected.languageCode} captions=$count',
+        tracks: tracks,
+        selectedLanguage: selected.languageCode,
+        debug: 'selected=${selected.languageCode} captions=$count',
       );
     } catch (e) {
-      return (subs: null, debug: 'error: $e');
+      return (subs: null, tracks: <SubtitleTrackInfo>[], selectedLanguage: null, debug: 'error: $e');
     }
   }
 

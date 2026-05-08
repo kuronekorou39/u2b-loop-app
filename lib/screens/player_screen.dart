@@ -1289,33 +1289,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  Future<void> _fetchSubtitles(String videoId) async {
+  Future<void> _fetchSubtitles(String videoId, {String? language}) async {
     ref.read(subtitleLoadingProvider.notifier).state = true;
     ref.read(subtitleDataProvider.notifier).state = null;
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('[DEBUG] 字幕取得開始: $videoId'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
     try {
-      final result = await SubtitleService.fetchSubtitles(videoId);
+      final result = await SubtitleService.fetchSubtitles(
+        videoId,
+        preferredLanguage: language,
+      );
       final subs = result.subs;
       if (mounted) {
         ref.read(subtitleDataProvider.notifier).state = subs;
+        ref.read(subtitleTracksProvider.notifier).state = result.tracks;
         final hasSubs = subs != null && subs.isNotEmpty;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(hasSubs
-                ? '字幕: ${subs.length}件取得'
-                : '字幕なし [${result.debug}]'),
-            duration: const Duration(seconds: 5),
-          ),
-        );
         if (hasSubs) {
           ref.read(subtitleVisibleProvider.notifier).state = true;
+          ref.read(subtitleLanguageProvider.notifier).state =
+              result.selectedLanguage;
         }
         final item = _currentItem;
         if (item.hasSubtitles == null || item.hasSubtitles != hasSubs) {
@@ -1323,20 +1313,66 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ref.read(loopItemsProvider.notifier).update(item);
         }
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('字幕取得エラー: $e'),
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
+    } catch (_) {
     } finally {
       if (mounted) {
         ref.read(subtitleLoadingProvider.notifier).state = false;
       }
     }
+  }
+
+  void _showSubtitleLanguagePicker() {
+    final tracks = ref.read(subtitleTracksProvider);
+    final currentLang = ref.read(subtitleLanguageProvider);
+    if (tracks.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Text('字幕の言語',
+                  style: Theme.of(context).textTheme.titleMedium),
+            ),
+            const Divider(height: 1),
+            // OFF
+            ListTile(
+              leading: const Icon(Icons.subtitles_off),
+              title: const Text('OFF'),
+              trailing: currentLang == null
+                  ? null
+                  : null,
+              onTap: () {
+                Navigator.pop(ctx);
+                ref.read(subtitleVisibleProvider.notifier).state = false;
+              },
+            ),
+            // 各言語
+            for (final track in tracks)
+              ListTile(
+                leading: const Icon(Icons.subtitles),
+                title: Text(track.languageName.isNotEmpty
+                    ? track.languageName
+                    : track.languageCode),
+                trailing: track.languageCode == currentLang
+                    ? const Icon(Icons.check, color: AppTheme.accentGreen)
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final videoId = _currentItem.videoId;
+                  if (videoId != null) {
+                    _fetchSubtitles(videoId, language: track.languageCode);
+                  }
+                },
+              ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
   }
 
   void _setupRegions(LoopItem item) {
@@ -2229,14 +2265,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               );
             }
             if (subs == null || subs.isEmpty) return const SizedBox.shrink();
-            return IconButton(
-              icon: Icon(
-                visible ? Icons.subtitles : Icons.subtitles_off,
-                size: AppIconSizes.md,
-                color: visible ? AppTheme.accentGreen : Colors.grey,
+            return GestureDetector(
+              onLongPress: _showSubtitleLanguagePicker,
+              child: IconButton(
+                icon: Icon(
+                  visible ? Icons.subtitles : Icons.subtitles_off,
+                  size: AppIconSizes.md,
+                  color: visible ? AppTheme.accentGreen : Colors.grey,
+                ),
+                onPressed: () => ref.read(subtitleVisibleProvider.notifier).state = !visible,
+                tooltip: '字幕ON/OFF（長押しで言語選択）',
               ),
-              onPressed: () => ref.read(subtitleVisibleProvider.notifier).state = !visible,
-              tooltip: visible ? '字幕OFF' : '字幕ON',
             );
           }),
           if (Platform.isAndroid || Platform.isIOS)
