@@ -2274,7 +2274,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   color: visible ? AppTheme.accentGreen : Colors.grey,
                 ),
                 onPressed: () => ref.read(subtitleVisibleProvider.notifier).state = !visible,
-                tooltip: '字幕ON/OFF（長押しで言語選択）',
               ),
             );
           }),
