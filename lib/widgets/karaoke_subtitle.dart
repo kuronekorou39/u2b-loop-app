@@ -12,8 +12,8 @@ class KaraokeSubtitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final visible = ref.watch(subtitleVisibleProvider);
-    if (!visible) return const SizedBox.shrink();
+    final mode = ref.watch(subtitleModeProvider);
+    if (mode != SubtitleMode.karaoke) return const SizedBox.shrink();
 
     final subtitles = ref.watch(subtitleDataProvider);
     if (subtitles == null || subtitles.isEmpty) return const SizedBox.shrink();

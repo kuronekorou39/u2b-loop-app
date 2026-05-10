@@ -35,6 +35,7 @@ import '../services/subtitle_service.dart';
 import '../services/waveform_service.dart';
 import '../widgets/equalizer_icon.dart';
 import '../widgets/karaoke_subtitle.dart';
+import '../widgets/lyrics_overlay.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/loop/loop_controls.dart';
@@ -1303,7 +1304,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ref.read(subtitleTracksProvider.notifier).state = result.tracks;
         final hasSubs = subs != null && subs.isNotEmpty;
         if (hasSubs) {
-          ref.read(subtitleVisibleProvider.notifier).state = true;
+          ref.read(subtitleModeProvider.notifier).state = SubtitleMode.karaoke;
           ref.read(subtitleLanguageProvider.notifier).state =
               result.selectedLanguage;
         }
@@ -1347,7 +1348,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   : null,
               onTap: () {
                 Navigator.pop(ctx);
-                ref.read(subtitleVisibleProvider.notifier).state = false;
+                ref.read(subtitleModeProvider.notifier).state = SubtitleMode.off;
               },
             ),
             // 各言語
@@ -2250,10 +2251,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               onPressed: () => setState(() => _hideVideo = !_hideVideo),
               tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
             ),
-          // 字幕トグル
+          // 字幕モード切替（タップ: OFF→カラオケ→リリクス→OFF、長押し: 言語選択）
           Consumer(builder: (_, ref, _) {
             final subs = ref.watch(subtitleDataProvider);
-            final visible = ref.watch(subtitleVisibleProvider);
+            final mode = ref.watch(subtitleModeProvider);
             final loading = ref.watch(subtitleLoadingProvider);
             if (loading) {
               return const Padding(
@@ -2265,15 +2266,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               );
             }
             if (subs == null || subs.isEmpty) return const SizedBox.shrink();
+            final IconData icon;
+            final Color color;
+            switch (mode) {
+              case SubtitleMode.off:
+                icon = Icons.subtitles_off;
+                color = Colors.grey;
+              case SubtitleMode.karaoke:
+                icon = Icons.subtitles;
+                color = AppTheme.accentGreen;
+              case SubtitleMode.lyrics:
+                icon = Icons.lyrics;
+                color = AppTheme.accentGreen;
+            }
             return GestureDetector(
               onLongPress: _showSubtitleLanguagePicker,
               child: IconButton(
-                icon: Icon(
-                  visible ? Icons.subtitles : Icons.subtitles_off,
-                  size: AppIconSizes.md,
-                  color: visible ? AppTheme.accentGreen : Colors.grey,
-                ),
-                onPressed: () => ref.read(subtitleVisibleProvider.notifier).state = !visible,
+                icon: Icon(icon, size: AppIconSizes.md, color: color),
+                onPressed: () {
+                  final next = switch (mode) {
+                    SubtitleMode.off => SubtitleMode.karaoke,
+                    SubtitleMode.karaoke => SubtitleMode.lyrics,
+                    SubtitleMode.lyrics => SubtitleMode.off,
+                  };
+                  ref.read(subtitleModeProvider.notifier).state = next;
+                },
               ),
             );
           }),
@@ -3175,9 +3192,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_isPlaylist && _showPlaylistPanel) {
       return Column(
         children: [
-          Offstage(
-            offstage: _hideVideo,
-            child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
+          Stack(
+            children: [
+              Offstage(
+                offstage: _hideVideo,
+                child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
+              ),
+              const Positioned.fill(child: LyricsOverlay()),
+            ],
           ),
           const KaraokeSubtitle(),
           const PlayerControls(),
@@ -3198,9 +3220,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          Offstage(
-            offstage: _isPlaylist && _hideVideo,
-            child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
+          Stack(
+            children: [
+              Offstage(
+                offstage: _isPlaylist && _hideVideo,
+                child: VideoPlayerWidget(onFullscreen: _enterFullscreen),
+              ),
+              const Positioned.fill(child: LyricsOverlay()),
+            ],
           ),
           const KaraokeSubtitle(),
           const PlayerControls(),

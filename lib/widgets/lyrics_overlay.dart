@@ -1,0 +1,106 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/theme/app_theme.dart';
+import '../providers/player_provider.dart';
+import '../providers/subtitle_provider.dart';
+import '../services/subtitle_service.dart';
+
+/// Apple Music風リリクス表示（動画に重ねる半透明オーバーレイ）
+class LyricsOverlay extends ConsumerStatefulWidget {
+  const LyricsOverlay({super.key});
+
+  @override
+  ConsumerState<LyricsOverlay> createState() => _LyricsOverlayState();
+}
+
+class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
+  final ScrollController _scrollController = ScrollController();
+  int _lastIndex = -1;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = ref.watch(subtitleModeProvider);
+    if (mode != SubtitleMode.lyrics) return const SizedBox.shrink();
+
+    final subtitles = ref.watch(subtitleDataProvider);
+    if (subtitles == null || subtitles.isEmpty) return const SizedBox.shrink();
+
+    final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
+    final currentIdx = _findCurrentIndex(subtitles, position);
+
+    // 自動スクロール
+    if (currentIdx != _lastIndex && currentIdx >= 0) {
+      _lastIndex = currentIdx;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToIndex(currentIdx, subtitles.length);
+      });
+    }
+
+    return Container(
+      color: Colors.black.withValues(alpha: 0.7),
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+        itemCount: subtitles.length,
+        itemBuilder: (ctx, i) {
+          final entry = subtitles[i];
+          final isCurrent = i == currentIdx;
+          final isPast = currentIdx >= 0 && i < currentIdx;
+
+          return GestureDetector(
+            onTap: () {
+              // タップで該当位置にシーク
+              ref.read(playerProvider).seek(entry.offset);
+            },
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 300),
+              style: TextStyle(
+                fontSize: isCurrent ? 18 : 14,
+                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                color: isCurrent
+                    ? AppTheme.accentGreen
+                    : isPast
+                        ? Colors.white.withValues(alpha: 0.3)
+                        : Colors.white.withValues(alpha: 0.6),
+                height: 1.6,
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: isCurrent ? 8 : 4,
+                ),
+                child: Text(
+                  entry.text,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  int _findCurrentIndex(List<SubtitleEntry> subs, Duration pos) {
+    for (var i = subs.length - 1; i >= 0; i--) {
+      if (pos >= subs[i].offset) return i;
+    }
+    return -1;
+  }
+
+  void _scrollToIndex(int index, int total) {
+    if (!_scrollController.hasClients) return;
+    // 1行あたり推定高さ（current=42, other=30）
+    final estimatedOffset = index * 30.0 - 60; // 少し手前に表示
+    _scrollController.animateTo(
+      estimatedOffset.clamp(0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
+  }
+}
