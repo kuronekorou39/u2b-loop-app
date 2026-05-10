@@ -47,15 +47,21 @@ class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-        itemCount: subtitles.length,
+        itemCount: subtitles.length + 1, // +1 for bottom spacer
         itemBuilder: (ctx, i) {
+          // 末尾スペーサー（最終行を中央に表示するための余白）
+          if (i >= subtitles.length) {
+            return SizedBox(height: MediaQuery.sizeOf(context).height * 0.4);
+          }
+
           final entry = subtitles[i];
           final isCurrent = i == currentIdx;
-          final isPast = currentIdx >= 0 && i < currentIdx;
+          // 間奏中(currentIdx==-1)は、endが過ぎた行を過去扱い
+          final isPast = (currentIdx >= 0 && i < currentIdx) ||
+              (currentIdx == -1 && position >= subtitles[i].end);
 
           return GestureDetector(
             onTap: () {
-              // タップで該当位置にシーク
               ref.read(playerProvider).seek(entry.offset);
             },
             child: AnimatedDefaultTextStyle(
@@ -88,7 +94,7 @@ class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
 
   int _findCurrentIndex(List<SubtitleEntry> subs, Duration pos) {
     for (var i = subs.length - 1; i >= 0; i--) {
-      if (pos >= subs[i].offset) return i;
+      if (pos >= subs[i].offset && pos < subs[i].end) return i;
     }
     return -1;
   }
