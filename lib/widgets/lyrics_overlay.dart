@@ -14,14 +14,8 @@ class LyricsOverlay extends ConsumerStatefulWidget {
 }
 
 class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
-  final ScrollController _scrollController = ScrollController();
   int _lastIndex = -1;
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+  final _currentKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
@@ -34,33 +28,42 @@ class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
     final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
     final currentIdx = _findCurrentIndex(subtitles, position);
 
-    // 自動スクロール
-    if (currentIdx != _lastIndex && currentIdx >= 0) {
+    // 自動スクロール（GlobalKeyでカレント行の実際の位置にスクロール）
+    if (currentIdx != _lastIndex) {
       _lastIndex = currentIdx;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToIndex(currentIdx, subtitles.length);
-      });
+      if (currentIdx >= 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = _currentKey.currentContext;
+          if (ctx != null) {
+            Scrollable.ensureVisible(
+              ctx,
+              alignment: 0.35, // 画面の35%の位置に表示
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOut,
+            );
+          }
+        });
+      }
     }
 
     return Container(
       color: Colors.black.withValues(alpha: 0.7),
       child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-        itemCount: subtitles.length + 1, // +1 for bottom spacer
+        padding: EdgeInsets.only(
+          top: 32,
+          bottom: MediaQuery.sizeOf(context).height * 0.5,
+          left: 16,
+          right: 16,
+        ),
+        itemCount: subtitles.length,
         itemBuilder: (ctx, i) {
-          // 末尾スペーサー（最終行を中央に表示するための余白）
-          if (i >= subtitles.length) {
-            return SizedBox(height: MediaQuery.sizeOf(context).height * 0.4);
-          }
-
           final entry = subtitles[i];
           final isCurrent = i == currentIdx;
-          // 間奏中(currentIdx==-1)は、endが過ぎた行を過去扱い
           final isPast = (currentIdx >= 0 && i < currentIdx) ||
               (currentIdx == -1 && position >= subtitles[i].end);
 
           return GestureDetector(
+            key: isCurrent ? _currentKey : null,
             onTap: () {
               ref.read(playerProvider).seek(entry.offset);
             },
@@ -88,7 +91,6 @@ class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
     );
   }
 
-  /// カレント行のハイライト進行表示
   Widget _buildHighlightedLine(SubtitleEntry entry, Duration pos) {
     final elapsed = (pos - entry.offset).inMilliseconds;
     final total = entry.duration.inMilliseconds;
@@ -132,16 +134,5 @@ class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
       if (pos >= subs[i].offset && pos < subs[i].end) return i;
     }
     return -1;
-  }
-
-  void _scrollToIndex(int index, int total) {
-    if (!_scrollController.hasClients) return;
-    // 1行あたり推定高さ（current=42, other=30）
-    final estimatedOffset = index * 30.0 - 60; // 少し手前に表示
-    _scrollController.animateTo(
-      estimatedOffset.clamp(0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOut,
-    );
   }
 }

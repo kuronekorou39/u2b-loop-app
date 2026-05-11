@@ -4,7 +4,7 @@ import '../providers/player_provider.dart';
 import '../providers/subtitle_provider.dart';
 import '../services/subtitle_service.dart';
 
-/// 字幕表示ウィジェット（1行表示、映画字幕風）
+/// 字幕表示ウィジェット（1行表示、映画字幕風、固定高さ）
 class KaraokeSubtitle extends ConsumerWidget {
   const KaraokeSubtitle({super.key});
 
@@ -18,21 +18,29 @@ class KaraokeSubtitle extends ConsumerWidget {
 
     final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
     final current = _findCurrent(subtitles, position);
-    if (current == null) return const SizedBox(height: 40);
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Text(
-        current.text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 15,
-          color: Colors.white,
-          shadows: [
-            Shadow(color: Colors.black, blurRadius: 4),
-          ],
-        ),
+    // 固定高さ（2行分）で要素のガタつきを防止
+    return SizedBox(
+      height: 48,
+      child: Center(
+        child: current != null
+            ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  current.text,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                    shadows: [
+                      Shadow(color: Colors.black, blurRadius: 4),
+                    ],
+                  ),
+                ),
+              )
+            : null,
       ),
     );
   }
