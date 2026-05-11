@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/subtitle_service.dart';
 
 /// 字幕表示モード
-enum SubtitleMode { off, karaoke, lyrics }
+enum SubtitleMode { off, subtitle, lyrics }
 
 /// 現在の字幕データ
 final subtitleDataProvider =

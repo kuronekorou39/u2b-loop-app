@@ -1304,7 +1304,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ref.read(subtitleTracksProvider.notifier).state = result.tracks;
         final hasSubs = subs != null && subs.isNotEmpty;
         if (hasSubs) {
-          ref.read(subtitleModeProvider.notifier).state = SubtitleMode.karaoke;
+          ref.read(subtitleModeProvider.notifier).state = SubtitleMode.subtitle;
           ref.read(subtitleLanguageProvider.notifier).state =
               result.selectedLanguage;
         }
@@ -2272,7 +2272,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               case SubtitleMode.off:
                 icon = Icons.subtitles_off;
                 color = Colors.grey;
-              case SubtitleMode.karaoke:
+              case SubtitleMode.subtitle:
                 icon = Icons.subtitles;
                 color = AppTheme.accentGreen;
               case SubtitleMode.lyrics:
@@ -2285,8 +2285,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 icon: Icon(icon, size: AppIconSizes.md, color: color),
                 onPressed: () {
                   final next = switch (mode) {
-                    SubtitleMode.off => SubtitleMode.karaoke,
-                    SubtitleMode.karaoke => SubtitleMode.lyrics,
+                    SubtitleMode.off => SubtitleMode.subtitle,
+                    SubtitleMode.subtitle => SubtitleMode.lyrics,
                     SubtitleMode.lyrics => SubtitleMode.off,
                   };
                   ref.read(subtitleModeProvider.notifier).state = next;

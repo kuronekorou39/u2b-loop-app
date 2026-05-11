@@ -64,30 +64,65 @@ class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
             onTap: () {
               ref.read(playerProvider).seek(entry.offset);
             },
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 300),
-              style: TextStyle(
-                fontSize: isCurrent ? 18 : 14,
-                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                color: isCurrent
-                    ? AppTheme.accentGreen
-                    : isPast
-                        ? Colors.white.withValues(alpha: 0.3)
-                        : Colors.white.withValues(alpha: 0.6),
-                height: 1.6,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                vertical: isCurrent ? 8 : 4,
               ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  vertical: isCurrent ? 8 : 4,
-                ),
-                child: Text(
-                  entry.text,
-                  textAlign: TextAlign.center,
-                ),
-              ),
+              child: isCurrent
+                  ? _buildHighlightedLine(entry, position)
+                  : Text(
+                      entry.text,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isPast
+                            ? Colors.white.withValues(alpha: 0.3)
+                            : Colors.white.withValues(alpha: 0.6),
+                        height: 1.6,
+                      ),
+                    ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// カレント行のハイライト進行表示
+  Widget _buildHighlightedLine(SubtitleEntry entry, Duration pos) {
+    final elapsed = (pos - entry.offset).inMilliseconds;
+    final total = entry.duration.inMilliseconds;
+    final progress = total > 0 ? (elapsed / total).clamp(0.0, 1.0) : 1.0;
+    final highlightedChars = (entry.text.length * progress).round();
+
+    return RichText(
+      textAlign: TextAlign.center,
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: entry.text.substring(0, highlightedChars),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.accentGreen,
+              height: 1.6,
+              shadows: [
+                Shadow(
+                    color: AppTheme.accentGreen.withValues(alpha: 0.4),
+                    blurRadius: 8),
+              ],
+            ),
+          ),
+          TextSpan(
+            text: entry.text.substring(highlightedChars),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white.withValues(alpha: 0.5),
+              height: 1.6,
+            ),
+          ),
+        ],
       ),
     );
   }
