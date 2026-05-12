@@ -83,7 +83,10 @@ class SubtitleService {
     }
   }
 
-  /// 字幕XMLを取得してパース
+  /// 字幕XMLを取得してパース（指定トラックの字幕を取得）
+  static Future<List<SubtitleEntry>?> fetchTrack(SubtitleTrackInfo track) =>
+      _fetchAndParse(track.baseUrl);
+
   static Future<List<SubtitleEntry>?> _fetchAndParse(String baseUrl) async {
     final client = HttpClient();
     try {

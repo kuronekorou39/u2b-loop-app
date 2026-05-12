@@ -1322,55 +1322,98 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
+  Future<void> _fetchSubSubtitle(SubtitleTrackInfo track) async {
+    try {
+      final subs = await SubtitleService.fetchTrack(track);
+      if (mounted) {
+        ref.read(subtitleSubDataProvider.notifier).state = subs;
+        ref.read(subtitleSubLanguageProvider.notifier).state =
+            track.languageCode;
+      }
+    } catch (_) {}
+  }
+
   void _showSubtitleLanguagePicker() {
     final tracks = ref.read(subtitleTracksProvider);
-    final currentLang = ref.read(subtitleLanguageProvider);
+    final mainLang = ref.read(subtitleLanguageProvider);
+    final subLang = ref.read(subtitleSubLanguageProvider);
     if (tracks.isEmpty) return;
+
+    String label(SubtitleTrackInfo t) =>
+        t.languageName.isNotEmpty ? t.languageName : t.languageCode;
 
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Text('字幕の言語',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            const Divider(height: 1),
-            // OFF
-            ListTile(
-              leading: const Icon(Icons.subtitles_off),
-              title: const Text('OFF'),
-              trailing: currentLang == null
-                  ? null
-                  : null,
-              onTap: () {
-                Navigator.pop(ctx);
-                ref.read(subtitleModeProvider.notifier).state = SubtitleMode.off;
-              },
-            ),
-            // 各言語
-            for (final track in tracks)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: Text('字幕の言語',
+                    style: Theme.of(context).textTheme.titleMedium),
+              ),
+              const Divider(height: 1),
+              // メイン字幕
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.xs),
+                child: Text('メイン', style: Theme.of(context).textTheme.labelSmall!
+                    .copyWith(color: AppTheme.accentGreen, fontWeight: FontWeight.bold)),
+              ),
+              for (final track in tracks)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.subtitles, size: AppIconSizes.sm),
+                  title: Text(label(track)),
+                  trailing: track.languageCode == mainLang
+                      ? const Icon(Icons.check, color: AppTheme.accentGreen, size: AppIconSizes.sm)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    final videoId = _currentItem.videoId;
+                    if (videoId != null) {
+                      _fetchSubtitles(videoId, language: track.languageCode);
+                    }
+                  },
+                ),
+              const Divider(height: 1),
+              // サブ字幕
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.xs),
+                child: Text('サブ（小さく表示）', style: Theme.of(context).textTheme.labelSmall!
+                    .copyWith(color: Colors.grey)),
+              ),
               ListTile(
-                leading: const Icon(Icons.subtitles),
-                title: Text(track.languageName.isNotEmpty
-                    ? track.languageName
-                    : track.languageCode),
-                trailing: track.languageCode == currentLang
-                    ? const Icon(Icons.check, color: AppTheme.accentGreen)
+                dense: true,
+                leading: const Icon(Icons.subtitles_off, size: AppIconSizes.sm),
+                title: const Text('なし'),
+                trailing: subLang == null
+                    ? const Icon(Icons.check, color: Colors.grey, size: AppIconSizes.sm)
                     : null,
                 onTap: () {
                   Navigator.pop(ctx);
-                  final videoId = _currentItem.videoId;
-                  if (videoId != null) {
-                    _fetchSubtitles(videoId, language: track.languageCode);
-                  }
+                  ref.read(subtitleSubDataProvider.notifier).state = null;
+                  ref.read(subtitleSubLanguageProvider.notifier).state = null;
                 },
               ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+              for (final track in tracks)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.subtitles, size: AppIconSizes.sm),
+                  title: Text(label(track)),
+                  trailing: track.languageCode == subLang
+                      ? const Icon(Icons.check, color: Colors.grey, size: AppIconSizes.sm)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _fetchSubSubtitle(track);
+                  },
+                ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+          ),
         ),
       ),
     );

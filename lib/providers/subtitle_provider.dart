@@ -18,5 +18,12 @@ final subtitleModeProvider = StateProvider<SubtitleMode>((ref) => SubtitleMode.o
 final subtitleTracksProvider =
     StateProvider<List<SubtitleTrackInfo>>((ref) => []);
 
-/// 選択中の言語コード
+/// 選択中のメイン言語コード
 final subtitleLanguageProvider = StateProvider<String?>((ref) => null);
+
+/// サブ字幕データ
+final subtitleSubDataProvider =
+    StateProvider<List<SubtitleEntry>?>((ref) => null);
+
+/// サブ言語コード
+final subtitleSubLanguageProvider = StateProvider<String?>((ref) => null);
