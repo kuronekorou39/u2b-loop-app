@@ -642,6 +642,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       try { ref.read(playerProvider).setVolume(100); } catch (_) {}
     }
     _consecutiveLoadErrors = 0;
+    // 字幕取得（プレイリスト曲切替時）
+    if (track.item.sourceType == 'youtube' && track.item.videoId != null) {
+      _fetchSubtitles(track.item.videoId!);
+    } else {
+      ref.read(subtitleDataProvider.notifier).state = null;
+      ref.read(subtitleSubDataProvider.notifier).state = null;
+    }
     // 2秒後に次曲プリロード開始（再生を安定させてから）
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
@@ -3042,13 +3049,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         const Positioned.fill(
           child: VideoPlayerWidget(useAspectRatio: false),
         ),
-        // タップ検知レイヤー（VideoPlayerWidgetの上に被せてタップを拾う）
+        // リリクスオーバーレイ（動画上に重ねる）
+        const Positioned.fill(child: LyricsOverlay()),
+        // タップ検知レイヤー（リリクス非表示時のみ有効）
         Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _toggleFullscreenOverlay,
-            onDoubleTap: _exitFullscreen,
-          ),
+          child: Consumer(builder: (_, ref, _) {
+            final mode = ref.watch(subtitleModeProvider);
+            if (mode == SubtitleMode.lyrics) return const SizedBox.shrink();
+            return GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _toggleFullscreenOverlay,
+              onDoubleTap: _exitFullscreen,
+            );
+          }),
         ),
           // オーバーレイ（コントロール）
           Positioned.fill(
@@ -3108,6 +3121,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              const KaraokeSubtitle(),
                               LoopSeekbar(
                                 compact: true,
                                 allowMarkerDrag: false,
