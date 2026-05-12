@@ -1293,6 +1293,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _fetchSubtitles(String videoId, {String? language}) async {
     ref.read(subtitleLoadingProvider.notifier).state = true;
     ref.read(subtitleDataProvider.notifier).state = null;
+    ref.read(subtitleSubDataProvider.notifier).state = null;
+    ref.read(subtitleSubLanguageProvider.notifier).state = null;
     try {
       final result = await SubtitleService.fetchSubtitles(
         videoId,
