@@ -580,6 +580,32 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                 minimumSize: const Size(0, 32),
                               ),
                             ),
+                          const SizedBox(width: AppSpacing.md),
+                          GestureDetector(
+                            onTap: () {
+                              pl.defaultShuffle = !pl.defaultShuffle;
+                              ref.read(playlistsProvider.notifier).update(pl);
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.shuffle,
+                                    size: AppIconSizes.sm,
+                                    color: pl.defaultShuffle
+                                        ? AppTheme.accentGreen
+                                        : Colors.grey),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'シャッフル',
+                                  style: textTheme.labelSmall!.copyWith(
+                                    color: pl.defaultShuffle
+                                        ? AppTheme.accentGreen
+                                        : Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ],

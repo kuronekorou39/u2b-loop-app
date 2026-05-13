@@ -17,6 +17,9 @@ class Playlist {
   /// サムネイル用のアイテムID（nullなら最初のアイテムを使用）
   String? thumbnailItemId;
 
+  /// デフォルトでシャッフルON
+  bool defaultShuffle;
+
   Playlist({
     required this.id,
     required this.name,
@@ -25,6 +28,7 @@ class Playlist {
     Map<String, List<String>>? regionSelections,
     Set<String>? disabledItemIds,
     this.thumbnailItemId,
+    this.defaultShuffle = false,
   })  : itemIds = itemIds ?? [],
         createdAt = createdAt ?? DateTime.now(),
         regionSelections = regionSelections ?? {},
@@ -67,6 +71,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       regionSelections: regionSel,
       disabledItemIds: disabled,
       thumbnailItemId: thumbnailItemId,
+      defaultShuffle: fields[7] as bool? ?? false,
     );
   }
 
@@ -80,6 +85,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       4: obj.regionSelections.isNotEmpty ? obj.regionSelections : null,
       5: obj.disabledItemIds.isNotEmpty ? obj.disabledItemIds.toList() : null,
       6: obj.thumbnailItemId,
+      7: obj.defaultShuffle ? true : null,
     });
   }
 }

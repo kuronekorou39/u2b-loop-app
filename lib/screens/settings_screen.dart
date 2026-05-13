@@ -68,6 +68,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'createdAt': pl.createdAt.toIso8601String(),
         'regionSelections': pl.regionSelections,
         'disabledItemIds': pl.disabledItemIds.toList(),
+        'defaultShuffle': pl.defaultShuffle,
       };
 
   Map<String, dynamic> _tagToJson(Tag tag) => {
@@ -164,6 +165,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       regionSelections: regionSel,
       disabledItemIds:
           (j['disabledItemIds'] as List?)?.cast<String>().toSet(),
+      defaultShuffle: j['defaultShuffle'] as bool? ?? false,
     );
   }
 

@@ -214,6 +214,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               regionSelections: widget.regionSelections,
               disabledItemIds: widget.disabledItemIds,
             );
+        // デフォルトシャッフル適用
+        if (widget.playlistId != null) {
+          final plBox = Hive.box<app.Playlist>('playlists');
+          final pl = plBox.get(widget.playlistId);
+          if (pl != null && pl.defaultShuffle) {
+            ref.read(playlistPlayerProvider.notifier).toggleShuffle();
+          }
+        }
       }
 
       _loadItem();

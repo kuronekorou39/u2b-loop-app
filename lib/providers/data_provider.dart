@@ -578,6 +578,7 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
       ),
       disabledItemIds: Set.from(src.disabledItemIds),
       thumbnailItemId: src.thumbnailItemId,
+      defaultShuffle: src.defaultShuffle,
     );
     await _box.put(newId, copy);
     _refresh();
