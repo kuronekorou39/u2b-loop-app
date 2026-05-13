@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show VoidCallback;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import '../models/loop_item.dart';
@@ -13,6 +13,7 @@ final loopProvider = StateNotifierProvider<LoopNotifier, LoopState>((ref) {
 class LoopNotifier extends StateNotifier<LoopState> {
   final Ref _ref;
   Timer? _timer;
+  StreamSubscription? _completedSub;
 
   /// 外部からの読み取り用
   LoopState get currentState => state;
@@ -43,6 +44,40 @@ class LoopNotifier extends StateNotifier<LoopState> {
         _trackPlayTime();
       },
     );
+    _listenCompleted();
+  }
+
+  /// player.stream.completed を直接listenして曲終了を確実に検知
+  void _listenCompleted() {
+    _completedSub?.cancel();
+    final player = _ref.read(playerProvider);
+    _completedSub = player.stream.completed.listen((completed) {
+      if (!completed) return;
+      if (!mounted) return;
+      debugPrint('[LoopNotifier] completed event');
+      _handleTrackCompleted();
+    });
+  }
+
+  /// 曲が自然終了した時の処理
+  void _handleTrackCompleted() {
+    final player = _ref.read(playerProvider);
+    // ABループが有効ならA点にシーク
+    if (state.enabled && state.pointA != null) {
+      player.seek(state.pointA ?? Duration.zero);
+      player.play();
+      return;
+    }
+    // プレイリストモード: onTrackEndコールバック
+    if (onTrackEnd != null) {
+      onTrackEnd!();
+      return;
+    }
+  }
+
+  /// activeSlot変更時にストリームを再リッスン
+  void relistenCompleted() {
+    _listenCompleted();
   }
 
   Duration get _maxDuration => _ref.read(playerProvider).state.duration;
@@ -225,6 +260,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
   @override
   void dispose() {
     _timer?.cancel();
+    _completedSub?.cancel();
     _saveAccumulatedTime();
     super.dispose();
   }

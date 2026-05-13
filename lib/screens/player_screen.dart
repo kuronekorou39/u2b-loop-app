@@ -108,6 +108,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   int _consecutiveLoadErrors = 0;
   DateTime? _lastAdvanceTime;
   static const _maxConsecutiveErrors = 3;
+  Timer? _loadingTimeoutTimer;
   static const _minAdvanceInterval = Duration(seconds: 3);
 
   // First verse fade
@@ -233,6 +234,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _tipNotifier.dispose();
     _tipTimer?.cancel();
     _overlayHideTimer?.cancel();
+    _loadingTimeoutTimer?.cancel();
     _cancelFade();
     // 全画面モード解除
     if (_isFullscreen) {
@@ -446,15 +448,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // ----- 手動操作: 次曲 / 前曲 / トラック選択 -----
 
   /// 手動操作の共通ガード。ロード中なら拒否してtrue返却。
+  void _startLoadingTimeout() {
+    _loadingTimeoutTimer?.cancel();
+    _loadingTimeoutTimer = Timer(const Duration(seconds: 30), () {
+      if (!mounted) return;
+      _cancelLoadingState();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('読込タイムアウト。操作可能です。'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    });
+  }
+
+  void _cancelLoadingState() {
+    _loadingTimeoutTimer?.cancel();
+    _cancelPreload();
+    setState(() {
+      _trackLoading = false;
+      _preloadingTargetIndex = null;
+    });
+  }
+
   bool _guardManualOp() {
     if (_trackLoading || _isPreloading) {
       if (!_loadingSnackShowing) {
         _loadingSnackShowing = true;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('読込中です...'),
-            duration: Duration(seconds: 1),
+          SnackBar(
+            content: const Text('読込中...（タップでキャンセル）'),
+            duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'キャンセル',
+              onPressed: _cancelLoadingState,
+            ),
           ),
         ).closed.then((_) => _loadingSnackShowing = false);
       }
@@ -485,6 +514,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // プリロード待ち（スピナー表示、ローディング画面なし）
     final startTrackIdx = ps.currentTrackIndex;
     setState(() => _trackLoading = true);
+    _startLoadingTimeout();
     if (!_isPreloading) _preloadNextTrack();
     for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -569,6 +599,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _directLoadTrack(PlaylistTrack track, [int? jumpToIndex]) async {
     _cancelFade();
     _cancelPreload();
+    _startLoadingTimeout();
     setState(() {
       _trackLoading = true;
       _preloadingTargetIndex = jumpToIndex ?? ref.read(playlistPlayerProvider).currentTrackIndex;
@@ -1053,6 +1084,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final newPlayer = newSlot == ActiveSlot.a
         ? ref.read(playerAProvider)
         : ref.read(playerBProvider);
+
+    // completedストリームを新プレイヤーに再リッスン
+    ref.read(loopProvider.notifier).relistenCompleted();
 
     // Stop old player (now the preload player)
     oldPlayer.stop();
