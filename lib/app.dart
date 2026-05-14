@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/loading_animation_provider.dart';
+import 'providers/mini_player_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/list_screen.dart';
 import 'services/share_service.dart';
@@ -62,7 +64,8 @@ class _Home extends ConsumerStatefulWidget {
   ConsumerState<_Home> createState() => _HomeState();
 }
 
-class _HomeState extends ConsumerState<_Home> {
+class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
+  static const _pipChannel = MethodChannel('com.u2bloop/pip');
   late final AppLinks _appLinks;
   StreamSubscription? _linkSub;
 
@@ -70,8 +73,13 @@ class _HomeState extends ConsumerState<_Home> {
   void initState() {
     super.initState();
     _appLinks = AppLinks();
+    WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 起動時にautoPiPを無効化（安全策）
+      try {
+        _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
+      } catch (_) {}
       UpdateService.checkForUpdate(context);
       _initDeepLinks();
     });
@@ -97,7 +105,21 @@ class _HomeState extends ConsumerState<_Home> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive) {
+      // バックグラウンド移行前: ミニプレイヤーが非アクティブならPiPを確実に無効化
+      final miniState = ref.read(miniPlayerProvider);
+      if (!miniState.active || miniState.item == null) {
+        try {
+          _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
+        } catch (_) {}
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _linkSub?.cancel();
     super.dispose();
   }
