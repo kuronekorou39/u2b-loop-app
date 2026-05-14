@@ -106,3 +106,6 @@ final previousVolumeProvider = StateProvider<double>((ref) => 100.0);
 final waveformDataProvider = StateProvider<List<double>?>((ref) => null);
 final waveformLoadingProvider = StateProvider<bool>((ref) => false);
 final waveformErrorProvider = StateProvider<String?>((ref) => null);
+
+/// 音量正規化ON/OFF
+final volumeNormProvider = StateProvider<bool>((ref) => false);

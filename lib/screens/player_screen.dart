@@ -1875,6 +1875,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               _applyFirstVerseCut(track);
             }
           }
+          // 音量正規化
+          _applyVolumeNormalization(waveform);
         }
       }
     } catch (e) {
@@ -1886,6 +1888,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ref.read(waveformLoadingProvider.notifier).state = false;
       }
     }
+  }
+
+  /// 波形データから音量を正規化（デフォルト50を基準に調整）
+  void _applyVolumeNormalization(List<double> waveform) {
+    if (!ref.read(volumeNormProvider)) return;
+
+    // 波形のRMS（平均二乗平方根）を計算
+    var sumSquares = 0.0;
+    for (final v in waveform) {
+      sumSquares += v * v;
+    }
+    final rms = (sumSquares / waveform.length);
+    if (rms <= 0) return;
+
+    // 基準RMS: 0.25（正規化済み波形の中央値想定）
+    const targetRms = 0.25;
+    final ratio = targetRms / rms;
+
+    // 音量 = 50 * ratio（20〜100にクランプ）
+    final volume = (50.0 * ratio).clamp(20.0, 100.0);
+    try {
+      ref.read(playerProvider).setVolume(volume);
+    } catch (_) {}
   }
 
   Future<bool> _tryDownloadAudio(
@@ -4127,6 +4152,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                   onPressed: _showAbEditDialog,
                   tooltip: 'AB区間を編集',
+                  visualDensity: VisualDensity.compact,
+                ),
+                // 音量正規化
+                IconButton(
+                  icon: Icon(
+                    Icons.equalizer,
+                    size: AppIconSizes.ml,
+                    color: ref.watch(volumeNormProvider)
+                        ? AppTheme.accentGreen
+                        : Colors.grey,
+                  ),
+                  onPressed: () {
+                    final current = ref.read(volumeNormProvider);
+                    ref.read(volumeNormProvider.notifier).state = !current;
+                    if (!current) {
+                      // ONにした時点で現在の波形で正規化を適用
+                      final waveform = ref.read(waveformDataProvider);
+                      if (waveform != null) _applyVolumeNormalization(waveform);
+                    } else {
+                      // OFFにしたらデフォルト音量に戻す
+                      try { ref.read(playerProvider).setVolume(100); } catch (_) {}
+                    }
+                  },
+                  tooltip: '音量正規化',
                   visualDensity: VisualDensity.compact,
                 ),
               ],

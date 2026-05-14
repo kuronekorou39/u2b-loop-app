@@ -27,3 +27,4 @@ final subtitleSubDataProvider =
 
 /// サブ言語コード
 final subtitleSubLanguageProvider = StateProvider<String?>((ref) => null);
+
