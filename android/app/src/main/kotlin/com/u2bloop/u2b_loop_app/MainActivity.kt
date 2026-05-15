@@ -131,6 +131,21 @@ class MainActivity : FlutterActivity() {
             registerReceiver(pipReceiver, filter)
         }
 
+        // --- Audio becoming noisy (headphones unplugged / BT disconnected) ---
+        val noisyReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                    pipChannel?.invokeMethod("onAudioNoisy", null)
+                }
+            }
+        }
+        val noisyFilter = IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(noisyReceiver, noisyFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(noisyReceiver, noisyFilter)
+        }
+
         // --- Waveform channel ---
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WAVEFORM_CHANNEL)
             .setMethodCallHandler { call, result ->

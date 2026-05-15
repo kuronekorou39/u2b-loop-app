@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../app.dart';
@@ -153,6 +154,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             if (_isPlaylist) _manualNext();
           case 'prev':
             if (_isPlaylist) _manualPrev();
+        }
+      } else if (call.method == 'onAudioNoisy') {
+        // ヘッドホン抜き/Bluetooth切断 → 一時停止
+        final player = ref.read(playerProvider);
+        if (player.state.playing) {
+          await player.pause();
         }
       } else if (call.method == 'getPlayState') {
         return ref.read(playerProvider).state.playing;
@@ -317,6 +324,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     if (_cachedAudioPath != null) {
       try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
+    }
+    // ミニプレイヤー非アクティブならwakelock解除
+    if (!ref.read(miniPlayerProvider).active) {
+      WakelockPlus.disable();
     }
     super.dispose();
   }
@@ -2309,12 +2320,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // PiPの再生/一時停止ボタンを同期（buildメソッド内でのみref.listen可能）
+    // 再生状態の同期: PiP + wakelock
     ref.listen(playingProvider, (_, next) {
       final playing = next.valueOrNull ?? false;
+      // PiPボタン同期
       try {
         _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
       } catch (_) {}
+      // wakelock: 再生中はスリープ防止
+      if (playing) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
     });
 
     // PiP判定: コールバック到着前でもウィンドウサイズで検知
