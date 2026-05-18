@@ -2320,18 +2320,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 再生状態の同期: PiP + wakelock
+    // 再生状態の同期: PiP + wakelock + foreground service
     ref.listen(playingProvider, (_, next) {
       final playing = next.valueOrNull ?? false;
       // PiPボタン同期
       try {
         _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
       } catch (_) {}
-      // wakelock: 再生中はスリープ防止
+      // wakelock + foreground service: 再生中はバックグラウンド継続
       if (playing) {
         WakelockPlus.enable();
+        try {
+          _pipChannel.invokeMethod('startPlaybackService', {
+            'title': _currentItem.title,
+          });
+        } catch (_) {}
       } else {
         WakelockPlus.disable();
+        try {
+          _pipChannel.invokeMethod('stopPlaybackService');
+        } catch (_) {}
       }
     });
 

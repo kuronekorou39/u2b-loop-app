@@ -211,6 +211,21 @@ class MainActivity : FlutterActivity() {
                     try { applyPipParams() } catch (_: Exception) {}
                     result.success(true)
                 }
+                "startPlaybackService" -> {
+                    val title = call.argument<String>("title") ?: "再生中"
+                    val intent = Intent(this, PlaybackService::class.java)
+                    intent.putExtra("title", title)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                    result.success(true)
+                }
+                "stopPlaybackService" -> {
+                    stopService(Intent(this, PlaybackService::class.java))
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
