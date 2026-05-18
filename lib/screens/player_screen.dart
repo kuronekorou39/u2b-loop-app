@@ -248,11 +248,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       // 画面オフ/バックグラウンド: 再生中だったら記録
-      _wasPlayingBeforePause = ref.read(playerProvider).state.playing;
+      if (ref.read(playerProvider).state.playing) {
+        _wasPlayingBeforePause = true;
+      }
+      // 画面オフでもすぐに再生再開（Foreground Serviceでプロセス保持）
+      if (_wasPlayingBeforePause) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && _wasPlayingBeforePause &&
+              !ref.read(playerProvider).state.playing) {
+            ref.read(playerProvider).play();
+          }
+        });
+      }
     } else if (state == AppLifecycleState.resumed) {
-      // フォアグラウンド復帰: media_kitが自動pauseしていたら再開
+      // フォアグラウンド復帰: まだ停止していたら再開
       if (_wasPlayingBeforePause && !ref.read(playerProvider).state.playing) {
         ref.read(playerProvider).play();
       }
