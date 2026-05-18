@@ -3,6 +3,7 @@ package com.u2bloop.u2b_loop_app
 import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.IBinder
 import android.support.v4.media.MediaMetadataCompat
@@ -24,6 +25,7 @@ class PlaybackService : Service() {
     private var isPlaying = true
     private var currentTitle = "再生中"
     private var isPlaylist = false
+    private var thumbnailPath: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -52,6 +54,7 @@ class PlaybackService : Service() {
         currentTitle = intent?.getStringExtra("title") ?: "再生中"
         isPlaying = intent?.getBooleanExtra("playing", true) ?: true
         isPlaylist = intent?.getBooleanExtra("isPlaylist", false) ?: false
+        intent?.getStringExtra("thumbnailPath")?.let { thumbnailPath = it }
 
         updateNotification()
 
@@ -93,12 +96,19 @@ class PlaybackService : Service() {
 
     private fun updateNotification() {
         // メタデータ
-        mediaSession?.setMetadata(
-            MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentTitle)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "U2B Loop")
-                .build()
-        )
+        val metaBuilder = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "U2B Loop")
+        // サムネイル
+        thumbnailPath?.let { path ->
+            try {
+                val bitmap = BitmapFactory.decodeFile(path)
+                if (bitmap != null) {
+                    metaBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+                }
+            } catch (_: Exception) {}
+        }
+        mediaSession?.setMetadata(metaBuilder.build())
 
         // 再生状態
         val state = if (isPlaying)

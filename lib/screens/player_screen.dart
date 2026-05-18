@@ -1354,7 +1354,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     player.play();
     WakelockPlus.enable();
     try {
-      _pipChannel.invokeMethod('startPlaybackService', {'title': item.title});
+      _pipChannel.invokeMethod('startPlaybackService', {
+        'title': item.title,
+        'thumbnailPath': item.thumbnailPath,
+      });
     } catch (_) {}
 
     // フルリロードパスでのフェードイン（_advanceToNextから来た場合）
@@ -2364,6 +2367,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _pipChannel.invokeMethod('updatePlaybackService', {
           'title': _currentItem.title,
           'playing': playing,
+          'thumbnailPath': _currentItem.thumbnailPath,
         });
       } catch (_) {}
     });

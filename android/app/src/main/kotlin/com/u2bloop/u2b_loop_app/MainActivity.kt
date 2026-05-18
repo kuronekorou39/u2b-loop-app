@@ -230,10 +230,12 @@ class MainActivity : FlutterActivity() {
                 "startPlaybackService" -> {
                     val title = call.argument<String>("title") ?: "再生中"
                     val playing = call.argument<Boolean>("playing") ?: true
+                    val thumbPath = call.argument<String>("thumbnailPath")
                     val intent = Intent(this, PlaybackService::class.java)
                     intent.putExtra("title", title)
                     intent.putExtra("playing", playing)
                     intent.putExtra("isPlaylist", isPlaylist)
+                    if (thumbPath != null) intent.putExtra("thumbnailPath", thumbPath)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         startForegroundService(intent)
                     } else {
@@ -244,10 +246,12 @@ class MainActivity : FlutterActivity() {
                 "updatePlaybackService" -> {
                     val title = call.argument<String>("title") ?: "再生中"
                     val playing = call.argument<Boolean>("playing") ?: true
+                    val thumbPath = call.argument<String>("thumbnailPath")
                     val intent = Intent(this, PlaybackService::class.java)
                     intent.putExtra("title", title)
                     intent.putExtra("playing", playing)
                     intent.putExtra("isPlaylist", isPlaylist)
+                    if (thumbPath != null) intent.putExtra("thumbnailPath", thumbPath)
                     startService(intent)
                     result.success(true)
                 }
