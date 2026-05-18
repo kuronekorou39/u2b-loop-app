@@ -109,3 +109,6 @@ final waveformErrorProvider = StateProvider<String?>((ref) => null);
 
 /// 音量正規化ON/OFF
 final volumeNormProvider = StateProvider<bool>((ref) => false);
+
+/// 現在のオーディオ出力デバイス（speaker/headphones/bluetooth）
+final audioDeviceProvider = StateProvider<String>((ref) => 'speaker');

@@ -80,6 +80,19 @@ class PlayerControls extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // オーディオデバイス表示
+          Consumer(builder: (_, ref, _) {
+            final device = ref.watch(audioDeviceProvider);
+            final icon = switch (device) {
+              'bluetooth' => Icons.bluetooth_audio,
+              'headphones' => Icons.headphones,
+              _ => Icons.speaker,
+            };
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Icon(icon, size: 16, color: Colors.grey),
+            );
+          }),
           // 最初から: A地点 or 先頭にシーク
           IconButton(
             icon: const Icon(Icons.skip_previous),

@@ -159,6 +159,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           case 'prev':
             if (_isPlaylist) _manualPrev();
         }
+      } else if (call.method == 'onAudioDeviceChanged') {
+        final device = call.arguments as String? ?? 'speaker';
+        ref.read(audioDeviceProvider.notifier).state = device;
       } else if (call.method == 'onAudioNoisy') {
         // ヘッドホン抜き/Bluetooth切断 → 一時停止
         final player = ref.read(playerProvider);

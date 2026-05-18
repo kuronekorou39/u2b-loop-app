@@ -162,6 +162,21 @@ class MainActivity : FlutterActivity() {
             registerReceiver(noisyReceiver, noisyFilter)
         }
 
+        // --- Audio device change detection ---
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val audioManager = getSystemService(android.media.AudioManager::class.java)
+            audioManager.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                    sendCurrentAudioDevice(audioManager)
+                }
+                override fun onAudioDevicesRemoved(removedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                    sendCurrentAudioDevice(audioManager)
+                }
+            }, null)
+            // 初期状態を送信
+            sendCurrentAudioDevice(audioManager)
+        }
+
         // --- Waveform channel ---
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WAVEFORM_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -348,6 +363,30 @@ class MainActivity : FlutterActivity() {
     }
 
     /// Flutterに再生状態を問い合わせてPiPパラメータを更新
+    private fun sendCurrentAudioDevice(audioManager: android.media.AudioManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val outputs = audioManager.getDevices(android.media.AudioDeviceInfo.GET_DEVICES_OUTPUTS)
+        // 優先順位: Bluetooth > 有線ヘッドホン > スピーカー
+        var deviceType = "speaker"
+        for (device in outputs) {
+            when (device.type) {
+                android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> {
+                    deviceType = "bluetooth"
+                    break
+                }
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_USB_HEADSET -> {
+                    deviceType = "headphones"
+                }
+            }
+        }
+        runOnUiThread {
+            pipChannel?.invokeMethod("onAudioDeviceChanged", deviceType)
+        }
+    }
+
     private fun syncPlayState() {
         pipChannel?.invokeMethod("getPlayState", null, object : MethodChannel.Result {
             override fun success(result: Any?) {
