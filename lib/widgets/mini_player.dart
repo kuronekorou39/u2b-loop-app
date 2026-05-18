@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -82,10 +83,12 @@ class MiniPlayerBar extends ConsumerWidget {
                       onPressed: () {
                         player.stop();
                         ref.read(miniPlayerProvider.notifier).deactivate();
-                        // 自動PiPを無効化
+                        // 自動PiP無効化 + バックグラウンド再生停止
                         try {
                           _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
+                          _pipChannel.invokeMethod('stopPlaybackService');
                         } catch (_) {}
+                        WakelockPlus.disable();
                       },
                     ),
                     const SizedBox(width: AppSpacing.xs),

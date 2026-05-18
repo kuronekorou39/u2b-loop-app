@@ -71,7 +71,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends ConsumerState<PlayerScreen> {
+class _PlayerScreenState extends ConsumerState<PlayerScreen>
+    with WidgetsBindingObserver {
   static const _pipChannel = MethodChannel('com.u2bloop/pip');
 
   bool _loading = true;
@@ -136,9 +137,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   bool get _isPlaylist => widget.playlistItems != null;
 
+  bool _wasPlayingBeforePause = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _compactSeekbar = widget.playlistItems != null;
 
     _pipChannel.setMethodCallHandler((call) async {
@@ -243,7 +247,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // 画面オフ/バックグラウンド: 再生中だったら記録
+      _wasPlayingBeforePause = ref.read(playerProvider).state.playing;
+    } else if (state == AppLifecycleState.resumed) {
+      // フォアグラウンド復帰: media_kitが自動pauseしていたら再開
+      if (_wasPlayingBeforePause && !ref.read(playerProvider).state.playing) {
+        ref.read(playerProvider).play();
+      }
+      _wasPlayingBeforePause = false;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _loadingProgress.dispose();
     _loadingStatus.dispose();
     _tipNotifier.dispose();
@@ -325,9 +344,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_cachedAudioPath != null) {
       try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
     }
-    // ミニプレイヤー非アクティブならwakelock解除
+    // ミニプレイヤー非アクティブならバックグラウンド再生停止
     if (!ref.read(miniPlayerProvider).active) {
       WakelockPlus.disable();
+      try { _pipChannel.invokeMethod('stopPlaybackService'); } catch (_) {}
     }
     super.dispose();
   }
@@ -1318,8 +1338,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 再生カウント: 現在のアイテムを設定
     ref.read(loopProvider.notifier).setCurrentItem(item.id);
 
-    // Auto-play
+    // Auto-play + バックグラウンド再生サービス開始
     player.play();
+    WakelockPlus.enable();
+    try {
+      _pipChannel.invokeMethod('startPlaybackService', {'title': item.title});
+    } catch (_) {}
 
     // フルリロードパスでのフェードイン（_advanceToNextから来た場合）
     if (_pendingFadeIn) {
@@ -2320,27 +2344,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 再生状態の同期: PiP + wakelock + foreground service
+    // 再生状態の同期: PiPボタンのみ
     ref.listen(playingProvider, (_, next) {
       final playing = next.valueOrNull ?? false;
-      // PiPボタン同期
       try {
         _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
       } catch (_) {}
-      // wakelock + foreground service: 再生中はバックグラウンド継続
-      if (playing) {
-        WakelockPlus.enable();
-        try {
-          _pipChannel.invokeMethod('startPlaybackService', {
-            'title': _currentItem.title,
-          });
-        } catch (_) {}
-      } else {
-        WakelockPlus.disable();
-        try {
-          _pipChannel.invokeMethod('stopPlaybackService');
-        } catch (_) {}
-      }
     });
 
     // PiP判定: コールバック到着前でもウィンドウサイズで検知
