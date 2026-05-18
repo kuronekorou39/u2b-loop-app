@@ -163,8 +163,8 @@ class MainActivity : FlutterActivity() {
         }
 
         // --- Audio device change detection ---
+        val audioManager = getSystemService(android.media.AudioManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val audioManager = getSystemService(android.media.AudioManager::class.java)
             audioManager.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
                 override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
                     sendCurrentAudioDevice(audioManager)
@@ -173,7 +173,6 @@ class MainActivity : FlutterActivity() {
                     sendCurrentAudioDevice(audioManager)
                 }
             }, null)
-            // 初期状態を送信
             sendCurrentAudioDevice(audioManager)
         }
 
@@ -363,9 +362,10 @@ class MainActivity : FlutterActivity() {
     }
 
     /// Flutterに再生状態を問い合わせてPiPパラメータを更新
+    @Suppress("DEPRECATION")
     private fun sendCurrentAudioDevice(audioManager: android.media.AudioManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        val outputs = audioManager.getDevices(android.media.AudioDeviceInfo.GET_DEVICES_OUTPUTS)
+        val outputs = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
         // 優先順位: Bluetooth > 有線ヘッドホン > スピーカー
         var deviceType = "speaker"
         for (device in outputs) {
