@@ -143,6 +143,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    playerScreenActive = true;
     _compactSeekbar = widget.playlistItems != null;
 
     _pipChannel.setMethodCallHandler((call) async {
@@ -278,6 +279,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    playerScreenActive = false;
     _loadingProgress.dispose();
     _loadingStatus.dispose();
     _tipNotifier.dispose();
@@ -1728,18 +1730,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // --- PiP ---
 
   void _enterPiP() async {
-    _updatePiPPlayState(); // PiP突入前に再生状態を同期
+    _updatePiPPlayState();
     try {
-      final result = await _pipChannel.invokeMethod('enterPiP', {
+      await _pipChannel.invokeMethod('enterPiP', {
         'thumbnailUrl': _currentItem.thumbnailUrl,
         'thumbnailPath': _currentItem.thumbnailPath,
       });
-      // デバッグ: PiP診断結果を常に表示
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('PiP: $result'), duration: const Duration(seconds: 8)),
-        );
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

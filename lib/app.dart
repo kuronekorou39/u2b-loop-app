@@ -18,6 +18,9 @@ import 'widgets/share_import_dialog.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 
+/// PlayerScreenが表示中かどうか（PiP制御用）
+bool playerScreenActive = false;
+
 class App extends ConsumerWidget {
   const App({super.key});
 
@@ -107,7 +110,8 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.inactive) {
-      // バックグラウンド移行前: ミニプレイヤーが非アクティブならPiPを確実に無効化
+      // バックグラウンド移行前: PlayerScreenもミニプレイヤーも非アクティブならPiP無効化
+      if (playerScreenActive) return; // PlayerScreen表示中は触らない
       final miniState = ref.read(miniPlayerProvider);
       if (!miniState.active || miniState.item == null) {
         try {
