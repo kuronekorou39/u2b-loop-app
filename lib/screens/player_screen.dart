@@ -2356,11 +2356,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    // 再生状態の同期: PiPボタンのみ
+    // 再生状態の同期: PiP + 通知コントローラー
     ref.listen(playingProvider, (_, next) {
       final playing = next.valueOrNull ?? false;
       try {
         _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
+        _pipChannel.invokeMethod('updatePlaybackService', {
+          'title': _currentItem.title,
+          'playing': playing,
+        });
       } catch (_) {}
     });
 

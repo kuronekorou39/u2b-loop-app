@@ -131,6 +131,22 @@ class MainActivity : FlutterActivity() {
             registerReceiver(pipReceiver, filter)
         }
 
+        // --- Media action from PlaybackService notification ---
+        val mediaActionReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == "com.u2bloop.MEDIA_ACTION") {
+                    val action = intent.getStringExtra("action") ?: return
+                    pipChannel?.invokeMethod("onPiPAction", action)
+                }
+            }
+        }
+        val mediaFilter = IntentFilter("com.u2bloop.MEDIA_ACTION")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(mediaActionReceiver, mediaFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(mediaActionReceiver, mediaFilter)
+        }
+
         // --- Audio becoming noisy (headphones unplugged / BT disconnected) ---
         val noisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -213,13 +229,26 @@ class MainActivity : FlutterActivity() {
                 }
                 "startPlaybackService" -> {
                     val title = call.argument<String>("title") ?: "再生中"
+                    val playing = call.argument<Boolean>("playing") ?: true
                     val intent = Intent(this, PlaybackService::class.java)
                     intent.putExtra("title", title)
+                    intent.putExtra("playing", playing)
+                    intent.putExtra("isPlaylist", isPlaylist)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         startForegroundService(intent)
                     } else {
                         startService(intent)
                     }
+                    result.success(true)
+                }
+                "updatePlaybackService" -> {
+                    val title = call.argument<String>("title") ?: "再生中"
+                    val playing = call.argument<Boolean>("playing") ?: true
+                    val intent = Intent(this, PlaybackService::class.java)
+                    intent.putExtra("title", title)
+                    intent.putExtra("playing", playing)
+                    intent.putExtra("isPlaylist", isPlaylist)
+                    startService(intent)
                     result.success(true)
                 }
                 "stopPlaybackService" -> {
