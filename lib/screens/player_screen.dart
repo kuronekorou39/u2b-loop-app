@@ -1410,9 +1410,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ref.read(subtitleTracksProvider.notifier).state = result.tracks;
         final hasSubs = subs != null && subs.isNotEmpty;
         if (hasSubs) {
-          ref.read(subtitleModeProvider.notifier).state = SubtitleMode.subtitle;
           ref.read(subtitleLanguageProvider.notifier).state =
               result.selectedLanguage;
+          // モードはユーザー選択を維持（デフォルトOFF）
         }
         final item = _currentItem;
         if (item.hasSubtitles == null || item.hasSubtitles != hasSubs) {
