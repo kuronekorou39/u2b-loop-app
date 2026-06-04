@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
 enum ExportFormat { mp4, audioOnly }
 
@@ -42,5 +43,25 @@ class ExportService {
     } on PlatformException catch (e) {
       return ExportResult(success: false, error: e.message);
     }
+  }
+
+  /// 書き出した一時ファイルを共有シート経由で保存/送信する。
+  ///
+  /// - ファイルをDartのメモリに読み込まずパスで渡すため、長尺MP4でもOOMしない。
+  /// - 共有時のファイル名は元ファイルのbasenameがそのまま使われる
+  ///   （share_plus 10.x はパス指定XFileの fileNameOverrides を無視するため、
+  ///    ネイティブ側で `<タイトル>.<拡張子>` のクリーンな名前を付けている）。
+  /// - 受信側アプリがコピーし終える前に消えるのを防ぐため、ここでは一時ファイルを
+  ///   削除しない。古い書き出しは次回 [exportRegion] 実行時にネイティブ側でまとめて掃除する。
+  Future<void> shareExported({
+    required String outputPath,
+    required ExportFormat format,
+    String? subject,
+  }) async {
+    final mime = format == ExportFormat.audioOnly ? 'audio/mp4' : 'video/mp4';
+    await Share.shareXFiles(
+      [XFile(outputPath, mimeType: mime)],
+      subject: subject,
+    );
   }
 }

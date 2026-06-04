@@ -255,10 +255,63 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   Future<void> _addLocalFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
-      allowMultiple: true,
-    );
+    // file_picker はAndroidで選択ファイルをキャッシュへコピーしてから返すため、
+    // 大きい動画だとコピー完了まで待たされる。その間ローディングを表示する。
+    var loadingShown = false;
+    void showCopyLoading() {
+      if (loadingShown || !mounted) return;
+      loadingShown = true;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const PopScope(
+          canPop: false,
+          child: Center(
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.all(AppSpacing.xl),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: AppIconSizes.md,
+                      height: AppIconSizes.md,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: AppSpacing.xl),
+                    Text('ファイルを読み込み中...'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    void hideCopyLoading() {
+      if (loadingShown && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      loadingShown = false;
+    }
+
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: true,
+        onFileLoading: (status) {
+          if (status == FilePickerStatus.picking) {
+            showCopyLoading();
+          } else {
+            hideCopyLoading();
+          }
+        },
+      );
+    } finally {
+      hideCopyLoading();
+    }
     if (result == null || result.files.isEmpty) return;
 
     // path（ファイルパス）またはidentifier（content:// URI）を使用

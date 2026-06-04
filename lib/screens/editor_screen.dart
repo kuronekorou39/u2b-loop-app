@@ -2,9 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -570,28 +568,23 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       return;
     }
 
-    // Save to user-selected location
-    final ext = format == ExportFormat.audioOnly ? 'm4a' : 'mp4';
+    // 共有シート経由で保存/送信する。
+    // ファイルをDartのメモリに読み込まずパスで渡すため、長尺MP4でもOOMしない。
+    // 共有シートの「ファイルに保存」を選べば従来同様に保存先を選択できる。
     final safeTitle = '${_item.title}_${region.name}'
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    final tempFile = File(result.outputPath!);
-    final bytes = await tempFile.readAsBytes();
-
-    final savePath = await FilePicker.platform.saveFile(
-      dialogTitle: '書き出し先を選択',
-      fileName: '$safeTitle.$ext',
-      bytes: Uint8List.fromList(bytes),
-    );
-
-    // Clean up temp file
     try {
-      await tempFile.delete();
-    } catch (_) {}
-
-    if (savePath != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('書き出し完了')),
+      await service.shareExported(
+        outputPath: result.outputPath!,
+        format: format,
+        subject: safeTitle,
       );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('共有に失敗しました: $e')),
+        );
+      }
     }
   }
 

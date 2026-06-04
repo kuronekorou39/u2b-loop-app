@@ -31,7 +31,11 @@ class MainActivity : FlutterActivity() {
     private val ACTION_PREV = "com.u2bloop.PIP_PREV"
     private val ACTION_NEXT = "com.u2bloop.PIP_NEXT"
     private var isPlaylist = false
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // 未捕捉のコルーチン例外でアプリがクラッシュしないようハンドラを付与
+    private val scope = CoroutineScope(
+        Dispatchers.IO + SupervisorJob() +
+            CoroutineExceptionHandler { _, e -> Log.e(TAG, "Uncaught coroutine error", e) }
+    )
 
     private var currentJob: Job? = null
     @Volatile private var currentExtractor: MediaExtractor? = null
@@ -294,15 +298,17 @@ class MainActivity : FlutterActivity() {
                         }
 
                         scope.launch {
+                            // OOM等のError（catch(Exception)では捕捉不可）も含めて捕捉し、
+                            // アプリクラッシュではなくエラー結果として返す
                             try {
                                 val outputPath = trimMedia(inputUri, startMs.toLong(), endMs.toLong(), audioOnly, title)
                                 withContext(Dispatchers.Main) {
                                     result.success(mapOf("success" to true, "outputPath" to outputPath))
                                 }
-                            } catch (e: Exception) {
-                                Log.e("Export", "Export failed: ${e.message}")
+                            } catch (e: Throwable) {
+                                Log.e("Export", "Export failed", e)
                                 withContext(Dispatchers.Main) {
-                                    result.success(mapOf("success" to false, "error" to (e.message ?: "Unknown error")))
+                                    result.success(mapOf("success" to false, "error" to (e.message ?: e.toString())))
                                 }
                             }
                         }
@@ -403,8 +409,19 @@ class MainActivity : FlutterActivity() {
         audioOnly: Boolean, title: String
     ): String {
         val safeTitle = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(50)
+            .ifBlank { "export" }
         val ext = if (audioOnly) "m4a" else "mp4"
-        val outputFile = java.io.File(cacheDir, "export_${safeTitle}_${System.currentTimeMillis()}.$ext")
+        // 書き出し専用ディレクトリ。共有ファイル名は basename がそのまま使われるため
+        // タイムスタンプを付けずクリーンな名前にする。
+        // 共有完了後の即時削除は受信側コピーとレースするため行わず、
+        // 前回までの一時ファイルをここ（次回書き出し開始時）でまとめて掃除する。
+        val exportDir = java.io.File(cacheDir, "exports")
+        if (exportDir.exists()) {
+            exportDir.listFiles()?.forEach { try { it.delete() } catch (_: Exception) {} }
+        } else {
+            exportDir.mkdirs()
+        }
+        val outputFile = java.io.File(exportDir, "$safeTitle.$ext")
 
         val extractor = MediaExtractor()
         try {
@@ -492,7 +509,19 @@ class MainActivity : FlutterActivity() {
 
             muxer.start()
 
-            val buffer = java.nio.ByteBuffer.allocate(1024 * 1024) // 1MB
+            // バッファサイズはトラックの KEY_MAX_INPUT_SIZE を基準に決定する。
+            // 固定1MBだとHD動画のキーフレーム(1MB超)で readSampleData が失敗し
+            // クラッシュの原因になるため、十分なサイズを確保し不足時は拡張する。
+            var maxInputSize = 0
+            for (i in 0 until extractor.trackCount) {
+                val f = extractor.getTrackFormat(i)
+                if (f.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    maxInputSize = maxOf(maxInputSize, f.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
+                }
+            }
+            val initialCapacity = (if (maxInputSize > 0) maxInputSize else 2 * 1024 * 1024)
+                .coerceIn(1 * 1024 * 1024, 16 * 1024 * 1024)
+            var buffer = java.nio.ByteBuffer.allocate(initialCapacity)
             val bufferInfo = MediaCodec.BufferInfo()
 
             for ((srcTrack, dstTrack) in trackMap) {
@@ -501,7 +530,16 @@ class MainActivity : FlutterActivity() {
 
                 while (true) {
                     yield()
-                    val sampleSize = extractor.readSampleData(buffer, 0)
+                    val sampleSize = try {
+                        extractor.readSampleData(buffer, 0)
+                    } catch (e: IllegalArgumentException) {
+                        // バッファ不足 → 倍増して同じサンプルを再読込（位置は進んでいない）
+                        val newCap = (buffer.capacity().toLong() * 2)
+                            .coerceAtMost(64L * 1024 * 1024).toInt()
+                        if (newCap <= buffer.capacity()) throw e
+                        buffer = java.nio.ByteBuffer.allocate(newCap)
+                        continue
+                    }
                     if (sampleSize < 0) break
 
                     val sampleTime = extractor.sampleTime
