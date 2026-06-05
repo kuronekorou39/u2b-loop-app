@@ -301,9 +301,26 @@ class MainActivity : FlutterActivity() {
                             // OOM等のError（catch(Exception)では捕捉不可）も含めて捕捉し、
                             // アプリクラッシュではなくエラー結果として返す
                             try {
-                                val outputPath = trimMedia(inputUri, startMs.toLong(), endMs.toLong(), audioOnly, title)
-                                withContext(Dispatchers.Main) {
-                                    result.success(mapOf("success" to true, "outputPath" to outputPath))
+                                val tempPath = trimMedia(inputUri, startMs.toLong(), endMs.toLong(), audioOnly, title)
+                                val tempFile = java.io.File(tempPath)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    // API 29+: MediaStoreで端末のギャラリー(フォト)/ミュージックへ直接保存
+                                    val location = saveToMediaStore(tempFile, audioOnly, tempFile.name)
+                                    try { tempFile.delete() } catch (_: Exception) {}
+                                    withContext(Dispatchers.Main) {
+                                        result.success(mapOf(
+                                            "success" to true,
+                                            "savedToGallery" to true,
+                                            "outputPath" to location))
+                                    }
+                                } else {
+                                    // API 28以下は書込権限が必要なため共有シートにフォールバック（Dart側で共有）
+                                    withContext(Dispatchers.Main) {
+                                        result.success(mapOf(
+                                            "success" to true,
+                                            "savedToGallery" to false,
+                                            "outputPath" to tempPath))
+                                    }
                                 }
                             } catch (e: Throwable) {
                                 Log.e("Export", "Export failed", e)
@@ -564,6 +581,49 @@ class MainActivity : FlutterActivity() {
         }
 
         return outputFile.absolutePath
+    }
+
+    /// 書き出し済みファイルを MediaStore 経由で端末のギャラリー(フォト)/ミュージックへ保存する。
+    /// 動画は Movies/U2BLoop（Googleフォトに表示）、音声は Music/U2BLoop に保存。
+    /// 戻り値は表示用の相対パス（例: "Movies/U2BLoop/foo.mp4"）。API 29(Q)以上専用。
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private fun saveToMediaStore(
+        tempFile: java.io.File, audioOnly: Boolean, displayName: String
+    ): String {
+        val resolver = applicationContext.contentResolver
+        val mime = if (audioOnly) "audio/mp4" else "video/mp4"
+        val relativePath = (if (audioOnly)
+            android.os.Environment.DIRECTORY_MUSIC
+        else
+            android.os.Environment.DIRECTORY_MOVIES) + "/U2BLoop"
+        val collection = if (audioOnly)
+            android.provider.MediaStore.Audio.Media
+                .getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        else
+            android.provider.MediaStore.Video.Media
+                .getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(collection, values)
+            ?: throw Exception("ギャラリーへの登録に失敗しました")
+        try {
+            resolver.openOutputStream(uri)?.use { out ->
+                tempFile.inputStream().use { it.copyTo(out) }
+            } ?: throw Exception("出力ストリームを開けませんでした")
+            val done = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(uri, done, null, null)
+        } catch (e: Throwable) {
+            try { resolver.delete(uri, null, null) } catch (_: Exception) {}
+            throw e
+        }
+        return "$relativePath/$displayName"
     }
 
     private fun cancelCurrentExtraction() {

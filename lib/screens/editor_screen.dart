@@ -568,9 +568,23 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       return;
     }
 
-    // 共有シート経由で保存/送信する。
+    // 端末のギャラリー（フォト）/ミュージックへ直接保存済み（API 29+）。
+    if (result.savedToGallery) {
+      if (mounted) {
+        final loc = result.outputPath;
+        final head = format == ExportFormat.audioOnly ? '保存しました' : 'フォトに保存しました';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(loc != null ? '$head\n$loc' : head),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Android 9以前は書込権限が必要なため共有シートにフォールバック。
     // ファイルをDartのメモリに読み込まずパスで渡すため、長尺MP4でもOOMしない。
-    // 共有シートの「ファイルに保存」を選べば従来同様に保存先を選択できる。
     final safeTitle = '${_item.title}_${region.name}'
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
     try {

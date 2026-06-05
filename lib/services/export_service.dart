@@ -5,9 +5,21 @@ enum ExportFormat { mp4, audioOnly }
 
 class ExportResult {
   final bool success;
+
+  /// 保存先の表示用パス（ギャラリー保存時は "Movies/U2BLoop/foo.mp4" 等、
+  /// 共有フォールバック時は一時ファイルの絶対パス）
   final String? outputPath;
+
+  /// 端末のギャラリー/ミュージックへ直接保存済みか。
+  /// false の場合は呼び出し側で [shareExported] による共有が必要（Android 9以前）。
+  final bool savedToGallery;
   final String? error;
-  const ExportResult({required this.success, this.outputPath, this.error});
+  const ExportResult({
+    required this.success,
+    this.outputPath,
+    this.savedToGallery = false,
+    this.error,
+  });
 }
 
 class ExportService {
@@ -38,6 +50,7 @@ class ExportService {
       return ExportResult(
         success: success,
         outputPath: result['outputPath'] as String?,
+        savedToGallery: result['savedToGallery'] as bool? ?? false,
         error: result['error'] as String?,
       );
     } on PlatformException catch (e) {
