@@ -153,6 +153,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           case 'playPause':
             final player = ref.read(playerProvider);
             await player.playOrPause();
+            // ユーザーの明示操作なので、復帰時の自動再開判定も追従させる
+            _wasPlayingBeforePause = player.state.playing;
             _updatePiPPlayState();
           case 'next':
             if (_isPlaylist) _manualNext();
@@ -168,6 +170,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (player.state.playing) {
           await player.pause();
         }
+        // 復帰時にスピーカーから鳴り出さないよう自動再開を無効化
+        _wasPlayingBeforePause = false;
       } else if (call.method == 'getPlayState') {
         return ref.read(playerProvider).state.playing;
       }
@@ -694,6 +698,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         );
       }
 
+      // プレイヤー使い回しのため、前トラックの速度が残らないよう毎回設定
+      await player.setRate(item.speed);
+
       if (jumpToIndex != null) {
         ref.read(playlistPlayerProvider.notifier).jumpTo(jumpToIndex);
       }
@@ -1020,10 +1027,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         await preloadPlayer.seek(Duration.zero);
       }
 
-      // Set speed
-      if (nextTrack.item.speed != 1.0) {
-        await preloadPlayer.setRate(nextTrack.item.speed);
-      }
+      // Set speed（プレイヤー使い回しのため毎回設定して前トラックの速度をリセット）
+      await preloadPlayer.setRate(nextTrack.item.speed);
 
       if (isStale()) return;
       _preloadedTrackIndex = nextIdx;
@@ -1140,8 +1145,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? ref.read(playerAProvider)
         : ref.read(playerBProvider);
 
-    // completedストリームを新プレイヤーに再リッスン
-    ref.read(loopProvider.notifier).relistenCompleted();
+    // completed購読の張り替えはスロット変更時にloopProviderが自動で行う
 
     // Stop old player (now the preload player)
     oldPlayer.stop();
@@ -1322,10 +1326,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await _yieldFrame();
     }
 
-    // Setup speed
-    if (item.speed != 1.0) {
-      player.setRate(item.speed);
-    }
+    // Setup speed（プレイヤー使い回しのため毎回設定して前トラックの速度をリセット）
+    player.setRate(item.speed);
 
     // Setup regions / AB
     if (_isPlaylist) {
@@ -2572,6 +2574,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (nextTrack.startMs != null) {
           await pp.seek(Duration(milliseconds: nextTrack.startMs!));
         }
+        // プレイヤー使い回しのため、前トラックの速度が残らないよう毎回設定
+        await pp.setRate(nextTrack.item.speed);
         preloadedIdx = nextIdx;
       } catch (_) {
       } finally {
@@ -2582,8 +2586,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     /// プリロード済みプレイヤーにスワップして再生開始
     void swapToPreloaded(PlaylistTrack track) {
       currentSlot = currentSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
+      // スロット変更でloopProviderのcompleted購読も自動で張り替わる
       slotNotifier.state = currentSlot;
       preloadedIdx = null;
+      // 旧プレイヤーを停止（二重再生防止）
+      preloadPlayer().stop();
       activePlayer().play();
       applyRegion(track);
       loopNotifier.setCurrentItem(track.item.id);

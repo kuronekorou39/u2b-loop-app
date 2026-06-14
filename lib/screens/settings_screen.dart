@@ -262,47 +262,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: ValueListenableBuilder<int>(
-          valueListenable: totalNotifier,
-          builder: (_, total, _) => ValueListenableBuilder<int>(
-            valueListenable: doneNotifier,
-            builder: (_, done, _) => ValueListenableBuilder<String>(
-              valueListenable: etaNotifier,
-              builder: (_, eta, _) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: AppSpacing.xl),
-                      Expanded(
-                        child: Text('サムネイルを復元中...',
-                            style: textTheme.bodyLarge),
-                      ),
-                    ],
-                  ),
-                  if (total > 0) ...[
-                    const SizedBox(height: AppSpacing.lg),
-                    LinearProgressIndicator(
-                        value: total > 0 ? done / total : 0),
-                    const SizedBox(height: AppSpacing.xs),
+      // 戻るボタンで閉じられると、完了時のpopが設定画面自体を閉じてしまう
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: ValueListenableBuilder<int>(
+            valueListenable: totalNotifier,
+            builder: (_, total, _) => ValueListenableBuilder<int>(
+              valueListenable: doneNotifier,
+              builder: (_, done, _) => ValueListenableBuilder<String>(
+                valueListenable: etaNotifier,
+                builder: (_, eta, _) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('$done / $total',
-                            style: textTheme.bodySmall),
-                        if (eta.isNotEmpty)
-                          Text('残り $eta',
-                              style: textTheme.bodySmall),
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: AppSpacing.xl),
+                        Expanded(
+                          child: Text('サムネイルを復元中...',
+                              style: textTheme.bodyLarge),
+                        ),
                       ],
                     ),
+                    if (total > 0) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      LinearProgressIndicator(
+                          value: total > 0 ? done / total : 0),
+                      const SizedBox(height: AppSpacing.xs),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('$done / $total',
+                              style: textTheme.bodySmall),
+                          if (eta.isNotEmpty)
+                            Text('残り $eta',
+                                style: textTheme.bodySmall),
+                        ],
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -322,12 +326,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           etaNotifier.value = _formatEta(remaining);
         }
       },
-    ).then((_) {
+    ).whenComplete(() {
+      // 失敗時も必ずダイアログを閉じる
       doneNotifier.dispose();
       totalNotifier.dispose();
       etaNotifier.dispose();
       if (mounted) Navigator.pop(context);
-    });
+    }).catchError((_) {});
   }
 
   // ─── Clear ───

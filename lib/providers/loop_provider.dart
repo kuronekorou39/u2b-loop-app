@@ -7,7 +7,11 @@ import '../models/loop_state.dart';
 import 'player_provider.dart';
 
 final loopProvider = StateNotifierProvider<LoopNotifier, LoopState>((ref) {
-  return LoopNotifier(ref);
+  final notifier = LoopNotifier(ref);
+  // アクティブスロットの切替に追従して completed 購読を自動で張り替える。
+  // （手動で relistenCompleted() を呼ぶ方式は呼び忘れで購読が死ぬため廃止）
+  ref.listen(activeSlotProvider, (_, _) => notifier.relistenCompleted());
+  return notifier;
 });
 
 class LoopNotifier extends StateNotifier<LoopState> {
@@ -75,7 +79,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
     }
   }
 
-  /// activeSlot変更時にストリームを再リッスン
+  /// activeSlot変更時にストリームを再リッスン（loopProviderのref.listenから自動で呼ばれる）
   void relistenCompleted() {
     _listenCompleted();
   }

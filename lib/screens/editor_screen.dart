@@ -322,9 +322,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           .setPointB(Duration(milliseconds: _item.pointBMs));
       ref.read(loopProvider.notifier).toggleEnabled();
     }
-    if (_item.speed != 1.0) {
-      ref.read(playerProvider).setRate(_item.speed);
-    }
+    // プレイヤー使い回しのため、前に再生していた曲の速度が残らないよう毎回設定
+    ref.read(playerProvider).setRate(_item.speed);
   }
 
   Future<void> _finishLoading(VideoSource source) async {

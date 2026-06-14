@@ -52,15 +52,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _memoController.text.trim() != (item.memo ?? '');
   }
 
-  Future<void> _save(LoopItem item) async {
+  /// 入力内容を保存する（画面は閉じない）。保存できたらtrue。
+  Future<bool> _saveOnly(LoopItem item) async {
     final title = _titleController.text.trim();
     final memo = _memoController.text.trim();
-    if (title.isEmpty) return;
+    if (title.isEmpty) return false;
 
     item.title = title;
     item.memo = memo.isEmpty ? null : memo;
     await ref.read(loopItemsProvider.notifier).update(item);
+    return true;
+  }
 
+  Future<void> _save(LoopItem item) async {
+    if (!await _saveOnly(item)) return;
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -85,24 +90,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return result == true;
   }
 
-  void _openPlayer(LoopItem item) {
-    if (_hasChanges(item)) _save(item);
+  Future<void> _openPlayer(LoopItem item) async {
+    if (_hasChanges(item)) await _saveOnly(item);
+    if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PlayerScreen(item: item)),
     );
   }
 
-  void _openAbEditor(LoopItem item, {int regionIndex = 0}) {
-    if (_hasChanges(item)) {
-      // Save without pop
-      final title = _titleController.text.trim();
-      final memo = _memoController.text.trim();
-      if (title.isNotEmpty) {
-        item.title = title;
-        item.memo = memo.isEmpty ? null : memo;
-        ref.read(loopItemsProvider.notifier).update(item);
-      }
-    }
+  Future<void> _openAbEditor(LoopItem item, {int regionIndex = 0}) async {
+    if (_hasChanges(item)) await _saveOnly(item);
+    if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
           builder: (_) =>
@@ -111,15 +109,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Future<void> _duplicateItem(LoopItem item) async {
-    if (_hasChanges(item)) {
-      final title = _titleController.text.trim();
-      final memo = _memoController.text.trim();
-      if (title.isNotEmpty) {
-        item.title = title;
-        item.memo = memo.isEmpty ? null : memo;
-        await ref.read(loopItemsProvider.notifier).update(item);
-      }
-    }
+    if (_hasChanges(item)) await _saveOnly(item);
     final copy =
         await ref.read(loopItemsProvider.notifier).duplicate(item);
     if (mounted) {

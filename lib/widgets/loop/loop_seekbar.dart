@@ -38,6 +38,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   String? _lastError;
   int _retryCount = 0;
   static const _maxRetries = 3;
+  String? _lastSourceUri; // トラック切替検知用（リトライ回数のリセット）
 
   // Zoom / pan
   double _zoomLevel = 1.0;
@@ -84,6 +85,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   }
 
   void _scheduleRetry(String error) {
+    // リトライ手段がなければスケジュールしない（「再取得中」表示の固着防止）
+    if (widget.onRetryWaveform == null) return;
     if (_retrying || _lastError == error || _retryCount >= _maxRetries) return;
     _lastError = error;
     _retryTimer?.cancel();
@@ -110,17 +113,32 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
       duration = durationStream ?? Duration.zero;
     }
     final loop = ref.watch(loopProvider);
-    final hasSource = ref.watch(videoSourceProvider) != null;
+    final source = ref.watch(videoSourceProvider);
+    final hasSource = source != null;
     final waveform = ref.watch(waveformDataProvider);
     final waveformLoading = ref.watch(waveformLoadingProvider);
     final waveformError = ref.watch(waveformErrorProvider);
 
-    // 波形取得成功時にリトライ状態をリセット
-    if (waveformError == null && (_retrying || _lastError != null)) {
+    // トラックが変わったらリトライ回数も含めて完全リセット
+    if (source?.uri != _lastSourceUri) {
+      _lastSourceUri = source?.uri;
       _retryTimer?.cancel();
       _retrying = false;
       _lastError = null;
       _retryCount = 0;
+    }
+    if (waveform != null && (_retrying || _lastError != null || _retryCount > 0)) {
+      // 波形取得成功: リトライ状態を完全リセット
+      _retryTimer?.cancel();
+      _retrying = false;
+      _lastError = null;
+      _retryCount = 0;
+    } else if (waveformError == null && (_retrying || _lastError != null)) {
+      // エラークリア＝リトライによる再取得開始。表示状態のみ解除し、
+      // _retryCount は維持して再失敗時のバックオフ・上限を効かせる
+      _retryTimer?.cancel();
+      _retrying = false;
+      _lastError = null;
     }
 
     // Auto-follow: keep position near 30% from left edge of viewport
