@@ -58,6 +58,26 @@ class ExportService {
     }
   }
 
+  /// 別々にダウンロードした映像専用/音声専用ファイルを1つのMP4へ結合する
+  /// （ネイティブMediaMuxerでremux、再エンコードなし）。高解像度オフライン保存用。
+  /// 成功時は true。
+  Future<bool> muxVideoAudio({
+    required String videoPath,
+    required String audioPath,
+    required String outputPath,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>('muxVideoAudio', {
+        'videoPath': videoPath,
+        'audioPath': audioPath,
+        'outputPath': outputPath,
+      });
+      return result?['success'] as bool? ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   /// 書き出した一時ファイルを共有シート経由で保存/送信する。
   ///
   /// - ファイルをDartのメモリに読み込まずパスで渡すため、長尺MP4でもOOMしない。

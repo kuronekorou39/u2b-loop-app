@@ -330,9 +330,114 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                     }
+                    "muxVideoAudio" -> {
+                        // 別々にDLした映像専用/音声専用ファイルを1つのMP4へ結合（再エンコードなし）。
+                        // 高解像度(1080p等)のオフライン保存用。
+                        val videoPath = call.argument<String>("videoPath")
+                        val audioPath = call.argument<String>("audioPath")
+                        val outputPath = call.argument<String>("outputPath")
+                        if (videoPath == null || audioPath == null || outputPath == null) {
+                            result.error("INVALID", "Missing parameters", null)
+                            return@setMethodCallHandler
+                        }
+                        scope.launch {
+                            try {
+                                muxVideoAudio(videoPath, audioPath, outputPath)
+                                withContext(Dispatchers.Main) {
+                                    result.success(mapOf(
+                                        "success" to true, "outputPath" to outputPath))
+                                }
+                            } catch (e: Throwable) {
+                                Log.e("Export", "Mux failed", e)
+                                try { java.io.File(outputPath).delete() } catch (_: Exception) {}
+                                withContext(Dispatchers.Main) {
+                                    result.success(mapOf(
+                                        "success" to false,
+                                        "error" to (e.message ?: e.toString())))
+                                }
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /// 映像専用ファイルと音声専用ファイルを1つのMP4に結合する（remux、再エンコードなし）。
+    private suspend fun muxVideoAudio(
+        videoPath: String, audioPath: String, outputPath: String
+    ) {
+        val videoEx = MediaExtractor()
+        val audioEx = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        try {
+            videoEx.setDataSource(videoPath)
+            audioEx.setDataSource(audioPath)
+
+            val videoTrack = firstTrackOfType(videoEx, "video/")
+            if (videoTrack < 0) throw Exception("映像トラックが見つかりません")
+            val audioTrack = firstTrackOfType(audioEx, "audio/")
+
+            java.io.File(outputPath).parentFile?.mkdirs()
+            muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val outVideo = muxer.addTrack(videoEx.getTrackFormat(videoTrack))
+            val outAudio = if (audioTrack >= 0)
+                muxer.addTrack(audioEx.getTrackFormat(audioTrack)) else -1
+            muxer.start()
+
+            copyFullTrack(videoEx, videoTrack, muxer, outVideo)
+            if (audioTrack >= 0) copyFullTrack(audioEx, audioTrack, muxer, outAudio)
+
+            muxer.stop()
+        } finally {
+            try { muxer?.release() } catch (_: Exception) {}
+            try { videoEx.release() } catch (_: Exception) {}
+            try { audioEx.release() } catch (_: Exception) {}
+        }
+    }
+
+    private fun firstTrackOfType(ex: MediaExtractor, prefix: String): Int {
+        for (i in 0 until ex.trackCount) {
+            val mime = ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: ""
+            if (mime.startsWith(prefix)) return i
+        }
+        return -1
+    }
+
+    /// 1トラックの全サンプルをそのままmuxerへコピーする（PTSは元のまま保持）。
+    private suspend fun copyFullTrack(
+        ex: MediaExtractor, srcTrack: Int, muxer: MediaMuxer, dstTrack: Int
+    ) {
+        val format = ex.getTrackFormat(srcTrack)
+        val maxInputSize = if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE))
+            format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE) else 0
+        var buffer = java.nio.ByteBuffer.allocate(
+            (if (maxInputSize > 0) maxInputSize else 2 * 1024 * 1024)
+                .coerceIn(1 * 1024 * 1024, 16 * 1024 * 1024))
+        val info = MediaCodec.BufferInfo()
+
+        ex.selectTrack(srcTrack)
+        ex.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+        while (true) {
+            yield()
+            val sampleSize = try {
+                ex.readSampleData(buffer, 0)
+            } catch (e: IllegalArgumentException) {
+                val newCap = (buffer.capacity().toLong() * 2)
+                    .coerceAtMost(64L * 1024 * 1024).toInt()
+                if (newCap <= buffer.capacity()) throw e
+                buffer = java.nio.ByteBuffer.allocate(newCap)
+                continue
+            }
+            if (sampleSize < 0) break
+            info.offset = 0
+            info.size = sampleSize
+            info.presentationTimeUs = ex.sampleTime
+            info.flags = ex.sampleFlags
+            muxer.writeSampleData(dstTrack, buffer, info)
+            ex.advance()
+        }
+        ex.unselectTrack(srcTrack)
     }
 
     override fun onPictureInPictureModeChanged(

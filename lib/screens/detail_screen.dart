@@ -196,7 +196,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   // --- オフライン保存 ---
 
-  /// 動画(muxed)＋字幕をアプリ内にダウンロードし、オフライン再生可能にする。
+  /// 動画＋字幕をアプリ内にダウンロードし、オフライン再生可能にする。
+  /// 画質を選んでから保存する（1080p等はネイティブで映像+音声を結合）。
   Future<void> _downloadOffline(LoopItem item) async {
     if (item.videoId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -204,6 +205,71 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       );
       return;
     }
+
+    // 画質一覧を取得
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+                width: AppIconSizes.s,
+                height: AppIconSizes.s,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(width: AppSpacing.lg),
+            Text('画質を取得中...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+      ),
+    );
+    List<CacheQuality> options;
+    try {
+      options = await CacheService().qualityOptions(item.videoId!);
+    } catch (e) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text('画質の取得に失敗しました: $e')));
+      return;
+    }
+    messenger.hideCurrentSnackBar();
+    if (!mounted) return;
+    if (options.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('保存できる画質が見つかりません')),
+      );
+      return;
+    }
+
+    // 画質選択
+    final quality = await showDialog<CacheQuality>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('画質を選択'),
+        children: [
+          for (final q in options)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, q),
+              child: ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                    q.needsMerge ? Icons.high_quality : Icons.hd,
+                    color: AppTheme.accentGreen),
+                title: Text(q.label,
+                    style: Theme.of(ctx).textTheme.bodyLarge),
+                subtitle: Text(
+                  [
+                    q.sizeLabel,
+                    if (q.needsMerge) '映像+音声を結合' else '音声込み',
+                  ].where((s) => s.isNotEmpty).join(' · '),
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (quality == null || !mounted) return;
 
     final progress = ValueNotifier<double>(0);
     var cancelled = false;
@@ -239,6 +305,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final result = await CacheService().downloadForOffline(
       item.id,
       item.videoId!,
+      quality: quality,
       onProgress: (p) => progress.value = p,
       isCancelled: () => cancelled,
     );
