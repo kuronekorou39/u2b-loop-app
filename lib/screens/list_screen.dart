@@ -1685,6 +1685,21 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   ),
                 ),
               ),
+            // オフライン保存バッジ
+            if (item.isCached)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentGreen.withValues(alpha: 0.85),
+                    borderRadius: AppRadius.borderXs,
+                  ),
+                  child: const Icon(Icons.offline_pin,
+                      size: 11, color: Colors.white),
+                ),
+              ),
             if (item.isFetching || item.hasError)
               Positioned.fill(child: _buildStatusOverlay(item)),
             if (selected)
@@ -1799,6 +1814,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       left: 2,
                       bottom: 2,
                       child: Icon(Icons.subtitles, size: 10, color: Colors.white70),
+                    ),
+                  if (item.isCached)
+                    Positioned(
+                      right: 2,
+                      bottom: 2,
+                      child: Icon(Icons.offline_pin,
+                          size: 11, color: AppTheme.accentGreen),
                     ),
                 ],
               ),

@@ -109,6 +109,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // Playlist error control
   int _consecutiveLoadErrors = 0;
   DateTime? _lastAdvanceTime;
+  DateTime? _lastTrackEndReplayAt; // onTrackEnd未準備時の再生やり直しの連続発火抑制
   static const _maxConsecutiveErrors = 3;
   Timer? _loadingTimeoutTimer;
   static const _minAdvanceInterval = Duration(seconds: 3);
@@ -428,12 +429,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (sameItem || ready) {
         _autoAdvance();
       } else {
-        // 未準備 → 先頭に戻して再生継続
-        try {
-          ref.read(playerProvider)
-            ..seek(Duration.zero)
-            ..play();
-        } catch (_) {}
+        // 未準備 → 先頭に戻して再生継続。タイマーとcompletedの二重発火や
+        // 極短トラックでの連続やり直しでフリーズしないよう1秒間は抑制。
+        final now = DateTime.now();
+        if (_lastTrackEndReplayAt == null ||
+            now.difference(_lastTrackEndReplayAt!) >
+                const Duration(seconds: 1)) {
+          _lastTrackEndReplayAt = now;
+          try {
+            ref.read(playerProvider)
+              ..seek(Duration.zero)
+              ..play();
+          } catch (_) {}
+        }
         if (!_isPreloading) _preloadNextTrack();
       }
     };
@@ -670,27 +678,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final player = ref.read(playerProvider);
 
       if (item.sourceType == 'youtube' && item.videoId != null) {
-        final ytService = ref.read(youtubeServiceProvider);
-        final manifest = await ytService.getManifestWithFallback(item.videoId!)
-            .timeout(const Duration(seconds: 30));
-        final muxed = manifest.muxed.sortByVideoQuality();
-        String streamUrl;
-        if (muxed.isNotEmpty) {
-          streamUrl = muxed.last.url.toString();
+        final cached = _cachedVideoPath(item);
+        if (cached != null) {
+          // オフラインキャッシュ優先（通信不要）
+          await player.open(Media(cached), play: false);
+          if (!mounted) return;
+          ref.read(videoSourceProvider.notifier).state = VideoSource(
+            type: VideoSourceType.youtube, uri: cached,
+            title: item.title, videoId: item.videoId,
+            thumbnailUrl: item.thumbnailUrl,
+          );
         } else {
-          final videoOnly = manifest.videoOnly.sortByVideoQuality();
-          if (videoOnly.isEmpty) throw Exception('ストリームなし');
-          streamUrl = videoOnly.last.url.toString();
+          final ytService = ref.read(youtubeServiceProvider);
+          final manifest = await ytService.getManifestWithFallback(item.videoId!)
+              .timeout(const Duration(seconds: 30));
+          final muxed = manifest.muxed.sortByVideoQuality();
+          String streamUrl;
+          if (muxed.isNotEmpty) {
+            streamUrl = muxed.last.url.toString();
+          } else {
+            final videoOnly = manifest.videoOnly.sortByVideoQuality();
+            if (videoOnly.isEmpty) throw Exception('ストリームなし');
+            streamUrl = videoOnly.last.url.toString();
+          }
+          if (!mounted) return;
+          await player.open(Media(streamUrl), play: false)
+              .timeout(const Duration(seconds: 30));
+          if (!mounted) return;
+          ref.read(videoSourceProvider.notifier).state = VideoSource(
+            type: VideoSourceType.youtube, uri: streamUrl,
+            title: item.title, videoId: item.videoId,
+            thumbnailUrl: item.thumbnailUrl,
+          );
         }
-        if (!mounted) return;
-        await player.open(Media(streamUrl), play: false)
-            .timeout(const Duration(seconds: 30));
-        if (!mounted) return;
-        ref.read(videoSourceProvider.notifier).state = VideoSource(
-          type: VideoSourceType.youtube, uri: streamUrl,
-          title: item.title, videoId: item.videoId,
-          thumbnailUrl: item.thumbnailUrl,
-        );
       } else {
         await player.open(Media(item.uri), play: false);
         if (!mounted) return;
@@ -736,8 +756,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       try { ref.read(playerProvider).setVolume(100); } catch (_) {}
     }
     _consecutiveLoadErrors = 0;
-    // 字幕取得（プレイリスト曲切替時）
-    if (track.item.sourceType == 'youtube' && track.item.videoId != null) {
+    // 字幕（プレイリスト曲切替時）: キャッシュSRT優先、無ければネット取得
+    if (track.item.cachedSubtitlePath != null) {
+      _loadCachedSubtitles(track.item);
+    } else if (track.item.sourceType == 'youtube' &&
+        track.item.videoId != null) {
       _fetchSubtitles(track.item.videoId!);
     } else {
       ref.read(subtitleDataProvider.notifier).state = null;
@@ -981,7 +1004,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final preloadPlayer = ref.read(preloadPlayerProvider);
       StreamManifest? manifest;
 
-      if (nextTrack.item.sourceType == 'youtube') {
+      final cachedNext = nextTrack.item.sourceType == 'youtube'
+          ? _cachedVideoPath(nextTrack.item)
+          : null;
+      if (cachedNext != null) {
+        // オフラインキャッシュ優先（通信不要・即時）。manifestはnullのまま=波形プリロードはno-op
+        await preloadPlayer.open(Media(cachedNext), play: false);
+      } else if (nextTrack.item.sourceType == 'youtube') {
         final ytService = ref.read(youtubeServiceProvider);
         manifest = await ytService.getManifestWithFallback(
             nextTrack.item.videoId!);
@@ -1311,6 +1340,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(videoSourceProvider.notifier).state = source;
 
     await _finishLoading(item, source);
+  }
+
+  /// キャッシュ済み動画のローカルパス（ファイルが実在すれば返す。無ければnull）。
+  String? _cachedVideoPath(LoopItem item) {
+    final p = item.cachedVideoPath;
+    if (p != null && p.isNotEmpty && File(p).existsSync()) return p;
+    return null;
   }
 
   /// オフラインキャッシュ済みのYouTube動画をローカルファイルから再生する。

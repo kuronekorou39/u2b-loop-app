@@ -16,6 +16,7 @@ import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
 import '../providers/loading_animation_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/cache_service.dart';
 import '../services/update_service.dart';
 import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
@@ -43,6 +44,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool get _cacheToDocuments =>
       Hive.box('settings').get('cache_to_documents', defaultValue: false)
           as bool;
+
+  /// すべてのオフラインキャッシュ（動画・字幕）を削除する。
+  Future<void> _clearAllOfflineCache() async {
+    final cached =
+        ref.read(loopItemsProvider).where((i) => i.isCached).toList();
+    if (cached.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('オフラインデータはありません')),
+      );
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('全削除の確認'),
+        content: Text('${cached.length}件のオフラインデータを削除します。よろしいですか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('削除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final notifier = ref.read(loopItemsProvider.notifier);
+    for (final item in cached) {
+      await notifier.clearCache(item.id);
+    }
+    if (mounted) {
+      setState(() {}); // 容量表示を再計算
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${cached.length}件のオフラインデータを削除しました')),
+      );
+    }
+  }
 
   // ─── Export ───
 
@@ -525,20 +566,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // ── オフライン保存 ──
               _sectionHeader('オフライン保存'),
               Card(
-                child: SwitchListTile(
-                  secondary: const Icon(Icons.sd_storage),
-                  title: Text('端末に永続保存', style: textTheme.bodyLarge),
-                  subtitle: Text(
-                    _cacheToDocuments
-                        ? 'documentsに保存（OSが自動削除しない）'
-                        : 'キャッシュ領域に保存（容量不足時にOSが削除する場合あり）',
-                    style: textTheme.bodySmall,
-                  ),
-                  value: _cacheToDocuments,
-                  onChanged: (v) {
-                    Hive.box('settings').put('cache_to_documents', v);
-                    setState(() {});
-                  },
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: const Icon(Icons.sd_storage),
+                      title: Text('端末に永続保存', style: textTheme.bodyLarge),
+                      subtitle: Text(
+                        _cacheToDocuments
+                            ? 'documentsに保存（OSが自動削除しない）'
+                            : 'キャッシュ領域に保存（容量不足時にOSが削除する場合あり）',
+                        style: textTheme.bodySmall,
+                      ),
+                      value: _cacheToDocuments,
+                      onChanged: (v) {
+                        Hive.box('settings').put('cache_to_documents', v);
+                        setState(() {});
+                      },
+                    ),
+                    const Divider(height: 1),
+                    FutureBuilder<int>(
+                      future: CacheService().totalCacheSize(),
+                      builder: (_, snap) {
+                        final waiting =
+                            snap.connectionState == ConnectionState.waiting;
+                        final mb =
+                            ((snap.data ?? 0) / 1024 / 1024).toStringAsFixed(1);
+                        return ListTile(
+                          leading: const Icon(Icons.folder_open),
+                          title: Text('オフラインデータ', style: textTheme.bodyLarge),
+                          subtitle: Text(waiting ? '計算中...' : '合計 ${mb}MB',
+                              style: textTheme.bodySmall),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    ListTile(
+                      leading: const Icon(Icons.delete_sweep, color: Colors.red),
+                      title: Text('全オフラインデータを削除',
+                          style: textTheme.bodyLarge!
+                              .copyWith(color: Colors.red)),
+                      subtitle: Text('保存した動画・字幕をすべて削除',
+                          style: textTheme.bodySmall),
+                      onTap: _busy ? null : _clearAllOfflineCache,
+                    ),
+                  ],
                 ),
               ),
 
