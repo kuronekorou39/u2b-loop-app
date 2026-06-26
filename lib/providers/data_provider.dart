@@ -9,6 +9,7 @@ import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
 import '../models/tag.dart';
+import '../services/cache_service.dart';
 import '../services/share_service.dart';
 import '../services/thumbnail_service.dart';
 
@@ -64,8 +65,14 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   }
 
   Future<void> delete(String id) async {
+    // 削除前にオフラインキャッシュのファイルパスを退避して掃除
+    final item = _box.get(id);
     await _box.delete(id);
     await ThumbnailService().delete(id);
+    if (item != null) {
+      await CacheService()
+          .deletePaths(item.cachedVideoPath, item.cachedSubtitlePath);
+    }
     // プレイリストから孤立参照を除去
     final plBox = Hive.box<app.Playlist>('playlists');
     for (final pl in plBox.values) {
@@ -76,6 +83,41 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         await plBox.put(pl.id, pl);
       }
     }
+    _refresh();
+  }
+
+  /// オフラインキャッシュ情報をアイテムに保存する。
+  /// 並び順を変えないよう updatedAt は更新せず box 直書き＋_refresh。
+  Future<void> saveCacheInfo(
+    String id, {
+    required String videoPath,
+    String? subtitlePath,
+    String? resolution,
+    int? sizeBytes,
+  }) async {
+    final item = _box.get(id);
+    if (item == null) return;
+    item.cachedVideoPath = videoPath;
+    item.cachedSubtitlePath = subtitlePath;
+    item.cachedResolution = resolution;
+    item.cachedSizeBytes = sizeBytes;
+    item.cachedAt = DateTime.now().millisecondsSinceEpoch;
+    await _box.put(id, item);
+    _refresh();
+  }
+
+  /// オフラインキャッシュ（動画・字幕ファイル＋メタ情報）を削除する。
+  Future<void> clearCache(String id) async {
+    final item = _box.get(id);
+    if (item == null) return;
+    await CacheService()
+        .deletePaths(item.cachedVideoPath, item.cachedSubtitlePath);
+    item.cachedVideoPath = null;
+    item.cachedSubtitlePath = null;
+    item.cachedResolution = null;
+    item.cachedSizeBytes = null;
+    item.cachedAt = null;
+    await _box.put(id, item);
     _refresh();
   }
 

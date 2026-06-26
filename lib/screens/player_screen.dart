@@ -1219,7 +1219,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     try {
       final item = _currentItem;
-      if (item.sourceType == 'youtube') {
+      // オフラインキャッシュがあればローカルファイルを優先再生（通信不要）
+      if (item.sourceType == 'youtube' &&
+          item.cachedVideoPath != null &&
+          await File(item.cachedVideoPath!).exists()) {
+        await _loadCachedYouTube(item);
+      } else if (item.sourceType == 'youtube') {
         await _loadYouTube(item);
       } else {
         await _loadLocal(item);
@@ -1308,6 +1313,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     await _finishLoading(item, source);
   }
 
+  /// オフラインキャッシュ済みのYouTube動画をローカルファイルから再生する。
+  /// ソース種別はyoutubeのまま（字幕・UIロジックを流用）、Mediaだけローカルファイル。
+  Future<void> _loadCachedYouTube(LoopItem item) async {
+    await _setProgress(0.40, 'オフラインキャッシュを読み込み中...');
+    final source = VideoSource(
+      type: VideoSourceType.youtube,
+      uri: item.cachedVideoPath!,
+      title: item.title,
+      videoId: item.videoId,
+      thumbnailUrl: item.thumbnailUrl,
+    );
+
+    if (!mounted) return;
+    await _setProgress(0.70, 'プレーヤーを準備中...');
+    final player = ref.read(playerProvider);
+    await player.open(Media(item.cachedVideoPath!), play: false);
+    await _yieldFrame();
+    ref.read(videoSourceProvider.notifier).state = source;
+
+    await _finishLoading(item, source);
+  }
+
   Future<void> _finishLoading(LoopItem item, VideoSource source) async {
     if (!mounted) return;
     final player = ref.read(playerProvider);
@@ -1388,11 +1415,46 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _generateWaveform(source);
     }
 
-    // 字幕取得（YouTube動画のみ、バックグラウンド）
-    if (source.type == VideoSourceType.youtube && source.videoId != null) {
+    // 字幕: オフラインキャッシュがあればファイルから（通信不要）、無ければ取得
+    if (item.cachedSubtitlePath != null) {
+      _loadCachedSubtitles(item);
+    } else if (source.type == VideoSourceType.youtube &&
+        source.videoId != null) {
       _fetchSubtitles(source.videoId!);
     } else {
       ref.read(subtitleDataProvider.notifier).state = null;
+    }
+  }
+
+  /// 保存済みSRTから字幕を読み込む（オフライン再生用）。
+  Future<void> _loadCachedSubtitles(LoopItem item) async {
+    ref.read(subtitleLoadingProvider.notifier).state = true;
+    ref.read(subtitleDataProvider.notifier).state = null;
+    ref.read(subtitleSubDataProvider.notifier).state = null;
+    try {
+      final file = File(item.cachedSubtitlePath!);
+      if (!await file.exists()) {
+        // ファイルが消えていればネットワーク取得にフォールバック
+        if (mounted && item.videoId != null) {
+          await _fetchSubtitles(item.videoId!);
+        }
+        return;
+      }
+      final subs = SubtitleService.parseSrt(await file.readAsString());
+      if (!mounted) return;
+      ref.read(subtitleDataProvider.notifier).state =
+          subs.isNotEmpty ? subs : null;
+      if (subs.isNotEmpty) {
+        // オフライン用に明示保存した字幕はOFFのままだと見えないので自動表示
+        if (ref.read(subtitleModeProvider) == SubtitleMode.off) {
+          ref.read(subtitleModeProvider.notifier).state =
+              SubtitleMode.subtitle;
+        }
+      }
+    } catch (_) {
+      if (mounted) ref.read(subtitleDataProvider.notifier).state = null;
+    } finally {
+      if (mounted) ref.read(subtitleLoadingProvider.notifier).state = false;
     }
   }
 

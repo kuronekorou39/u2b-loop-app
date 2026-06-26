@@ -37,6 +37,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int get _playlistCount => Hive.box<app.Playlist>('playlists').length;
   int get _tagCount => Hive.box<Tag>('tags').length;
 
+  // ─── オフラインキャッシュ ───
+
+  /// オフライン保存の保存先（false=キャッシュ領域[既定], true=documentsに永続保存）
+  bool get _cacheToDocuments =>
+      Hive.box('settings').get('cache_to_documents', defaultValue: false)
+          as bool;
+
   // ─── Export ───
 
   Map<String, dynamic> _itemToJson(LoopItem item) => {
@@ -510,6 +517,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       onTap: _busy ? null : _clearData,
                     ),
                   ],
+                ),
+              ),
+
+              const SizedBox(height: AppSpacing.xl),
+
+              // ── オフライン保存 ──
+              _sectionHeader('オフライン保存'),
+              Card(
+                child: SwitchListTile(
+                  secondary: const Icon(Icons.sd_storage),
+                  title: Text('端末に永続保存', style: textTheme.bodyLarge),
+                  subtitle: Text(
+                    _cacheToDocuments
+                        ? 'documentsに保存（OSが自動削除しない）'
+                        : 'キャッシュ領域に保存（容量不足時にOSが削除する場合あり）',
+                    style: textTheme.bodySmall,
+                  ),
+                  value: _cacheToDocuments,
+                  onChanged: (v) {
+                    Hive.box('settings').put('cache_to_documents', v);
+                    setState(() {});
+                  },
                 ),
               ),
 

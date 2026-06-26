@@ -149,6 +149,68 @@ class SubtitleService {
     }
   }
 
+  /// 字幕エントリをSRT文字列に直列化（オフライン保存用）。
+  static String toSrt(List<SubtitleEntry> entries) {
+    final sb = StringBuffer();
+    for (var i = 0; i < entries.length; i++) {
+      final e = entries[i];
+      sb.writeln(i + 1);
+      sb.writeln('${_srtTime(e.offset)} --> ${_srtTime(e.end)}');
+      sb.writeln(e.text);
+      sb.writeln();
+    }
+    return sb.toString();
+  }
+
+  static String _srtTime(Duration d) {
+    final h = d.inHours.toString().padLeft(2, '0');
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    final ms = (d.inMilliseconds % 1000).toString().padLeft(3, '0');
+    return '$h:$m:$s,$ms';
+  }
+
+  static final _srtTimeRegex = RegExp(
+      r'(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})');
+
+  /// 保存したSRTをパースして字幕エントリに戻す（オフライン再生用）。
+  static List<SubtitleEntry> parseSrt(String content) {
+    final entries = <SubtitleEntry>[];
+    final blocks = content.replaceAll('\r\n', '\n').split(RegExp(r'\n\s*\n'));
+    for (final block in blocks) {
+      final lines =
+          block.split('\n').where((l) => l.trim().isNotEmpty).toList();
+      if (lines.isEmpty) continue;
+      // 時刻行を探す（インデックス行の有無に依存しない）
+      int? timeIdx;
+      for (var i = 0; i < lines.length; i++) {
+        if (_srtTimeRegex.hasMatch(lines[i])) {
+          timeIdx = i;
+          break;
+        }
+      }
+      if (timeIdx == null) continue;
+      final m = _srtTimeRegex.firstMatch(lines[timeIdx])!;
+      final start = _srtDuration(m, 1);
+      final end = _srtDuration(m, 5);
+      final text = lines.sublist(timeIdx + 1).join(' ').trim();
+      if (text.isEmpty) continue;
+      entries.add(SubtitleEntry(
+        text: text,
+        offset: start,
+        duration: end >= start ? end - start : Duration.zero,
+      ));
+    }
+    return entries;
+  }
+
+  static Duration _srtDuration(RegExpMatch m, int g) => Duration(
+        hours: int.parse(m.group(g)!),
+        minutes: int.parse(m.group(g + 1)!),
+        seconds: int.parse(m.group(g + 2)!),
+        milliseconds: int.parse(m.group(g + 3)!),
+      );
+
   /// YouTube字幕XML（srv3形式）のパース
   static List<SubtitleEntry> _parseSubtitleXml(String xml) {
     final entries = <SubtitleEntry>[];

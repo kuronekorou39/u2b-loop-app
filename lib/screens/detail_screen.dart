@@ -11,6 +11,7 @@ import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../services/cache_service.dart';
 import '../services/export_runner.dart';
 import '../services/export_service.dart';
 import '../services/youtube_service.dart';
@@ -193,6 +194,104 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
   }
 
+  // --- オフライン保存 ---
+
+  /// 動画(muxed)＋字幕をアプリ内にダウンロードし、オフライン再生可能にする。
+  Future<void> _downloadOffline(LoopItem item) async {
+    if (item.videoId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('YouTube動画のみオフライン保存できます')),
+      );
+      return;
+    }
+
+    final progress = ValueNotifier<double>(0);
+    var cancelled = false;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('オフライン保存中...'),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (_, p, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: p > 0 ? p : null),
+              const SizedBox(height: AppSpacing.md),
+              Text('${(p * 100).toStringAsFixed(0)}%',
+                  style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              cancelled = true;
+              Navigator.pop(context);
+            },
+            child: const Text('キャンセル'),
+          ),
+        ],
+      ),
+    );
+
+    final result = await CacheService().downloadForOffline(
+      item.id,
+      item.videoId!,
+      onProgress: (p) => progress.value = p,
+      isCancelled: () => cancelled,
+    );
+
+    if (cancelled) {
+      progress.dispose();
+      // キャンセル直前に完走していたら孤児ファイルを掃除
+      if (result.videoPath != null) {
+        await CacheService()
+            .deletePaths(result.videoPath, result.subtitlePath);
+      }
+      return;
+    }
+    if (mounted) Navigator.of(context).pop(); // 進捗ダイアログを閉じる
+    progress.dispose();
+    if (!mounted) return;
+
+    if (result.success) {
+      await ref.read(loopItemsProvider.notifier).saveCacheInfo(
+            item.id,
+            videoPath: result.videoPath!,
+            subtitlePath: result.subtitlePath,
+            resolution: result.resolution,
+            sizeBytes: result.sizeBytes,
+          );
+      if (!mounted) return;
+      final mb = (result.sizeBytes / 1024 / 1024).toStringAsFixed(1);
+      final subMsg = result.subtitlePath != null ? '・字幕付き' : '（字幕なし）';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'オフライン保存しました（${result.resolution ?? ''} ${mb}MB$subMsg）'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存失敗: ${result.error}')),
+      );
+    }
+  }
+
+  Future<void> _clearOffline(LoopItem item) async {
+    await ref.read(loopItemsProvider.notifier).clearCache(item.id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('オフラインデータを削除しました'),
+            duration: Duration(seconds: 2)),
+      );
+    }
+  }
+
   // --- YouTube URL ---
 
   String? _getYouTubeUrl(LoopItem item) {
@@ -298,6 +397,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               onSelected: (v) {
                 if (v == 'duplicate') _duplicateItem(item);
                 if (v == 'playlist') _showAddToPlaylist(item);
+                if (v == 'offline_save') _downloadOffline(item);
+                if (v == 'offline_delete') _clearOffline(item);
                 if (v == 'delete') _deleteItem(item);
               },
               itemBuilder: (_) => [
@@ -305,6 +406,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     value: 'duplicate', child: Text('複製')),
                 const PopupMenuItem(
                     value: 'playlist', child: Text('プレイリストに追加')),
+                if (item.sourceType == 'youtube' && item.videoId != null)
+                  PopupMenuItem(
+                    value: item.isCached ? 'offline_delete' : 'offline_save',
+                    child: Text(item.isCached
+                        ? 'オフラインデータを削除'
+                        : 'オフライン保存（字幕付き）'),
+                  ),
                 const PopupMenuItem(
                     value: 'delete',
                     child:
@@ -338,6 +446,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 if (item.speed != 1.0) ...[
                   const SizedBox(width: AppSpacing.lg),
                   _metaChip(Icons.speed, '${item.speed}x'),
+                ],
+                if (item.isCached) ...[
+                  const SizedBox(width: AppSpacing.lg),
+                  _metaChip(
+                    Icons.offline_pin,
+                    'オフライン${item.cachedResolution != null ? ' ${item.cachedResolution}' : ''}',
+                    isLink: true,
+                  ),
                 ],
                 const Spacer(),
                 if (ytUrl != null)

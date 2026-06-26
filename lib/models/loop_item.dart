@@ -37,6 +37,21 @@ class LoopItem {
   /// 字幕の有無（null=未チェック, true=あり, false=なし）
   bool? hasSubtitles;
 
+  /// オフライン再生用にダウンロード保存した動画ファイルのパス（null=未キャッシュ）
+  String? cachedVideoPath;
+
+  /// オフライン再生用に保存した字幕ファイル(SRT)のパス
+  String? cachedSubtitlePath;
+
+  /// キャッシュした動画の画質ラベル（例: '720p'。表示用）
+  String? cachedResolution;
+
+  /// キャッシュした動画ファイルのサイズ（バイト。容量表示用）
+  int? cachedSizeBytes;
+
+  /// キャッシュした時刻（ミリ秒。LRU削除用）
+  int? cachedAt;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -58,6 +73,11 @@ class LoopItem {
     this.playCount = 0,
     this.accumulatedPlayMs = 0,
     this.hasSubtitles,
+    this.cachedVideoPath,
+    this.cachedSubtitlePath,
+    this.cachedResolution,
+    this.cachedSizeBytes,
+    this.cachedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
@@ -73,6 +93,9 @@ class LoopItem {
   bool get isFetching => fetchStatus == 'fetching';
   bool get hasError => fetchStatus != null && fetchStatus!.startsWith('error');
   bool get isReady => fetchStatus == null;
+
+  /// オフライン再生用の動画がダウンロード済みか
+  bool get isCached => cachedVideoPath != null;
   String? get errorMessage =>
       hasError ? fetchStatus!.substring('error:'.length) : null;
 
@@ -125,6 +148,11 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       playCount: fields[17] as int? ?? 0,
       accumulatedPlayMs: fields[18] as int? ?? 0,
       hasSubtitles: fields[19] as bool?,
+      cachedVideoPath: fields[20] as String?,
+      cachedSubtitlePath: fields[21] as String?,
+      cachedResolution: fields[22] as String?,
+      cachedSizeBytes: fields[23] as int?,
+      cachedAt: fields[24] as int?,
     );
   }
 
@@ -151,6 +179,11 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       17: obj.playCount,
       18: obj.accumulatedPlayMs,
       19: obj.hasSubtitles,
+      20: obj.cachedVideoPath,
+      21: obj.cachedSubtitlePath,
+      22: obj.cachedResolution,
+      23: obj.cachedSizeBytes,
+      24: obj.cachedAt,
     });
   }
 }
