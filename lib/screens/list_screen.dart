@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yte;
 
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
@@ -14,6 +13,7 @@ import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
+import '../services/playlist_service.dart';
 import '../services/share_service.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/loading_animations/loading_animation.dart';
@@ -390,29 +390,20 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
 
     try {
-      final yt = yte.YoutubeExplode();
       try {
         statusNotifier.value = 'プレイリスト情報を取得中...';
-        final playlist = await yt.playlists.get(playlistId);
-        if (_importCancelled) return;
-
-        statusNotifier.value = '「${playlist.title}」の動画を取得中...';
-        final videos = <yte.Video>[];
-        await for (final v in yt.playlists.getVideos(playlistId)) {
-          if (_importCancelled) break;
-          videos.add(v);
-          countNotifier.value = videos.length;
-
-          // 100件ごとに5秒休憩（APIページ境界付近）
-          if (videos.length % 100 == 0) {
-            statusNotifier.value = '${videos.length}件取得済み、少し待機中...';
-            await Future.delayed(const Duration(seconds: 5));
-          }
-        }
-
+        final data = await PlaylistService().fetch(
+          playlistId,
+          isCancelled: () => _importCancelled,
+          onProgress: (count) {
+            countNotifier.value = count;
+            if (count > 0) statusNotifier.value = '動画を取得中...';
+          },
+        );
         if (_importCancelled || !mounted) return;
         Navigator.pop(context);
 
+        final videos = data.videos;
         if (videos.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -425,27 +416,28 @@ class _ListScreenState extends ConsumerState<ListScreen>
           return;
         }
 
+        final playlistTitle = data.title.isNotEmpty ? data.title : 'プレイリスト';
+
         // 既存アイテムとの重複チェック
         final existingItems = ref.read(loopItemsProvider);
         final existingVideoIds =
             existingItems.map((i) => i.videoId).whereType<String>().toSet();
         final duplicates =
-            videos.where((v) => existingVideoIds.contains(v.id.value)).toList();
+            videos.where((v) => existingVideoIds.contains(v.id)).toList();
         final newVideos =
-            videos.where((v) => !existingVideoIds.contains(v.id.value)).toList();
+            videos.where((v) => !existingVideoIds.contains(v.id)).toList();
 
         if (duplicates.isEmpty) {
-          _addVideos(videos, playlist.title);
+          _addVideos(videos, playlistTitle);
         } else {
           await _showDuplicateDialog(
-            playlistTitle: playlist.title,
+            playlistTitle: playlistTitle,
             allVideos: videos,
             newVideos: newVideos,
             duplicates: duplicates,
           );
         }
       } finally {
-        yt.close();
         countNotifier.dispose();
         statusNotifier.dispose();
       }
@@ -460,7 +452,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
   }
 
-  Future<void> _addVideos(List<yte.Video> videos, String playlistTitle) async {
+  Future<void> _addVideos(
+      List<PlaylistVideoInfo> videos, String playlistTitle) async {
     // タグを選択/作成するダイアログ
     final tagId = await _showImportTagDialog(playlistTitle);
     if (!mounted) return;
@@ -470,10 +463,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final addedIds = await notifier.addYouTubeBatch(
       videos: videos
           .map((v) => (
-                videoId: v.id.value,
+                videoId: v.id,
                 title: v.title,
-                url: 'https://youtu.be/${v.id.value}',
-                thumbnailUrl: v.thumbnails.highResUrl,
+                url: 'https://youtu.be/${v.id}',
+                thumbnailUrl: v.thumbnailHighUrl,
               ))
           .toList(),
       tagId: tagId,
@@ -554,9 +547,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Future<void> _showDuplicateDialog({
     required String playlistTitle,
-    required List<yte.Video> allVideos,
-    required List<yte.Video> newVideos,
-    required List<yte.Video> duplicates,
+    required List<PlaylistVideoInfo> allVideos,
+    required List<PlaylistVideoInfo> newVideos,
+    required List<PlaylistVideoInfo> duplicates,
   }) async {
     final result = await showDialog<String>(
       context: context,
@@ -614,11 +607,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _showVideoSelectPage(
-    List<yte.Video> allVideos,
-    List<yte.Video> duplicates,
+    List<PlaylistVideoInfo> allVideos,
+    List<PlaylistVideoInfo> duplicates,
     String playlistTitle,
   ) {
-    final duplicateIds = duplicates.map((v) => v.id.value).toSet();
+    final duplicateIds = duplicates.map((v) => v.id).toSet();
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _PlaylistVideoSelectPage(
@@ -2651,10 +2644,10 @@ class _TagManagerSheetState extends State<_TagManagerSheet> {
 // ============================================================
 
 class _PlaylistVideoSelectPage extends StatefulWidget {
-  final List<yte.Video> videos;
+  final List<PlaylistVideoInfo> videos;
   final Set<String> duplicateIds;
   final String playlistTitle;
-  final void Function(List<yte.Video> selected) onConfirm;
+  final void Function(List<PlaylistVideoInfo> selected) onConfirm;
 
   const _PlaylistVideoSelectPage({
     required this.videos,
@@ -2676,8 +2669,8 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
     super.initState();
     // デフォルトで新規のものを全選択
     _selected = widget.videos
-        .where((v) => !widget.duplicateIds.contains(v.id.value))
-        .map((v) => v.id.value)
+        .where((v) => !widget.duplicateIds.contains(v.id))
+        .map((v) => v.id)
         .toSet();
   }
 
@@ -2696,7 +2689,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                 ? null
                 : () {
                     final selected = widget.videos
-                        .where((v) => _selected.contains(v.id.value))
+                        .where((v) => _selected.contains(v.id))
                         .toList();
                     widget.onConfirm(selected);
                     Navigator.pop(context);
@@ -2719,7 +2712,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                 TextButton(
                   onPressed: () => setState(() {
                     _selected =
-                        widget.videos.map((v) => v.id.value).toSet();
+                        widget.videos.map((v) => v.id).toSet();
                   }),
                   child: Text('すべて選択', style: Theme.of(context).textTheme.labelMedium),
                 ),
@@ -2735,7 +2728,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
               itemCount: widget.videos.length,
               itemBuilder: (context, i) {
                 final video = widget.videos[i];
-                final id = video.id.value;
+                final id = video.id;
                 final isDuplicate = widget.duplicateIds.contains(id);
                 final isSelected = _selected.contains(id);
 
@@ -2746,7 +2739,7 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                       width: 64,
                       height: 36,
                       child: Image.network(
-                        video.thumbnails.lowResUrl,
+                        video.thumbnailLowUrl,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => Container(
                           color: Theme.of(context)
