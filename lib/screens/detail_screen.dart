@@ -11,6 +11,9 @@ import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../services/export_runner.dart';
+import '../services/export_service.dart';
+import '../services/youtube_service.dart';
 import '../widgets/item_tag_sheet.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
@@ -485,6 +488,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.file_download_outlined),
+              title: const Text('書き出し'),
+              subtitle: const Text('この区間をMP4/音声で保存'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportRegion(item, index);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除',
                   style: TextStyle(color: Colors.red)),
@@ -496,6 +508,106 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// 詳細ページから区間を書き出す。
+  /// local はアイテムの元URI、YouTube は stream URL を解決してから書き出す。
+  Future<void> _exportRegion(LoopItem item, int index) async {
+    final regions = item.effectiveRegions;
+    if (index >= regions.length) return;
+    final region = regions[index];
+    if (!region.hasA || !region.hasB) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A・B両方の地点を設定してください')),
+      );
+      return;
+    }
+
+    // 形式選択
+    final format = await showDialog<ExportFormat>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${region.name} を書き出し'),
+        content: Text(
+          '${TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!))}'
+          ' - ${TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!))}',
+          style: Theme.of(ctx).textTheme.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton.icon(
+            onPressed: () => Navigator.pop(ctx, ExportFormat.audioOnly),
+            icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
+            label: const Text('音声のみ'),
+          ),
+          TextButton.icon(
+            onPressed: () => Navigator.pop(ctx, ExportFormat.mp4),
+            icon: const Icon(Icons.videocam, size: AppIconSizes.s),
+            label: const Text('MP4'),
+          ),
+        ],
+      ),
+    );
+    if (format == null || !mounted) return;
+
+    // 入力URI解決（local=元URI、YouTube=stream URL を都度解決）
+    String? inputUri;
+    if (item.sourceType == 'local') {
+      inputUri = item.uri;
+    } else if (item.videoId != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                  width: AppIconSizes.s,
+                  height: AppIconSizes.s,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              SizedBox(width: AppSpacing.lg),
+              Text('動画を準備中...'),
+            ],
+          ),
+          duration: Duration(seconds: 30),
+        ),
+      );
+      final service = YouTubeService();
+      try {
+        final source = await service.getVideoSource(item.videoId!);
+        inputUri = source.uri;
+      } catch (e) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(content: Text('動画の取得に失敗しました: $e')),
+        );
+        return;
+      } finally {
+        service.dispose();
+      }
+      messenger.hideCurrentSnackBar();
+    }
+
+    if (inputUri == null || inputUri.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('書き出せる動画ソースがありません')),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    await runExportFlow(
+      context,
+      inputUri: inputUri,
+      startMs: region.pointAMs!,
+      endMs: region.pointBMs!,
+      format: format,
+      title: '${item.title}_${region.name}',
     );
   }
 

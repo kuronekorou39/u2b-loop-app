@@ -30,6 +30,7 @@ import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_player_provider.dart';
 import '../services/export_service.dart';
+import '../services/export_runner.dart';
 import '../providers/subtitle_provider.dart';
 import '../services/subtitle_service.dart';
 import '../services/waveform_service.dart';
@@ -1826,76 +1827,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            SizedBox(
-                width: AppIconSizes.s,
-                height: AppIconSizes.s,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-            SizedBox(width: AppSpacing.lg),
-            Text('書き出し中...'),
-          ],
-        ),
-        duration: Duration(seconds: 30),
-      ),
-    );
-
-    final service = ExportService();
-    final result = await service.exportRegion(
+    await runExportFlow(
+      context,
       inputUri: inputUri,
       startMs: startMs,
       endMs: endMs,
       format: audioOnly ? ExportFormat.audioOnly : ExportFormat.mp4,
       title: _currentItem.title,
     );
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-    if (!result.success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('書き出し失敗: ${result.error}'),
-          duration: const Duration(seconds: 8),
-        ),
-      );
-      return;
-    }
-
-    // 端末のギャラリー（フォト）/ミュージックへ直接保存済み（API 29+）。
-    if (result.savedToGallery) {
-      if (mounted) {
-        final loc = result.outputPath;
-        final head = audioOnly ? '保存しました' : 'フォトに保存しました';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(loc != null ? '$head\n$loc' : head),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-      return;
-    }
-
-    // Android 9以前は書込権限が必要なため共有シートにフォールバック。
-    // ファイルをDartのメモリに読み込まずパスで渡すため、全尺・長尺でもOOMしない。
-    final safeTitle =
-        _currentItem.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    try {
-      await service.shareExported(
-        outputPath: result.outputPath!,
-        format: audioOnly ? ExportFormat.audioOnly : ExportFormat.mp4,
-        subject: safeTitle,
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('共有に失敗しました: $e')),
-        );
-      }
-    }
   }
 
   // --- Waveform ---
