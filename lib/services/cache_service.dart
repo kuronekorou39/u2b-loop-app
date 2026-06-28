@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hive/hive.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
@@ -154,18 +155,36 @@ class CacheService {
   }) async {
     final service = YouTubeService();
     try {
-      final manifest = await service.getManifestWithFallback(videoId);
       final dir = await _cacheDir();
       final videoFile = File('${dir.path}/$id.mp4');
       final String resolution;
 
-      if (quality != null && quality.needsMerge && quality.audioTag != null) {
-        // 高解像度: 映像専用+音声専用を別DL → ネイティブ結合
-        final vInfo =
-            manifest.videoOnly.firstWhere((v) => v.tag == quality.videoTag);
-        final aInfo =
-            manifest.audioOnly.firstWhere((a) => a.tag == quality.audioTag);
-        resolution = quality.label;
+      if (quality != null && quality.needsMerge) {
+        // 高解像度: 映像専用+音声専用を別DL → ネイティブ結合。
+        // adaptiveストリームはdefaultクライアントだと n パラメータthrottlingで
+        // 1チャンク後に403になるため、androidVrクライアント＋Range分割DLで取得する。
+        final vrManifest = await service.yt.videos.streamsClient
+            .getManifest(videoId, ytClients: [YoutubeApiClient.androidVr]);
+
+        final vCands = vrManifest.videoOnly
+            .where((v) =>
+                v.container == StreamContainer.mp4 &&
+                v.videoCodec.startsWith('avc'))
+            .toList()
+          ..sort((a, b) => b.videoResolution.height - a.videoResolution.height);
+        final aCands = vrManifest.audioOnly
+            .where((a) => a.container == StreamContainer.mp4)
+            .toList();
+        if (vCands.isEmpty || aCands.isEmpty) {
+          return const OfflineCacheResult(error: 'この画質のストリームを取得できませんでした');
+        }
+        final targetH = _resValue(quality.label);
+        final vInfo = vCands.firstWhere((v) => v.tag == quality.videoTag,
+            orElse: () => vCands.firstWhere(
+                (v) => v.videoResolution.height == targetH,
+                orElse: () => vCands.first));
+        final aInfo = aCands.withHighestBitrate();
+        resolution = vInfo.qualityLabel;
 
         final tmpDir = await getTemporaryDirectory();
         final tmpV = File('${tmpDir.path}/${id}_v.tmp');
@@ -174,8 +193,8 @@ class CacheService {
         final aBytes = aInfo.size.totalBytes;
         final total = (vBytes + aBytes) > 0 ? (vBytes + aBytes) : 1;
 
-        final okV = await _downloadStream(
-          service, vInfo, tmpV, isCancelled,
+        final okV = await _downloadRanged(
+          vInfo.url.toString(), vBytes, tmpV, isCancelled,
           (r) => onProgress?.call((r / total).clamp(0.0, 0.98)),
         );
         if (okV != _DlState.ok) {
@@ -185,8 +204,8 @@ class CacheService {
               : const OfflineCacheResult(error: '映像のダウンロードに失敗しました');
         }
 
-        final okA = await _downloadStream(
-          service, aInfo, tmpA, isCancelled,
+        final okA = await _downloadRanged(
+          aInfo.url.toString(), aBytes, tmpA, isCancelled,
           (r) => onProgress?.call(((vBytes + r) / total).clamp(0.0, 0.99)),
         );
         if (okA != _DlState.ok) {
@@ -210,7 +229,8 @@ class CacheService {
         }
         onProgress?.call(1.0);
       } else {
-        // muxed（結合不要、単一DL）
+        // muxed（結合不要、単一DL。progressiveなのでthrottling影響を受けにくい）
+        final manifest = await service.getManifestWithFallback(videoId);
         final muxedList = manifest.muxed.sortByVideoQuality();
         if (muxedList.isEmpty) {
           return const OfflineCacheResult(
@@ -299,6 +319,60 @@ class CacheService {
         await sink?.close();
       } catch (_) {}
       return _DlState.failed;
+    }
+  }
+
+  /// adaptiveストリームURLを Range ヘッダで分割ダウンロードする。
+  /// youtube_explode の get() はadaptiveで途中失敗するため自前で実装。
+  /// androidVrクライアントのURLと併用することで n パラメータthrottlingを回避する。
+  Future<_DlState> _downloadRanged(
+    String url,
+    int total,
+    File file,
+    bool Function()? isCancelled,
+    void Function(int received) onReceived,
+  ) async {
+    const chunk = 9 * 1024 * 1024; // googlevideoが1リクエストで返す単位に合わせる
+    final client = http.Client();
+    IOSink? sink;
+    try {
+      sink = file.openWrite();
+      var start = 0;
+      var guard = 0;
+      while (total <= 0 || start < total) {
+        if (isCancelled?.call() ?? false) {
+          await sink.close();
+          return _DlState.cancelled;
+        }
+        if (++guard > 2000) break; // 暴走防止
+        final end = (total > 0 && start + chunk - 1 >= total)
+            ? total - 1
+            : start + chunk - 1;
+        final res = await client
+            .get(Uri.parse(url), headers: {'Range': 'bytes=$start-$end'})
+            .timeout(const Duration(seconds: 60));
+        if (res.statusCode != 200 && res.statusCode != 206) {
+          await sink.close();
+          return _DlState.failed;
+        }
+        if (res.bodyBytes.isEmpty) break;
+        sink.add(res.bodyBytes);
+        start += res.bodyBytes.length;
+        onReceived(start);
+        // total不明時は、要求量より少なければ終端とみなす
+        if (total <= 0 && res.bodyBytes.length < chunk) break;
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      return start > 0 ? _DlState.ok : _DlState.failed;
+    } catch (_) {
+      try {
+        await sink?.close();
+      } catch (_) {}
+      return _DlState.failed;
+    } finally {
+      client.close();
     }
   }
 
