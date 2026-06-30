@@ -2474,48 +2474,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
             ),
           // 字幕モード切替（タップ: OFF→カラオケ→リリクス→OFF、長押し: 言語選択）
-          Consumer(builder: (_, ref, _) {
-            final subs = ref.watch(subtitleDataProvider);
-            final mode = ref.watch(subtitleModeProvider);
-            final loading = ref.watch(subtitleLoadingProvider);
-            if (loading) {
-              return const Padding(
-                padding: EdgeInsets.all(12),
-                child: SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              );
-            }
-            if (subs == null || subs.isEmpty) return const SizedBox.shrink();
-            final IconData icon;
-            final Color color;
-            switch (mode) {
-              case SubtitleMode.off:
-                icon = Icons.subtitles_off;
-                color = Colors.grey;
-              case SubtitleMode.subtitle:
-                icon = Icons.subtitles;
-                color = AppTheme.accentGreen;
-              case SubtitleMode.lyrics:
-                icon = Icons.lyrics;
-                color = AppTheme.accentGreen;
-            }
-            return GestureDetector(
-              onLongPress: _showSubtitleLanguagePicker,
-              child: IconButton(
-                icon: Icon(icon, size: AppIconSizes.md, color: color),
-                onPressed: () {
-                  final next = switch (mode) {
-                    SubtitleMode.off => SubtitleMode.subtitle,
-                    SubtitleMode.subtitle => SubtitleMode.lyrics,
-                    SubtitleMode.lyrics => SubtitleMode.off,
-                  };
-                  ref.read(subtitleModeProvider.notifier).state = next;
-                },
-              ),
-            );
-          }),
+          _subtitleToggleButton(),
           if (Platform.isAndroid || Platform.isIOS)
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt, size: AppIconSizes.ml),
@@ -3215,9 +3174,65 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 字幕モード切替ボタン（タップ: OFF→カラオケ→リリクス→OFF、長押し: 言語選択）。
+  /// 縦画面コントロールと横全画面トップバーで共用。
+  Widget _subtitleToggleButton() {
+    return Consumer(builder: (_, ref, _) {
+      final subs = ref.watch(subtitleDataProvider);
+      final mode = ref.watch(subtitleModeProvider);
+      final loading = ref.watch(subtitleLoadingProvider);
+      if (loading) {
+        return const Padding(
+          padding: EdgeInsets.all(12),
+          child: SizedBox(
+            width: 16, height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      }
+      if (subs == null || subs.isEmpty) return const SizedBox.shrink();
+      final IconData icon;
+      final Color color;
+      switch (mode) {
+        case SubtitleMode.off:
+          icon = Icons.subtitles_off;
+          color = Colors.grey;
+        case SubtitleMode.subtitle:
+          icon = Icons.subtitles;
+          color = AppTheme.accentGreen;
+        case SubtitleMode.lyrics:
+          icon = Icons.lyrics;
+          color = AppTheme.accentGreen;
+      }
+      return GestureDetector(
+        onLongPress: _showSubtitleLanguagePicker,
+        child: IconButton(
+          icon: Icon(icon, size: AppIconSizes.md, color: color),
+          onPressed: () {
+            final next = switch (mode) {
+              SubtitleMode.off => SubtitleMode.subtitle,
+              SubtitleMode.subtitle => SubtitleMode.lyrics,
+              SubtitleMode.lyrics => SubtitleMode.off,
+            };
+            ref.read(subtitleModeProvider.notifier).state = next;
+          },
+        ),
+      );
+    });
+  }
+
   /// 横画面 全画面モード
   Widget _buildFullscreenView(double bottomInset) {
     final drawerWidth = MediaQuery.sizeOf(context).width * 0.4;
+    // immersive中はSafeAreaのpaddingが0になるため、viewPadding(ノッチ/ジェスチャー
+    // 領域などの物理インセット)を明示的に使う。最低マージンも確保。
+    final vp = MediaQuery.viewPaddingOf(context);
+    double atLeast(double v, double m) => v > m ? v : m;
+    final padL = atLeast(vp.left, 12);
+    final padR = atLeast(vp.right, 12);
+    // 開閉タブはコントロール表示に同調（常時表示は邪魔）。ただしドロワーを開いて
+    // いる間は閉じられるよう表示し続ける。
+    final showToggle = _showFullscreenOverlay || _showRightDrawer;
     return Stack(
       children: [
         // 動画（全画面）+ タップ検知を上に被せる
@@ -3259,14 +3274,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       stops: [0.0, 0.2, 0.7, 1.0],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      // 上部バー
-                      SafeArea(
-                        bottom: false,
-                        child: Row(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: padL,
+                      right: padR,
+                      top: atLeast(vp.top, 8),
+                      bottom: atLeast(vp.bottom, 12),
+                    ),
+                    child: Column(
+                      children: [
+                        // 上部バー（タイトル + 字幕切替）
+                        Row(
                           children: [
-                            const SizedBox(width: AppSpacing.md),
                             Expanded(
                               child: Text(
                                 _isPlaylist
@@ -3283,30 +3302,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            _subtitleToggleButton(),
                           ],
                         ),
-                      ),
-                      const Spacer(),
-                      // 下部コントロール
-                      SafeArea(
-                        top: false,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.xl),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              LoopSeekbar(
-                                compact: true,
-                                allowMarkerDrag: false,
-                                onRetryWaveform: _retryWaveform,
-                              ),
-                              const PlayerControls(),
-                            ],
-                          ),
+                        const Spacer(),
+                        // 下部コントロール
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            LoopSeekbar(
+                              compact: true,
+                              allowMarkerDrag: false,
+                              onRetryWaveform: _retryWaveform,
+                            ),
+                            const PlayerControls(),
+                          ],
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -3317,8 +3330,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           AnimatedPositioned(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
-            left: 0,
-            right: 0,
+            left: padL,
+            right: padR,
             bottom: (_showFullscreenOverlay ? 132.0 : 32.0) + bottomInset,
             child: const IgnorePointer(child: KaraokeSubtitle()),
           ),
@@ -3349,35 +3362,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
           ),
-          // ドロワー開閉タブ（常時表示、右端に張り付き）
+          // ドロワー開閉タブ（コントロール表示に同調。右端はノッチ分内側へ）
           AnimatedPositioned(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
-            right: _showRightDrawer ? drawerWidth : 0,
+            right: _showRightDrawer ? drawerWidth : vp.right,
             top: 0,
             bottom: 0,
             child: Center(
-              child: GestureDetector(
-                onTap: () {
-                  setState(() => _showRightDrawer = !_showRightDrawer);
-                },
-                child: Container(
-                  width: 24,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.7),
-                    borderRadius: const BorderRadius.horizontal(
-                        left: Radius.circular(8)),
-                  ),
-                  child: Icon(
-                    _showRightDrawer
-                        ? Icons.chevron_right
-                        : Icons.chevron_left,
-                    color: Colors.white,
-                    size: AppIconSizes.sm,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: showToggle ? 1.0 : 0.0,
+                child: IgnorePointer(
+                  ignoring: !showToggle,
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() => _showRightDrawer = !_showRightDrawer);
+                    },
+                    child: Container(
+                      width: 24,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.7),
+                        borderRadius: const BorderRadius.horizontal(
+                            left: Radius.circular(8)),
+                      ),
+                      child: Icon(
+                        _showRightDrawer
+                            ? Icons.chevron_right
+                            : Icons.chevron_left,
+                        color: Colors.white,
+                        size: AppIconSizes.sm,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -3386,20 +3406,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // フルスクリーン解除ボタン（右下、フルスクリーンボタンと同じ位置）
           if (_showFullscreenOverlay)
             Positioned(
-              right: 12,
-              bottom: 12,
-              child: SafeArea(
-                child: GestureDetector(
-                  onTap: _exitFullscreen,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: AppRadius.borderXs,
-                    ),
-                    child: const Icon(Icons.fullscreen_exit,
-                        color: Colors.white, size: AppIconSizes.lg),
+              right: 12 + padR,
+              bottom: 12 + vp.bottom,
+              child: GestureDetector(
+                onTap: _exitFullscreen,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: AppRadius.borderXs,
                   ),
+                  child: const Icon(Icons.fullscreen_exit,
+                      color: Colors.white, size: AppIconSizes.lg),
                 ),
               ),
             ),
