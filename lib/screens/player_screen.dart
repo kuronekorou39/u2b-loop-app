@@ -3296,7 +3296,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const KaraokeSubtitle(),
                               LoopSeekbar(
                                 compact: true,
                                 allowMarkerDrag: false,
@@ -3312,6 +3311,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
               ),
             ),
+          ),
+          // 字幕（カラオケ）: コントロールの自動非表示に関わらず常時表示。
+          // コントロール表示中はシークバーより上、非表示中は画面下寄りに移動。
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            left: 0,
+            right: 0,
+            bottom: (_showFullscreenOverlay ? 132.0 : 32.0) + bottomInset,
+            child: const IgnorePointer(child: KaraokeSubtitle()),
           ),
           // 右ドロワー（半透明）
           AnimatedPositioned(
