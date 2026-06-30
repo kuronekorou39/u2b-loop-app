@@ -292,9 +292,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _overlayHideTimer?.cancel();
     _loadingTimeoutTimer?.cancel();
     _cancelFade();
-    // 全画面モード解除
+    // 全画面モード解除（バックジェスチャ等で全画面のまま離脱しても向きを戻す）
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
     }
     _preloadCheckTimer?.cancel();
 

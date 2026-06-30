@@ -1101,7 +1101,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
       },
       child: Scaffold(
         appBar: _buildNormalAppBar(isDataTab, items),
-        body: Stack(
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: Stack(
           children: [
             GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
@@ -1231,6 +1234,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               ),
           ],
         ),
+        ),
         floatingActionButton: _isSelecting
             ? null
             : _tabController.index == 0
@@ -1252,10 +1256,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   PreferredSizeWidget _buildNormalAppBar(bool isDataTab, List<LoopItem> items) {
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     return AppBar(
+      toolbarHeight: landscape ? 44 : null,
       title: Image.asset(
         'assets/images/logo.png',
-        height: 30,
+        height: landscape ? 22 : 30,
         fit: BoxFit.contain,
       ),
       centerTitle: false,
@@ -1577,27 +1584,31 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget _buildItemsView(List<LoopItem> items, List<Tag> tags) {
     return switch (_viewMode) {
       _ViewMode.list => _buildListView(items, tags),
-      _ViewMode.grid2 => _buildGridView(items, tags, 2, 16 / 12),
-      _ViewMode.grid4 => _buildGridView(items, tags, 4, 16 / 11),
+      _ViewMode.grid2 => _buildGridView(items, tags,
+          maxExtent: 220, ratio: 16 / 12, compact: false),
+      _ViewMode.grid4 => _buildGridView(items, tags,
+          maxExtent: 120, ratio: 16 / 11, compact: true),
     };
   }
 
   // === Grid view ===
 
   Widget _buildGridView(
-      List<LoopItem> items, List<Tag> tags, int cols, double ratio) {
+      List<LoopItem> items, List<Tag> tags,
+      {required double maxExtent, required double ratio, required bool compact}) {
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+    // 幅に応じて列数を自動算出（横画面・タブレットで列が増える）
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(AppSpacing.sm, AppSpacing.sm, AppSpacing.sm, 80 + bottomPad),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: cols,
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: maxExtent,
         childAspectRatio: ratio,
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
       ),
       itemCount: items.length,
       itemBuilder: (context, i) =>
-          _buildCard(items[i], tags, compact: cols >= 4),
+          _buildCard(items[i], tags, compact: compact),
     );
   }
 

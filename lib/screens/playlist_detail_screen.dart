@@ -474,7 +474,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Column(
         children: [
           // ヘッダー
           Padding(
@@ -754,6 +757,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             ),
           ),
         ],
+      ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddSheet(pl),
@@ -1176,7 +1180,10 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
           const SizedBox(width: AppSpacing.md),
         ],
       ),
-      body: Column(
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
@@ -1257,6 +1264,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

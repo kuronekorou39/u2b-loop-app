@@ -610,11 +610,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               _buildSaveButton(),
           ],
         ),
-        body: _loading
-            ? _buildLoadingView()
-            : _loadError != null
-                ? _buildErrorView()
-                : _buildEditorView(bottomInset),
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: _loading
+              ? _buildLoadingView()
+              : _loadError != null
+                  ? _buildErrorView()
+                  : _buildEditorView(bottomInset),
+        ),
       ),
     );
   }

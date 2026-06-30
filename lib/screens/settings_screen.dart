@@ -475,7 +475,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: Stack(
         children: [
           ListView(
-            padding: EdgeInsets.fromLTRB(16, 8, 16,
+            padding: EdgeInsets.fromLTRB(
+                16 + MediaQuery.of(context).viewPadding.left,
+                8,
+                16 + MediaQuery.of(context).viewPadding.right,
                 8 + MediaQuery.of(context).viewPadding.bottom),
             children: [
               // ── 外観 ──

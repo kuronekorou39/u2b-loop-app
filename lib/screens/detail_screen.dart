@@ -489,7 +489,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           ],
         ),
         body: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: EdgeInsets.fromLTRB(
+              16 + MediaQuery.viewPaddingOf(context).left,
+              8,
+              16 + MediaQuery.viewPaddingOf(context).right,
+              8),
           children: [
             // サムネイル
             _buildThumbnail(item),
