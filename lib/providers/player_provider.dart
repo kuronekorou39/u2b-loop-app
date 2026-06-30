@@ -17,14 +17,29 @@ enum ActiveSlot { a, b }
 
 final activeSlotProvider = StateProvider<ActiveSlot>((ref) => ActiveSlot.a);
 
+/// mpv(media_kit)が動画ファイルの隣にある同名字幕(.srt)を自動読み込みして
+/// ネイティブ字幕として表示してしまうのを無効化する。
+/// 字幕はアプリ独自のオーバーレイ(KaraokeSubtitle/LyricsOverlay)で描画するため、
+/// mpv側の字幕は常に不要。これを切らないとオフライン再生で二重字幕になる。
+void _disableNativeSubtitles(Player player) {
+  final platform = player.platform;
+  if (platform is NativePlayer) {
+    // 生成直後でもsetPropertyは初期化完了まで待ってから適用される
+    platform.setProperty('sub-auto', 'no');
+    platform.setProperty('sub-visibility', 'no');
+  }
+}
+
 final playerAProvider = Provider<Player>((ref) {
   final player = Player();
+  _disableNativeSubtitles(player);
   ref.onDispose(player.dispose);
   return player;
 });
 
 final playerBProvider = Provider<Player>((ref) {
   final player = Player();
+  _disableNativeSubtitles(player);
   ref.onDispose(player.dispose);
   return player;
 });
