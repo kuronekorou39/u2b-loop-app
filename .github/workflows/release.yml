@@ -36,6 +36,9 @@ jobs:
 
       - run: flutter analyze
 
+      # 端末不要のユニットテスト（integration_test は実機が要るのでCIでは走らせない）
+      - run: flutter test
+
   build-android:
     needs: check
     runs-on: ubuntu-latest

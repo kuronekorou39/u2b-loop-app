@@ -8,11 +8,15 @@ class IdGenerator {
 
   static int _counter = 0;
 
-  /// 衝突しないID。マイクロ秒＋プロセス内カウンタ。
-  static String next() =>
+  /// マイクロ秒＋プロセス内カウンタ。
+  /// カウンタが無いと、一括追加のように同一マイクロ秒で複数生成する場面で衝突する。
+  static String _stamp() =>
       '${DateTime.now().microsecondsSinceEpoch}_${_counter++}';
+
+  /// 衝突しないID
+  static String next() => _stamp();
 
   /// 親IDに紐づく子ID（区間など）。親ごとに一意になる。
   static String child(String parentId, String kind) =>
-      '${parentId}_$kind${DateTime.now().microsecondsSinceEpoch}';
+      '${parentId}_$kind${_stamp()}';
 }
