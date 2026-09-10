@@ -55,6 +55,20 @@ import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
+/// ミニプレイヤー中に通知・PiPから届くメディア操作の受け口。
+/// PlayerScreen の dispose 後に呼ばれるため、ref や mounted に依存しないこと。
+class _MiniMediaCommands {
+  _MiniMediaCommands({
+    required this.playPause,
+    required this.next,
+    required this.prev,
+  });
+
+  final Future<void> Function() playPause;
+  final void Function() next;
+  final Future<void> Function() prev;
+}
+
 class PlayerScreen extends ConsumerStatefulWidget {
   final LoopItem item;
   final List<LoopItem>? playlistItems;
@@ -90,7 +104,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String? _cachedAudioPath;
 
   int _activeRegionIdx = -1;
-  bool _isInPiP = false;
   bool _compactSeekbar = false;
   bool _showPlaylistPanel = false;
 
@@ -153,6 +166,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _wasPlayingBeforePause = false;
 
+  /// ミニプレイヤー中に通知・PiPのボタンから呼ばれる操作。
+  /// PlayerScreen の dispose 後も動く必要があるので ref/mounted に依存しない。
+  _MiniMediaCommands? _miniCommands;
+
   @override
   void initState() {
     super.initState();
@@ -162,7 +179,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     NativeChannels.pip.setMethodCallHandler((call) async {
       if (call.method == 'onPiPChanged') {
-        if (mounted) setState(() => _isInPiP = call.arguments as bool);
+        ref.read(pipModeProvider.notifier).state = call.arguments as bool;
       } else if (call.method == 'onPiPAction') {
         switch (call.arguments) {
           case 'playPause':
@@ -336,51 +353,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } catch (_) {}
     }
 
-    // PiPハンドラ: ミニプレイヤー中にPiP突入→PlayerScreenに自動遷移
+    // dispose後もプロバイダーコンテナは生きているので、コントローラを先に捕まえておく
+    final pipMode = ref.read(pipModeProvider.notifier);
+
     if (miniActive) {
+      // ミニプレイヤー中のハンドラ。
+      // PiP表示はアプリのルートが pipModeProvider を見て切り替えるので、
+      // ここでは状態を伝えるだけでよい（以前はPiP突入後にPlayerScreenを
+      // pushして映像に差し替えようとしていたが、PiPに入った後では手遅れで、
+      // 一覧画面がそのままPiPに映っていた）。
+      // 単体再生（プレイリストでない）では _miniCommands が無いので、
+      // 再生/一時停止だけは直接プレイヤーを叩く
+      final commands = _miniCommands;
+      final engine = ref.read(playlistEngineProvider);
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
+      final audioDevice = ref.read(audioDeviceProvider.notifier);
       NativeChannels.pip.setMethodCallHandler((call) async {
-        if (call.method == 'onPiPChanged' && call.arguments == true) {
-          // dispose時点の状態を握ると、ミニプレイヤーで曲が進んだ後に
-          // 古い曲へ巻き戻ってしまうため、突入時の最新状態を読み直す
-          final miniState = miniNotifier.currentState;
-          if (miniState.item == null) return;
-          // PiP突入検知 → PlayerScreenに遷移（PiP内表示が動画に切り替わる）
-          miniNotifier.deactivateUI();
-          var playlistItems = miniState.playlistItems;
-          var regionSelections = miniState.regionSelections;
-          var disabledItemIds = miniState.disabledItemIds;
-          var playlistName = miniState.playlistName;
-          if (miniState.playlistId != null) {
-            try {
-              final plBox = AppBoxes.playlists;
-              final itemBox = AppBoxes.loopItems;
-              final pl = plBox.get(miniState.playlistId);
-              if (pl != null) {
-                playlistItems = pl.itemIds
-                    .map((id) => itemBox.get(id))
-                    .whereType<LoopItem>()
-                    .toList();
-                regionSelections = pl.regionSelections;
-                disabledItemIds = pl.disabledItemIds;
-                playlistName = pl.name;
-              }
-            } catch (_) {}
-          }
-          appNavigatorKey.currentState?.push(MaterialPageRoute(
-            builder: (_) => PlayerScreen(
-              item: miniState.item!,
-              playlistItems: playlistItems,
-              initialIndex: miniState.initialIndex,
-              regionSelections: regionSelections,
-              disabledItemIds: disabledItemIds,
-              playlistName: playlistName,
-              playlistId: miniState.playlistId,
-            ),
-          ));
+        switch (call.method) {
+          case 'onPiPChanged':
+            pipMode.state = call.arguments as bool;
+          case 'onPiPAction':
+            switch (call.arguments) {
+              case 'playPause':
+                if (commands != null) {
+                  await commands.playPause();
+                } else {
+                  await engine.activePlayer.playOrPause();
+                  _notifyPlayState(engine, miniNotifier);
+                }
+              case 'next':
+                commands?.next();
+              case 'prev':
+                await commands?.prev();
+            }
+          case 'onAudioDeviceChanged':
+            audioDevice.state = call.arguments as String? ?? 'speaker';
+          case 'onAudioNoisy':
+            // ヘッドホン抜き/Bluetooth切断 → 一時停止
+            final player = engine.activePlayer;
+            if (player.state.playing) await player.pause();
+            _notifyPlayState(engine, miniNotifier);
+          case 'getPlayState':
+            return engine.activePlayer.state.playing;
         }
+        return null;
       });
     } else {
+      pipMode.state = false;
       NativeChannels.pip.setMethodCallHandler(null);
     }
     if (_cachedAudioPath != null) {
@@ -2188,12 +2207,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }).catchError((_) {});
     });
 
-    // PiP判定: コールバック到着前でもウィンドウサイズで検知
-    final windowSize = MediaQuery.sizeOf(context);
-    if (_isInPiP || (windowSize.shortestSide < 250)) {
-      if (!_isInPiP) _isInPiP = true;
-      return PiPVideoView(hideVideo: _hideVideo, loading: _trackLoading);
-    }
+    // PiP中は映像をアプリのルートが描くので、ここでは何も描かない。
+    // Videoウィジェットを2つ積むと media_kit のコントローラを取り合うため。
+    // （この画面自体は Offstage で生かされたままなので状態は失われない）
+    if (ref.watch(pipModeProvider)) return const SizedBox.shrink();
+
     final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
 
@@ -2416,8 +2434,75 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     };
 
+    /// 同一アイテムでない前トラックをアクティブプレイヤーに直接読み込む
+    Future<void> loadPrev() async {
+      final ps = plNotifier.currentState;
+      final prevIdx = ps.peekPrevTrackIndex();
+      if (prevIdx == null) return;
+      final prevTrack = ps.tracks[prevIdx];
+      final current = ps.currentTrack;
+      if (current != null && prevTrack.isSameItem(current)) {
+        if (!plNotifier.prev()) return;
+        final track = plNotifier.currentState.currentTrack;
+        if (track != null) seekToTrack(track);
+        return;
+      }
+      try {
+        await engine.prepare(engine.activePlayer, prevTrack);
+        plNotifier.jumpTo(prevIdx);
+        final track = plNotifier.currentState.currentTrack;
+        if (track == null) return;
+        engine.activePlayer.play();
+        engine.applyRegion(track);
+        loopNotifier.setCurrentItem(track.item.id);
+        miniNotifier.updateCurrentItem(track.item,
+            trackIndex: plNotifier.currentState.currentTrackIndex);
+        preloadedIdx = null;
+        preloadNext();
+      } catch (e) {
+        debugPrint('[MiniPlayer] 前トラックの読み込みに失敗: $e');
+      }
+    }
+
+    // 通知・PiPのボタンから使う操作（PlayerScreen dispose後も動く）
+    _miniCommands = _MiniMediaCommands(
+      playPause: () async {
+        await engine.activePlayer.playOrPause();
+        _notifyPlayState(engine, miniNotifier);
+      },
+      next: () {
+        final readiness = engine.readiness(preloadedIndex: preloadedIdx);
+        if (readiness == AdvanceReadiness.none) return;
+        if (readiness == AdvanceReadiness.notReady) {
+          if (!isPreloading) preloadNext();
+          return;
+        }
+        advance(readiness);
+      },
+      prev: loadPrev,
+    );
+
     // 初回プリロード開始
     preloadNext();
+  }
+
+  /// 再生状態をPiPと通知に伝える。
+  ///
+  /// ミニプレイヤー中は ref が使えないので engine と notifier を受け取る。
+  /// ネイティブ側の updatePlaybackService はタイトル未指定だと「再生中」に
+  /// 上書きしてしまうため、曲名は毎回渡すこと。
+  static void _notifyPlayState(
+      PlaylistEngine engine, MiniPlayerNotifier miniNotifier) {
+    final playing = engine.activePlayer.state.playing;
+    final item = miniNotifier.currentState.item;
+    NativeChannels.pip
+        .invokeMethod('updatePiPPlayState', {'playing': playing})
+        .catchError((_) {});
+    NativeChannels.pip.invokeMethod('updatePlaybackService', {
+      'title': item?.title ?? '再生中',
+      'playing': playing,
+      'thumbnailPath': item?.thumbnailPath,
+    }).catchError((_) {});
   }
 
   // （旧 _smoothNext / _smoothPrev は _manualNext / _manualPrev に統合済み）

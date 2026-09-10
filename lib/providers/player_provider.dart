@@ -79,6 +79,14 @@ final preloadPlayerProvider = Provider<Player>((ref) {
 
 final videoSourceProvider = StateProvider<VideoSource?>((ref) => null);
 
+/// ピクチャーインピクチャー表示中かどうか。
+///
+/// PiPウィンドウにはActivityの内容がそのまま縮小されて映るため、
+/// 「今どの画面にいるか」に関係なく**アプリのルートで**映像だけを描く必要がある。
+/// 画面ごとに持つと、一覧画面などからPiPに入ったときに
+/// その画面がそのままPiPに映ってしまう。
+final pipModeProvider = StateProvider<bool>((ref) => false);
+
 final playingProvider = StreamProvider<bool>((ref) {
   return ref.watch(playerProvider).stream.playing;
 });

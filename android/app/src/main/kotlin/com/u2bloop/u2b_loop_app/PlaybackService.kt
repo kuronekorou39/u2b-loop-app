@@ -34,27 +34,35 @@ class PlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        // intent が null で来るのはシステムによる再起動時だけ。
+        // 再生状態は Flutter プロセス側にあり、そのプロセスは既に死んでいるので、
+        // ここで startForeground すると「再生中」通知だけが復活してしまう。
+        if (intent == null) {
+            stopPlaybackAndSelf()
+            return START_NOT_STICKY
+        }
+
+        when (intent.action) {
             ACTION_PLAY_PAUSE -> {
                 // Flutter側に通知
                 sendToFlutter("playPause")
-                return START_STICKY
+                return START_NOT_STICKY
             }
             ACTION_PREV -> {
                 sendToFlutter("prev")
-                return START_STICKY
+                return START_NOT_STICKY
             }
             ACTION_NEXT -> {
                 sendToFlutter("next")
-                return START_STICKY
+                return START_NOT_STICKY
             }
         }
 
         // 通常の開始コマンド
-        currentTitle = intent?.getStringExtra("title") ?: "再生中"
-        isPlaying = intent?.getBooleanExtra("playing", true) ?: true
-        isPlaylist = intent?.getBooleanExtra("isPlaylist", false) ?: false
-        intent?.getStringExtra("thumbnailPath")?.let { thumbnailPath = it }
+        currentTitle = intent.getStringExtra("title") ?: "再生中"
+        isPlaying = intent.getBooleanExtra("playing", true)
+        isPlaylist = intent.getBooleanExtra("isPlaylist", false)
+        intent.getStringExtra("thumbnailPath")?.let { thumbnailPath = it }
 
         updateNotification()
 
@@ -65,13 +73,42 @@ class PlaybackService : Service() {
             startForeground(NOTIFICATION_ID, buildNotification())
         }
 
-        return START_STICKY
+        // START_STICKY にするとプロセスが死んだ後にシステムが intent=null で
+        // 再起動し、再生していないのに通知だけが残る（アプリが生きて見える）。
+        return START_NOT_STICKY
+    }
+
+    /// タスク一覧からスワイプして閉じられたとき。
+    /// 再生の実体は Flutter プロセス側にあり一緒に落ちるため、
+    /// サービスだけ生かしても「再生中」通知が残るだけになる。
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stopPlaybackAndSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
+    /// 通知を消してサービスを終了する
+    private fun stopPlaybackAndSelf() {
+        try { mediaSession?.isActive = false } catch (_: Exception) {}
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (_: Exception) {}
+        try {
+            getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
+        } catch (_: Exception) {}
+        stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        try { mediaSession?.isActive = false } catch (_: Exception) {}
         mediaSession?.release()
+        mediaSession = null
         super.onDestroy()
     }
 

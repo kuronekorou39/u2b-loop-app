@@ -12,7 +12,9 @@ import 'screens/list_screen.dart';
 import 'services/share_service.dart';
 import 'services/update_service.dart';
 import 'widgets/mini_player.dart';
+import 'providers/player_provider.dart';
 import 'widgets/perf_overlay.dart';
+import 'widgets/player/player_status_views.dart';
 import 'widgets/share_import_dialog.dart';
 import 'core/native_channels.dart';
 
@@ -42,6 +44,26 @@ class App extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       builder: (context, child) {
+        // PiP中はActivityの内容がそのまま縮小されて映るので、
+        // どの画面にいてもルートで映像だけに差し替える。
+        // 画面側で切り替えると、一覧画面などからPiPに入ったときに
+        // その画面がそのままPiPに映ってしまう。
+        // onPiPChanged が届く前でもウィンドウサイズで検知する（端末により遅れる）。
+        final inPiP = ref.watch(pipModeProvider) ||
+            MediaQuery.sizeOf(context).shortestSide < 250;
+        if (inPiP) {
+          // Navigator は Offstage で生かしたまま隠す。
+          // ここで child を外すと全ルートが破棄され、PlayerScreen の dispose が
+          // 走ってプレイヤーごと止まってしまう。
+          // ミニプレイヤーバーは映像ウィジェットを持つので、この間は積まない
+          // （media_kit の Video を同時に2つ出すとコントローラを取り合う）。
+          return Stack(
+            children: [
+              Offstage(offstage: true, child: child!),
+              const PiPVideoView(hideVideo: false, loading: false),
+            ],
+          );
+        }
         return Column(
           children: [
             Expanded(

@@ -879,6 +879,12 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        // アプリを閉じた（Backで抜けた・タスクを消した）ときは、Flutter側の
+        // プレイヤーごと落ちるので前景サービスも一緒に止める。
+        // 残すと再生していないのに「再生中」通知だけが居座る。
+        if (isFinishing) {
+            try { stopService(Intent(this, PlaybackService::class.java)) } catch (_: Exception) {}
+        }
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(mediaActionReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(noisyReceiver) } catch (_: Exception) {}
