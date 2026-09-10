@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'youtube_client_info.dart';
 
 class SubtitleEntry {
   final String text;
@@ -42,19 +43,12 @@ class SubtitleService {
       String videoId) async {
     final client = HttpClient();
     try {
-      final request = await client.postUrl(Uri.parse(
-          'https://www.youtube.com/youtubei/v1/player?prettyPrint=false'));
+      final request =
+          await client.postUrl(Uri.parse(YouTubeClientInfo.playerEndpoint));
       request.headers.set('Content-Type', 'application/json');
-      request.headers.set('User-Agent',
-          'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip');
+      request.headers.set('User-Agent', YouTubeClientInfo.userAgent);
       request.write(jsonEncode({
-        'context': {
-          'client': {
-            'clientName': 'ANDROID',
-            'clientVersion': '20.10.38',
-            'hl': 'ja',
-          },
-        },
+        'context': {'client': YouTubeClientInfo.context(hl: 'ja')},
         'videoId': videoId,
       }));
       final response =

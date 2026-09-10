@@ -581,10 +581,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     ),
                     const Spacer(),
                     Text(
-                      regions[i].hasA
-                          ? TimeUtils.formatShort(Duration(
-                              milliseconds: regions[i].pointAMs!))
-                          : '--:--',
+                      TimeUtils.formatShortMs(regions[i].pointAMs),
                       style: textTheme.labelMedium!.copyWith(
                           color: AppTheme.pointAColor),
                     ),
@@ -592,10 +589,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         style: textTheme.labelMedium!.copyWith(
                             color: Colors.grey)),
                     Text(
-                      regions[i].hasB
-                          ? TimeUtils.formatShort(Duration(
-                              milliseconds: regions[i].pointBMs!))
-                          : '--:--',
+                      TimeUtils.formatShortMs(regions[i].pointBMs),
                       style: textTheme.labelMedium!.copyWith(
                           color: AppTheme.pointBColor),
                     ),

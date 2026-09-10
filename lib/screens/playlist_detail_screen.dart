@@ -872,9 +872,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       style: Theme.of(context).textTheme.bodyLarge),
                   subtitle: region.hasPoints
                       ? Text(
-                          '${region.pointAMs != null ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!)) : '--:--'}'
+                          '${TimeUtils.formatShortMs(region.pointAMs)}'
                           ' - '
-                          '${region.pointBMs != null ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!)) : '--:--'}',
+                          '${TimeUtils.formatShortMs(region.pointBMs)}',
                           style: Theme.of(context).textTheme.bodySmall)
                       : null,
                   dense: true,
@@ -1327,12 +1327,8 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
 
   String? _formatRegionTime(LoopRegion region) {
     if (!region.hasPoints) return null;
-    final a = region.pointAMs != null
-        ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!))
-        : '--:--';
-    final b = region.pointBMs != null
-        ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!))
-        : '--:--';
+    final a = TimeUtils.formatShortMs(region.pointAMs);
+    final b = TimeUtils.formatShortMs(region.pointBMs);
     return '$a - $b';
   }
 

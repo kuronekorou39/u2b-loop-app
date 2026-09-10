@@ -1,26 +1,14 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/video_source.dart';
+import 'youtube_client_info.dart';
 
 /// Androidクライアント + contentCheckOk/racyCheckOk
 /// TVクライアントはBot判定されやすいため、Androidベースで警告回避
-const _androidContentCheck = YoutubeApiClient({
-  'context': {
-    'client': {
-      'clientName': 'ANDROID',
-      'clientVersion': '20.10.38',
-      'androidSdkVersion': 30,
-      'userAgent':
-          'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
-      'hl': 'en',
-      'timeZone': 'UTC',
-      'utcOffsetMinutes': 0,
-      'osName': 'Android',
-      'osVersion': '11',
-    },
-  },
+final _androidContentCheck = YoutubeApiClient({
+  'context': {'client': YouTubeClientInfo.context()},
   'contentCheckOk': true,
   'racyCheckOk': true,
-}, 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
+}, YouTubeClientInfo.playerEndpoint);
 
 class YouTubeService {
   static const _networkTimeout = Duration(seconds: 30);

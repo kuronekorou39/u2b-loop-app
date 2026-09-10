@@ -1802,12 +1802,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
 
     // A-B times
-    final aStr = first.hasA
-        ? TimeUtils.formatShort(Duration(milliseconds: first.pointAMs!))
-        : '--:--';
-    final bStr = first.hasB
-        ? TimeUtils.formatShort(Duration(milliseconds: first.pointBMs!))
-        : '--:--';
+    final aStr = TimeUtils.formatShortMs(first.pointAMs);
+    final bStr = TimeUtils.formatShortMs(first.pointBMs);
     parts.add('A $aStr - B $bStr');
 
     // Additional regions count

@@ -24,6 +24,12 @@ class TimeUtils {
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
+  /// ミリ秒(null可)を M:SS で表示する。null は [nullTimeShort]。
+  /// `x != null ? formatShort(Duration(milliseconds: x!)) : '--:--'` が
+  /// 14箇所に散っていたのをこれ1つに寄せた。
+  static String formatShortMs(int? ms) =>
+      ms == null ? nullTimeShort : formatShort(Duration(milliseconds: ms));
+
   /// Parse M:SS.mmm or M:SS to Duration
   static Duration? parse(String s) {
     final match = RegExp(r'(\d+):(\d{1,2})(?:\.(\d{1,3}))?').firstMatch(s);

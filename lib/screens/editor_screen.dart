@@ -1275,12 +1275,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
     String timeText;
     if (region.hasA || region.hasB) {
-      final aStr = region.hasA
-          ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!))
-          : '--:--';
-      final bStr = region.hasB
-          ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!))
-          : '--:--';
+      final aStr = TimeUtils.formatShortMs(region.pointAMs);
+      final bStr = TimeUtils.formatShortMs(region.pointBMs);
       timeText = '$aStr - $bStr';
       if (region.hasA && region.hasB) {
         final durationSec =
