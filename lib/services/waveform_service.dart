@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -14,39 +13,6 @@ class WaveformService {
     try {
       await _channel.invokeMethod('cancelExtraction');
     } catch (_) {}
-  }
-
-  /// 音声ストリームを一時ファイルにダウンロードしてから波形抽出
-  /// （MediaExtractor の setDataSource(url) が player と CDN 接続を競合するため）
-  Future<List<double>?> generateFromStream(
-      Stream<List<int>> audioStream, int targetSamples) async {
-    final tempDir = await getTemporaryDirectory();
-    final tempFile = File('${tempDir.path}/u2b_waveform_audio.tmp');
-    try {
-      debugPrint('[Waveform] ダウンロード開始...');
-      final sink = tempFile.openWrite();
-      var bytes = 0;
-      await for (final chunk in audioStream) {
-        sink.add(chunk);
-        bytes += chunk.length;
-      }
-      await sink.flush();
-      await sink.close();
-
-      debugPrint('[Waveform] ダウンロード完了: ${(bytes / 1024 / 1024).toStringAsFixed(1)}MB → ${tempFile.path}');
-
-      if (bytes == 0) {
-        debugPrint('[Waveform] エラー: ダウンロードファイルが空');
-        return null;
-      }
-
-      // ローカルファイルとして MediaExtractor に渡す
-      return await generateFromUrl(tempFile.path, targetSamples);
-    } finally {
-      try {
-        if (await tempFile.exists()) await tempFile.delete();
-      } catch (_) {}
-    }
   }
 
   /// Android MediaExtractorで音声サンプルサイズを取得 → 波形データ化

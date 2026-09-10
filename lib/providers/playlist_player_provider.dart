@@ -23,7 +23,6 @@ class PlaylistPlayerState {
 
   bool get isEmpty => tracks.isEmpty;
   int get trackCount => tracks.length;
-  int get enabledCount => tracks.where((t) => t.enabled).length;
 
   PlaylistTrack? get currentTrack {
     if (tracks.isEmpty || playOrder.isEmpty) return null;
@@ -42,12 +41,6 @@ class PlaylistPlayerState {
       return null;
     }
     return playOrder[currentOrderIndex];
-  }
-
-  /// 次のトラックを覗き見（プリロード用）
-  PlaylistTrack? peekNext() {
-    final idx = peekNextTrackIndex();
-    return idx != null ? tracks[idx] : null;
   }
 
   /// 次のトラックのインデックスを返す（プリロード判定用）

@@ -652,10 +652,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               padding: EdgeInsets.only(
                   bottom: 80 + MediaQuery.of(context).viewPadding.bottom),
               itemCount: items.length,
-              onReorder: (oldIdx, newIdx) {
-                if (newIdx > oldIdx) newIdx--;
-                final id = pl.itemIds.removeAt(oldIdx);
-                pl.itemIds.insert(newIdx, id);
+              // items は実体のないID（孤児）を除いた表示用リストなので、
+              // itemIds の生インデックスではなくID経由で並べ替える
+              onReorderItem: (oldIdx, newIdx) {
+                final ids = items.map((e) => e.id).toList();
+                ids.insert(newIdx, ids.removeAt(oldIdx));
+                final orphans =
+                    pl.itemIds.where((id) => !ids.contains(id)).toList();
+                pl.itemIds = [...ids, ...orphans];
                 ref.read(playlistsProvider.notifier).update(pl);
               },
               itemBuilder: (context, i) {

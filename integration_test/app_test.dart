@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,7 +23,6 @@ import 'package:u2b_loop_app/providers/loading_animation_provider.dart';
 import 'package:u2b_loop_app/providers/mini_player_provider.dart';
 import 'package:u2b_loop_app/widgets/loading_animations/loading_animation.dart';
 import 'package:u2b_loop_app/providers/loop_provider.dart';
-import 'package:u2b_loop_app/providers/player_provider.dart';
 import 'package:u2b_loop_app/providers/playlist_player_provider.dart';
 import 'package:u2b_loop_app/services/share_service.dart';
 import 'package:u2b_loop_app/services/thumbnail_service.dart';
@@ -1943,28 +1941,33 @@ void main() {
   group('AA. MiniPlayer', () {
     testWidgets('AA1. 初期状態', (tester) async {
       await tester.pumpWidget(const ProviderScope(child: App()));
-      final notifier = MiniPlayerNotifier();
-      expect(notifier.debugState.active, false);
-      expect(notifier.debugState.item, isNull);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(container.read(miniPlayerProvider).active, false);
+      expect(container.read(miniPlayerProvider).item, isNull);
     });
 
     testWidgets('AA2. activate / deactivate', (tester) async {
       await tester.pumpWidget(const ProviderScope(child: App()));
-      final notifier = MiniPlayerNotifier();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(miniPlayerProvider.notifier);
       final item = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
 
       notifier.activate(item: item);
-      expect(notifier.debugState.active, true);
-      expect(notifier.debugState.item!.id, item.id);
+      expect(container.read(miniPlayerProvider).active, true);
+      expect(container.read(miniPlayerProvider).item!.id, item.id);
 
       notifier.deactivate();
-      expect(notifier.debugState.active, false);
-      expect(notifier.debugState.item, isNull);
+      expect(container.read(miniPlayerProvider).active, false);
+      expect(container.read(miniPlayerProvider).item, isNull);
     });
 
     testWidgets('AA3. activate with playlist', (tester) async {
       await tester.pumpWidget(const ProviderScope(child: App()));
-      final notifier = MiniPlayerNotifier();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(miniPlayerProvider.notifier);
       final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
       final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
 
@@ -1975,52 +1978,60 @@ void main() {
         playlistName: 'テストPL',
         playlistId: 'pl1',
       );
-      expect(notifier.debugState.active, true);
-      expect(notifier.debugState.playlistItems!.length, 2);
-      expect(notifier.debugState.playlistName, 'テストPL');
+      expect(container.read(miniPlayerProvider).active, true);
+      expect(container.read(miniPlayerProvider).playlistItems!.length, 2);
+      expect(container.read(miniPlayerProvider).playlistName, 'テストPL');
     });
 
     testWidgets('AA4. deactivateUI（再生情報保持）', (tester) async {
       await tester.pumpWidget(const ProviderScope(child: App()));
-      final notifier = MiniPlayerNotifier();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(miniPlayerProvider.notifier);
       final item = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
 
       notifier.activate(item: item, playlistName: 'PL');
       notifier.deactivateUI();
-      expect(notifier.debugState.active, false);
-      expect(notifier.debugState.item, isNotNull); // 情報は保持
-      expect(notifier.debugState.playlistName, 'PL');
+      expect(container.read(miniPlayerProvider).active, false);
+      expect(container.read(miniPlayerProvider).item, isNotNull); // 情報は保持
+      expect(container.read(miniPlayerProvider).playlistName, 'PL');
     });
 
     testWidgets('AA5. updateCurrentItem', (tester) async {
       await tester.pumpWidget(const ProviderScope(child: App()));
-      final notifier = MiniPlayerNotifier();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(miniPlayerProvider.notifier);
       final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
       final s2 = itemBox.values.firstWhere((i) => i.videoId == '1tk1pqwrOys');
 
       notifier.activate(item: s1);
       notifier.updateCurrentItem(s2);
-      expect(notifier.debugState.item!.id, s2.id);
+      expect(container.read(miniPlayerProvider).item!.id, s2.id);
     });
 
     testWidgets('AA6. updateCurrentItem（非アクティブ時は無視）', (tester) async {
       await tester.pumpWidget(const ProviderScope(child: App()));
-      final notifier = MiniPlayerNotifier();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(miniPlayerProvider.notifier);
       final s1 = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
 
       notifier.updateCurrentItem(s1); // 非アクティブ
-      expect(notifier.debugState.item, isNull);
+      expect(container.read(miniPlayerProvider).item, isNull);
     });
 
     testWidgets('AA7. clearRestoreInfo', (tester) async {
       await tester.pumpWidget(const ProviderScope(child: App()));
-      final notifier = MiniPlayerNotifier();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(miniPlayerProvider.notifier);
       final item = itemBox.values.firstWhere((i) => i.videoId == 'h7ha6JMgQwk');
 
       notifier.activate(item: item);
       notifier.clearRestoreInfo();
-      expect(notifier.debugState.active, false);
-      expect(notifier.debugState.item, isNull);
+      expect(container.read(miniPlayerProvider).active, false);
+      expect(container.read(miniPlayerProvider).item, isNull);
     });
   });
 

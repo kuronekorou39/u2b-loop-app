@@ -9,7 +9,35 @@ permissions:
   contents: write
 
 jobs:
+  # ビルド前に落とすべきものを落とす（高コストなビルドを走らせる前に fail-fast）
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: バージョン一致ガード（pubspec.yaml とタグ）
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          EXPECTED="${TAG#v}"
+          ACTUAL="$(sed -n 's/^version: *//p' pubspec.yaml | tr -d '\r')"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::タグ $TAG に対し pubspec.yaml の version が '$ACTUAL' です（期待値: '$EXPECTED'）。ズレるとアプリ内アップデートチェックが誤判定します。"
+            exit 1
+          fi
+          echo "バージョン一致OK: $ACTUAL"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.x'
+          channel: 'stable'
+          cache: true
+
+      - run: flutter pub get
+
+      - run: flutter analyze
+
   build-android:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +51,7 @@ jobs:
         with:
           flutter-version: '3.41.x'
           channel: 'stable'
+          cache: true
 
       - name: Decode keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
@@ -51,14 +80,18 @@ jobs:
           name: android-apk
           path: build/app/outputs/flutter-apk/u2b-loop-${{ steps.version.outputs.tag }}.apk
 
+  # 署名なしIPA（実機配布不可）。失敗しても Android のリリースは止めない
   build-ios:
+    needs: check
     runs-on: macos-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.x'
           channel: 'stable'
+          cache: true
       - run: flutter pub get
       - name: Generate iOS icons
         run: dart run flutter_launcher_icons
@@ -91,7 +124,9 @@ jobs:
         with:
           name: android-apk
 
+      # iOSビルドが落ちた場合はIPAが無いのでスキップする
       - name: Download IPA
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ios-ipa
@@ -102,6 +137,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
+          fail_on_unmatched_files: false
           files: |
             u2b-loop-${{ steps.version.outputs.tag }}.apk
             u2b-loop-ios-${{ steps.version.outputs.tag }}.ipa

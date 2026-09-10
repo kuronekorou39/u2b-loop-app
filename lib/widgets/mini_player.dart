@@ -84,10 +84,11 @@ class MiniPlayerBar extends ConsumerWidget {
                         player.stop();
                         ref.read(miniPlayerProvider.notifier).deactivate();
                         // 自動PiP無効化 + バックグラウンド再生停止
-                        try {
-                          _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
-                          _pipChannel.invokeMethod('stopPlaybackService');
-                        } catch (_) {}
+                        _pipChannel.invokeMethod(
+                            'setAutoPiP', {'enabled': false}).catchError((_) {});
+                        _pipChannel
+                            .invokeMethod('stopPlaybackService')
+                            .catchError((_) {});
                         WakelockPlus.disable();
                       },
                     ),

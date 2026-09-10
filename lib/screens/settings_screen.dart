@@ -116,6 +116,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'createdAt': pl.createdAt.toIso8601String(),
         'regionSelections': pl.regionSelections,
         'disabledItemIds': pl.disabledItemIds.toList(),
+        'thumbnailItemId': pl.thumbnailItemId,
         'defaultShuffle': pl.defaultShuffle,
       };
 
@@ -213,6 +214,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       regionSelections: regionSel,
       disabledItemIds:
           (j['disabledItemIds'] as List?)?.cast<String>().toSet(),
+      thumbnailItemId: j['thumbnailItemId'] as String?,
       defaultShuffle: j['defaultShuffle'] as bool? ?? false,
     );
   }
@@ -944,7 +946,7 @@ class _AnimPickerSheetState extends State<_AnimPickerSheet> {
               color: const Color(0xFF1A1A2E),
               borderRadius: AppRadius.borderMd,
             ),
-            child: _selected == LoadingAnimationType.off || _selected == null && false
+            child: _selected == LoadingAnimationType.off
                 ? Center(
                     child: Text('プレビューなし',
                         style: textTheme.bodySmall!

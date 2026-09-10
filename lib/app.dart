@@ -80,9 +80,8 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 起動時にautoPiPを無効化（安全策）
-      try {
-        _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
-      } catch (_) {}
+      _pipChannel
+          .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
       UpdateService.checkForUpdate(context);
       _initDeepLinks();
     });
@@ -114,9 +113,8 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
       if (playerScreenActive) return; // PlayerScreen表示中は触らない
       final miniState = ref.read(miniPlayerProvider);
       if (!miniState.active || miniState.item == null) {
-        try {
-          _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
-        } catch (_) {}
+        _pipChannel
+            .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
       }
     }
   }

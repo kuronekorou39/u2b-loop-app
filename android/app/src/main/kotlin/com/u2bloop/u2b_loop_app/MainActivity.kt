@@ -28,6 +28,7 @@ class MainActivity : FlutterActivity() {
     private val EXPORT_CHANNEL = "com.u2bloop/export"
     private val TAG = "WaveformExtractor"
     private val ACTION_PLAY_PAUSE = "com.u2bloop.PIP_PLAY_PAUSE"
+    private val REQ_POST_NOTIFICATIONS = 4801
     private val ACTION_PREV = "com.u2bloop.PIP_PREV"
     private val ACTION_NEXT = "com.u2bloop.PIP_NEXT"
     private var isPlaylist = false
@@ -43,7 +44,29 @@ class MainActivity : FlutterActivity() {
     private var autoPipEnabled = false
     private var isPlaying = false
     private var pipReceiver: BroadcastReceiver? = null
+    private var mediaActionReceiver: BroadcastReceiver? = null
+    private var noisyReceiver: BroadcastReceiver? = null
+    private var audioDeviceCallback: android.media.AudioDeviceCallback? = null
     private var pipEnteredByHint = false
+    private var notificationPermissionAsked = false
+
+    /// Android 13以降は POST_NOTIFICATIONS が未許可だと前景サービスの通知が
+    /// 通知ドロワーに出ない（＝再生コントロールが使えない）ため、
+    /// バックグラウンド再生を開始するタイミングで一度だけ許可を求める。
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (notificationPermissionAsked) return
+        val granted = checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        notificationPermissionAsked = true
+        try {
+            requestPermissions(
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                REQ_POST_NOTIFICATIONS
+            )
+        } catch (_: Exception) {}
+    }
 
     private fun buildPipParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
@@ -136,7 +159,7 @@ class MainActivity : FlutterActivity() {
         }
 
         // --- Media action from PlaybackService notification ---
-        val mediaActionReceiver = object : BroadcastReceiver() {
+        mediaActionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "com.u2bloop.MEDIA_ACTION") {
                     val action = intent.getStringExtra("action") ?: return
@@ -152,7 +175,7 @@ class MainActivity : FlutterActivity() {
         }
 
         // --- Audio becoming noisy (headphones unplugged / BT disconnected) ---
-        val noisyReceiver = object : BroadcastReceiver() {
+        noisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
                     pipChannel?.invokeMethod("onAudioNoisy", null)
@@ -169,14 +192,16 @@ class MainActivity : FlutterActivity() {
         // --- Audio device change detection ---
         val audioManager = getSystemService(android.media.AudioManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            audioManager.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+            val deviceCallback = object : android.media.AudioDeviceCallback() {
                 override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
                     sendCurrentAudioDevice(audioManager)
                 }
                 override fun onAudioDevicesRemoved(removedDevices: Array<out android.media.AudioDeviceInfo>?) {
                     sendCurrentAudioDevice(audioManager)
                 }
-            }, null)
+            }
+            audioDeviceCallback = deviceCallback
+            audioManager.registerAudioDeviceCallback(deviceCallback, null)
             sendCurrentAudioDevice(audioManager)
         }
 
@@ -246,6 +271,7 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "startPlaybackService" -> {
+                    ensureNotificationPermission()
                     val title = call.argument<String>("title") ?: "再生中"
                     val playing = call.argument<Boolean>("playing") ?: true
                     val thumbPath = call.argument<String>("thumbnailPath")
@@ -546,6 +572,7 @@ class MainActivity : FlutterActivity() {
         val outputFile = java.io.File(exportDir, "$safeTitle.$ext")
 
         val extractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
         try {
             // setDataSource: content URI / ファイルパス / URL
             if (inputUri.startsWith("content://")) {
@@ -596,8 +623,9 @@ class MainActivity : FlutterActivity() {
                 Log.d("Export", "Track $i: ${format.getString(MediaFormat.KEY_MIME)}")
             }
 
-            val muxer = MediaMuxer(outputFile.absolutePath,
+            val mx = MediaMuxer(outputFile.absolutePath,
                 MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = mx
 
             val trackMap = mutableMapOf<Int, Int>()
             val startUs = startMs * 1000L
@@ -609,7 +637,7 @@ class MainActivity : FlutterActivity() {
                 val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
                 if (audioOnly && !mime.startsWith("audio/")) continue
                 try {
-                    val muxTrack = muxer.addTrack(format)
+                    val muxTrack = mx.addTrack(format)
                     trackMap[i] = muxTrack
                 } catch (e: Exception) {
                     Log.w("Export", "Skipping track $i ($mime): ${e.message}")
@@ -618,7 +646,6 @@ class MainActivity : FlutterActivity() {
             }
 
             if (trackMap.isEmpty()) {
-                muxer.release()
                 val allMimes = (0 until extractor.trackCount).map {
                     extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) ?: "?"
                 }
@@ -629,7 +656,7 @@ class MainActivity : FlutterActivity() {
                 )
             }
 
-            muxer.start()
+            mx.start()
 
             // バッファサイズはトラックの KEY_MAX_INPUT_SIZE を基準に決定する。
             // 固定1MBだとHD動画のキーフレーム(1MB超)で readSampleData が失敗し
@@ -672,16 +699,16 @@ class MainActivity : FlutterActivity() {
                         bufferInfo.size = sampleSize
                         bufferInfo.presentationTimeUs = sampleTime - startUs
                         bufferInfo.flags = extractor.sampleFlags
-                        muxer.writeSampleData(dstTrack, buffer, bufferInfo)
+                        mx.writeSampleData(dstTrack, buffer, bufferInfo)
                     }
                     extractor.advance()
                 }
                 extractor.unselectTrack(srcTrack)
             }
 
-            muxer.stop()
-            muxer.release()
+            mx.stop()
         } finally {
+            try { muxer?.release() } catch (_: Exception) {}
             extractor.release()
         }
 
@@ -853,6 +880,19 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(mediaActionReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(noisyReceiver) } catch (_: Exception) {}
+        val deviceCallback = audioDeviceCallback
+        if (deviceCallback != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                getSystemService(android.media.AudioManager::class.java)
+                    .unregisterAudioDeviceCallback(deviceCallback)
+            } catch (_: Exception) {}
+        }
+        pipReceiver = null
+        mediaActionReceiver = null
+        noisyReceiver = null
+        audioDeviceCallback = null
         cancelCurrentExtraction()
         scope.cancel()
         super.onDestroy()

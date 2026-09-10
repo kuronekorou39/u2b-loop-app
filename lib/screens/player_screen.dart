@@ -196,7 +196,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           'enabled': true, 'isPlaylist': _isPlaylist,
           'thumbnailUrl': _currentItem.thumbnailUrl,
           'thumbnailPath': _currentItem.thumbnailPath,
-        });
+        }).catchError((_) {});
         _updatePiPPlayState();
         _startPreloadMonitor();
         // iOS: トランジション中にmpvが自動pauseするため、遷移前の状態に基づいて復元
@@ -250,7 +250,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         'enabled': true, 'isPlaylist': _isPlaylist,
         'thumbnailUrl': _currentItem.thumbnailUrl,
         'thumbnailPath': _currentItem.thumbnailPath,
-      });
+      }).catchError((_) {});
       _updatePiPPlayState();
     });
   }
@@ -308,9 +308,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // 自動PiP: ミニプレイヤー有効時は維持（PiP突入後にPlayerScreenに遷移する）
     if (!miniActive) {
-      try {
-        _pipChannel.invokeMethod('setAutoPiP', {'enabled': false});
-      } catch (_) {}
+      _pipChannel
+          .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
     }
     if (!miniActive) {
       try {
@@ -374,7 +373,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // ミニプレイヤー非アクティブならバックグラウンド再生停止
     if (!ref.read(miniPlayerProvider).active) {
       WakelockPlus.disable();
-      try { _pipChannel.invokeMethod('stopPlaybackService'); } catch (_) {}
+      _pipChannel.invokeMethod('stopPlaybackService').catchError((_) {});
     }
     super.dispose();
   }
@@ -1428,12 +1427,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Auto-play + バックグラウンド再生サービス開始
     player.play();
     WakelockPlus.enable();
-    try {
-      _pipChannel.invokeMethod('startPlaybackService', {
-        'title': item.title,
-        'thumbnailPath': item.thumbnailPath,
-      });
-    } catch (_) {}
+    _pipChannel.invokeMethod('startPlaybackService', {
+      'title': item.title,
+      'thumbnailPath': item.thumbnailPath,
+    }).catchError((_) {});
 
     // フルリロードパスでのフェードイン（_advanceToNextから来た場合）
     if (_pendingFadeIn) {
@@ -1842,19 +1839,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         'thumbnailPath': _currentItem.thumbnailPath,
       });
     } catch (e) {
+      debugPrint('enterPiP failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('PiP exception: $e'), duration: const Duration(seconds: 8)),
+          const SnackBar(
+              content: Text('PiPに入れませんでした'),
+              duration: Duration(seconds: 3)),
         );
       }
     }
   }
 
   void _updatePiPPlayState() {
-    try {
-      final playing = ref.read(playerProvider).state.playing;
-      _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
-    } catch (_) {}
+    final playing = ref.read(playerProvider).state.playing;
+    _pipChannel
+        .invokeMethod('updatePiPPlayState', {'playing': playing}).catchError((_) {});
   }
 
   // --- Export ---
@@ -2415,14 +2414,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 再生状態の同期: PiP + 通知コントローラー
     ref.listen(playingProvider, (_, next) {
       final playing = next.valueOrNull ?? false;
-      try {
-        _pipChannel.invokeMethod('updatePiPPlayState', {'playing': playing});
-        _pipChannel.invokeMethod('updatePlaybackService', {
-          'title': _currentItem.title,
-          'playing': playing,
-          'thumbnailPath': _currentItem.thumbnailPath,
-        });
-      } catch (_) {}
+      _pipChannel.invokeMethod(
+          'updatePiPPlayState', {'playing': playing}).catchError((_) {});
+      _pipChannel.invokeMethod('updatePlaybackService', {
+        'title': _currentItem.title,
+        'playing': playing,
+        'thumbnailPath': _currentItem.thumbnailPath,
+      }).catchError((_) {});
     });
 
     // PiP判定: コールバック到着前でもウィンドウサイズで検知

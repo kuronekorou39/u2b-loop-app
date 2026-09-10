@@ -17,11 +17,12 @@ import '../services/thumbnail_service.dart';
 
 final loopItemsProvider =
     StateNotifierProvider<LoopItemsNotifier, List<LoopItem>>((ref) {
-  return LoopItemsNotifier(Hive.box<LoopItem>('loop_items'));
+  return LoopItemsNotifier(Hive.box<LoopItem>('loop_items'), ref);
 });
 
 class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   final Box<LoopItem> _box;
+  final Ref _ref;
   int _idCounter = 0;
 
   // プログレッシブディレイ管理（時間経過でリセット）
@@ -44,7 +45,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   String _generateId() => '${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
-  LoopItemsNotifier(this._box)
+  LoopItemsNotifier(this._box, this._ref)
       : super(_box.values.toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)));
 
@@ -75,14 +76,18 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     }
     // プレイリストから孤立参照を除去
     final plBox = Hive.box<app.Playlist>('playlists');
+    var playlistsChanged = false;
     for (final pl in plBox.values) {
       if (pl.itemIds.remove(id)) {
         pl.regionSelections.remove(id);
         pl.disabledItemIds.remove(id);
         if (pl.thumbnailItemId == id) pl.thumbnailItemId = null;
         await plBox.put(pl.id, pl);
+        playlistsChanged = true;
       }
     }
+    // box直書きなので、開いているプレイリスト画面に再読込を通知する
+    if (playlistsChanged) _ref.read(playlistsProvider.notifier).reload();
     _refresh();
   }
 
@@ -274,20 +279,6 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     }
   }
 
-  Future<void> addLocalFile(String path, String fileName) async {
-    final id = _generateId();
-    final item = LoopItem(
-      id: id,
-      title: fileName,
-      uri: path,
-      sourceType: 'local',
-    );
-    await add(item);
-
-    // バックグラウンドでサムネイル生成
-    _generateLocalThumbnail(item);
-  }
-
   /// ローカルファイルを一括追加（即座にUI反映→サムネは順次バックグラウンド）
   int addLocalFilesSync(List<({String path, String name})> files) {
     final entries = <String, LoopItem>{};
@@ -320,17 +311,6 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       } catch (_) {}
     }
     if (items.isNotEmpty) _refresh();
-  }
-
-  Future<void> _generateLocalThumbnail(LoopItem item) async {
-    try {
-      final thumbPath =
-          await ThumbnailService().generateFromVideo(item.id, item.uri);
-      if (thumbPath != null) {
-        item.thumbnailPath = thumbPath;
-        await update(item);
-      }
-    } catch (_) {}
   }
 
   /// サムネイルが未取得のアイテムを一括で再取得
@@ -590,6 +570,9 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     state = _box.values.toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
+
+  /// box を直接書き換えた側から一覧の再読込を促すための入口
+  void reload() => _refresh();
 
   Future<void> add(app.Playlist playlist) async {
     await _box.put(playlist.id, playlist);
