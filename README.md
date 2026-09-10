@@ -45,6 +45,7 @@
 | YouTube解析 | youtube_explode_dart |
 | データ永続化 | Hive |
 | UI | Material Design 3 |
+| テスト | flutter_test（ユニット94件）／ integration_test（実機） |
 
 ## スクリーンショット
 

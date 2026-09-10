@@ -4,26 +4,45 @@
 - 対象: v1.60.7（commit cebd916）時点の全コード — lib/ 58ファイル（約19,000行）、android/ ネイティブKotlin、.github/workflows/、ドキュメント
 - 方法: `flutter analyze`（lib/はクリーン）＋ 領域別の全行精読 ＋ 横断grepスキャン。重要度「高」はコードで裏取り済み
 
-## その後の対応状況（2026-09-10 時点）
+## その後の対応状況（2026-09-11 時点）
 
-このレポートは2026-06-12時点のスナップショット。以下は解消済み。
+このレポートは2026-06-12時点のスナップショット。**§1〜§6 の指摘はすべて解消済み。**
 
-- §1 高優先バグ7件 — すべて修正済み（commit 93583f1）
-- §2 `MainActivity.kt` のreceiver/AudioDeviceCallback解除漏れ、`trimMedia` のmuxer解放漏れ、
-  `POST_NOTIFICATIONS` のランタイム要求欠落、バックアップの `thumbnailItemId` 欠落、
-  `delete()` のplaylistsProvider未通知、`invokeMethod` の非同期エラー未捕捉、
-  プレイリスト並べ替えの孤児IDバグ — 修正済み（v1.65.0）
-- §3-1 **プレイリスト遷移エンジンの2重実装** — `lib/providers/playlist_engine.dart` に統合（v1.66.0）
-- §3-3 `_executeExport` の2重実装 — `lib/services/export_runner.dart` に集約（v1.61.0）
-- §3-4 YouTubeストリームURL解決の重複 — `YouTubeService.pickStreamUrl` / `resolveStreamUrl` に集約（v1.66.0）
-- §5 デッドコード（`_TagManagerSheet` 168行、未使用API群、`&& false`、両分岐nullの `top:`、
-  英語デバッグSnackBar） — 削除済み（v1.65.0）
-- §6 CIのバージョン一致ガード・`flutter analyze` ステップ・iOS依存の分離 — 対応済み（v1.65.0）。
-  ISSUES.md も実態に合わせて更新済み。README も更新済み
+- **§1 高優先バグ7件** — 修正済み（commit 93583f1）
+- **§2 中程度のバグ** — 全件修正済み（v1.65.0 / v1.67.0）。
+  ネイティブのreceiver・muxer解放漏れ、POST_NOTIFICATIONSのランタイム要求欠落、
+  バックアップのthumbnailItemId欠落、delete()のprovider未通知、invokeMethodの非同期エラー、
+  ロード成功時のタイムアウトタイマー未キャンセル、音量正規化のRMS（平方根なし）、
+  フェードが正規化音量を上書き、_autoAdvanceの遅延リトライ多重予約、区間ID衝突、
+  PiP復帰時の古いminiState、effectiveRegionsの副作用、波形一時ファイル名の衝突、
+  プレイリストのスキップ設定が全区間選択に化ける、dispose済みcontroller参照、
+  保存ボタンが出ない（detail/editor）、Heroタグ重複、取り込み時の二重pop、
+  歌詞オーバーレイの追従停止、build中の副作用
+- **§3 重複コード** — 全項目解消。
+  遷移エンジン → `providers/playlist_engine.dart`、
+  読み込み/波形パイプライン → `WaveformService.generateForVideoSource` / `prefetchAudio`、
+  書き出し → `services/export_runner.dart`、
+  URL解決 → `YouTubeService.pickStreamUrl` / `resolveStreamUrl`、
+  名前入力・削除確認ダイアログ → `core/ui/app_dialogs.dart`、
+  サムネイル → `widgets/item_thumbnail.dart`、
+  AB編集UI → `widgets/loop/ab_edit_controls.dart`、
+  innertubeクライアント情報 → `services/youtube_client_info.dart`、
+  MethodChannel → `core/native_channels.dart`
+- **§4 記述の不統一** — 全項目解消。
+  テーマ色 → `AppTheme` 定数（B地点の色の規約違反も修正）、
+  SnackBar → `core/ui/app_snack_bar.dart`（用途別5種）、
+  ID生成 → `core/utils/id_generator.dart`、
+  Hive box名・設定キー → `core/storage/app_boxes.dart`、
+  sourceType → `LoopItem.isYouTube` / `isLocal`、
+  `'--:--'` → `TimeUtils.formatShortMs`、
+  書き込み経路 → 再生カウントもNotifier経由に統一
+- **§5 デッドコード** — 削除済み（v1.65.0）
+- **§6 CI・ドキュメント** — バージョン一致ガード・`flutter analyze`・`flutter test` を
+  check ジョブに追加、iOS依存を分離（署名なしIPAの失敗でAPKリリースが止まらない）。
+  ISSUES.md / README.md も実態に更新
 
-**残っている主なもの**: AB編集UIの縦横コピペ（§3-6）、テーマ色直書き・SnackBarヘルパー・
-Hive box名・ID生成方式の不統一（§4）、build中の副作用と `effectiveRegions` の副作用（§2/§5）、
-`detail_screen.dart` のdispose済みController参照（§2）、波形一時ファイル名の衝突（§2）。
+**その後に足したもの**: 端末不要のユニットテスト94件（`test/`）。
+以前は実機必須の integration_test が1本あるだけだった。
 
 ---
 

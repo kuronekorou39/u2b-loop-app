@@ -91,6 +91,29 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
+  /// 再生回数を1つ進める。
+  ///
+  /// 「再生しただけで一覧の並びが変わる」のを避けるため updatedAt は更新せず、
+  /// box直書き＋_refresh で表示だけ最新にする。
+  /// （直書きのまま通知しないと、一覧の再生回数が古いままになる）
+  Future<void> incrementPlayCount(String itemId, int accumulatedPlayMs) async {
+    final item = _box.get(itemId);
+    if (item == null) return;
+    item.playCount++;
+    item.accumulatedPlayMs = accumulatedPlayMs;
+    await _box.put(item.id, item);
+    _refresh();
+  }
+
+  /// 未カウント分の累積再生時間だけを保存する（アプリ終了対策の定期保存）。
+  /// 画面に出ない値なので通知はしない（5秒ごとに一覧を再構築しないため）。
+  Future<void> saveAccumulatedPlayMs(String itemId, int accumulatedPlayMs) async {
+    final item = _box.get(itemId);
+    if (item == null || item.accumulatedPlayMs == accumulatedPlayMs) return;
+    item.accumulatedPlayMs = accumulatedPlayMs;
+    await _box.put(item.id, item);
+  }
+
   /// オフラインキャッシュ情報をアイテムに保存する。
   /// 並び順を変えないよう updatedAt は更新せず box 直書き＋_refresh。
   Future<void> saveCacheInfo(

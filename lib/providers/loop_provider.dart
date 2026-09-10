@@ -5,6 +5,7 @@ import '../models/loop_item.dart';
 import '../models/loop_state.dart';
 import 'player_provider.dart';
 import '../core/storage/app_boxes.dart';
+import 'data_provider.dart';
 
 final loopProvider = StateNotifierProvider<LoopNotifier, LoopState>((ref) {
   final notifier = LoopNotifier(ref);
@@ -223,24 +224,17 @@ class LoopNotifier extends StateNotifier<LoopState> {
 
     // しきい値到達 → カウント+1
     _playCountAccMs -= threshold;
-    final box = AppBoxes.loopItems;
-    final item = box.get(currentItemId);
-    if (item != null) {
-      item.playCount++;
-      item.accumulatedPlayMs = _playCountAccMs;
-      box.put(item.id, item);
-    }
+    _ref
+        .read(loopItemsProvider.notifier)
+        .incrementPlayCount(currentItemId!, _playCountAccMs);
     _msSinceLastSave = 0;
   }
 
   void _saveAccumulatedTime() {
     if (currentItemId == null) return;
-    final box = AppBoxes.loopItems;
-    final item = box.get(currentItemId);
-    if (item != null && _playCountAccMs != item.accumulatedPlayMs) {
-      item.accumulatedPlayMs = _playCountAccMs;
-      box.put(item.id, item);
-    }
+    _ref
+        .read(loopItemsProvider.notifier)
+        .saveAccumulatedPlayMs(currentItemId!, _playCountAccMs);
     _msSinceLastSave = 0;
   }
 
