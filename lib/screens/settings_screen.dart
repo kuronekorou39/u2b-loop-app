@@ -21,6 +21,7 @@ import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/storage/app_boxes.dart';
+import '../core/ui/app_dialogs.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -239,7 +240,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       message: '既存のデータは上書きされます。続けますか？',
       confirmLabel: 'インポート',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     setState(() => _busy = true);
     try {
@@ -393,7 +394,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       confirmLabel: '削除',
       isDestructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final really = await _showConfirmDialog(
       title: '本当に削除しますか？',
@@ -402,7 +403,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       confirmLabel: '完全に削除',
       isDestructive: true,
     );
-    if (really != true) return;
+    if (!really) return;
 
     setState(() => _busy = true);
     try {
@@ -432,35 +433,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ─── Helpers ───
 
-  Future<bool?> _showConfirmDialog({
+  Future<bool> _showConfirmDialog({
     required String title,
     required String message,
     required String confirmLabel,
     bool isDestructive = false,
-  }) {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              confirmLabel,
-              style: isDestructive
-                  ? const TextStyle(color: Colors.red)
-                  : null,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  }) =>
+      AppDialogs.confirm(context,
+          title: title,
+          message: message,
+          confirmLabel: confirmLabel,
+          destructive: isDestructive);
 
   // ─── Build ───
 

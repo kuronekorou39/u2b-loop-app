@@ -4,6 +4,7 @@ import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
+import '../core/ui/app_dialogs.dart';
 
 /// 個別アイテムのタグ編集シート（共有ウィジェット）
 class ItemTagSheet extends StatefulWidget {
@@ -48,37 +49,12 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
   }
 
   void _createNew() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新しいタグ'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.tagNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: 'タグ名',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('作成して追加'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name != null && name.isNotEmpty) {
+    final name = await AppDialogs.prompt(context,
+        title: '新しいタグ',
+        hintText: 'タグ名',
+        confirmLabel: '作成して追加',
+        maxLength: AppLimits.tagNameMaxLength);
+    if (name != null) {
       final tag = await widget.onCreateAndAdd(name);
       setState(() {
         _tags.add(tag);

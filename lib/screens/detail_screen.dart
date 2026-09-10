@@ -19,6 +19,7 @@ import '../widgets/item_thumbnail.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
+import '../core/ui/app_dialogs.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -74,26 +75,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  Future<bool> _confirmDiscard() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('変更を破棄しますか？'),
-        content: const Text('保存していない変更があります。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('戻る'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('破棄', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    return result == true;
-  }
+  Future<bool> _confirmDiscard() => AppDialogs.confirm(context,
+      title: '変更を破棄しますか？',
+      message: '保存していない変更があります。',
+      confirmLabel: '破棄',
+      cancelLabel: '戻る',
+      destructive: true);
 
   Future<void> _openPlayer(LoopItem item) async {
     if (_hasChanges(item)) await _saveOnly(item);
@@ -168,24 +155,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Future<void> _deleteItem(LoopItem item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('削除確認'),
-        content: Text('「${item.title}」を削除しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
+    final confirmed = await AppDialogs.confirmDelete(context,
+        message: '「${item.title}」を削除しますか？');
+    if (confirmed && mounted) {
       ref.read(loopItemsProvider.notifier).delete(item.id);
       Navigator.of(context).pop();
     }
@@ -781,38 +753,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   void _renameRegion(LoopItem item, int index) async {
     final regions = item.effectiveRegions;
-    final controller = TextEditingController(text: regions[index].name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('区間名'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.regionNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: '区間名を入力',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name == null || name.isEmpty) return;
+    final name = await AppDialogs.prompt(context,
+        title: '区間名',
+        initialValue: regions[index].name,
+        hintText: '区間名を入力',
+        maxLength: AppLimits.regionNameMaxLength);
+    if (name == null) return;
 
     regions[index] = regions[index].copyWith(name: name);
     item.regions = List.from(regions);

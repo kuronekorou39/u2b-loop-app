@@ -18,6 +18,7 @@ import '../widgets/item_thumbnail.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
+import '../core/ui/app_dialogs.dart';
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   final String playlistId;
@@ -31,60 +32,21 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   void _renamePlaylist(Playlist pl) async {
-    final controller = TextEditingController(text: pl.name);
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('プレイリスト名変更'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.playlistNameMaxLength,
-          decoration: const InputDecoration(
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('変更'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (newName != null && newName.isNotEmpty && newName != pl.name) {
+    final newName = await AppDialogs.prompt(context,
+        title: 'プレイリスト名変更',
+        initialValue: pl.name,
+        confirmLabel: '変更',
+        maxLength: AppLimits.playlistNameMaxLength);
+    if (newName != null && newName != pl.name) {
       pl.name = newName;
       ref.read(playlistsProvider.notifier).update(pl);
     }
   }
 
   Future<void> _deletePlaylist(Playlist pl) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('削除確認'),
-        content: Text('「${pl.name}」を削除しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
+    final confirmed = await AppDialogs.confirmDelete(context,
+        message: '「${pl.name}」を削除しますか？');
+    if (confirmed && mounted) {
       ref.read(playlistsProvider.notifier).delete(pl.id);
       Navigator.of(context).pop();
     }
@@ -669,26 +631,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     child:
                         const Icon(Icons.delete_outline, color: Colors.white),
                   ),
-                  confirmDismiss: (_) async {
-                    return await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('削除確認'),
-                        content: Text('「${item.title}」をプレイリストから削除しますか？'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('キャンセル'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('削除',
-                                style: TextStyle(color: Colors.red)),
-                          ),
-                        ],
-                      ),
-                    ) ?? false;
-                  },
+                  confirmDismiss: (_) => AppDialogs.confirmDelete(context,
+                      message: '「${item.title}」をプレイリストから削除しますか？'),
                   onDismissed: (_) => _removeItem(pl, item.id),
                   child: Opacity(
                     opacity: isDisabled ? 0.4 : 1.0,

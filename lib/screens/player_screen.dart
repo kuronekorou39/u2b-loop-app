@@ -52,6 +52,7 @@ import '../core/ui/app_snack_bar.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/native_channels.dart';
 import '../core/utils/id_generator.dart';
+import '../core/ui/app_dialogs.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -1656,39 +1657,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _saveRegions();
   }
 
-  Future<String?> _showRegionNameDialog(String initial) async {
-    final controller = TextEditingController(text: initial);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('区間名'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.regionNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: '区間名を入力',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return (result != null && result.isNotEmpty) ? result : null;
-  }
+  Future<String?> _showRegionNameDialog(String initial) =>
+      AppDialogs.prompt(context,
+          title: '区間名',
+          initialValue: initial,
+          hintText: '区間名を入力',
+          maxLength: AppLimits.regionNameMaxLength);
 
   void _showRegionMenu(int index) {
     showModalBottomSheet(

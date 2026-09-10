@@ -29,6 +29,7 @@ import '../widgets/player/player_controls.dart';
 import '../widgets/player/video_player_widget.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/id_generator.dart';
+import '../core/ui/app_dialogs.dart';
 
 /// AB区間専用エディタ。LoopItem を受け取って AB 区間を編集する。
 class EditorScreen extends ConsumerStatefulWidget {
@@ -174,39 +175,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _loadRegionIntoLoop(_selectedRegionIdx);
   }
 
-  Future<String?> _showRegionNameDialog(String initial) async {
-    final controller = TextEditingController(text: initial);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('区間名'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.regionNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: '区間名を入力',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return (result != null && result.isNotEmpty) ? result : null;
-  }
+  Future<String?> _showRegionNameDialog(String initial) =>
+      AppDialogs.prompt(context,
+          title: '区間名',
+          initialValue: initial,
+          hintText: '区間名を入力',
+          maxLength: AppLimits.regionNameMaxLength);
 
   // --- Loading progress ---
 
@@ -557,26 +531,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     return false;
   }
 
-  Future<bool> _confirmDiscard() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('変更を破棄しますか？'),
-        content: const Text('保存していないAB設定があります。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('戻る'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('破棄', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    return result == true;
-  }
+  Future<bool> _confirmDiscard() => AppDialogs.confirm(context,
+      title: '変更を破棄しますか？',
+      message: '保存していないAB設定があります。',
+      confirmLabel: '破棄',
+      cancelLabel: '戻る',
+      destructive: true);
 
   // --- Build ---
 

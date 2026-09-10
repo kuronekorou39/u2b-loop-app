@@ -25,6 +25,7 @@ import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/id_generator.dart';
+import '../core/ui/app_dialogs.dart';
 
 /// 表示モード: リスト / 2列 / 4列
 enum _ViewMode { list, grid2, grid4 }
@@ -700,24 +701,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Future<void> _deleteSelected() async {
     final count = _selectedIds.length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('削除確認'),
-        content: Text('選択した $count 件を削除しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
+    final confirmed = await AppDialogs.confirmDelete(context,
+        message: '選択した $count 件を削除しますか？');
+    if (confirmed) {
       final ids = Set<String>.from(_selectedIds);
       _clearSelection();
       for (final id in ids) {
@@ -848,38 +834,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   style: Theme.of(context).textTheme.bodyLarge),
               onTap: () async {
                 Navigator.pop(ctx);
-                final controller = TextEditingController();
-                final name = await showDialog<String>(
-                  context: context,
-                  builder: (dlgCtx) => AlertDialog(
-                    title: const Text('プレイリスト作成'),
-                    content: TextField(
-                      controller: controller,
-                      autofocus: true,
-                      maxLength: AppLimits.playlistNameMaxLength,
-                      decoration: const InputDecoration(
-                        hintText: 'プレイリスト名',
-                                isDense: true,
-                        border: OutlineInputBorder(),
-                        counterText: '',
-                      ),
-                      onSubmitted: (v) => Navigator.pop(dlgCtx, v.trim()),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dlgCtx),
-                        child: const Text('キャンセル'),
-                      ),
-                      TextButton(
-                        onPressed: () =>
-                            Navigator.pop(dlgCtx, controller.text.trim()),
-                        child: const Text('作成'),
-                      ),
-                    ],
-                  ),
-                );
-                controller.dispose();
-                if (name != null && name.isNotEmpty) {
+                final name = await AppDialogs.prompt(context,
+                    title: 'プレイリスト作成',
+                    hintText: 'プレイリスト名',
+                    confirmLabel: '作成',
+                    maxLength: AppLimits.playlistNameMaxLength);
+                if (name != null) {
                   final pl = Playlist(
                     id: IdGenerator.next(),
                     name: name,
@@ -933,37 +893,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // --- プレイリスト ---
 
   Future<void> _createPlaylist() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('プレイリスト作成'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.playlistNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: 'プレイリスト名',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('作成'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name != null && name.isNotEmpty) {
+    final name = await AppDialogs.prompt(context,
+        title: 'プレイリスト作成',
+        hintText: 'プレイリスト名',
+        confirmLabel: '作成',
+        maxLength: AppLimits.playlistNameMaxLength);
+    if (name != null) {
       ref.read(playlistsProvider.notifier).add(Playlist(
             id: IdGenerator.next(),
             name: name,
@@ -972,24 +907,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   Future<void> _deletePlaylist(Playlist playlist) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('削除確認'),
-        content: Text('「${playlist.name}」を削除しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
+    final confirmed = await AppDialogs.confirmDelete(context,
+        message: '「${playlist.name}」を削除しますか？');
+    if (confirmed) {
       ref.read(playlistsProvider.notifier).delete(playlist.id);
     }
   }
@@ -1862,24 +1782,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   Future<void> _deleteItem(LoopItem item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('削除確認'),
-        content: Text('「${item.title}」を削除しますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
+    final confirmed = await AppDialogs.confirmDelete(context,
+        message: '「${item.title}」を削除しますか？');
+    if (confirmed) {
       ref.read(loopItemsProvider.notifier).delete(item.id);
     }
   }
@@ -2023,37 +1928,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _createTagFromTab() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('タグを作成'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.tagNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: 'タグ名',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('作成'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name == null || name.isEmpty) return;
+    final name = await AppDialogs.prompt(context,
+        title: 'タグを作成',
+        hintText: 'タグ名',
+        confirmLabel: '作成',
+        maxLength: AppLimits.tagNameMaxLength);
+    if (name == null) return;
     ref.read(tagsProvider.notifier).create(name);
   }
 
@@ -2147,37 +2027,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _renameTagFromTab(Tag tag) async {
-    final controller = TextEditingController(text: tag.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('タグ名変更'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.tagNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: 'タグ名',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name == null || name.isEmpty) return;
+    final name = await AppDialogs.prompt(context,
+        title: 'タグ名変更',
+        initialValue: tag.name,
+        hintText: 'タグ名',
+        maxLength: AppLimits.tagNameMaxLength);
+    if (name == null) return;
     ref.read(tagsProvider.notifier).rename(tag.id, name);
   }
 
@@ -2346,37 +2201,12 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
   }
 
   void _showNewTagInput() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新しいタグ'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.tagNameMaxLength,
-          decoration: const InputDecoration(
-            hintText: 'タグ名',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('作成'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name != null && name.isNotEmpty) {
+    final name = await AppDialogs.prompt(context,
+        title: '新しいタグ',
+        hintText: 'タグ名',
+        confirmLabel: '作成',
+        maxLength: AppLimits.tagNameMaxLength);
+    if (name != null) {
       final tag = await widget.onCreateTag(name);
       widget.onAddTag(tag.id);
       setState(() {
