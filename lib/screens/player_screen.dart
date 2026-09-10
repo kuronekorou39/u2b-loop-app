@@ -28,12 +28,15 @@ import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/playlist_engine.dart';
 import '../providers/playlist_player_provider.dart';
+import '../services/cache_service.dart';
 import '../services/export_service.dart';
 import '../services/export_runner.dart';
 import '../providers/subtitle_provider.dart';
 import '../services/subtitle_service.dart';
 import '../services/waveform_service.dart';
+import '../services/youtube_service.dart';
 import '../widgets/equalizer_icon.dart';
 import '../widgets/karaoke_subtitle.dart';
 import '../widgets/lyrics_overlay.dart';
@@ -388,6 +391,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // - ユーザー操作は _trackLoading で排他制御。自動遷移はブロックしない。
   // =====================================================================
 
+  /// 現在のプリロード状況で次トラックへ進めるかを判定する
+  /// （判定ロジックはミニプレイヤー側と共通の PlaylistEngine に置いてある）
+  AdvanceReadiness _readiness() => ref.read(playlistEngineProvider).readiness(
+        preloadedIndex: _preloadedTrackIndex,
+        pendingJumpIndex: _pendingJumpIndex,
+      );
+
   /// コールバック設定（PlayerScreen表示中 + ミニプレイヤー中 共通）
   void _setupPlaylistCallbacks() {
     final loopNotifier = ref.read(loopProvider.notifier);
@@ -398,39 +408,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     loopNotifier.onBPointReached = () {
-      final ps = ref.read(playlistPlayerProvider);
-      if (ps.repeatMode == pl.RepeatMode.single) return false;
-
-      final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null && _pendingJumpIndex == null) return false;
-      final current = ps.currentTrack;
-      final sameItem = nextIdx != null && current != null &&
-          ps.tracks[nextIdx].isSameItem(current);
-      final ready = _preloadedTrackIndex != null &&
-          (_pendingJumpIndex == _preloadedTrackIndex ||
-           nextIdx == _preloadedTrackIndex);
-
-      if (sameItem || ready) {
+      if (ref.read(playlistPlayerProvider).repeatMode == pl.RepeatMode.single) {
+        return false;
+      }
+      // 遷移可否の判定はミニプレイヤー側と共通（PlaylistEngine）
+      final readiness = _readiness();
+      if (readiness == AdvanceReadiness.sameItem ||
+          readiness == AdvanceReadiness.preloaded) {
         _autoAdvance();
         return true;
       }
+      if (readiness == AdvanceReadiness.none) return false;
       // 未準備 → ABループ継続、プリロード確保
       if (!_isPreloading) _preloadNextTrack();
       return false;
     };
 
     loopNotifier.onTrackEnd = () {
-      final ps = ref.read(playlistPlayerProvider);
-      final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null && _pendingJumpIndex == null) return;
-      final current = ps.currentTrack;
-      final sameItem = nextIdx != null && current != null &&
-          ps.tracks[nextIdx].isSameItem(current);
-      final ready = _preloadedTrackIndex != null &&
-          (_pendingJumpIndex == _preloadedTrackIndex ||
-           nextIdx == _preloadedTrackIndex);
+      final readiness = _readiness();
+      if (readiness == AdvanceReadiness.none) return;
 
-      if (sameItem || ready) {
+      if (readiness == AdvanceReadiness.sameItem ||
+          readiness == AdvanceReadiness.preloaded) {
         _autoAdvance();
       } else {
         // 未準備 → 先頭に戻して再生継続。タイマーとcompletedの二重発火や
@@ -570,14 +569,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final ps = ref.read(playlistPlayerProvider);
     if (!ps.hasNext) return;
 
-    final nextIdx = ps.peekNextTrackIndex();
-    if (nextIdx == null) return;
-    final nextTrack = ps.tracks[nextIdx];
-    final current = ps.currentTrack;
-    final sameItem = current != null && nextTrack.isSameItem(current);
-    final ready = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
-
-    if (sameItem || ready) {
+    final readiness = _readiness();
+    if (readiness == AdvanceReadiness.none) return;
+    if (readiness == AdvanceReadiness.sameItem ||
+        readiness == AdvanceReadiness.preloaded) {
       // 即遷移可能
       _autoAdvance();
       return;
@@ -681,47 +676,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final item = track.item;
       final player = ref.read(playerProvider);
 
-      if (item.sourceType == 'youtube' && item.videoId != null) {
-        final cached = _cachedVideoPath(item);
-        if (cached != null) {
-          // オフラインキャッシュ優先（通信不要）
-          await player.open(Media(cached), play: false);
-          if (!mounted) return;
-          ref.read(videoSourceProvider.notifier).state = VideoSource(
-            type: VideoSourceType.youtube, uri: cached,
-            title: item.title, videoId: item.videoId,
-            thumbnailUrl: item.thumbnailUrl,
-          );
-        } else {
-          final ytService = ref.read(youtubeServiceProvider);
-          final manifest = await ytService.getManifestWithFallback(item.videoId!)
-              .timeout(const Duration(seconds: 30));
-          final muxed = manifest.muxed.sortByVideoQuality();
-          String streamUrl;
-          if (muxed.isNotEmpty) {
-            streamUrl = muxed.last.url.toString();
-          } else {
-            final videoOnly = manifest.videoOnly.sortByVideoQuality();
-            if (videoOnly.isEmpty) throw Exception('ストリームなし');
-            streamUrl = videoOnly.last.url.toString();
-          }
-          if (!mounted) return;
-          await player.open(Media(streamUrl), play: false)
-              .timeout(const Duration(seconds: 30));
-          if (!mounted) return;
-          ref.read(videoSourceProvider.notifier).state = VideoSource(
-            type: VideoSourceType.youtube, uri: streamUrl,
-            title: item.title, videoId: item.videoId,
-            thumbnailUrl: item.thumbnailUrl,
-          );
-        }
-      } else {
-        await player.open(Media(item.uri), play: false);
-        if (!mounted) return;
-        ref.read(videoSourceProvider.notifier).state = VideoSource(
-          type: VideoSourceType.local, uri: item.uri, title: item.title,
-        );
-      }
+      // 再生URIの解決（オフライン保存済みならローカル優先）はエンジンに集約
+      final uri = await ref
+          .read(playlistEngineProvider)
+          .resolvePlayableUri(item)
+          .timeout(const Duration(seconds: 30));
+      if (uri == null) throw Exception('再生可能なストリームがありません');
+      if (!mounted) return;
+
+      await player
+          .open(Media(uri), play: false)
+          .timeout(const Duration(seconds: 30));
+      if (!mounted) return;
+      ref.read(videoSourceProvider.notifier).state = VideoSource(
+        type: item.sourceType == 'youtube'
+            ? VideoSourceType.youtube
+            : VideoSourceType.local,
+        uri: uri,
+        title: item.title,
+        videoId: item.videoId,
+        thumbnailUrl: item.thumbnailUrl,
+      );
 
       // プレイヤー使い回しのため、前トラックの速度が残らないよう毎回設定
       await player.setRate(item.speed);
@@ -779,15 +754,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _loadTrackRegion(PlaylistTrack track) {
-    final notifier = ref.read(loopProvider.notifier);
-    if (track.hasRegion) {
-      notifier.setPointA(
-          track.startMs != null ? Duration(milliseconds: track.startMs!) : null);
-      notifier.setPointB(
-          track.endMs != null ? Duration(milliseconds: track.endMs!) : null);
-      if (!ref.read(loopProvider).enabled) notifier.toggleEnabled();
-    } else {
-      notifier.reset();
+    // AB区間の反映はミニプレイヤー側と共通（PlaylistEngine）
+    ref.read(playlistEngineProvider).applyRegion(track);
+    if (!track.hasRegion) {
       // 1番だけモード: 区間未設定のトラックに仮想B点を設定
       _applyFirstVerseCut(track);
     }
@@ -1005,64 +974,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         return;
       }
 
-      final preloadPlayer = ref.read(preloadPlayerProvider);
-      StreamManifest? manifest;
-
-      final cachedNext = nextTrack.item.sourceType == 'youtube'
-          ? _cachedVideoPath(nextTrack.item)
-          : null;
-      if (cachedNext != null) {
-        // オフラインキャッシュ優先（通信不要・即時）。manifestはnullのまま=波形プリロードはno-op
-        await preloadPlayer.open(Media(cachedNext), play: false);
-      } else if (nextTrack.item.sourceType == 'youtube') {
-        final ytService = ref.read(youtubeServiceProvider);
-        manifest = await ytService.getManifestWithFallback(
-            nextTrack.item.videoId!);
-
-        if (isStale()) return;
-
-        final muxed = manifest.muxed.sortByVideoQuality();
-        String streamUrl;
-        if (muxed.isNotEmpty) {
-          streamUrl = muxed.last.url.toString();
-        } else {
-          final videoOnly = manifest.videoOnly.sortByVideoQuality();
-          if (videoOnly.isEmpty) return;
-          streamUrl = videoOnly.last.url.toString();
-        }
-
-        await preloadPlayer.open(Media(streamUrl), play: false);
-      } else {
-        await preloadPlayer.open(Media(nextTrack.item.uri), play: false);
-      }
-
-      if (isStale()) return;
-
-      // Wait for metadata (duration) by briefly playing
-      if (preloadPlayer.state.duration == Duration.zero) {
-        await preloadPlayer.setVolume(0);
-        await preloadPlayer.play();
-        for (var i = 0;
-            i < 30 &&
-                preloadPlayer.state.duration == Duration.zero &&
-                !isStale();
-            i++) {
-          await Future.delayed(const Duration(milliseconds: 100));
-        }
-        if (isStale()) return;
-        await preloadPlayer.pause();
-        await preloadPlayer.setVolume(ref.read(playerProvider).state.volume);
-      }
-
-      // Seek to start position
-      if (nextTrack.startMs != null) {
-        await preloadPlayer.seek(Duration(milliseconds: nextTrack.startMs!));
-      } else {
-        await preloadPlayer.seek(Duration.zero);
-      }
-
-      // Set speed（プレイヤー使い回しのため毎回設定して前トラックの速度をリセット）
-      await preloadPlayer.setRate(nextTrack.item.speed);
+      // ロード機構（キャッシュ優先・メタデータ待ち・シーク・速度設定）は
+      // PlaylistEngine に集約してあり、ミニプレイヤー側と同じ実装を通る。
+      // manifest は波形の先行生成に再利用する（キャッシュ再生時はnull）。
+      final manifest = await ref
+          .read(playlistEngineProvider)
+          .prepare(ref.read(preloadPlayerProvider), nextTrack, isStale: isStale);
 
       if (isStale()) return;
       _preloadedTrackIndex = nextIdx;
@@ -1154,10 +1071,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _preloadingTargetIndex = null;
     _isPreloading = false;
 
-    // Save reference to old player before swap
-    final oldPlayer = ref.read(playerProvider);
-
-    // Update video source (before swap so UI has it ready)
+    // 動画ソースを先に更新しておく（スワップ前にUIが参照できるように）
     final item = newTrack.item;
     ref.read(videoSourceProvider.notifier).state = VideoSource(
       type: item.sourceType == 'youtube'
@@ -1169,23 +1083,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       thumbnailUrl: item.thumbnailUrl,
     );
 
-    // Swap active slot
-    final currentSlot = ref.read(activeSlotProvider);
-    final newSlot = currentSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
-    ref.read(activeSlotProvider.notifier).state = newSlot;
-
-    // 新しいプレイヤーを直接参照（プロバイダ経由だと更新が遅れる場合がある）
-    final newPlayer = newSlot == ActiveSlot.a
-        ? ref.read(playerAProvider)
-        : ref.read(playerBProvider);
-
-    // completed購読の張り替えはスロット変更時にloopProviderが自動で行う
-
-    // Stop old player (now the preload player)
-    oldPlayer.stop();
-
-    // Play new active player
-    newPlayer.play();
+    // スロット入替・旧プレイヤーの停止・新プレイヤーの再生開始は
+    // PlaylistEngine に集約（ミニプレイヤー側と同じ実装を通る）
+    ref.read(playlistEngineProvider).swapSlots();
 
     // 再生カウント: トラック切替
     ref.read(loopProvider.notifier).setCurrentItem(item.id);
@@ -1254,8 +1154,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final item = _currentItem;
       // オフラインキャッシュがあればローカルファイルを優先再生（通信不要）
       if (item.sourceType == 'youtube' &&
-          item.cachedVideoPath != null &&
-          await File(item.cachedVideoPath!).exists()) {
+          CacheService.offlineVideoPath(item) != null) {
         await _loadCachedYouTube(item);
       } else if (item.sourceType == 'youtube') {
         await _loadYouTube(item);
@@ -1293,15 +1192,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     await _yieldFrame();
 
     if (!mounted) return;
-    final muxed = manifest.muxed.sortByVideoQuality();
-    String streamUrl;
-    if (muxed.isNotEmpty) {
-      streamUrl = muxed.last.url.toString();
-    } else {
-      final videoOnly = manifest.videoOnly.sortByVideoQuality();
-      if (videoOnly.isEmpty) throw Exception('再生可能なストリームがありません');
-      streamUrl = videoOnly.last.url.toString();
-    }
+    final streamUrl = YouTubeService.pickStreamUrl(manifest);
 
     final source = VideoSource(
       type: VideoSourceType.youtube,
@@ -1344,13 +1235,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(videoSourceProvider.notifier).state = source;
 
     await _finishLoading(item, source);
-  }
-
-  /// キャッシュ済み動画のローカルパス（ファイルが実在すれば返す。無ければnull）。
-  String? _cachedVideoPath(LoopItem item) {
-    final p = item.cachedVideoPath;
-    if (p != null && p.isNotEmpty && File(p).existsSync()) return p;
-    return null;
   }
 
   /// オフラインキャッシュ済みのYouTube動画をローカルファイルから再生する。
@@ -2514,69 +2398,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  /// ミニプレイヤー用の軽量コールバック（PlayerScreen dispose後も動作）
+  /// ミニプレイヤー用のコールバック（PlayerScreen dispose後も動作する）。
+  ///
+  /// 遷移の機構（URL解決・プリロード・スロット入替・区間適用）は PlaylistEngine に
+  /// 集約してあり、PlayerScreen 側のコールバックと同じ実装を通る。
+  /// ここに組み立てるのは「画面が無いときの振る舞い」だけ。
   void _setupMiniPlayerCallbacks() {
-    // dispose後にref.read()は使えないため、参照を事前キャプチャ
+    // dispose後にref.read()は使えないため、providerコンテナに生き続ける
+    // エンジンとNotifierを事前にキャプチャしておく
+    final engine = ref.read(playlistEngineProvider);
     final loopNotifier = ref.read(loopProvider.notifier);
     final plNotifier = ref.read(playlistPlayerProvider.notifier);
-    final playerA = ref.read(playerAProvider);
-    final playerB = ref.read(playerBProvider);
-    final slotNotifier = ref.read(activeSlotProvider.notifier);
-    final ytService = ref.read(youtubeServiceProvider);
     final miniNotifier = ref.read(miniPlayerProvider.notifier);
 
-    // プリロード状態（クロージャ内ローカル変数）
-    var currentSlot = ref.read(activeSlotProvider);
     int? preloadedIdx;
     var isPreloading = false;
-
-    Player activePlayer() => currentSlot == ActiveSlot.a ? playerA : playerB;
-    Player preloadPlayer() => currentSlot == ActiveSlot.a ? playerB : playerA;
-
-    void applyRegion(PlaylistTrack track) {
-      if (track.hasRegion) {
-        loopNotifier.setPointA(
-            track.startMs != null ? Duration(milliseconds: track.startMs!) : null);
-        loopNotifier.setPointB(
-            track.endMs != null ? Duration(milliseconds: track.endMs!) : null);
-        if (!loopNotifier.currentState.enabled) loopNotifier.toggleEnabled();
-      } else {
-        loopNotifier.reset();
-      }
-    }
-
-    Future<String?> resolveStreamUrl(LoopItem item) async {
-      if (item.sourceType != 'youtube') return item.uri;
-      final manifest = await ytService.getManifestWithFallback(item.videoId!);
-      final muxed = manifest.muxed.sortByVideoQuality();
-      if (muxed.isNotEmpty) return muxed.last.url.toString();
-      final videoOnly = manifest.videoOnly.sortByVideoQuality();
-      if (videoOnly.isNotEmpty) return videoOnly.last.url.toString();
-      return null;
-    }
+    DateTime? lastReplayAt;
 
     /// 次トラックをプリロードプレイヤーに読み込む
     Future<void> preloadNext() async {
       if (isPreloading || preloadedIdx != null) return;
-      final nextIdx = plNotifier.currentState.peekNextTrackIndex();
+      final ps = plNotifier.currentState;
+      final nextIdx = ps.peekNextTrackIndex();
       if (nextIdx == null) return;
-      final nextTrack = plNotifier.currentState.tracks[nextIdx];
-      final current = plNotifier.currentState.currentTrack;
+      final nextTrack = ps.tracks[nextIdx];
+      final current = ps.currentTrack;
+      // 同一アイテムは遷移時のシークだけで済むためプリロード不要
       if (current != null && nextTrack.isSameItem(current)) return;
 
       isPreloading = true;
       try {
-        final url = await resolveStreamUrl(nextTrack.item);
-        if (url == null) return;
-        final pp = preloadPlayer();
-        await pp.open(Media(url), play: false);
-        if (nextTrack.startMs != null) {
-          await pp.seek(Duration(milliseconds: nextTrack.startMs!));
-        }
-        // プレイヤー使い回しのため、前トラックの速度が残らないよう毎回設定
-        await pp.setRate(nextTrack.item.speed);
+        await engine.prepare(engine.preloadPlayer, nextTrack);
         preloadedIdx = nextIdx;
-      } catch (_) {
+      } catch (e) {
+        debugPrint('[MiniPlayer] プリロード失敗: $e');
       } finally {
         isPreloading = false;
       }
@@ -2584,14 +2439,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     /// プリロード済みプレイヤーにスワップして再生開始
     void swapToPreloaded(PlaylistTrack track) {
-      currentSlot = currentSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
-      // スロット変更でloopProviderのcompleted購読も自動で張り替わる
-      slotNotifier.state = currentSlot;
       preloadedIdx = null;
-      // 旧プレイヤーを停止（二重再生防止）
-      preloadPlayer().stop();
-      activePlayer().play();
-      applyRegion(track);
+      engine.swapSlots();
+      engine.applyRegion(track);
       loopNotifier.setCurrentItem(track.item.id);
       miniNotifier.updateCurrentItem(track.item);
       // 次のプリロードを開始
@@ -2601,34 +2451,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     /// 同一アイテムの別区間にシーク
     void seekToTrack(PlaylistTrack track) {
       if (track.startMs != null) {
-        activePlayer().seek(Duration(milliseconds: track.startMs!));
+        engine.activePlayer.seek(Duration(milliseconds: track.startMs!));
       }
-      applyRegion(track);
+      engine.applyRegion(track);
       miniNotifier.updateCurrentItem(track.item);
     }
 
-    void miniAdvance() {
-      final ps = plNotifier.currentState;
-      final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null) return;
-
-      final nextTrack = ps.tracks[nextIdx];
-      final current = ps.currentTrack;
-      final sameItem = current != null && nextTrack.isSameItem(current);
-      final ready = preloadedIdx != null && nextIdx == preloadedIdx;
-
-      if (!sameItem && !ready) {
-        // 未準備 → ループ継続、プリロード確保
-        if (!isPreloading) preloadNext();
-        return; // falseを返してABループ
+    /// 未準備のまま曲が終わった場合に、同じ曲を頭からやり直して再生を止めない。
+    /// タイマーとcompletedの二重発火や極短トラックでの連続やり直しで
+    /// フリーズしないよう1秒間は抑制する。
+    void replayCurrent() {
+      final now = DateTime.now();
+      if (lastReplayAt != null &&
+          now.difference(lastReplayAt!) <= const Duration(seconds: 1)) {
+        return;
       }
+      lastReplayAt = now;
+      try {
+        engine.activePlayer
+          ..seek(Duration.zero)
+          ..play();
+      } catch (_) {}
+    }
 
+    void advance(AdvanceReadiness readiness) {
       final changed = plNotifier.next();
       if (!changed) return;
       final track = plNotifier.currentState.currentTrack;
       if (track == null) return;
-
-      if (sameItem) {
+      if (readiness == AdvanceReadiness.sameItem) {
         seekToTrack(track);
       } else {
         swapToPreloaded(track);
@@ -2639,37 +2490,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (plNotifier.currentState.repeatMode == pl.RepeatMode.single) {
         return false;
       }
-      final ps = plNotifier.currentState;
-      final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null) return false;
-      final nextTrack = ps.tracks[nextIdx];
-      final current = ps.currentTrack;
-      final sameItem = current != null && nextTrack.isSameItem(current);
-      final ready = preloadedIdx != null && nextIdx == preloadedIdx;
-
-      if (sameItem || ready) {
-        miniAdvance();
+      final readiness = engine.readiness(preloadedIndex: preloadedIdx);
+      if (readiness == AdvanceReadiness.sameItem ||
+          readiness == AdvanceReadiness.preloaded) {
+        advance(readiness);
         return true;
       }
-      // 未準備 → ABループ継続
-      if (!isPreloading) preloadNext();
+      // 未準備 → ABループ継続、裏でプリロードを確保
+      if (readiness == AdvanceReadiness.notReady && !isPreloading) {
+        preloadNext();
+      }
       return false;
     };
 
     loopNotifier.onTrackEnd = () {
-      final ps = plNotifier.currentState;
-      final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null) return;
-      final nextTrack = ps.tracks[nextIdx];
-      final current = ps.currentTrack;
-      final sameItem = current != null && nextTrack.isSameItem(current);
-      final ready = preloadedIdx != null && nextIdx == preloadedIdx;
-
-      if (sameItem || ready) {
-        miniAdvance();
-      } else {
-        activePlayer().seek(Duration.zero);
-        activePlayer().play();
+      final readiness = engine.readiness(preloadedIndex: preloadedIdx);
+      if (readiness == AdvanceReadiness.sameItem ||
+          readiness == AdvanceReadiness.preloaded) {
+        advance(readiness);
+      } else if (readiness == AdvanceReadiness.notReady) {
+        replayCurrent();
         if (!isPreloading) preloadNext();
       }
     };
