@@ -18,7 +18,6 @@ import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
-import '../models/tag.dart';
 import '../models/loop_state.dart';
 import '../models/playlist.dart' as app;
 import '../models/playlist_mode.dart' as pl;
@@ -43,10 +42,12 @@ import '../widgets/lyrics_overlay.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/loop/loop_controls.dart';
+import '../widgets/loop/loop_panel_parts.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
-import '../providers/loading_animation_provider.dart';
-import '../widgets/loading_animations/loading_animation_widget.dart';
+import '../widgets/player/player_status_views.dart';
+import '../widgets/player/subtitle_toggle_button.dart';
+import '../widgets/player/track_row_parts.dart';
 import '../widgets/player/video_player_widget.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
@@ -2059,84 +2060,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // --- Playlist panel (inline) ---
 
-  Widget _buildTrackThumb(PlaylistTrack track, {double width = 40, double height = 30}) {
-    final path = track.item.thumbnailPath;
-    return ClipRRect(
-      borderRadius: AppRadius.borderXs,
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: path != null
-            ? Image.file(File(path), fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _trackThumbPlaceholder(track))
-            : _trackThumbPlaceholder(track),
-      ),
-    );
-  }
-
-  Widget _trackThumbPlaceholder(PlaylistTrack track) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Icon(
-        track.item.sourceType == 'youtube'
-            ? Icons.play_circle_outline
-            : Icons.video_file_outlined,
-        size: AppIconSizes.s,
-        color: Colors.grey,
-      ),
-    );
-  }
-
-  Widget _buildTrackTitleText(BuildContext ctx, PlaylistTrack track,
-      bool isCurrent) {
-    return Text(
-      track.displayName,
-      style: Theme.of(ctx).textTheme.labelMedium!.copyWith(
-        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-        color: isCurrent
-            ? AppTheme.accentGreen
-            : track.enabled
-                ? null
-                : Colors.grey,
-      ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-    );
-  }
-
-  List<Widget> _buildTrackTags(BuildContext ctx, PlaylistTrack track,
-      Map<String, Tag> tagMap) {
-    final itemTags = track.item.tagIds
-        .map((id) => tagMap[id])
-        .whereType<Tag>()
-        .take(2)
-        .toList();
-    if (itemTags.isEmpty) return const [];
-
-    return [
-      const SizedBox(width: AppSpacing.xs),
-      for (final tag in itemTags)
-        Padding(
-          padding: const EdgeInsets.only(left: 2),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 72),
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs, vertical: 0),
-            decoration: BoxDecoration(
-              color: tag.color.withValues(alpha: 0.25),
-              borderRadius: AppRadius.borderXs,
-            ),
-            child: Text(
-              tag.name,
-              style: Theme.of(ctx).textTheme.labelSmall!.copyWith(fontSize: 9),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ),
-    ];
-  }
-
   Widget _buildPlaylistPanel(double bottomInset, {bool transparent = false}) {
     final plState = ref.watch(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
@@ -2213,7 +2136,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         children: [
                           SizedBox(width: AppIconSizes.xl, child: Center(child: statusWidget)),
                           const SizedBox(width: AppSpacing.md),
-                          _buildTrackThumb(track, width: 48, height: 36),
+                          TrackThumb(track: track, width: 48, height: 36),
                           const SizedBox(width: AppSpacing.md),
                           Expanded(
                             child: Column(
@@ -2245,7 +2168,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             ),
                           ),
                           // タグ: 右端に配置
-                          ..._buildTrackTags(ctx, track, tagMap),
+                          ...trackTagChips(ctx, track, tagMap),
                         ],
                       ),
                     ),
@@ -2263,10 +2186,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       children: [
                         SizedBox(width: AppIconSizes.lg, child: statusWidget),
                         const SizedBox(width: AppSpacing.sm),
-                        _buildTrackThumb(track),
+                        TrackThumb(track: track),
                         const SizedBox(width: AppSpacing.sm),
                         Expanded(
-                          child: _buildTrackTitleText(ctx, track, isCurrent),
+                          child: TrackTitleText(
+                              track: track, isCurrent: isCurrent),
                         ),
                         if (track.hasRegion)
                           Padding(
@@ -2278,7 +2202,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               style: Theme.of(ctx).textTheme.labelSmall!.copyWith(fontSize: 10),
                             ),
                           ),
-                        ..._buildTrackTags(ctx, track, tagMap),
+                        ...trackTagChips(ctx, track, tagMap),
                       ],
                     ),
                   ),
@@ -2311,7 +2235,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final windowSize = MediaQuery.sizeOf(context);
     if (_isInPiP || (windowSize.shortestSide < 250)) {
       if (!_isInPiP) _isInPiP = true;
-      return _buildPiPView();
+      return PiPVideoView(hideVideo: _hideVideo, loading: _trackLoading);
     }
     final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
@@ -2361,7 +2285,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               tooltip: _hideVideo ? '動画を表示' : '動画を非表示',
             ),
           // 字幕モード切替（タップ: OFF→カラオケ→リリクス→OFF、長押し: 言語選択）
-          _subtitleToggleButton(),
+          SubtitleToggleButton(onLongPress: _showSubtitleLanguagePicker),
           if (Platform.isAndroid || Platform.isIOS)
             IconButton(
               icon: const Icon(Icons.picture_in_picture_alt, size: AppIconSizes.ml),
@@ -2371,9 +2295,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ],
       ),
       body: _loading
-          ? _buildLoadingView()
+          ? PlayerLoadingView(
+              title: _currentItem.title,
+              progress: _loadingProgress,
+              status: _loadingStatus,
+              tip: _tipNotifier,
+            )
           : _loadError != null
-              ? _buildErrorView()
+              ? PlayerErrorView(
+                  message: _loadError!,
+                  stoppedByRepeatedErrors: _isPlaylist &&
+                      _consecutiveLoadErrors >= _maxConsecutiveErrors,
+                  onRetry: () {
+                    _consecutiveLoadErrors = 0;
+                    _loadItem();
+                  },
+                  onSkip: _isPlaylist
+                      ? () {
+                          _consecutiveLoadErrors = 0;
+                          _autoAdvance();
+                        }
+                      : null,
+                )
               : _buildPlayerView(bottomInset),
     ),
     );
@@ -2518,164 +2461,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     preloadNext();
   }
 
-  Widget _buildPiPView() {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: _hideVideo
-          ? const SizedBox.shrink()
-          : _trackLoading
-              ? const Center(
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Center(child: VideoPlayerWidget()),
-    );
-  }
-
   // （旧 _smoothNext / _smoothPrev は _manualNext / _manualPrev に統合済み）
-
-  Widget _buildLoadingView() {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-    return Stack(
-      children: [
-        // 背景アニメーション
-        Positioned.fill(
-          child: LoadingAnimationView(
-            type: ref.read(loadingAnimationProvider),
-          ),
-        ),
-        // 前景: タイトル＋プログレス（ValueListenableBuilderで局所更新）
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _currentItem.title,
-                  style: textTheme.titleSmall!.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface.withValues(alpha: 0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-                ValueListenableBuilder<double>(
-                  valueListenable: _loadingProgress,
-                  builder: (context, progress, _) {
-                    return TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: progress),
-                      duration: const Duration(milliseconds: 400),
-                      curve: Curves.easeInOut,
-                      builder: (context, value, _) {
-                        return ClipRRect(
-                          borderRadius: AppRadius.borderXs,
-                          child: LinearProgressIndicator(
-                            value: value,
-                            minHeight: 6,
-                            backgroundColor:
-                                colorScheme.surfaceContainerHighest,
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                ValueListenableBuilder<String>(
-                  valueListenable: _loadingStatus,
-                  builder: (context, status, _) {
-                    return Text(
-                      status,
-                      style: textTheme.bodyMedium!.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-                // Tip（8秒ごとにフェード切替）
-                ValueListenableBuilder<String>(
-                  valueListenable: _tipNotifier,
-                  builder: (context, tip, _) {
-                    return AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 600),
-                      child: Text(
-                        'Tip: $tip',
-                        key: ValueKey(tip),
-                        style: textTheme.bodySmall!.copyWith(
-                          color: colorScheme.onSurface.withValues(alpha: 0.35),
-                          fontStyle: FontStyle.italic,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildErrorView() {
-    final textTheme = Theme.of(context).textTheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: AppIconSizes.xxl, color: Colors.orange),
-            const SizedBox(height: AppSpacing.xl),
-            Text('読み込み失敗',
-                style: textTheme.displaySmall),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              _loadError!,
-              style: textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-            if (_isPlaylist && _consecutiveLoadErrors >= _maxConsecutiveErrors)
-              Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.md),
-                child: Text(
-                  '連続でエラーが発生したため停止しました',
-                  style: textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            const SizedBox(height: AppSpacing.xxl),
-            FilledButton.icon(
-              onPressed: () {
-                _consecutiveLoadErrors = 0;
-                _loadItem();
-              },
-              icon: const Icon(Icons.refresh, size: AppIconSizes.sm),
-              label: const Text('再試行'),
-            ),
-            if (_isPlaylist) ...[
-              const SizedBox(height: AppSpacing.md),
-              OutlinedButton.icon(
-                onPressed: () {
-                  _consecutiveLoadErrors = 0;
-                  _autoAdvance();
-                },
-                icon: const Icon(Icons.skip_next, size: AppIconSizes.sm),
-                label: const Text('次の曲へスキップ'),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 
   // =====================================================================
   // 横画面レイアウト
@@ -2832,24 +2618,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             children: [
-              _buildRegionTile(
+              RegionTile(
                 name: '全体',
                 isActive: _activeRegionIdx == -1,
                 pointAMs: null,
                 pointBMs: null,
                 onTap: _clearRegion,
-                theme: theme,
               ),
               Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.3)),
               for (var i = 0; i < regions.length; i++) ...[
-                _buildRegionTile(
+                RegionTile(
                   name: regions[i].name,
                   isActive: i == _activeRegionIdx,
                   pointAMs: regions[i].pointAMs,
                   pointBMs: regions[i].pointBMs,
                   onTap: () => _selectRegion(i),
                   onLongPress: () => _showRegionMenu(i),
-                  theme: theme,
                 ),
                 if (i < regions.length - 1)
                   Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.3)),
@@ -3006,9 +2790,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 : Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildPointDisplay('A', AppTheme.pointAColor, loop.pointA),
+                      LoopPointDisplay(
+                          label: 'A',
+                          color: AppTheme.pointAColor,
+                          time: loop.pointA,
+                          onSeek: _seekTo),
                       const SizedBox(height: AppSpacing.sm),
-                      _buildPointDisplay('B', AppTheme.pointBColor, loop.pointB),
+                      LoopPointDisplay(
+                          label: 'B',
+                          color: AppTheme.pointBColor,
+                          time: loop.pointB,
+                          onSeek: _seekTo),
                     ],
                   ),
           ),
@@ -3019,51 +2811,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 字幕モード切替ボタン（タップ: OFF→カラオケ→リリクス→OFF、長押し: 言語選択）。
   /// 縦画面コントロールと横全画面トップバーで共用。
-  Widget _subtitleToggleButton() {
-    return Consumer(builder: (_, ref, _) {
-      final subs = ref.watch(subtitleDataProvider);
-      final mode = ref.watch(subtitleModeProvider);
-      final loading = ref.watch(subtitleLoadingProvider);
-      if (loading) {
-        return const Padding(
-          padding: EdgeInsets.all(12),
-          child: SizedBox(
-            width: 16, height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        );
-      }
-      if (subs == null || subs.isEmpty) return const SizedBox.shrink();
-      final IconData icon;
-      final Color color;
-      switch (mode) {
-        case SubtitleMode.off:
-          icon = Icons.subtitles_off;
-          color = Colors.grey;
-        case SubtitleMode.subtitle:
-          icon = Icons.subtitles;
-          color = AppTheme.accentGreen;
-        case SubtitleMode.lyrics:
-          icon = Icons.lyrics;
-          color = AppTheme.accentGreen;
-      }
-      return GestureDetector(
-        onLongPress: _showSubtitleLanguagePicker,
-        child: IconButton(
-          icon: Icon(icon, size: AppIconSizes.md, color: color),
-          onPressed: () {
-            final next = switch (mode) {
-              SubtitleMode.off => SubtitleMode.subtitle,
-              SubtitleMode.subtitle => SubtitleMode.lyrics,
-              SubtitleMode.lyrics => SubtitleMode.off,
-            };
-            ref.read(subtitleModeProvider.notifier).state = next;
-          },
-        ),
-      );
-    });
-  }
-
   /// 横画面 全画面モード
   Widget _buildFullscreenView(double bottomInset) {
     final drawerWidth = MediaQuery.sizeOf(context).width * 0.4;
@@ -3145,7 +2892,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            _subtitleToggleButton(),
+                            SubtitleToggleButton(onLongPress: _showSubtitleLanguagePicker),
                           ],
                         ),
                         const Spacer(),
@@ -3383,13 +3130,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // 「全体」（固定）
-                    _buildRegionTile(
+                    RegionTile(
                       name: '全体',
                       isActive: _activeRegionIdx == -1,
                       pointAMs: null,
                       pointBMs: null,
                       onTap: _clearRegion,
-                      theme: theme,
                     ),
                     Divider(height: 1,
                         color: theme.dividerColor.withValues(alpha: 0.3)),
@@ -3400,14 +3146,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           padding: EdgeInsets.zero,
                           children: [
                             for (var i = 0; i < regions.length; i++) ...[
-                              _buildRegionTile(
+                              RegionTile(
                                 name: regions[i].name,
                                 isActive: i == _activeRegionIdx,
                                 pointAMs: regions[i].pointAMs,
                                 pointBMs: regions[i].pointBMs,
                                 onTap: () => _selectRegion(i),
                                 onLongPress: () => _showRegionMenu(i),
-                                theme: theme,
                               ),
                               if (i < regions.length - 1)
                                 Divider(height: 1,
@@ -3662,7 +3407,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       // --- 全体 ---
                       const Spacer(),
                       // Gap（LoopON時）
-                      if (loop.enabled) _buildGapSlider(loop, notifier, textTheme),
+                      if (loop.enabled)
+                        LoopGapSlider(
+                            gapSeconds: loop.gapSeconds,
+                            onChanged: notifier.setGap),
                       if (hasSource)
                         SizedBox(
                           width: double.infinity,
@@ -3691,14 +3439,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         ),
                     ] else ...[
                       // --- Non-edit: read-only A/B display ---
-                      _buildPointDisplay(
-                          'A', AppTheme.pointAColor, loop.pointA),
+                      LoopPointDisplay(
+                          label: 'A',
+                          color: AppTheme.pointAColor,
+                          time: loop.pointA,
+                          onSeek: _seekTo),
                       const SizedBox(height: AppSpacing.sm),
-                      _buildPointDisplay(
-                          'B', AppTheme.pointBColor, loop.pointB),
+                      LoopPointDisplay(
+                          label: 'B',
+                          color: AppTheme.pointBColor,
+                          time: loop.pointB,
+                          onSeek: _seekTo),
                       const Spacer(),
                       // Gap（LoopON時）
-                      if (loop.enabled) _buildGapSlider(loop, notifier, textTheme),
+                      if (loop.enabled)
+                        LoopGapSlider(
+                            gapSeconds: loop.gapSeconds,
+                            onChanged: notifier.setGap),
                       SizedBox(
                         width: double.infinity,
                         height: 28,
@@ -3733,148 +3490,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  Widget _buildRegionTile({
-    required String name,
-    required bool isActive,
-    int? pointAMs,
-    int? pointBMs,
-    required VoidCallback onTap,
-    VoidCallback? onLongPress,
-    required ThemeData theme,
-  }) {
-    String timeText;
-    if (pointAMs != null || pointBMs != null) {
-      final aStr = pointAMs != null
-          ? TimeUtils.formatShort(Duration(milliseconds: pointAMs))
-          : '--:--';
-      final bStr = pointBMs != null
-          ? TimeUtils.formatShort(Duration(milliseconds: pointBMs))
-          : '--:--';
-      timeText = '$aStr - $bStr';
-      if (pointAMs != null && pointBMs != null) {
-        final durationSec = (pointBMs - pointAMs).abs() / 1000;
-        timeText += ' (${durationSec.toStringAsFixed(1)}s)';
-      }
-    } else {
-      timeText = '未設定';
-    }
-
-    final tileTextTheme = theme.textTheme;
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      borderRadius: AppRadius.borderSm,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: AppSpacing.xs),
-        decoration: BoxDecoration(
-          color: isActive
-              ? theme.colorScheme.primary.withValues(alpha: 0.15)
-              : null,
-          borderRadius: AppRadius.borderSm,
-          border: Border.all(
-            color: isActive
-                ? theme.colorScheme.primary.withValues(alpha: 0.5)
-                : Colors.transparent,
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              name,
-              style: tileTextTheme.labelMedium!.copyWith(
-                fontWeight:
-                    isActive ? FontWeight.bold : FontWeight.normal,
-                color: isActive ? theme.colorScheme.primary : null,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 1),
-            Text(
-              timeText,
-              style: tileTextTheme.labelSmall!.copyWith(
-                fontSize: 10,
-                color: (pointAMs != null || pointBMs != null)
-                    ? Colors.grey.shade400
-                    : Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGapSlider(LoopState loop, LoopNotifier notifier, TextTheme textTheme) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: Row(
-        children: [
-          Text('Gap:', style: textTheme.labelSmall),
-          Expanded(
-            child: SliderTheme(
-              data: const SliderThemeData(
-                trackHeight: 2,
-                thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
-                overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
-              ),
-              child: Slider(
-                value: loop.gapSeconds,
-                min: 0,
-                max: 10,
-                divisions: 20,
-                onChanged: (v) => notifier.setGap(v),
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 30,
-            child: Text('${loop.gapSeconds.toStringAsFixed(1)}s',
-                style: textTheme.labelSmall),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPointDisplay(
-      String label, Color color, Duration? time) {
-    final ptTextTheme = Theme.of(context).textTheme;
-    return Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            border: Border.all(color: color),
-            borderRadius: AppRadius.borderSm,
-          ),
-          alignment: Alignment.center,
-          child: Text(label,
-              style: ptTextTheme.bodyMedium!.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color)),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        GestureDetector(
-          onTap: time != null
-              ? () => ref.read(playerProvider).seek(time)
-              : null,
-          child: Text(
-            TimeUtils.formatNullable(time),
-            style: ptTextTheme.bodyMedium!.copyWith(
-              fontFamily: 'monospace',
-              decoration:
-                  time != null ? TextDecoration.underline : null,
-              decorationColor: color.withValues(alpha: 0.5),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  void _seekTo(Duration time) => ref.read(playerProvider).seek(time);
 
   /// プレイリストモード: AB区間の微調整 + 区間登録ダイアログ
   void _showAbEditDialog() {
