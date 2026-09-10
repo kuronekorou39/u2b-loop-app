@@ -210,7 +210,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     });
 
     try {
-      if (_item.sourceType == 'youtube') {
+      if (_item.isYouTube) {
         await _loadYouTube();
       } else {
         await _loadLocal();

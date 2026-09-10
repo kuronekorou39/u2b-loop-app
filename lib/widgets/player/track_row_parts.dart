@@ -41,7 +41,7 @@ class TrackThumb extends StatelessWidget {
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Icon(
-        track.item.sourceType == 'youtube'
+        track.item.isYouTube
             ? Icons.play_circle_outline
             : Icons.video_file_outlined,
         size: AppIconSizes.s,

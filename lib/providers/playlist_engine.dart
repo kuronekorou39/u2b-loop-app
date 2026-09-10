@@ -60,7 +60,7 @@ class PlaylistEngine {
   Future<String?> resolvePlayableUri(LoopItem item) async {
     final cached = CacheService.offlineVideoPath(item);
     if (cached != null) return cached;
-    if (item.sourceType != 'youtube' || item.videoId == null) {
+    if (!item.isYouTube || item.videoId == null) {
       return item.uri.isEmpty ? null : item.uri;
     }
     try {
@@ -97,7 +97,7 @@ class PlaylistEngine {
     final cached = CacheService.offlineVideoPath(item);
     if (cached != null) {
       await player.open(Media(cached), play: false);
-    } else if (item.sourceType == 'youtube' && item.videoId != null) {
+    } else if (item.isYouTube && item.videoId != null) {
       final ytService = _ref.read(youtubeServiceProvider);
       manifest = await ytService.getManifestWithFallback(item.videoId!);
       if (stale()) return null;

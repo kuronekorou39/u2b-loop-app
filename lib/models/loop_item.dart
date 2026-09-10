@@ -1,11 +1,21 @@
 import 'package:hive/hive.dart';
 import 'loop_region.dart';
 
+/// [LoopItem.sourceType] に入る値。
+/// Hive にはこの文字列のまま保存されているので、値を変えると既存データが読めなくなる。
+class SourceTypes {
+  SourceTypes._();
+  static const youtube = 'youtube';
+  static const local = 'local';
+}
+
 class LoopItem {
   String id;
   String title;
   String uri;
-  String sourceType; // 'youtube' or 'local'
+
+  /// [SourceTypes] のいずれか。比較には [isYouTube] / [isLocal] を使うこと
+  String sourceType;
   String? videoId;
   String? thumbnailUrl;
   String? thumbnailPath;
@@ -89,6 +99,12 @@ class LoopItem {
     if (durationMs >= 600000) return 480000; // ≥10分: 8分固定
     return (durationMs * 0.8).round(); // その間: 80%
   }
+
+  /// YouTube由来か（文字列比較を19箇所に散らさないための入口）
+  bool get isYouTube => sourceType == SourceTypes.youtube;
+
+  /// ローカルファイル由来か
+  bool get isLocal => sourceType == SourceTypes.local;
 
   bool get isFetching => fetchStatus == 'fetching';
   bool get hasError => fetchStatus != null && fetchStatus!.startsWith('error');

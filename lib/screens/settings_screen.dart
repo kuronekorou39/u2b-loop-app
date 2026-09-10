@@ -785,8 +785,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final totalRegions =
         items.fold<int>(0, (sum, i) => sum + i.regions.length);
     final youtubeCount =
-        items.where((i) => i.sourceType == 'youtube').length;
-    final localCount = items.where((i) => i.sourceType == 'local').length;
+        items.where((i) => i.isYouTube).length;
+    final localCount = items.where((i) => i.isLocal).length;
 
     // 最もリピートした曲
     LoopItem? mostPlayed;

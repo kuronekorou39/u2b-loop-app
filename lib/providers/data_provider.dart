@@ -134,7 +134,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       id: id,
       title: videoId,
       uri: '',
-      sourceType: 'youtube',
+      sourceType: SourceTypes.youtube,
       videoId: videoId,
       youtubeUrl: originalUrl,
       fetchStatus: 'fetching',
@@ -165,7 +165,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       id: id,
       title: title,
       uri: '',
-      sourceType: 'youtube',
+      sourceType: SourceTypes.youtube,
       videoId: videoId,
       youtubeUrl: originalUrl,
       thumbnailUrl: thumbnailUrl,
@@ -247,7 +247,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         id: id,
         title: v.title,
         uri: '',
-        sourceType: 'youtube',
+        sourceType: SourceTypes.youtube,
         videoId: v.videoId,
         youtubeUrl: v.url,
         thumbnailUrl: v.thumbnailUrl,
@@ -288,7 +288,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         id: id,
         title: f.name,
         uri: f.path,
-        sourceType: 'local',
+        sourceType: SourceTypes.local,
       );
     }
     if (entries.isEmpty) return 0;
@@ -327,7 +327,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         continue;
       }
       if (item.thumbnailUrl != null ||
-          (item.sourceType == 'local' && item.uri.isNotEmpty)) {
+          (item.isLocal && item.uri.isNotEmpty)) {
         targets.add(item);
       }
     }
@@ -343,7 +343,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           await _box.put(item.id, item);
         }
         await Future.delayed(_nextDelay());
-      } else if (item.sourceType == 'local' && item.uri.isNotEmpty) {
+      } else if (item.isLocal && item.uri.isNotEmpty) {
         try {
           final path =
               await ThumbnailService().generateFromVideo(item.id, item.uri);
@@ -482,7 +482,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         id: id,
         title: si.title,
         uri: '',
-        sourceType: 'youtube',
+        sourceType: SourceTypes.youtube,
         videoId: si.videoId,
         youtubeUrl: 'https://youtu.be/${si.videoId}',
         thumbnailUrl: 'https://img.youtube.com/vi/${si.videoId}/hqdefault.jpg',

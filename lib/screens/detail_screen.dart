@@ -425,7 +425,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     value: 'duplicate', child: Text('複製')),
                 const PopupMenuItem(
                     value: 'playlist', child: Text('プレイリストに追加')),
-                if (item.sourceType == 'youtube' && item.videoId != null)
+                if (item.isYouTube && item.videoId != null)
                   PopupMenuItem(
                     value: item.isCached ? 'offline_delete' : 'offline_save',
                     child: Text(item.isCached
@@ -702,7 +702,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
     // 入力URI解決（local=元URI、YouTube=stream URL を都度解決）
     String? inputUri;
-    if (item.sourceType == 'local') {
+    if (item.isLocal) {
       inputUri = item.uri;
     } else if (item.videoId != null) {
       final messenger = ScaffoldMessenger.of(context);

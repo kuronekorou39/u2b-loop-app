@@ -700,7 +700,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           .timeout(const Duration(seconds: 30));
       if (!mounted) return;
       ref.read(videoSourceProvider.notifier).state = VideoSource(
-        type: item.sourceType == 'youtube'
+        type: item.isYouTube
             ? VideoSourceType.youtube
             : VideoSourceType.local,
         uri: uri,
@@ -752,7 +752,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 字幕（プレイリスト曲切替時）: キャッシュSRT優先、無ければネット取得
     if (track.item.cachedSubtitlePath != null) {
       _loadCachedSubtitles(track.item);
-    } else if (track.item.sourceType == 'youtube' &&
+    } else if (track.item.isYouTube &&
         track.item.videoId != null) {
       _fetchSubtitles(track.item.videoId!);
     } else {
@@ -1029,7 +1029,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final service = WaveformService();
       List<double>? waveform;
 
-      if (item.sourceType != 'youtube') {
+      if (!item.isYouTube) {
         waveform = await service.generateForLocalFile(item.uri, 4000);
       } else if (manifest != null) {
         // YouTube: 音声をダウンロードして波形生成
@@ -1088,7 +1088,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 動画ソースを先に更新しておく（スワップ前にUIが参照できるように）
     final item = newTrack.item;
     ref.read(videoSourceProvider.notifier).state = VideoSource(
-      type: item.sourceType == 'youtube'
+      type: item.isYouTube
           ? VideoSourceType.youtube
           : VideoSourceType.local,
       uri: item.uri,
@@ -1167,10 +1167,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       final item = _currentItem;
       // オフラインキャッシュがあればローカルファイルを優先再生（通信不要）
-      if (item.sourceType == 'youtube' &&
+      if (item.isYouTube &&
           CacheService.offlineVideoPath(item) != null) {
         await _loadCachedYouTube(item);
-      } else if (item.sourceType == 'youtube') {
+      } else if (item.isYouTube) {
         await _loadYouTube(item);
       } else {
         await _loadLocal(item);
