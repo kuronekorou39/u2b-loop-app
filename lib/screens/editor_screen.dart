@@ -582,6 +582,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    // _hasChanges が再生速度を見ているので、速度変更だけでも再ビルドさせる
+    // （watchしないと速度だけ変えたときに保存ボタンが出ない）
+    ref.watch(rateProvider);
 
     return PopScope(
       canPop: false,

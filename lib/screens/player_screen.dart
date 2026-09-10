@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -113,6 +114,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // Playlist error control
   int _consecutiveLoadErrors = 0;
   DateTime? _lastAdvanceTime;
+  bool _advanceRetryScheduled = false; // 遅延リトライの多重予約防止
   DateTime? _lastTrackEndReplayAt; // onTrackEnd未準備時の再生やり直しの連続発火抑制
   static const _maxConsecutiveErrors = 3;
   Timer? _loadingTimeoutTimer;
@@ -123,6 +125,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Timer? _fadeInTimer;   // フェードイン用（監視タイマーと独立）
   bool _isFading = false;
   bool _pendingFadeIn = false;
+
+  /// 音量正規化の結果（正規化OFFなら100）。
+  /// フェードイン/アウトはこの値を上限にする。100固定にすると
+  /// フェード完了時に正規化した音量が上書きされてしまう。
+  double _baseVolume = 100.0;
 
   bool _trackLoading = false;
   bool _loadingSnackShowing = false;
@@ -329,10 +336,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // PiPハンドラ: ミニプレイヤー中にPiP突入→PlayerScreenに自動遷移
     if (miniActive) {
-      final miniState = ref.read(miniPlayerProvider);
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
       _pipChannel.setMethodCallHandler((call) async {
         if (call.method == 'onPiPChanged' && call.arguments == true) {
+          // dispose時点の状態を握ると、ミニプレイヤーで曲が進んだ後に
+          // 古い曲へ巻き戻ってしまうため、突入時の最新状態を読み直す
+          final miniState = miniNotifier.currentState;
+          if (miniState.item == null) return;
           // PiP突入検知 → PlayerScreenに遷移（PiP内表示が動画に切り替わる）
           miniNotifier.deactivateUI();
           var playlistItems = miniState.playlistItems;
@@ -456,20 +466,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _autoAdvance() {
     if (_consecutiveLoadErrors >= _maxConsecutiveErrors) return;
 
-    // 高速遷移の抑制
+    // 高速遷移の抑制。リトライ予約は1本だけにする
+    // （onTrackEndとB点到達が続けて発火すると、予約が積み上がって二重スキップになる）
     final now = DateTime.now();
-    if (_lastAdvanceTime != null &&
-        now.difference(_lastAdvanceTime!) < _minAdvanceInterval) {
-      Future.delayed(_minAdvanceInterval - now.difference(_lastAdvanceTime!), () {
-        if (mounted) _autoAdvance();
-      });
+    final sinceLast =
+        _lastAdvanceTime == null ? null : now.difference(_lastAdvanceTime!);
+    if (sinceLast != null && sinceLast < _minAdvanceInterval) {
+      if (!_advanceRetryScheduled) {
+        _advanceRetryScheduled = true;
+        Future.delayed(_minAdvanceInterval - sinceLast, () {
+          _advanceRetryScheduled = false;
+          if (mounted) _autoAdvance();
+        });
+      }
       return;
     }
     _lastAdvanceTime = now;
 
     final shouldFadeIn = ref.read(playlistPlayerProvider).firstVerseMode && _isFading;
     _cancelFade();
-    try { ref.read(playerProvider).setVolume(100); } catch (_) {}
+    try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
 
     final plState = ref.read(playlistPlayerProvider);
     final oldTrack = plState.currentTrack;
@@ -588,10 +604,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await Future.delayed(const Duration(milliseconds: 100));
       // 自動遷移(onBPointReached)が先に実行された場合はキャンセル
       if (ref.read(playlistPlayerProvider).currentTrackIndex != startTrackIdx) {
+        _loadingTimeoutTimer?.cancel();
         if (mounted) setState(() => _trackLoading = false);
         return;
       }
     }
+    _loadingTimeoutTimer?.cancel();
     if (mounted) setState(() => _trackLoading = false);
     // 自動遷移がまだ実行されていない場合のみ進む
     if (_preloadedTrackIndex != null && mounted &&
@@ -711,6 +729,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (_) {
       // 失敗は無視（次のタップで再試行される）
     } finally {
+      // ロードが終わったらタイムアウト監視も止める
+      // （残すと30秒後に _cancelLoadingState が走り、次曲プリロードを誤って破棄する）
+      _loadingTimeoutTimer?.cancel();
       if (mounted) {
         setState(() {
           _trackLoading = false;
@@ -733,7 +754,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } else {
       // スワップ後のボリュームストリーム同期
       // （旧プレイヤーのフェードアウト値が残らないよう新プレイヤーに明示設定）
-      try { ref.read(playerProvider).setVolume(100); } catch (_) {}
+      try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
     }
     _consecutiveLoadErrors = 0;
     // 字幕（プレイリスト曲切替時）: キャッシュSRT優先、無ければネット取得
@@ -830,7 +851,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (_isFading) {
           _isFading = false;
           fadeStep = 0;
-          try { ref.read(playerProvider).setVolume(100); } catch (_) {}
+          try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
         }
         return;
       }
@@ -844,7 +865,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (fadeStep <= fadeSteps) {
         final volume = (1.0 - fadeStep / fadeSteps).clamp(0.0, 1.0);
         try {
-          ref.read(playerProvider).setVolume(volume * 100);
+          ref.read(playerProvider).setVolume(volume * _baseVolume);
         } catch (_) {}
       }
     });
@@ -861,7 +882,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       step++;
       final volume = (step / steps).clamp(0.0, 1.0);
       try {
-        ref.read(playerProvider).setVolume(volume * 100);
+        ref.read(playerProvider).setVolume(volume * _baseVolume);
       } catch (_) {}
       if (step >= steps) {
         _fadeInTimer?.cancel();
@@ -1564,7 +1585,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 現在のループ状態を選択中の区間に同期
   void _syncRegionFromLoop() {
     if (_isPlaylist || _activeRegionIdx < 0) return;
-    final regions = _currentItem.effectiveRegions;
+    // その場で書き換えるので、表示用のコピーではなく本体リストを取る
+    final regions = _currentItem.ensureRegions();
     if (_activeRegionIdx >= regions.length) return;
     final loop = ref.read(loopProvider);
     regions[_activeRegionIdx] = regions[_activeRegionIdx].copyWith(
@@ -1590,7 +1612,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _addRegion() {
     if (_isPlaylist) return;
-    final regions = _currentItem.effectiveRegions;
+    final regions = _currentItem.ensureRegions();
     if (regions.length >= _maxRegions) return;
 
     _syncRegionFromLoop();
@@ -1879,14 +1901,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 波形データから音量を正規化（デフォルト50を基準に調整）
   void _applyVolumeNormalization(List<double> waveform) {
-    if (!ref.read(volumeNormProvider)) return;
+    if (!ref.read(volumeNormProvider)) {
+      _baseVolume = 100.0;
+      return;
+    }
 
-    // 波形のRMS（平均二乗平方根）を計算
+    // 波形のRMS（二乗平均平方根）を計算
     var sumSquares = 0.0;
     for (final v in waveform) {
       sumSquares += v * v;
     }
-    final rms = (sumSquares / waveform.length);
+    final rms = math.sqrt(sumSquares / waveform.length);
     if (rms <= 0) return;
 
     // 基準RMS: 0.25（正規化済み波形の中央値想定）
@@ -1895,6 +1920,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // 音量 = 50 * ratio（20〜100にクランプ）
     final volume = (50.0 * ratio).clamp(20.0, 100.0);
+    _baseVolume = volume;
     try {
       ref.read(playerProvider).setVolume(volume);
     } catch (_) {}
@@ -2386,7 +2412,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       engine.swapSlots();
       engine.applyRegion(track);
       loopNotifier.setCurrentItem(track.item.id);
-      miniNotifier.updateCurrentItem(track.item);
+      miniNotifier.updateCurrentItem(track.item,
+          trackIndex: plNotifier.currentState.currentTrackIndex);
       // 次のプリロードを開始
       preloadNext();
     }
@@ -2397,7 +2424,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         engine.activePlayer.seek(Duration(milliseconds: track.startMs!));
       }
       engine.applyRegion(track);
-      miniNotifier.updateCurrentItem(track.item);
+      miniNotifier.updateCurrentItem(track.item,
+          trackIndex: plNotifier.currentState.currentTrackIndex);
     }
 
     /// 未準備のまま曲が終わった場合に、同じ曲を頭からやり直して再生を止めない。
@@ -3015,26 +3043,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
   }
 
-  Widget _buildPlayerView(double bottomInset) {
-    final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    // 横画面 = フルスクリーンビュー直行
-    if (isLandscape) {
-      if (!_isFullscreen) {
-        _isFullscreen = true;
-        _showFullscreenOverlay = true;
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        _resetOverlayTimer();
-      }
-      return _buildFullscreenView(bottomInset);
-    }
-    // 縦に戻ったらフルスクリーン自動解除
-    if (_isFullscreen) {
+  /// 画面の向きに合わせてフルスクリーン状態を切り替える。
+  /// build から直接呼ぶとフレームの整合が崩れる（フィールド書き換え・SystemChrome呼び出し・
+  /// タイマー起動が副作用として走る）ため、必ずフレーム後に呼ぶこと。
+  void _syncFullscreenTo(bool fullscreen) {
+    if (!mounted || fullscreen == _isFullscreen) return;
+    if (fullscreen) {
+      _isFullscreen = true;
+      _showFullscreenOverlay = true;
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      _resetOverlayTimer();
+    } else {
       _isFullscreen = false;
       _showRightDrawer = false;
       _overlayHideTimer?.cancel();
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
+    setState(() {});
+  }
+
+  Widget _buildPlayerView(double bottomInset) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    // 横画面 = フルスクリーン、縦に戻ったら自動解除。
+    // 状態の反映はフレーム後（buildは表示するものを決めるだけにする）
+    if (isLandscape != _isFullscreen) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _syncFullscreenTo(isLandscape));
+    }
+    if (isLandscape) return _buildFullscreenView(bottomInset);
 
     final regions = _currentItem.effectiveRegions;
     final loop = ref.watch(loopProvider);
@@ -3577,7 +3614,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (name == null) return;
 
     final region = LoopRegion(
-      id: '${item.id}_r${item.regions.length}',
+      id: '${item.id}_r${DateTime.now().microsecondsSinceEpoch}',
       name: name,
       pointAMs: aMs,
       pointBMs: bMs,
@@ -3766,6 +3803,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       if (waveform != null) _applyVolumeNormalization(waveform);
                     } else {
                       // OFFにしたらデフォルト音量に戻す
+                      _baseVolume = 100.0;
                       try { ref.read(playerProvider).setVolume(100); } catch (_) {}
                     }
                   },

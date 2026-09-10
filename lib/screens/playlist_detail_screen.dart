@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +14,7 @@ import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../services/share_service.dart';
+import '../widgets/item_thumbnail.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
 
@@ -248,7 +248,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       child: SizedBox(
                         width: 48,
                         height: 36,
-                        child: _buildThumbnail(item),
+                        child: ItemThumbnail(item: item, iconSize: AppIconSizes.sm),
                       ),
                     ),
                     title: Text(item.title,
@@ -494,7 +494,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         width: 120,
                         height: 90,
                         child: thumbItem != null
-                            ? _buildThumbnail(thumbItem)
+                            ? ItemThumbnail(item: thumbItem, iconSize: AppIconSizes.sm)
                             : Container(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -712,7 +712,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                               child: SizedBox(
                                 width: 64,
                                 height: 36,
-                                child: _buildThumbnail(item),
+                                child: ItemThumbnail(item: item, iconSize: AppIconSizes.sm),
                               ),
                             ),
                             if (isDisabled)
@@ -862,8 +862,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   void _showRegionEditSheet(Playlist pl, LoopItem item) {
     final regions = item.effectiveRegions;
     final currentSel = pl.regionSelections[item.id];
-    // 未設定なら全区間選択状態（全体は含まない）
-    final selected = currentSel != null && currentSel.isNotEmpty
+    // キーが無い＝未設定（全区間を再生）／空リスト＝スキップ設定なので区別する。
+    // 空リストを未設定扱いにすると、シートを開いて保存するだけで
+    // スキップ設定が「全区間選択」に化けてしまう。
+    final selected = currentSel != null
         ? Set<String>.from(currentSel)
         : regions.map((r) => r.id).toSet();
 
@@ -950,30 +952,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
-  Widget _buildThumbnail(LoopItem item) {
-    if (item.thumbnailPath != null) {
-      final file = File(item.thumbnailPath!);
-      return Image.file(file, fit: BoxFit.cover, errorBuilder: (_, _, _) {
-        return Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: const Icon(Icons.play_circle_outline,
-              color: Colors.grey, size: AppIconSizes.sm),
-        );
-      });
-    }
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          item.sourceType == 'youtube'
-              ? Icons.play_circle_outline
-              : Icons.video_file_outlined,
-          color: Colors.grey,
-          size: AppIconSizes.sm,
-        ),
-      ),
-    );
-  }
 }
 
 // ============================================================
@@ -1303,7 +1281,7 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
             child: SizedBox(
               width: 64,
               height: 36,
-              child: _buildThumbnail(item),
+              child: ItemThumbnail(item: item, iconSize: AppIconSizes.sm),
             ),
           ),
           title: Text(
@@ -1422,28 +1400,4 @@ class _ItemPickerPageState extends State<_ItemPickerPage> {
     return '$a - $b';
   }
 
-  Widget _buildThumbnail(LoopItem item) {
-    if (item.thumbnailPath != null) {
-      final file = File(item.thumbnailPath!);
-      return Image.file(file, fit: BoxFit.cover, errorBuilder: (_, _, _) {
-        return Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: const Icon(Icons.play_circle_outline,
-              color: Colors.grey, size: AppIconSizes.sm),
-        );
-      });
-    }
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          item.sourceType == 'youtube'
-              ? Icons.play_circle_outline
-              : Icons.video_file_outlined,
-          color: Colors.grey,
-          size: AppIconSizes.sm,
-        ),
-      ),
-    );
-  }
 }

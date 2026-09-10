@@ -16,6 +16,53 @@ class LyricsOverlay extends ConsumerStatefulWidget {
 class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
   int _lastIndex = -1;
   final _currentKey = GlobalKey();
+  final _scrollController = ScrollController();
+
+  /// 行の高さの概算（現在行が未生成のときの飛び先計算用）
+  static const _estimatedRowHeight = 40.0;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// カレント行へスクロールする。
+  ///
+  /// ListView.builder は画面外の行を生成しないため、ABループのB→Aジャンプなどで
+  /// カレント行が大きく画面外に出ると GlobalKey が null になり
+  /// `ensureVisible` が何もできず追従が止まってしまう。
+  /// その場合は概算位置へ飛ばして行を生成させ、次フレームで正確に寄せ直す。
+  void _scrollToCurrent(int index) {
+    if (!mounted) return;
+    final ctx = _currentKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.35, // 画面の35%の位置に表示
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final target =
+        (index * _estimatedRowHeight - position.viewportDimension * 0.35)
+            .clamp(position.minScrollExtent, position.maxScrollExtent);
+    _scrollController.jumpTo(target);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final rebuilt = _currentKey.currentContext;
+      if (rebuilt == null) return;
+      Scrollable.ensureVisible(
+        rebuilt,
+        alignment: 0.35,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,23 +79,15 @@ class _LyricsOverlayState extends ConsumerState<LyricsOverlay> {
     if (currentIdx != _lastIndex) {
       _lastIndex = currentIdx;
       if (currentIdx >= 0) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final ctx = _currentKey.currentContext;
-          if (ctx != null) {
-            Scrollable.ensureVisible(
-              ctx,
-              alignment: 0.35, // 画面の35%の位置に表示
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOut,
-            );
-          }
-        });
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _scrollToCurrent(currentIdx));
       }
     }
 
     return Container(
       color: Colors.black.withValues(alpha: 0.7),
       child: ListView.builder(
+        controller: _scrollController,
         padding: EdgeInsets.only(
           top: 32,
           bottom: MediaQuery.sizeOf(context).height * 0.5,

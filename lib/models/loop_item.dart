@@ -101,20 +101,34 @@ class LoopItem {
 
   /// regions が空でレガシーAB値がある場合はregionsに昇格してから返す（後方互換）
   /// それ以外は空リスト（= 全体再生）
+  /// 表示用の区間リスト。
+  ///
+  /// 旧バージョンのAB値しか持たないアイテムでは、それを区間1つとして「見せる」だけで
+  /// **[regions] は書き換えない**。以前はここで昇格させていたため、
+  /// 読んだだけで区間が生成され、後続のsaveでユーザーが作っていない区間が
+  /// 永続化されてしまっていた。
+  /// 区間を編集する場合は [ensureRegions] を使うこと。
   List<LoopRegion> get effectiveRegions {
     if (regions.isNotEmpty) return regions;
-    if (pointAMs > 0 || pointBMs > 0) {
-      // レガシーAB値をregionsに昇格（以後はregionsが使われる）
-      regions.add(LoopRegion(
+    if (pointAMs > 0 || pointBMs > 0) return [_legacyRegion()];
+    return [];
+  }
+
+  /// 区間を直接編集する前に呼ぶ。
+  /// レガシーAB値しか無ければ区間へ昇格させ、[regions] 本体を返す。
+  List<LoopRegion> ensureRegions() {
+    if (regions.isEmpty && (pointAMs > 0 || pointBMs > 0)) {
+      regions.add(_legacyRegion());
+    }
+    return regions;
+  }
+
+  LoopRegion _legacyRegion() => LoopRegion(
         id: 'default',
         name: '区間 1',
         pointAMs: pointAMs > 0 ? pointAMs : null,
         pointBMs: pointBMs > 0 ? pointBMs : null,
-      ));
-      return regions;
-    }
-    return [];
-  }
+      );
 }
 
 class LoopItemAdapter extends TypeAdapter<LoopItem> {

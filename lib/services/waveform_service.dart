@@ -161,16 +161,41 @@ class WaveformService {
 
   // --- 音声DL + 波形生成（PlayerScreen/EditorScreen共通） ---
 
+  static const _tempPrefix = 'u2b_waveform_';
+
+  /// 画面が異常終了して消し損ねた一時ファイルを掃除する。
+  /// 進行中のDL（最長30秒）を巻き込まないよう1時間以上前のものだけ消す。
+  Future<void> _sweepStaleTempFiles(Directory tempDir) async {
+    try {
+      final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+      await for (final entity in tempDir.list()) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.last;
+        if (!name.startsWith(_tempPrefix) || !name.endsWith('.tmp')) continue;
+        try {
+          if ((await entity.stat()).modified.isBefore(cutoff)) {
+            await entity.delete();
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   /// 音声ストリームを一時ファイルにダウンロードし、パスを返す。
   /// タイムアウトしても100KB超ならパスを返す。失敗時はnull。
   Future<String?> downloadAudioToTemp(
     Stream<List<int>> audioStream, {
-    String fileName = 'u2b_waveform_audio.tmp',
+    String? fileName,
     Duration timeout = const Duration(seconds: 30),
   }) async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final tempFile = File('${tempDir.path}/$fileName');
+      // 固定名にすると、素早く曲を切り替えたときに並行DLが同じファイルへ
+      // 書き込み合って壊れた音声になる。指定が無ければ毎回一意な名前にする。
+      final name = fileName ??
+          '$_tempPrefix${DateTime.now().microsecondsSinceEpoch}.tmp';
+      await _sweepStaleTempFiles(tempDir);
+      final tempFile = File('${tempDir.path}/$name');
       final sink = tempFile.openWrite();
       var bytes = 0;
       final sub = audioStream.listen((chunk) {

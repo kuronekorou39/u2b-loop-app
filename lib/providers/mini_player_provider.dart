@@ -35,6 +35,10 @@ class MiniPlayerState {
 class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
   MiniPlayerNotifier() : super(const MiniPlayerState());
 
+  /// 外部からの読み取り用（PlayerScreen dispose後のコールバックなど、
+  /// ref.read が使えない場所から最新状態を見るために必要）
+  MiniPlayerState get currentState => state;
+
   /// PlayerScreenから戻る時: ミニプレイヤーを表示
   void activate({
     required LoopItem item,
@@ -78,13 +82,16 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
   }
 
   /// ミニプレイヤー中のトラック進行時: 表示アイテムを更新
-  void updateCurrentItem(LoopItem item) {
+  /// [trackIndex] を渡すと再生位置も更新する。
+  /// 渡さないと PiP経由でPlayerScreenに復帰したときに
+  /// ミニプレイヤーで進んだ分だけ古い位置から再生されてしまう。
+  void updateCurrentItem(LoopItem item, {int? trackIndex}) {
     if (!state.active) return;
     state = MiniPlayerState(
       active: true,
       item: item,
       playlistItems: state.playlistItems,
-      initialIndex: state.initialIndex,
+      initialIndex: trackIndex ?? state.initialIndex,
       regionSelections: state.regionSelections,
       disabledItemIds: state.disabledItemIds,
       playlistName: state.playlistName,

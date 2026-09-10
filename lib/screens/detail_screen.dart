@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +15,7 @@ import '../services/export_runner.dart';
 import '../services/export_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/item_tag_sheet.dart';
+import '../widgets/item_thumbnail.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
 
@@ -496,7 +496,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               8),
           children: [
             // サムネイル
-            _buildThumbnail(item),
+            ClipRRect(
+              borderRadius: AppRadius.borderMd,
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ItemThumbnail(
+                  item: item,
+                  heroTag: 'thumb_${item.id}',
+                  placeholder: ItemThumbnailPlaceholderLarge(item: item),
+                ),
+              ),
+            ),
             const SizedBox(height: AppSpacing.md),
 
             // 再生ボタン + メタ情報
@@ -541,6 +551,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             // タイトル
             TextField(
               controller: _titleController,
+              // 保存ボタンの出し分けが _hasChanges 依存なので、入力のたびに再ビルドする
+              onChanged: (_) => setState(() {}),
               maxLength: AppLimits.titleMaxLength,
               decoration: const InputDecoration(
                 labelText: 'タイトル',
@@ -555,6 +567,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             // 備考
             TextField(
               controller: _memoController,
+              onChanged: (_) => setState(() {}),
               maxLength: AppLimits.memoMaxLength,
               decoration: const InputDecoration(
                 labelText: '備考',
@@ -895,12 +908,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ],
       ),
     );
+    // dispose後のcontrollerから .text を読むのはAPI契約違反なので先に取り出す
+    final aText = aController.text.trim();
+    final bText = bController.text.trim();
     aController.dispose();
     bController.dispose();
     if (result != true) return;
 
-    final aText = aController.text.trim();
-    final bText = bController.text.trim();
     final aParsed = aText.isNotEmpty ? double.tryParse(aText) : null;
     final bParsed = bText.isNotEmpty ? double.tryParse(bText) : null;
     final aMs = aParsed != null ? (aParsed * 1000).round() : null;
@@ -1028,49 +1042,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   // --- Thumbnail ---
-
-  Widget _buildThumbnail(LoopItem item) {
-    Widget content;
-    if (item.thumbnailPath != null) {
-      final file = File(item.thumbnailPath!);
-      content = Image.file(file,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _placeholderThumb(item));
-    } else {
-      content = _placeholderThumb(item);
-    }
-    return Hero(
-      tag: 'thumb_${item.id}',
-      child: ClipRRect(
-        borderRadius: AppRadius.borderMd,
-        child: AspectRatio(aspectRatio: 16 / 9, child: content),
-      ),
-    );
-  }
-
-  Widget _placeholderThumb(LoopItem item) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            item.sourceType == 'youtube'
-                ? Icons.play_circle_outline
-                : Icons.video_file_outlined,
-            size: 48,
-            color: Colors.grey,
-          ),
-          if (item.sourceType == 'local')
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text('ローカルファイル',
-                  style: TextStyle(color: Colors.grey, fontSize: 12)),
-            ),
-        ],
-      ),
-    );
-  }
 
 }
 

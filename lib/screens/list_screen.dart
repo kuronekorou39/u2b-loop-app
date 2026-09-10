@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +14,7 @@ import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
 import '../services/playlist_service.dart';
 import '../services/share_service.dart';
+import '../widgets/item_thumbnail.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/share_import_dialog.dart';
@@ -345,6 +345,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
     // 進捗付きダイアログ（キャンセル可能）
     final countNotifier = ValueNotifier<int>(0);
     final statusNotifier = ValueNotifier<String>('プレイリスト情報を取得中...');
+    // 進捗ダイアログを閉じたあとに例外が起きると、catch節のpopが
+    // 一覧画面自体をpopしてしまうため、閉じたかどうかを覚えておく
+    var progressDialogOpen = true;
+    void closeProgressDialog() {
+      if (!progressDialogOpen) return;
+      progressDialogOpen = false;
+      if (mounted) Navigator.pop(context);
+    }
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -381,7 +389,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           TextButton(
             onPressed: () {
               _importCancelled = true;
-              Navigator.pop(context);
+              closeProgressDialog();
             },
             child: const Text('キャンセル'),
           ),
@@ -401,7 +409,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           },
         );
         if (_importCancelled || !mounted) return;
-        Navigator.pop(context);
+        closeProgressDialog();
 
         final videos = data.videos;
         if (videos.isEmpty) {
@@ -443,8 +451,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
       }
     } catch (e) {
       if (_importCancelled) return;
+      closeProgressDialog();
       if (mounted) {
-        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('取得失敗: $e')),
         );
@@ -816,7 +824,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                         width: 48,
                         height: 36,
                         child: thumbItem != null
-                            ? _buildThumbnail(thumbItem)
+                            ? ItemThumbnail(item: thumbItem)
                             : Container(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -1633,7 +1641,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
               children: [
                 AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: _buildThumbnail(item),
+                  child: ItemThumbnail(
+                      item: item,
+                      heroTag: 'thumb_${item.id}',
+                      iconSize: _viewMode == _ViewMode.grid4
+                          ? AppIconSizes.s
+                          : null),
                 ),
                 if (!compact)
                   Expanded(
@@ -1800,7 +1813,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _buildThumbnail(item),
+                  ItemThumbnail(item: item, heroTag: 'thumb_${item.id}'),
                   if (item.isFetching)
                     Container(
                       color: Colors.black54,
@@ -2211,7 +2224,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               width: 56,
               height: 56,
               child: thumbItem != null
-                  ? _buildThumbnail(thumbItem)
+                  ? ItemThumbnail(item: thumbItem)
                   : Container(
                       color: Theme.of(context)
                           .colorScheme
@@ -2298,36 +2311,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  Widget _buildThumbnail(LoopItem item) {
-    Widget content;
-    if (item.thumbnailPath != null) {
-      final file = File(item.thumbnailPath!);
-      content = Image.file(file,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _placeholderThumb(item));
-    } else {
-      content = _placeholderThumb(item);
-    }
-    return Hero(
-      tag: 'thumb_${item.id}',
-      child: content,
-    );
-  }
-
-  Widget _placeholderThumb(LoopItem item) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          item.sourceType == 'youtube'
-              ? Icons.play_circle_outline
-              : Icons.video_file_outlined,
-          color: Colors.grey,
-          size: _viewMode == _ViewMode.grid4 ? AppIconSizes.s : null,
-        ),
-      ),
-    );
-  }
+  /// [hero] は詳細画面へ遷移するアイテムカードでのみ true にする。
+  /// プレイリストのサムネにも付けると、同じ曲をサムネにしたプレイリストと
+  /// そのアイテム自身が同一画面に並んだときにHeroタグが重複してクラッシュする。
 }
 
 // ============================================================
