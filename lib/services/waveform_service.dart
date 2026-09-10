@@ -4,7 +4,11 @@ import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+
 import '../core/native_channels.dart';
+import '../models/video_source.dart';
+import 'youtube_service.dart';
 
 class WaveformService {
 
@@ -220,6 +224,45 @@ class WaveformService {
   }
 
   /// キャッシュ済み音声ファイルから波形を生成し、ファイルを削除して返す。
+  /// 波形用の音声を先読みしてローカルに落とす。パスを返す（失敗時null）。
+  /// 取得済みのマニフェストを使い回すので、再生開始直後に呼ぶと安上がり。
+  Future<String?> prefetchAudio(
+      StreamManifest manifest, YouTubeService ytService) async {
+    final muxed = manifest.muxed.sortByVideoQuality();
+    if (muxed.isEmpty) return null;
+    return downloadAudioToTemp(
+        ytService.yt.videos.streamsClient.get(muxed.first));
+  }
+
+  /// 動画ソースから波形を生成する（ローカル/YouTube共通の入口）。
+  ///
+  /// YouTubeは音声を一時ファイルに落としてから抽出する。
+  /// MediaExtractor にリモートURLを直接渡すとプレイヤーとCDN接続が競合するため。
+  /// [cachedAudioPath] を渡すとDLを省略する（[prefetchAudio] の結果を使う）。
+  /// 使い終わった一時ファイルは内部で削除する。
+  Future<List<double>?> generateForVideoSource(
+    VideoSource source,
+    YouTubeService ytService, {
+    String? cachedAudioPath,
+    int targetSamples = 4000,
+  }) async {
+    if (source.type == VideoSourceType.local) {
+      return generateForLocalFile(source.uri, targetSamples);
+    }
+    final videoId = source.videoId;
+    if (videoId == null) return null;
+
+    var path = cachedAudioPath;
+    if (path == null) {
+      final manifest = await ytService
+          .getManifestWithFallback(videoId)
+          .timeout(const Duration(seconds: 30));
+      path = await prefetchAudio(manifest, ytService);
+      if (path == null) return null;
+    }
+    return generateFromCachedAudio(path, targetSamples: targetSamples);
+  }
+
   Future<List<double>?> generateFromCachedAudio(
     String audioPath, {
     int targetSamples = 4000,

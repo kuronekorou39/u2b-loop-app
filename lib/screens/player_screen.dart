@@ -1224,8 +1224,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         .timeout(const Duration(seconds: 60));
 
     // 波形用音声DLは再生開始後にバックグラウンドで実行→完了後に波形生成
-    _tryDownloadAudio(manifest, ytService).then((ok) {
-      if (ok && mounted) _generateWaveform(source);
+    WaveformService().prefetchAudio(manifest, ytService).then((path) {
+      if (path == null || !mounted) return;
+      _cachedAudioPath = path;
+      _generateWaveform(source);
     });
     await _yieldFrame();
     ref.read(videoSourceProvider.notifier).state = source;
@@ -1824,14 +1826,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final service = WaveformService();
       await service.cancel();
 
-      List<double>? waveform;
-      if (source.type == VideoSourceType.local) {
-        waveform = await service.generateForLocalFile(source.uri, 4000);
-      } else if (source.videoId != null) {
-        waveform = await _generateYouTubeWaveform(source, service);
-      } else {
+      if (source.type != VideoSourceType.local && source.videoId == null) {
         return;
       }
+      // 先読み済みの音声があればDLを省略する
+      final prefetched = _cachedAudioPath;
+      _cachedAudioPath = null;
+      final waveform = await service.generateForVideoSource(
+        source,
+        ref.read(youtubeServiceProvider),
+        cachedAudioPath: prefetched,
+      );
 
       if (mounted) {
         if (waveform == null || waveform.isEmpty) {
@@ -1889,41 +1894,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (_) {}
   }
 
-  Future<bool> _tryDownloadAudio(
-      StreamManifest manifest, dynamic ytService) async {
-    final muxed = manifest.muxed.sortByVideoQuality();
-    if (muxed.isEmpty) return false;
-    final dataStream = ytService.yt.videos.streamsClient.get(muxed.first)
-        as Stream<List<int>>;
-    final path = await WaveformService().downloadAudioToTemp(dataStream);
-    if (path != null) {
-      _cachedAudioPath = path;
-      return true;
-    }
-    return false;
-  }
 
-  Future<List<double>?> _generateYouTubeWaveform(
-      VideoSource source, WaveformService service) async {
-    // キャッシュ済み音声ファイルがあればそれを使う
-    if (_cachedAudioPath != null) {
-      final path = _cachedAudioPath!;
-      _cachedAudioPath = null;
-      return await service.generateFromCachedAudio(path);
-    }
-
-    // マニフェストを再取得して音声DL（リトライ時もここを通る）
-    final ytService = ref.read(youtubeServiceProvider);
-    final manifest = await ytService
-        .getManifestWithFallback(source.videoId!)
-        .timeout(const Duration(seconds: 30));
-    final ok = await _tryDownloadAudio(manifest, ytService);
-    if (!ok) return null;
-
-    final path = _cachedAudioPath!;
-    _cachedAudioPath = null;
-    return await service.generateFromCachedAudio(path);
-  }
 
   // --- Track context menu ---
 
