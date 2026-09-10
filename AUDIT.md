@@ -4,6 +4,29 @@
 - 対象: v1.60.7（commit cebd916）時点の全コード — lib/ 58ファイル（約19,000行）、android/ ネイティブKotlin、.github/workflows/、ドキュメント
 - 方法: `flutter analyze`（lib/はクリーン）＋ 領域別の全行精読 ＋ 横断grepスキャン。重要度「高」はコードで裏取り済み
 
+## その後の対応状況（2026-09-10 時点）
+
+このレポートは2026-06-12時点のスナップショット。以下は解消済み。
+
+- §1 高優先バグ7件 — すべて修正済み（commit 93583f1）
+- §2 `MainActivity.kt` のreceiver/AudioDeviceCallback解除漏れ、`trimMedia` のmuxer解放漏れ、
+  `POST_NOTIFICATIONS` のランタイム要求欠落、バックアップの `thumbnailItemId` 欠落、
+  `delete()` のplaylistsProvider未通知、`invokeMethod` の非同期エラー未捕捉、
+  プレイリスト並べ替えの孤児IDバグ — 修正済み（v1.65.0）
+- §3-1 **プレイリスト遷移エンジンの2重実装** — `lib/providers/playlist_engine.dart` に統合（v1.66.0）
+- §3-3 `_executeExport` の2重実装 — `lib/services/export_runner.dart` に集約（v1.61.0）
+- §3-4 YouTubeストリームURL解決の重複 — `YouTubeService.pickStreamUrl` / `resolveStreamUrl` に集約（v1.66.0）
+- §5 デッドコード（`_TagManagerSheet` 168行、未使用API群、`&& false`、両分岐nullの `top:`、
+  英語デバッグSnackBar） — 削除済み（v1.65.0）
+- §6 CIのバージョン一致ガード・`flutter analyze` ステップ・iOS依存の分離 — 対応済み（v1.65.0）。
+  ISSUES.md も実態に合わせて更新済み。README も更新済み
+
+**残っている主なもの**: AB編集UIの縦横コピペ（§3-6）、テーマ色直書き・SnackBarヘルパー・
+Hive box名・ID生成方式の不統一（§4）、build中の副作用と `effectiveRegions` の副作用（§2/§5）、
+`detail_screen.dart` のdispose済みController参照（§2）、波形一時ファイル名の衝突（§2）。
+
+---
+
 ## 総評
 
 基礎衛生は良好 — `flutter analyze`クリーン、TODO/ignoreコメント0件、`withValues`新API完全移行、永続化はHive一本、dispose処理も概ね丁寧、Flutter⇔Kotlinのメソッドチャネル名も完全一致。一方で、実害のあるバグが7件、そして巨大画面ファイルへのコピペ増殖（エクスポート処理90行×2、名前入力ダイアログ×12、テーマ色直書き約26箇所など）が主な負債。特に「プレイリスト遷移エンジンの2重実装」は重複が実バグを直接生んでいる。
