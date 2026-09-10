@@ -724,7 +724,7 @@ class _CompactSeekbarPainter extends CustomPainter {
       final bX = toX(pointB!);
       canvas.drawRect(
         Rect.fromLTRB(aX, cy - barH / 2, bX, cy + barH / 2),
-        Paint()..color = const Color(0xFF4ECCA3).withValues(alpha: 0.3),
+        Paint()..color = AppTheme.pointBColor.withValues(alpha: 0.3),
       );
     }
 
@@ -734,7 +734,7 @@ class _CompactSeekbarPainter extends CustomPainter {
       canvas.drawRRect(
         RRect.fromLTRBAndCorners(0, cy - barH / 2, posX, cy + barH / 2,
             topLeft: r, bottomLeft: r),
-        Paint()..color = const Color(0xFF4ECCA3),
+        Paint()..color = AppTheme.accentGreen,
       );
     }
 
@@ -745,7 +745,7 @@ class _CompactSeekbarPainter extends CustomPainter {
         Offset(aX, cy - 6),
         Offset(aX, cy + 6),
         Paint()
-          ..color = const Color(0xFFFF6B6B)
+          ..color = AppTheme.pointAColor
           ..strokeWidth = 1.5,
       );
     }
@@ -757,7 +757,7 @@ class _CompactSeekbarPainter extends CustomPainter {
         Offset(bX, cy - 6),
         Offset(bX, cy + 6),
         Paint()
-          ..color = const Color(0xFF4ECCA3)
+          ..color = AppTheme.pointBColor
           ..strokeWidth = 1.5,
       );
     }
@@ -908,7 +908,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
     final endIdx = min(barCount, (viewEnd * barCount).ceil() + 1);
 
     // Waveform uses accent green color (not B color)
-    const waveColorDark = Color(0xFF4ECCA3);
+    const waveColorDark = AppTheme.accentGreen;
     const waveColorLight = Color(0xFF00A86B);
 
     for (var i = startIdx; i < endIdx; i++) {
@@ -975,7 +975,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
         ),
         Paint()
           ..color = isDark
-              ? const Color(0xFF4ECCA3).withValues(alpha: 0.5)
+              ? AppTheme.accentGreen.withValues(alpha: 0.5)
               : const Color(0xFF00A86B).withValues(alpha: 0.5),
       );
     }
@@ -1105,7 +1105,7 @@ class _MinimapPainter extends CustomPainter {
               height: h * 2),
           Paint()
             ..color = isDark
-                ? const Color(0xFF4ECCA3).withValues(alpha: 0.4)
+                ? AppTheme.accentGreen.withValues(alpha: 0.4)
                 : const Color(0xFF00A86B).withValues(alpha: 0.4),
         );
       }

@@ -10,5 +10,8 @@ class AppLimits {
   static const int regionNameMaxLength = 20;
   static const int maxTagsPerItem = 20;
   static const int maxRegions = 10;
+
+  /// QRコードに収められるおおよその文字数
+  static const int qrMaxLength = 2000;
 }
 

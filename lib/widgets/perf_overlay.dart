@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import '../core/theme/app_theme.dart';
 
 /// 画面下部に表示するカスタムパフォーマンスオーバーレイ。
 /// FPS・最悪フレーム時間・ジャンク数をリアルタイム表示。
@@ -58,15 +59,15 @@ class _PerfOverlayState extends State<PerfOverlay>
   }
 
   Color _fpsColor(double fps) {
-    if (fps >= 55) return const Color(0xFF4ECCA3);
+    if (fps >= 55) return AppTheme.accentGreen;
     if (fps >= 30) return const Color(0xFFFFD93D);
-    return const Color(0xFFE94560);
+    return AppTheme.accentRed;
   }
 
   Color _jankColor(int count) {
-    if (count == 0) return const Color(0xFF4ECCA3);
+    if (count == 0) return AppTheme.accentGreen;
     if (count <= 3) return const Color(0xFFFFD93D);
-    return const Color(0xFFE94560);
+    return AppTheme.accentRed;
   }
 
   @override

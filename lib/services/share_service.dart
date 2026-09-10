@@ -149,7 +149,7 @@ class ShareService {
     ).length;
   }
 
-  /// QRコードに収まるか（約2000文字以内）
+  /// QRコードに収まるか（[AppLimits.qrMaxLength] 文字以内）
   static bool canFitInQr({
     required String playlistName,
     required List<LoopItem> items,
@@ -160,7 +160,7 @@ class ShareService {
           items: items,
           tagIdToName: tagIdToName,
         ) <=
-        2000;
+        AppLimits.qrMaxLength;
   }
 }
 

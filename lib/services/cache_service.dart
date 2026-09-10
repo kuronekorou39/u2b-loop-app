@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -9,6 +8,7 @@ import '../models/loop_item.dart';
 import 'export_service.dart';
 import 'subtitle_service.dart';
 import 'youtube_service.dart';
+import '../core/storage/app_boxes.dart';
 
 /// オフラインキャッシュの保存結果。
 class OfflineCacheResult {
@@ -71,8 +71,6 @@ enum _DlState { ok, cancelled, failed }
 ///   VP9/AV1のみの1440p/4Kは MediaMuxer 非対応のため選択肢に出さない）。
 /// 保存先は設定 `cache_to_documents` で切替（false=キャッシュ領域[既定], true=documents）。
 class CacheService {
-  static const _settingsBox = 'settings';
-  static const _storageKey = 'cache_to_documents';
   static const _subDirName = 'offline';
 
   /// オフライン保存済み動画のパス。実体が消えていれば null。
@@ -95,7 +93,8 @@ class CacheService {
 
   bool get _persistent {
     try {
-      return Hive.box(_settingsBox).get(_storageKey, defaultValue: false)
+      return AppBoxes.settings
+          .get(SettingsKeys.cacheToDocuments, defaultValue: false)
           as bool;
     } catch (_) {
       return false;

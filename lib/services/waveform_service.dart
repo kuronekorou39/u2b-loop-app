@@ -4,21 +4,21 @@ import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import '../core/native_channels.dart';
 
 class WaveformService {
-  static const _channel = MethodChannel('com.u2bloop/waveform');
 
   /// 前回の抽出をキャンセル（ネイティブ側の MediaExtractor を解放）
   Future<void> cancel() async {
     try {
-      await _channel.invokeMethod('cancelExtraction');
+      await NativeChannels.waveform.invokeMethod('cancelExtraction');
     } catch (_) {}
   }
 
   /// Android MediaExtractorで音声サンプルサイズを取得 → 波形データ化
   /// ローカルファイルパスを渡す（YouTube URL は generateFromAudioUrl を使うこと）
   Future<List<double>?> generateFromUrl(String url, int targetSamples) async {
-    final result = await _channel.invokeMethod<List<dynamic>>(
+    final result = await NativeChannels.waveform.invokeMethod<List<dynamic>>(
       'extractAmplitudes',
       {'url': url},
     );

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
@@ -15,6 +14,7 @@ import 'services/update_service.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/perf_overlay.dart';
 import 'widgets/share_import_dialog.dart';
+import 'core/native_channels.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -68,7 +68,6 @@ class _Home extends ConsumerStatefulWidget {
 }
 
 class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
-  static const _pipChannel = MethodChannel('com.u2bloop/pip');
   late final AppLinks _appLinks;
   StreamSubscription? _linkSub;
 
@@ -80,7 +79,7 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 起動時にautoPiPを無効化（安全策）
-      _pipChannel
+      NativeChannels.pip
           .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
       UpdateService.checkForUpdate(context);
       _initDeepLinks();
@@ -113,7 +112,7 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
       if (playerScreenActive) return; // PlayerScreen表示中は触らない
       final miniState = ref.read(miniPlayerProvider);
       if (!miniState.active || miniState.item == null) {
-        _pipChannel
+        NativeChannels.pip
             .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
       }
     }

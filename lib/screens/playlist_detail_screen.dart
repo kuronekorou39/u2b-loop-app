@@ -17,6 +17,7 @@ import '../services/share_service.dart';
 import '../widgets/item_thumbnail.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
+import '../core/ui/app_snack_bar.dart';
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   final String playlistId;
@@ -97,7 +98,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
     if (youtubeItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('YouTube動画がありません')),
+        AppSnackBar.info('YouTube動画がありません'),
       );
       return;
     }
@@ -111,16 +112,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     const maxShareLength = 9500;
     if (url.length > maxShareLength) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              '共有データが大きすぎます（${youtubeItems.length}曲/${url.length}文字）。目安150曲以下に減らしてください。'),
-          duration: const Duration(seconds: 5),
-        ),
+        AppSnackBar.error(
+            '共有データが大きすぎます（${youtubeItems.length}曲/${url.length}文字）。目安150曲以下に減らしてください。'),
       );
       return;
     }
 
-    final canQr = url.length <= 2000;
+    final canQr = url.length <= AppLimits.qrMaxLength;
 
     showModalBottomSheet(
       context: context,
@@ -157,7 +155,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 Navigator.pop(ctx);
                 Clipboard.setData(ClipboardData(text: url));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('URLをコピーしました')),
+                  AppSnackBar.success('URLをコピーしました'),
                 );
               },
             ),
@@ -368,10 +366,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 .read(playlistsProvider.notifier)
                 .addItems(pl.id, ids, regions: regions);
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${ids.length}件を追加しました'),
-                duration: const Duration(seconds: 2),
-              ),
+              AppSnackBar.success('${ids.length}件を追加しました'),
             );
           },
         ),
@@ -415,10 +410,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       .read(playlistsProvider.notifier)
                       .addItemsByTag(pl.id, tag.id, allItems);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('「${tag.name}」の曲を追加しました'),
-                      duration: const Duration(seconds: 2),
-                    ),
+                    AppSnackBar.success('「${tag.name}」の曲を追加しました'),
                   );
                 },
               ),

@@ -45,11 +45,17 @@ class AppTheme {
   static const accentGreen = Color(0xFF4ECCA3);
   static const accentRed = Color(0xFFE94560);
 
+  /// ダークテーマの背景（Webアプリ版と揃えた色）
+  static const darkBackground = Color(0xFF1A1A2E);
+
+  /// ダークテーマのカード・AppBar など一段手前の面
+  static const darkSurface = Color(0xFF16213E);
+
   static const _fontFamily = 'Roboto';
 
   static TextTheme _buildTextTheme(Brightness brightness) {
     final color =
-        brightness == Brightness.dark ? Colors.white : const Color(0xFF1A1A2E);
+        brightness == Brightness.dark ? Colors.white : AppTheme.darkBackground;
     final subColor =
         brightness == Brightness.dark ? Colors.grey : Colors.grey.shade600;
 
@@ -116,10 +122,10 @@ class AppTheme {
   }
 
   static ThemeData get dark {
-    const bg = Color(0xFF1A1A2E);
-    const bgSecondary = Color(0xFF16213E);
-    const accent = Color(0xFF4ECCA3);
-    const accentRed = Color(0xFFE94560);
+    const bg = AppTheme.darkBackground;
+    const bgSecondary = AppTheme.darkSurface;
+    const accent = AppTheme.accentGreen;
+    const accentRed = AppTheme.accentRed;
 
     return ThemeData(
       brightness: Brightness.dark,
@@ -185,7 +191,7 @@ class AppTheme {
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: bgSecondary,
-        foregroundColor: Color(0xFF1A1A2E),
+        foregroundColor: AppTheme.darkBackground,
         elevation: 0,
       ),
       cardTheme: const CardThemeData(

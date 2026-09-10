@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import '../core/theme/app_theme.dart';
 
 /// タグのプリセットカラー（index 0 = デフォルト青緑）
 const tagPresetColors = [
-  Color(0xFF4ECCA3), // デフォルト（アクセントグリーン）
+  AppTheme.accentGreen, // デフォルト（アクセントグリーン）
   Color(0xFFEF5350), // 赤
   Color(0xFFFF7043), // オレンジ
   Color(0xFFFFCA28), // 黄

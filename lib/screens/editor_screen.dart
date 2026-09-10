@@ -27,6 +27,8 @@ import '../widgets/loop/loop_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/video_player_widget.dart';
+import '../core/ui/app_snack_bar.dart';
+import '../core/utils/id_generator.dart';
 
 /// AB区間専用エディタ。LoopItem を受け取って AB 区間を編集する。
 class EditorScreen extends ConsumerStatefulWidget {
@@ -67,7 +69,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _regions = effective.map((r) => r.copyWith()).toList();
     if (_regions.isEmpty) {
       _regions.add(LoopRegion(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: IdGenerator.next(),
         name: '区間 1',
       ));
     }
@@ -141,7 +143,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final position = player.state.position;
 
     final region = LoopRegion(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: IdGenerator.next(),
       name: '区間 ${_regions.length + 1}',
       pointAMs: position.inMilliseconds,
       pointBMs: null,
@@ -450,7 +452,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失敗: $e')),
+          AppSnackBar.error('保存失敗: $e'),
         );
       }
     } finally {

@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import '../core/storage/app_boxes.dart';
 
 class EasterEggState {
   final bool statsUnlocked;
@@ -28,11 +28,11 @@ class EasterEggNotifier extends StateNotifier<EasterEggState> {
   }
 
   void _load() {
-    final box = Hive.box('settings');
+    final box = AppBoxes.settings;
     state = EasterEggState(
-      statsUnlocked: box.get('ee_stats', defaultValue: false) as bool,
-      cassetteUnlocked: box.get('ee_cassette', defaultValue: false) as bool,
-      matrixUnlocked: box.get('ee_matrix', defaultValue: false) as bool,
+      statsUnlocked: box.get(SettingsKeys.eeStats, defaultValue: false) as bool,
+      cassetteUnlocked: box.get(SettingsKeys.eeCassette, defaultValue: false) as bool,
+      matrixUnlocked: box.get(SettingsKeys.eeMatrix, defaultValue: false) as bool,
     );
   }
 
@@ -43,7 +43,7 @@ class EasterEggNotifier extends StateNotifier<EasterEggState> {
       cassetteUnlocked: state.cassetteUnlocked,
       matrixUnlocked: state.matrixUnlocked,
     );
-    Hive.box('settings').put('ee_stats', true);
+    AppBoxes.settings.put(SettingsKeys.eeStats, true);
     return true;
   }
 
@@ -54,7 +54,7 @@ class EasterEggNotifier extends StateNotifier<EasterEggState> {
       cassetteUnlocked: true,
       matrixUnlocked: state.matrixUnlocked,
     );
-    Hive.box('settings').put('ee_cassette', true);
+    AppBoxes.settings.put(SettingsKeys.eeCassette, true);
     return true;
   }
 
@@ -65,7 +65,7 @@ class EasterEggNotifier extends StateNotifier<EasterEggState> {
       cassetteUnlocked: state.cassetteUnlocked,
       matrixUnlocked: true,
     );
-    Hive.box('settings').put('ee_matrix', true);
+    AppBoxes.settings.put(SettingsKeys.eeMatrix, true);
     return true;
   }
 }

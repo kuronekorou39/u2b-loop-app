@@ -68,7 +68,7 @@ class _LoadingAnimationViewState extends State<LoadingAnimationView>
     AppTheme.accentGreen,
     AppTheme.pointAColor,
     AppTheme.accentRed,
-    Color(0xFF4FC3F7),
+    AppTheme.pointBColor,
   ];
 
   @override

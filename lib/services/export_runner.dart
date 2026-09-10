@@ -2,8 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../core/theme/app_theme.dart';
 import 'export_service.dart';
+import '../core/ui/app_snack_bar.dart';
 
 /// 書き出しの共通フロー。
 ///
@@ -29,25 +29,13 @@ Future<void> runExportFlow(
 
   if (end - start <= 0) {
     messenger.showSnackBar(
-      const SnackBar(content: Text('書き出す区間の長さがありません')),
+      AppSnackBar.info('書き出す区間の長さがありません'),
     );
     return;
   }
 
   messenger.showSnackBar(
-    const SnackBar(
-      content: Row(
-        children: [
-          SizedBox(
-              width: AppIconSizes.s,
-              height: AppIconSizes.s,
-              child: CircularProgressIndicator(strokeWidth: 2)),
-          SizedBox(width: AppSpacing.lg),
-          Text('書き出し中...'),
-        ],
-      ),
-      duration: Duration(seconds: 30),
-    ),
+    AppSnackBar.progress('書き出し中...'),
   );
 
   final service = ExportService();
@@ -63,10 +51,8 @@ Future<void> runExportFlow(
 
   if (!result.success) {
     messenger.showSnackBar(
-      SnackBar(
-        content: Text('書き出し失敗: ${result.error}'),
-        duration: const Duration(seconds: 8),
-      ),
+      AppSnackBar.error('書き出し失敗: ${result.error}',
+          duration: const Duration(seconds: 8)),
     );
     return;
   }
@@ -76,10 +62,8 @@ Future<void> runExportFlow(
     final loc = result.outputPath;
     final head = format == ExportFormat.audioOnly ? '保存しました' : 'フォトに保存しました';
     messenger.showSnackBar(
-      SnackBar(
-        content: Text(loc != null ? '$head\n$loc' : head),
-        duration: const Duration(seconds: 4),
-      ),
+      AppSnackBar.success(loc != null ? '$head\n$loc' : head,
+          duration: const Duration(seconds: 4)),
     );
     return;
   }
@@ -95,7 +79,7 @@ Future<void> runExportFlow(
     );
   } catch (e) {
     messenger.showSnackBar(
-      SnackBar(content: Text('共有に失敗しました: $e')),
+      AppSnackBar.error('共有に失敗しました: $e'),
     );
   }
 }

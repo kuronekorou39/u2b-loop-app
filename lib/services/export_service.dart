@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import '../core/native_channels.dart';
 
 enum ExportFormat { mp4, audioOnly }
 
@@ -23,7 +24,6 @@ class ExportResult {
 }
 
 class ExportService {
-  static const _channel = MethodChannel('com.u2bloop/export');
 
   /// AB区間をトリミングしてファイルに書き出す
   Future<ExportResult> exportRegion({
@@ -34,7 +34,7 @@ class ExportService {
     required String title,
   }) async {
     try {
-      final result = await _channel.invokeMethod<Map>('exportRegion', {
+      final result = await NativeChannels.export.invokeMethod<Map>('exportRegion', {
         'inputUri': inputUri,
         'startMs': startMs,
         'endMs': endMs,
@@ -67,7 +67,7 @@ class ExportService {
     required String outputPath,
   }) async {
     try {
-      final result = await _channel.invokeMethod<Map>('muxVideoAudio', {
+      final result = await NativeChannels.export.invokeMethod<Map>('muxVideoAudio', {
         'videoPath': videoPath,
         'audioPath': audioPath,
         'outputPath': outputPath,

@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import 'package:hive_flutter/hive_flutter.dart';
 
 import '../app.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
-import '../models/playlist.dart' as app;
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../screens/player_screen.dart';
+import '../core/storage/app_boxes.dart';
+import '../core/native_channels.dart';
 
-const _pipChannel = MethodChannel('com.u2bloop/pip');
 
 class MiniPlayerBar extends ConsumerWidget {
   const MiniPlayerBar({super.key});
@@ -84,9 +82,9 @@ class MiniPlayerBar extends ConsumerWidget {
                         player.stop();
                         ref.read(miniPlayerProvider.notifier).deactivate();
                         // 自動PiP無効化 + バックグラウンド再生停止
-                        _pipChannel.invokeMethod(
+                        NativeChannels.pip.invokeMethod(
                             'setAutoPiP', {'enabled': false}).catchError((_) {});
-                        _pipChannel
+                        NativeChannels.pip
                             .invokeMethod('stopPlaybackService')
                             .catchError((_) {});
                         WakelockPlus.disable();
@@ -116,8 +114,8 @@ class MiniPlayerBar extends ConsumerWidget {
     String? playlistName = state.playlistName;
 
     if (state.playlistId != null) {
-      final plBox = Hive.box<app.Playlist>('playlists');
-      final itemBox = Hive.box<LoopItem>('loop_items');
+      final plBox = AppBoxes.playlists;
+      final itemBox = AppBoxes.loopItems;
       final pl = plBox.get(state.playlistId);
       if (pl != null) {
         playlistItems = pl.itemIds

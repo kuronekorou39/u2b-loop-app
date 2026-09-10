@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import '../widgets/loading_animations/loading_animation.dart';
+import '../core/storage/app_boxes.dart';
 
 /// ローディングアニメーション設定。null = ランダム。
 final loadingAnimationProvider =
@@ -12,10 +12,10 @@ class LoadingAnimationNotifier extends StateNotifier<LoadingAnimationType?> {
     _load();
   }
 
-  static const _key = 'loading_animation';
+  static const _key = SettingsKeys.loadingAnimation;
 
   void _load() {
-    final box = Hive.box('settings');
+    final box = AppBoxes.settings;
     final saved = box.get(_key) as String?;
     if (saved == null) {
       state = null; // ランダム
@@ -28,7 +28,7 @@ class LoadingAnimationNotifier extends StateNotifier<LoadingAnimationType?> {
 
   void set(LoadingAnimationType? type) {
     state = type;
-    final box = Hive.box('settings');
+    final box = AppBoxes.settings;
     if (type == null) {
       box.delete(_key);
     } else {
@@ -44,11 +44,11 @@ final perfOverlayProvider =
 
 class PerfOverlayNotifier extends StateNotifier<bool> {
   PerfOverlayNotifier() : super(false) {
-    state = Hive.box('settings').get('perf_overlay', defaultValue: false) as bool;
+    state = AppBoxes.settings.get(SettingsKeys.perfOverlay, defaultValue: false) as bool;
   }
 
   void toggle() {
     state = !state;
-    Hive.box('settings').put('perf_overlay', state);
+    AppBoxes.settings.put(SettingsKeys.perfOverlay, state);
   }
 }

@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../core/theme/app_theme.dart';
@@ -20,6 +19,8 @@ import '../services/cache_service.dart';
 import '../services/update_service.dart';
 import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
+import '../core/ui/app_snack_bar.dart';
+import '../core/storage/app_boxes.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -34,15 +35,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ─── Data stats ───
 
-  int get _itemCount => Hive.box<LoopItem>('loop_items').length;
-  int get _playlistCount => Hive.box<app.Playlist>('playlists').length;
-  int get _tagCount => Hive.box<Tag>('tags').length;
+  int get _itemCount => AppBoxes.loopItems.length;
+  int get _playlistCount => AppBoxes.playlists.length;
+  int get _tagCount => AppBoxes.tags.length;
 
   // ─── オフラインキャッシュ ───
 
   /// オフライン保存の保存先（false=キャッシュ領域[既定], true=documentsに永続保存）
   bool get _cacheToDocuments =>
-      Hive.box('settings').get('cache_to_documents', defaultValue: false)
+      AppBoxes.settings.get(SettingsKeys.cacheToDocuments, defaultValue: false)
           as bool;
 
   /// すべてのオフラインキャッシュ（動画・字幕）を削除する。
@@ -51,7 +52,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ref.read(loopItemsProvider).where((i) => i.isCached).toList();
     if (cached.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('オフラインデータはありません')),
+        AppSnackBar.info('オフラインデータはありません'),
       );
       return;
     }
@@ -80,7 +81,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) {
       setState(() {}); // 容量表示を再計算
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${cached.length}件のオフラインデータを削除しました')),
+        AppSnackBar.success('${cached.length}件のオフラインデータを削除しました'),
       );
     }
   }
@@ -129,9 +130,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _exportData() async {
     setState(() => _busy = true);
     try {
-      final items = Hive.box<LoopItem>('loop_items').values.toList();
-      final playlists = Hive.box<app.Playlist>('playlists').values.toList();
-      final tags = Hive.box<Tag>('tags').values.toList();
+      final items = AppBoxes.loopItems.values.toList();
+      final playlists = AppBoxes.playlists.values.toList();
+      final tags = AppBoxes.tags.values.toList();
 
       final data = {
         'version': 1,
@@ -158,13 +159,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!mounted) return;
       if (result != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('エクスポート完了')),
+          AppSnackBar.success('エクスポート完了'),
         );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('エクスポート失敗: $e')),
+        AppSnackBar.error('エクスポート失敗: $e'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -245,9 +246,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final jsonStr = utf8.decode(result.files.single.bytes!);
       final data = jsonDecode(jsonStr) as Map<String, dynamic>;
 
-      final itemBox = Hive.box<LoopItem>('loop_items');
-      final plBox = Hive.box<app.Playlist>('playlists');
-      final tagBox = Hive.box<Tag>('tags');
+      final itemBox = AppBoxes.loopItems;
+      final plBox = AppBoxes.playlists;
+      final tagBox = AppBoxes.tags;
 
       await itemBox.clear();
       await plBox.clear();
@@ -272,12 +273,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'インポート完了: ${data['items']?.length ?? 0}件のアイテム, '
-              '${data['playlists']?.length ?? 0}件のプレイリスト, '
-              '${data['tags']?.length ?? 0}件のタグ'),
-        ),
+        AppSnackBar.success('インポート完了: ${data['items']?.length ?? 0}件のアイテム, '
+            '${data['playlists']?.length ?? 0}件のプレイリスト, '
+            '${data['tags']?.length ?? 0}件のタグ'),
       );
       setState(() {});
 
@@ -286,7 +284,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('インポート失敗: $e')),
+        AppSnackBar.error('インポート失敗: $e'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -408,14 +406,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     setState(() => _busy = true);
     try {
-      await Hive.box<LoopItem>('loop_items').clear();
-      await Hive.box<app.Playlist>('playlists').clear();
-      await Hive.box<Tag>('tags').clear();
+      await AppBoxes.loopItems.clear();
+      await AppBoxes.playlists.clear();
+      await AppBoxes.tags.clear();
       // イースターエッグもリセット
-      final settingsBox = Hive.box('settings');
-      await settingsBox.delete('ee_stats');
-      await settingsBox.delete('ee_cassette');
-      await settingsBox.delete('ee_matrix');
+      final settingsBox = AppBoxes.settings;
+      await settingsBox.delete(SettingsKeys.eeStats);
+      await settingsBox.delete(SettingsKeys.eeCassette);
+      await settingsBox.delete(SettingsKeys.eeMatrix);
 
       ref.invalidate(loopItemsProvider);
       ref.invalidate(playlistsProvider);
@@ -424,7 +422,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('全データを削除しました')),
+        AppSnackBar.success('全データを削除しました'),
       );
       setState(() {});
     } finally {
@@ -584,7 +582,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                       value: _cacheToDocuments,
                       onChanged: (v) {
-                        Hive.box('settings').put('cache_to_documents', v);
+                        AppBoxes.settings.put(SettingsKeys.cacheToDocuments, v);
                         setState(() {});
                       },
                     ),
@@ -649,10 +647,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       onTap: () {
                         UpdateService.checkForUpdate(context);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('最新版を確認中...'),
-                            duration: Duration(seconds: 2),
-                          ),
+                          AppSnackBar.info('最新版を確認中...'),
                         );
                       },
                     ),
@@ -680,9 +675,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   .unlockStats();
                               if (unlocked) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('🎉 隠しステータスがアンロックされました！'),
-                                  ),
+                                  AppSnackBar.success(
+                                      '🎉 隠しステータスがアンロックされました！'),
                                 );
                               }
                               _showStatsScreen();
@@ -758,9 +752,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // シートを閉じてからSnackBar
             Navigator.pop(ctx);
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🎵 隠しアニメーション「カセット」がアンロックされました！'),
-              ),
+              AppSnackBar.success(
+                  '🎵 隠しアニメーション「カセット」がアンロックされました！'),
             );
           }
         },
@@ -796,9 +789,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // ─── 隠しステータス画面 ───
 
   void _showStatsScreen() {
-    final items = Hive.box<LoopItem>('loop_items').values.toList();
-    final playlists = Hive.box<app.Playlist>('playlists').values.toList();
-    final tags = Hive.box<Tag>('tags').values.toList();
+    final items = AppBoxes.loopItems.values.toList();
+    final playlists = AppBoxes.playlists.values.toList();
+    final tags = AppBoxes.tags.values.toList();
 
     // 集計
     final totalItems = items.length;
@@ -943,7 +936,7 @@ class _AnimPickerSheetState extends State<_AnimPickerSheet> {
             margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A2E),
+              color: AppTheme.darkBackground,
               borderRadius: AppRadius.borderMd,
             ),
             child: _selected == LoadingAnimationType.off

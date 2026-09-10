@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive/hive.dart';
 
 import '../core/theme/app_theme.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../services/share_service.dart';
+import '../core/ui/app_snack_bar.dart';
+import '../core/storage/app_boxes.dart';
+import '../core/utils/id_generator.dart';
 
 Future<void> showShareImportDialog(
     BuildContext context, WidgetRef ref, ShareData data) {
@@ -79,7 +81,7 @@ class _ShareImportDialog extends StatelessWidget {
   }
 
   void _import(BuildContext context) async {
-    final tagBox = Hive.box<Tag>('tags');
+    final tagBox = AppBoxes.tags;
     final existingTags = tagBox.values.toList();
 
     // タグの名前→ID変換テーブルを作成
@@ -90,7 +92,7 @@ class _ShareImportDialog extends StatelessWidget {
       if (existing != null) {
         tagNameToId[name] = existing.id;
       } else {
-        final id = DateTime.now().microsecondsSinceEpoch.toString();
+        final id = IdGenerator.next();
         final tag = Tag(id: id, name: name);
         await tagBox.put(id, tag);
         tagNameToId[name] = id;
@@ -102,13 +104,13 @@ class _ShareImportDialog extends StatelessWidget {
     final itemIds = await notifier.importSharedItems(data.items, tagNameToId);
 
     // プレイリスト作成
-    final plId = DateTime.now().microsecondsSinceEpoch.toString();
+    final plId = IdGenerator.next();
     final playlist = Playlist(
       id: plId,
       name: data.name,
       itemIds: itemIds,
     );
-    await Hive.box<Playlist>('playlists').put(plId, playlist);
+    await AppBoxes.playlists.put(plId, playlist);
 
     // UIを更新して完了通知
     ref.invalidate(playlistsProvider);
@@ -116,10 +118,8 @@ class _ShareImportDialog extends StatelessWidget {
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('「${data.name}」をインポートしました（${itemIds.length}曲）'),
-        ),
+        AppSnackBar.success(
+            '「${data.name}」をインポートしました（${itemIds.length}曲）'),
       );
     }
 

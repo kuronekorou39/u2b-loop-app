@@ -12,18 +12,19 @@ import '../models/tag.dart';
 import '../services/cache_service.dart';
 import '../services/share_service.dart';
 import '../services/thumbnail_service.dart';
+import '../core/storage/app_boxes.dart';
+import '../core/utils/id_generator.dart';
 
 // --- LoopItem ---
 
 final loopItemsProvider =
     StateNotifierProvider<LoopItemsNotifier, List<LoopItem>>((ref) {
-  return LoopItemsNotifier(Hive.box<LoopItem>('loop_items'), ref);
+  return LoopItemsNotifier(AppBoxes.loopItems, ref);
 });
 
 class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   final Box<LoopItem> _box;
   final Ref _ref;
-  int _idCounter = 0;
 
   // プログレッシブディレイ管理（時間経過でリセット）
   int _requestCount = 0;
@@ -43,7 +44,6 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     return Duration(milliseconds: ms);
   }
 
-  String _generateId() => '${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
   LoopItemsNotifier(this._box, this._ref)
       : super(_box.values.toList()
@@ -75,7 +75,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           .deletePaths(item.cachedVideoPath, item.cachedSubtitlePath);
     }
     // プレイリストから孤立参照を除去
-    final plBox = Hive.box<app.Playlist>('playlists');
+    final plBox = AppBoxes.playlists;
     var playlistsChanged = false;
     for (final pl in plBox.values) {
       if (pl.itemIds.remove(id)) {
@@ -129,7 +129,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   /// YouTube動画を即座にリストに追加し、バックグラウンドで情報を取得
   Future<void> addYouTubeAndFetch(String videoId, String originalUrl,
       {String? tagId}) async {
-    final id = _generateId();
+    final id = IdGenerator.next();
     final item = LoopItem(
       id: id,
       title: videoId,
@@ -155,7 +155,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     // 既に登録済みならスキップ
     if (_box.values.any((i) => i.videoId == videoId)) return;
 
-    final id = _generateId();
+    final id = IdGenerator.next();
     String? thumbPath;
     if (thumbnailUrl != null) {
       await Future.delayed(_nextDelay());
@@ -242,7 +242,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     final addedIds = <String>[];
     for (final v in videos) {
       if (_box.values.any((i) => i.videoId == v.videoId)) continue;
-      final id = _generateId();
+      final id = IdGenerator.next();
       final item = LoopItem(
         id: id,
         title: v.title,
@@ -283,7 +283,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   int addLocalFilesSync(List<({String path, String name})> files) {
     final entries = <String, LoopItem>{};
     for (final f in files) {
-      final id = _generateId();
+      final id = IdGenerator.next();
       entries[id] = LoopItem(
         id: id,
         title: f.name,
@@ -362,7 +362,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   /// アイテムを複製（新IDで同じ内容のコピーを作成）
   Future<LoopItem> duplicate(LoopItem source) async {
-    final id = _generateId();
+    final id = IdGenerator.next();
     final copy = LoopItem(
       id: id,
       title: '${source.title} (コピー)',
@@ -381,7 +381,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           .asMap()
           .entries
           .map((e) => LoopRegion(
-                id: '${DateTime.now().microsecondsSinceEpoch}_${e.key}',
+                id: IdGenerator.next(),
                 name: e.value.name,
                 pointAMs: e.value.pointAMs,
                 pointBMs: e.value.pointBMs,
@@ -468,7 +468,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         continue;
       }
 
-      final id = _generateId();
+      final id = IdGenerator.next();
       final tagIds =
           si.tags.map((name) => tagNameToId[name]).whereType<String>().toList();
       final regions = si.regions
@@ -502,7 +502,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 // --- Tag ---
 
 final tagsProvider = StateNotifierProvider<TagsNotifier, List<Tag>>((ref) {
-  return TagsNotifier(Hive.box<Tag>('tags'));
+  return TagsNotifier(AppBoxes.tags);
 });
 
 class TagsNotifier extends StateNotifier<List<Tag>> {
@@ -516,7 +516,7 @@ class TagsNotifier extends StateNotifier<List<Tag>> {
   }
 
   Future<Tag> create(String name) async {
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = IdGenerator.next();
     final tag = Tag(id: id, name: name.trim());
     await _box.put(id, tag);
     _refresh();
@@ -556,7 +556,7 @@ final tagFilterProvider = StateProvider<Map<String, bool>>((ref) => {});
 
 final playlistsProvider =
     StateNotifierProvider<PlaylistsNotifier, List<app.Playlist>>((ref) {
-  return PlaylistsNotifier(Hive.box<app.Playlist>('playlists'));
+  return PlaylistsNotifier(AppBoxes.playlists);
 });
 
 class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
@@ -592,7 +592,7 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
   Future<app.Playlist> duplicate(String id) async {
     final src = _box.get(id);
     if (src == null) throw Exception('Playlist not found');
-    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newId = IdGenerator.next();
     final copy = app.Playlist(
       id: newId,
       name: '${src.name} (コピー)',

@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'loading_animation.dart';
+import '../../core/theme/app_theme.dart';
 
 class CassetteAnimation extends LoadingAnimation {
   CassetteAnimation({required super.elapsed});
@@ -26,7 +27,7 @@ class CassetteAnimation extends LoadingAnimation {
     canvas.drawRRect(
       bodyRect,
       Paint()
-        ..color = const Color(0xFF4ECCA3).withValues(alpha: 0.3)
+        ..color = AppTheme.accentGreen.withValues(alpha: 0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5 * scale,
     );
@@ -39,7 +40,7 @@ class CassetteAnimation extends LoadingAnimation {
     canvas.drawRRect(
       windowRect,
       Paint()
-        ..color = const Color(0xFF1A1A2E)
+        ..color = AppTheme.darkBackground
         ..style = PaintingStyle.fill,
     );
 
@@ -58,7 +59,7 @@ class CassetteAnimation extends LoadingAnimation {
       Offset(leftReelX + reelRadius, reelY),
       Offset(rightReelX - reelRadius, reelY),
       Paint()
-        ..color = const Color(0xFF4ECCA3).withValues(alpha: 0.5)
+        ..color = AppTheme.accentGreen.withValues(alpha: 0.5)
         ..strokeWidth = 1.5 * scale,
     );
 
@@ -70,7 +71,7 @@ class CassetteAnimation extends LoadingAnimation {
     canvas.drawRRect(
       headRect,
       Paint()
-        ..color = const Color(0xFF1A1A2E)
+        ..color = AppTheme.darkBackground
         ..style = PaintingStyle.fill,
     );
 
@@ -84,7 +85,7 @@ class CassetteAnimation extends LoadingAnimation {
       canvas.drawCircle(
         offset,
         3 * scale,
-        Paint()..color = const Color(0xFF4ECCA3).withValues(alpha: 0.2),
+        Paint()..color = AppTheme.accentGreen.withValues(alpha: 0.2),
       );
     }
 
@@ -96,7 +97,7 @@ class CassetteAnimation extends LoadingAnimation {
         Offset(cx - lineWidth / 2, lineY),
         Offset(cx + lineWidth / 2, lineY),
         Paint()
-          ..color = const Color(0xFF4ECCA3).withValues(alpha: 0.15)
+          ..color = AppTheme.accentGreen.withValues(alpha: 0.15)
           ..strokeWidth = 2 * scale
           ..strokeCap = StrokeCap.round,
       );
@@ -110,7 +111,7 @@ class CassetteAnimation extends LoadingAnimation {
       Offset(cx, cy),
       radius,
       Paint()
-        ..color = const Color(0xFF4ECCA3).withValues(alpha: 0.3)
+        ..color = AppTheme.accentGreen.withValues(alpha: 0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5 * scale,
     );
@@ -120,7 +121,7 @@ class CassetteAnimation extends LoadingAnimation {
       Offset(cx, cy),
       6 * scale,
       Paint()
-        ..color = const Color(0xFF4ECCA3).withValues(alpha: 0.4)
+        ..color = AppTheme.accentGreen.withValues(alpha: 0.4)
         ..style = PaintingStyle.fill,
     );
 
@@ -131,7 +132,7 @@ class CassetteAnimation extends LoadingAnimation {
         Offset(cx + cos(angle) * 6 * scale, cy + sin(angle) * 6 * scale),
         Offset(cx + cos(angle) * radius * 0.85, cy + sin(angle) * radius * 0.85),
         Paint()
-          ..color = const Color(0xFF4ECCA3).withValues(alpha: 0.3)
+          ..color = AppTheme.accentGreen.withValues(alpha: 0.3)
           ..strokeWidth = 1.5 * scale
           ..strokeCap = StrokeCap.round,
       );

@@ -18,6 +18,7 @@ import '../widgets/item_tag_sheet.dart';
 import '../widgets/item_thumbnail.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
+import '../core/ui/app_snack_bar.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -118,8 +119,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         await ref.read(loopItemsProvider.notifier).duplicate(item);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('複製しました'), duration: Duration(seconds: 1)),
+        AppSnackBar.success('複製しました'),
       );
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => DetailScreen(itemId: copy.id)),
@@ -157,10 +157,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       .read(playlistsProvider.notifier)
                       .addItems(pl.id, [item.id]);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('「${pl.name}」に追加しました'),
-                      duration: const Duration(seconds: 1),
-                    ),
+                    AppSnackBar.success('「${pl.name}」に追加しました'),
                   );
                 },
               ),
@@ -201,7 +198,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Future<void> _downloadOffline(LoopItem item) async {
     if (item.videoId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('YouTube動画のみオフライン保存できます')),
+        AppSnackBar.info('YouTube動画のみオフライン保存できます'),
       );
       return;
     }
@@ -209,33 +206,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     // 画質一覧を取得
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            SizedBox(
-                width: AppIconSizes.s,
-                height: AppIconSizes.s,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-            SizedBox(width: AppSpacing.lg),
-            Text('画質を取得中...'),
-          ],
-        ),
-        duration: Duration(seconds: 30),
-      ),
+      AppSnackBar.progress('画質を取得中...'),
     );
     List<CacheQuality> options;
     try {
       options = await CacheService().qualityOptions(item.videoId!);
     } catch (e) {
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(SnackBar(content: Text('画質の取得に失敗しました: $e')));
+      messenger.showSnackBar(AppSnackBar.error('画質の取得に失敗しました: $e'));
       return;
     }
     messenger.hideCurrentSnackBar();
     if (!mounted) return;
     if (options.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('保存できる画質が見つかりません')),
+        AppSnackBar.info('保存できる画質が見つかりません'),
       );
       return;
     }
@@ -335,15 +320,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       final mb = (result.sizeBytes / 1024 / 1024).toStringAsFixed(1);
       final subMsg = result.subtitlePath != null ? '・字幕付き' : '（字幕なし）';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'オフライン保存しました（${result.resolution ?? ''} ${mb}MB$subMsg）'),
-          duration: const Duration(seconds: 4),
-        ),
+        AppSnackBar.success(
+            'オフライン保存しました（${result.resolution ?? ''} ${mb}MB$subMsg）',
+            duration: const Duration(seconds: 4)),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失敗: ${result.error}')),
+        AppSnackBar.error('保存失敗: ${result.error}'),
       );
     }
   }
@@ -352,9 +335,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     await ref.read(loopItemsProvider.notifier).clearCache(item.id);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('オフラインデータを削除しました'),
-            duration: Duration(seconds: 2)),
+        AppSnackBar.success('オフラインデータを削除しました'),
       );
     }
   }
@@ -374,8 +355,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   void _copyUrl(String url) {
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('URLをコピーしました'), duration: Duration(seconds: 1)),
+      AppSnackBar.success('URLをコピーしました'),
     );
   }
 
@@ -719,7 +699,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final region = regions[index];
     if (!region.hasA || !region.hasB) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A・B両方の地点を設定してください')),
+        AppSnackBar.info('A・B両方の地点を設定してください'),
       );
       return;
     }
@@ -761,19 +741,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     } else if (item.videoId != null) {
       final messenger = ScaffoldMessenger.of(context);
       messenger.showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                  width: AppIconSizes.s,
-                  height: AppIconSizes.s,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: AppSpacing.lg),
-              Text('動画を準備中...'),
-            ],
-          ),
-          duration: Duration(seconds: 30),
-        ),
+        AppSnackBar.progress('動画を準備中...'),
       );
       final service = YouTubeService();
       try {
@@ -782,7 +750,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       } catch (e) {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
-          SnackBar(content: Text('動画の取得に失敗しました: $e')),
+          AppSnackBar.error('動画の取得に失敗しました: $e'),
         );
         return;
       } finally {
@@ -794,7 +762,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (inputUri == null || inputUri.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('書き出せる動画ソースがありません')),
+          AppSnackBar.info('書き出せる動画ソースがありません'),
         );
       }
       return;

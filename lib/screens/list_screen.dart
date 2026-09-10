@@ -23,6 +23,8 @@ import 'detail_screen.dart';
 import 'player_screen.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
+import '../core/ui/app_snack_bar.dart';
+import '../core/utils/id_generator.dart';
 
 /// 表示モード: リスト / 2列 / 4列
 enum _ViewMode { list, grid2, grid4 }
@@ -77,9 +79,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     setState(() => _matrixActive = true);
     if (unlocked) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('💊 マトリックスモードがアンロックされました！'),
-        ),
+        AppSnackBar.success('💊 マトリックスモードがアンロックされました！'),
       );
     }
     Future.delayed(const Duration(seconds: 10), () {
@@ -112,7 +112,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           showShareImportDialog(context, ref, data);
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('無効な共有URLです')),
+            AppSnackBar.info('無効な共有URLです'),
           );
         }
         return;
@@ -156,10 +156,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               .read(loopItemsProvider.notifier)
               .addYouTubeAndFetch(videoId, url);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('追加しました（情報を取得中...）'),
-              duration: Duration(seconds: 2),
-            ),
+            AppSnackBar.success('追加しました（情報を取得中...）'),
           );
         }
         return;
@@ -167,17 +164,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
       if (videoId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('無効なYouTube URLです')),
+          AppSnackBar.info('無効なYouTube URLです'),
         );
         return;
       }
       ref.read(loopItemsProvider.notifier).addYouTubeAndFetch(videoId, url);
       Navigator.pop(dialogCtx);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('追加しました（情報を取得中...）'),
-          duration: Duration(seconds: 2),
-        ),
+        AppSnackBar.success('追加しました（情報を取得中...）'),
       );
     }
 
@@ -326,10 +320,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final count = ref.read(loopItemsProvider.notifier).addLocalFilesSync(files);
     if (mounted && count > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$count件追加しました（サムネイル取得中...）'),
-          duration: const Duration(seconds: 2),
-        ),
+        AppSnackBar.success('$count件追加しました（サムネイル取得中...）'),
       );
     }
   }
@@ -414,12 +405,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
         final videos = data.videos;
         if (videos.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(playlistId.startsWith('RD')
-                  ? 'ミックスリストの取得に失敗しました（YouTube側の制限の可能性）'
-                  : 'プレイリストに動画がありません'),
-              duration: const Duration(seconds: 3),
-            ),
+            AppSnackBar.info(playlistId.startsWith('RD')
+                ? 'ミックスリストの取得に失敗しました（YouTube側の制限の可能性）'
+                : 'プレイリストに動画がありません'),
           );
           return;
         }
@@ -454,7 +442,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       closeProgressDialog();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('取得失敗: $e')),
+          AppSnackBar.error('取得失敗: $e'),
         );
       }
     }
@@ -482,9 +470,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('「$playlistTitle」から${addedIds.length}曲を追加しました'),
-        ),
+        AppSnackBar.success(
+            '「$playlistTitle」から${addedIds.length}曲を追加しました'),
       );
     }
 
@@ -643,7 +630,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
     if (item.isFetching) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('データ取得中です...')),
+        AppSnackBar.info('データ取得中です...'),
       );
       return;
     }
@@ -846,11 +833,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           .addItems(pl.id, ids);
                       _clearSelection();
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                              '${ids.length}件を「${pl.name}」に追加しました'),
-                          duration: const Duration(seconds: 2),
-                        ),
+                        AppSnackBar.success(
+                            '${ids.length}件を「${pl.name}」に追加しました'),
                       );
                     },
                   );
@@ -897,7 +881,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 controller.dispose();
                 if (name != null && name.isNotEmpty) {
                   final pl = Playlist(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                    id: IdGenerator.next(),
                     name: name,
                   );
                   await ref.read(playlistsProvider.notifier).add(pl);
@@ -908,11 +892,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   _clearSelection();
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content:
-                            Text('${ids.length}件を「${pl.name}」に追加しました'),
-                        duration: const Duration(seconds: 2),
-                      ),
+                      AppSnackBar.success(
+                          '${ids.length}件を「${pl.name}」に追加しました'),
                     );
                   }
                 }
@@ -984,7 +965,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     controller.dispose();
     if (name != null && name.isNotEmpty) {
       ref.read(playlistsProvider.notifier).add(Playlist(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            id: IdGenerator.next(),
             name: name,
           ));
     }

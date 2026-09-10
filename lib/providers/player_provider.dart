@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../models/video_source.dart';
 import '../services/youtube_service.dart';
+import '../core/storage/app_boxes.dart';
 
 final youtubeServiceProvider = Provider<YouTubeService>((ref) {
   final service = YouTubeService();
@@ -103,15 +103,15 @@ final seekStepProvider =
     StateNotifierProvider<SeekStepNotifier, int>((ref) => SeekStepNotifier());
 
 class SeekStepNotifier extends StateNotifier<int> {
-  static const _key = 'seek_step';
+  static const _key = SettingsKeys.seekStep;
 
   SeekStepNotifier() : super(5) {
-    state = Hive.box('settings').get(_key, defaultValue: 5) as int;
+    state = AppBoxes.settings.get(_key, defaultValue: 5) as int;
   }
 
   set value(int v) {
     state = v;
-    Hive.box('settings').put(_key, v);
+    AppBoxes.settings.put(_key, v);
   }
 }
 final flipHorizontalProvider = StateProvider<bool>((ref) => false);

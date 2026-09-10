@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -20,7 +19,6 @@ import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
 import '../models/loop_state.dart';
-import '../models/playlist.dart' as app;
 import '../models/playlist_mode.dart' as pl;
 import '../models/playlist_track.dart';
 import '../models/video_source.dart';
@@ -50,6 +48,10 @@ import '../widgets/player/player_status_views.dart';
 import '../widgets/player/subtitle_toggle_button.dart';
 import '../widgets/player/track_row_parts.dart';
 import '../widgets/player/video_player_widget.dart';
+import '../core/ui/app_snack_bar.dart';
+import '../core/storage/app_boxes.dart';
+import '../core/native_channels.dart';
+import '../core/utils/id_generator.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
 class PlayerScreen extends ConsumerStatefulWidget {
@@ -78,7 +80,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver {
-  static const _pipChannel = MethodChannel('com.u2bloop/pip');
 
   bool _loading = true;
   final _loadingStatus = ValueNotifier<String>('準備中...');
@@ -158,7 +159,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     playerScreenActive = true;
     _compactSeekbar = widget.playlistItems != null;
 
-    _pipChannel.setMethodCallHandler((call) async {
+    NativeChannels.pip.setMethodCallHandler((call) async {
       if (call.method == 'onPiPChanged') {
         if (mounted) setState(() => _isInPiP = call.arguments as bool);
       } else if (call.method == 'onPiPAction') {
@@ -203,7 +204,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
-        _pipChannel.invokeMethod('setAutoPiP', {
+        NativeChannels.pip.invokeMethod('setAutoPiP', {
           'enabled': true, 'isPlaylist': _isPlaylist,
           'thumbnailUrl': _currentItem.thumbnailUrl,
           'thumbnailPath': _currentItem.thumbnailPath,
@@ -247,7 +248,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             );
         // デフォルトシャッフル適用
         if (widget.playlistId != null) {
-          final plBox = Hive.box<app.Playlist>('playlists');
+          final plBox = AppBoxes.playlists;
           final pl = plBox.get(widget.playlistId);
           if (pl != null && pl.defaultShuffle) {
             ref.read(playlistPlayerProvider.notifier).toggleShuffle();
@@ -257,7 +258,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       _loadItem();
       // 自動PiPを有効化 + 現在の再生状態を送信
-      _pipChannel.invokeMethod('setAutoPiP', {
+      NativeChannels.pip.invokeMethod('setAutoPiP', {
         'enabled': true, 'isPlaylist': _isPlaylist,
         'thumbnailUrl': _currentItem.thumbnailUrl,
         'thumbnailPath': _currentItem.thumbnailPath,
@@ -319,7 +320,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // 自動PiP: ミニプレイヤー有効時は維持（PiP突入後にPlayerScreenに遷移する）
     if (!miniActive) {
-      _pipChannel
+      NativeChannels.pip
           .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
     }
     if (!miniActive) {
@@ -337,7 +338,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // PiPハンドラ: ミニプレイヤー中にPiP突入→PlayerScreenに自動遷移
     if (miniActive) {
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
-      _pipChannel.setMethodCallHandler((call) async {
+      NativeChannels.pip.setMethodCallHandler((call) async {
         if (call.method == 'onPiPChanged' && call.arguments == true) {
           // dispose時点の状態を握ると、ミニプレイヤーで曲が進んだ後に
           // 古い曲へ巻き戻ってしまうため、突入時の最新状態を読み直す
@@ -351,8 +352,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           var playlistName = miniState.playlistName;
           if (miniState.playlistId != null) {
             try {
-              final plBox = Hive.box<app.Playlist>('playlists');
-              final itemBox = Hive.box<LoopItem>('loop_items');
+              final plBox = AppBoxes.playlists;
+              final itemBox = AppBoxes.loopItems;
               final pl = plBox.get(miniState.playlistId);
               if (pl != null) {
                 playlistItems = pl.itemIds
@@ -379,7 +380,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       });
     } else {
-      _pipChannel.setMethodCallHandler(null);
+      NativeChannels.pip.setMethodCallHandler(null);
     }
     if (_cachedAudioPath != null) {
       try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
@@ -387,7 +388,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // ミニプレイヤー非アクティブならバックグラウンド再生停止
     if (!ref.read(miniPlayerProvider).active) {
       WakelockPlus.disable();
-      _pipChannel.invokeMethod('stopPlaybackService').catchError((_) {});
+      NativeChannels.pip.invokeMethod('stopPlaybackService').catchError((_) {});
     }
     super.dispose();
   }
@@ -542,10 +543,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return;
       _cancelLoadingState();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('読込タイムアウト。操作可能です。'),
-          duration: Duration(seconds: 2),
-        ),
+        AppSnackBar.info('読込タイムアウト。操作可能です。'),
       );
     });
   }
@@ -564,15 +562,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!_loadingSnackShowing) {
         _loadingSnackShowing = true;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('読込中...（タップでキャンセル）'),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'キャンセル',
-              onPressed: _cancelLoadingState,
-            ),
-          ),
+          AppSnackBar.action('読込中...（タップでキャンセル）',
+              label: 'キャンセル', onPressed: _cancelLoadingState),
         ).closed.then((_) => _loadingSnackShowing = false);
       }
       return true;
@@ -1333,7 +1324,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Auto-play + バックグラウンド再生サービス開始
     player.play();
     WakelockPlus.enable();
-    _pipChannel.invokeMethod('startPlaybackService', {
+    NativeChannels.pip.invokeMethod('startPlaybackService', {
       'title': item.title,
       'thumbnailPath': item.thumbnailPath,
     }).catchError((_) {});
@@ -1618,7 +1609,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _syncRegionFromLoop();
     final position = ref.read(playerProvider).state.position;
     final region = LoopRegion(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: IdGenerator.next(),
       name: '区間 ${regions.length + 1}',
       pointAMs: position.inMilliseconds,
       pointBMs: null,
@@ -1741,7 +1732,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _enterPiP() async {
     _updatePiPPlayState();
     try {
-      await _pipChannel.invokeMethod('enterPiP', {
+      await NativeChannels.pip.invokeMethod('enterPiP', {
         'thumbnailUrl': _currentItem.thumbnailUrl,
         'thumbnailPath': _currentItem.thumbnailPath,
       });
@@ -1749,9 +1740,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       debugPrint('enterPiP failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('PiPに入れませんでした'),
-              duration: Duration(seconds: 3)),
+          AppSnackBar.info('PiPに入れませんでした'),
         );
       }
     }
@@ -1759,7 +1748,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _updatePiPPlayState() {
     final playing = ref.read(playerProvider).state.playing;
-    _pipChannel
+    NativeChannels.pip
         .invokeMethod('updatePiPPlayState', {'playing': playing}).catchError((_) {});
   }
 
@@ -2076,10 +2065,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('「${track.item.title}」を削除しました'),
-          duration: const Duration(seconds: 2),
-        ),
+        AppSnackBar.success('「${track.item.title}」を削除しました'),
       );
     }
   }
@@ -2248,9 +2234,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 再生状態の同期: PiP + 通知コントローラー
     ref.listen(playingProvider, (_, next) {
       final playing = next.valueOrNull ?? false;
-      _pipChannel.invokeMethod(
+      NativeChannels.pip.invokeMethod(
           'updatePiPPlayState', {'playing': playing}).catchError((_) {});
-      _pipChannel.invokeMethod('updatePlaybackService', {
+      NativeChannels.pip.invokeMethod('updatePlaybackService', {
         'title': _currentItem.title,
         'playing': playing,
         'thumbnailPath': _currentItem.thumbnailPath,
@@ -3614,7 +3600,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (name == null) return;
 
     final region = LoopRegion(
-      id: '${item.id}_r${DateTime.now().microsecondsSinceEpoch}',
+      id: IdGenerator.child(item.id, 'r'),
       name: name,
       pointAMs: aMs,
       pointBMs: bMs,

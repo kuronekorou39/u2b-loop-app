@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive/hive.dart';
 import '../models/loop_item.dart';
 import '../models/loop_state.dart';
 import 'player_provider.dart';
+import '../core/storage/app_boxes.dart';
 
 final loopProvider = StateNotifierProvider<LoopNotifier, LoopState>((ref) {
   final notifier = LoopNotifier(ref);
@@ -223,7 +223,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
 
     // しきい値到達 → カウント+1
     _playCountAccMs -= threshold;
-    final box = Hive.box<LoopItem>('loop_items');
+    final box = AppBoxes.loopItems;
     final item = box.get(currentItemId);
     if (item != null) {
       item.playCount++;
@@ -235,7 +235,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
 
   void _saveAccumulatedTime() {
     if (currentItemId == null) return;
-    final box = Hive.box<LoopItem>('loop_items');
+    final box = AppBoxes.loopItems;
     final item = box.get(currentItemId);
     if (item != null && _playCountAccMs != item.accumulatedPlayMs) {
       item.accumulatedPlayMs = _playCountAccMs;
@@ -253,7 +253,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
     currentItemId = itemId;
     _msSinceLastSave = 0;
     if (itemId != null) {
-      final box = Hive.box<LoopItem>('loop_items');
+      final box = AppBoxes.loopItems;
       final item = box.get(itemId);
       _playCountAccMs = item?.accumulatedPlayMs ?? 0;
     } else {
