@@ -9,7 +9,6 @@ class PlayerControls extends ConsumerWidget {
   const PlayerControls({super.key});
 
   static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-  static const _seekSteps = [5, 10, 30];
 
   static const _rewindIcons = <int, IconData>{
     5: Icons.replay_5,
@@ -29,7 +28,7 @@ class PlayerControls extends ConsumerWidget {
       context: context,
       position: RelativeRect.fromLTRB(
           position.dx - 40, position.dy - 160, position.dx + 40, position.dy),
-      items: _seekSteps
+      items: SeekStepNotifier.options
           .map((s) => PopupMenuItem(
                 value: s,
                 height: 36,

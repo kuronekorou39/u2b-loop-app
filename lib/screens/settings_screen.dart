@@ -6,22 +6,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
+import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_snack_bar.dart';
 import '../models/loop_item.dart';
-import '../models/loop_region.dart';
-import '../models/playlist.dart' as app;
-import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
 import '../providers/loading_animation_provider.dart';
+import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/backup_service.dart';
 import '../services/cache_service.dart';
 import '../services/update_service.dart';
 import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
-import '../core/ui/app_snack_bar.dart';
-import '../core/storage/app_boxes.dart';
-import '../core/ui/app_dialogs.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -34,270 +33,120 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
   int _versionTapCount = 0;
 
-  // ─── Data stats ───
-
   int get _itemCount => AppBoxes.loopItems.length;
   int get _playlistCount => AppBoxes.playlists.length;
   int get _tagCount => AppBoxes.tags.length;
 
-  // ─── オフラインキャッシュ ───
-
-  /// オフライン保存の保存先（false=キャッシュ領域[既定], true=documentsに永続保存）
-  bool get _cacheToDocuments =>
+  /// オフライン動画の保存先（true=端末に残す[documents] / false=一時領域[cache]）
+  bool get _keepOfflineVideos =>
       AppBoxes.settings.get(SettingsKeys.cacheToDocuments, defaultValue: false)
           as bool;
 
-  /// すべてのオフラインキャッシュ（動画・字幕）を削除する。
-  Future<void> _clearAllOfflineCache() async {
-    final cached =
-        ref.read(loopItemsProvider).where((i) => i.isCached).toList();
-    if (cached.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.info('オフラインデータはありません'),
-      );
-      return;
-    }
-    final ok = await showDialog<bool>(
+  void _toast(SnackBar bar) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  }
+
+  // ─── 再生 ───
+
+  Future<void> _pickSeekStep() async {
+    final current = ref.read(seekStepProvider);
+    final picked = await showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('全削除の確認'),
-        content: Text('${cached.length}件のオフラインデータを削除します。よろしいですか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除', style: TextStyle(color: Colors.red)),
+      builder: (ctx) => SimpleDialog(
+        title: const Text('スキップ秒数'),
+        children: [
+          RadioGroup<int>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(ctx, v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final s in SeekStepNotifier.options)
+                  RadioListTile<int>(value: s, title: Text('$s秒')),
+              ],
+            ),
           ),
         ],
       ),
     );
-    if (ok != true) return;
-    final notifier = ref.read(loopItemsProvider.notifier);
-    for (final item in cached) {
-      await notifier.clearCache(item.id);
-    }
-    if (mounted) {
-      setState(() {}); // 容量表示を再計算
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.success('${cached.length}件のオフラインデータを削除しました'),
-      );
-    }
+    if (picked != null) ref.read(seekStepProvider.notifier).value = picked;
   }
 
-  // ─── Export ───
-
-  Map<String, dynamic> _itemToJson(LoopItem item) => {
-        'id': item.id,
-        'title': item.title,
-        'uri': item.uri,
-        'sourceType': item.sourceType,
-        'videoId': item.videoId,
-        'thumbnailUrl': item.thumbnailUrl,
-        'pointAMs': item.pointAMs,
-        'pointBMs': item.pointBMs,
-        'speed': item.speed,
-        'memo': item.memo,
-        'createdAt': item.createdAt.toIso8601String(),
-        'updatedAt': item.updatedAt.toIso8601String(),
-        'fetchStatus': item.fetchStatus,
-        'tagIds': item.tagIds,
-        'youtubeUrl': item.youtubeUrl,
-        'regions': item.regions.map((r) => r.toMap()).toList(),
-        'playCount': item.playCount,
-        'accumulatedPlayMs': item.accumulatedPlayMs,
-        'hasSubtitles': item.hasSubtitles,
-      };
-
-  Map<String, dynamic> _playlistToJson(app.Playlist pl) => {
-        'id': pl.id,
-        'name': pl.name,
-        'itemIds': pl.itemIds,
-        'createdAt': pl.createdAt.toIso8601String(),
-        'regionSelections': pl.regionSelections,
-        'disabledItemIds': pl.disabledItemIds.toList(),
-        'thumbnailItemId': pl.thumbnailItemId,
-        'defaultShuffle': pl.defaultShuffle,
-      };
-
-  Map<String, dynamic> _tagToJson(Tag tag) => {
-        'id': tag.id,
-        'name': tag.name,
-        'colorIndex': tag.colorIndex,
-      };
+  // ─── バックアップ ───
 
   Future<void> _exportData() async {
     setState(() => _busy = true);
     try {
-      final items = AppBoxes.loopItems.values.toList();
-      final playlists = AppBoxes.playlists.values.toList();
-      final tags = AppBoxes.tags.values.toList();
-
-      final data = {
-        'version': 1,
-        'exportedAt': DateTime.now().toIso8601String(),
-        'items': items.map(_itemToJson).toList(),
-        'playlists': playlists.map(_playlistToJson).toList(),
-        'tags': tags.map(_tagToJson).toList(),
-      };
-
-      final jsonStr = const JsonEncoder.withIndent('  ').convert(data);
-      final bytes = Uint8List.fromList(utf8.encode(jsonStr));
-      final ts = DateTime.now()
-          .toIso8601String()
-          .replaceAll(':', '-')
-          .split('.')
-          .first;
-
-      final result = await FilePicker.platform.saveFile(
+      final json = BackupService.encode(
+        items: AppBoxes.loopItems.values.toList(),
+        playlists: AppBoxes.playlists.values.toList(),
+        tags: AppBoxes.tags.values.toList(),
+      );
+      final saved = await FilePicker.platform.saveFile(
         dialogTitle: 'バックアップを保存',
-        fileName: 'u2b_loop_backup_$ts.json',
-        bytes: bytes,
+        fileName: BackupService.fileName(),
+        bytes: Uint8List.fromList(utf8.encode(json)),
       );
-
-      if (!mounted) return;
-      if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          AppSnackBar.success('エクスポート完了'),
-        );
-      }
+      if (saved != null) _toast(AppSnackBar.success('書き出しました'));
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.error('エクスポート失敗: $e'),
-      );
+      _toast(AppSnackBar.error('書き出しに失敗しました: $e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ─── Import ───
-
-  LoopItem _itemFromJson(Map<String, dynamic> j) => LoopItem(
-        id: j['id'] as String,
-        title: j['title'] as String,
-        uri: j['uri'] as String,
-        sourceType: j['sourceType'] as String,
-        videoId: j['videoId'] as String?,
-        thumbnailUrl: j['thumbnailUrl'] as String?,
-        pointAMs: j['pointAMs'] as int? ?? 0,
-        pointBMs: j['pointBMs'] as int? ?? 0,
-        speed: (j['speed'] as num?)?.toDouble() ?? 1.0,
-        memo: j['memo'] as String?,
-        createdAt: DateTime.tryParse(j['createdAt'] ?? '') ?? DateTime.now(),
-        updatedAt: DateTime.tryParse(j['updatedAt'] ?? '') ?? DateTime.now(),
-        fetchStatus: j['fetchStatus'] as String?,
-        tagIds: (j['tagIds'] as List?)?.cast<String>() ?? [],
-        youtubeUrl: j['youtubeUrl'] as String?,
-        regions: (j['regions'] as List?)
-                ?.map((m) =>
-                    LoopRegion.fromMap((m as Map).cast<String, dynamic>()))
-                .toList() ??
-            [],
-        playCount: j['playCount'] as int? ?? 0,
-        accumulatedPlayMs: j['accumulatedPlayMs'] as int? ?? 0,
-        hasSubtitles: j['hasSubtitles'] as bool?,
-      );
-
-  app.Playlist _playlistFromJson(Map<String, dynamic> j) {
-    Map<String, List<String>>? regionSel;
-    if (j['regionSelections'] != null) {
-      final raw = (j['regionSelections'] as Map).cast<String, dynamic>();
-      regionSel =
-          raw.map((k, v) => MapEntry(k, (v as List).cast<String>()));
-    }
-    return app.Playlist(
-      id: j['id'] as String,
-      name: j['name'] as String,
-      itemIds: (j['itemIds'] as List?)?.cast<String>() ?? [],
-      createdAt: DateTime.tryParse(j['createdAt'] ?? '') ?? DateTime.now(),
-      regionSelections: regionSel,
-      disabledItemIds:
-          (j['disabledItemIds'] as List?)?.cast<String>().toSet(),
-      thumbnailItemId: j['thumbnailItemId'] as String?,
-      defaultShuffle: j['defaultShuffle'] as bool? ?? false,
-    );
-  }
-
-  Tag _tagFromJson(Map<String, dynamic> j) => Tag(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        colorIndex: j['colorIndex'] as int? ?? 0,
-      );
-
   Future<void> _importData() async {
-    final result = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['json'],
       withData: true,
     );
-    if (result == null || result.files.single.bytes == null) return;
+    final bytes = picked?.files.single.bytes;
+    if (bytes == null) return;
 
-    final confirmed = await _showConfirmDialog(
-      title: 'インポート',
-      message: '既存のデータは上書きされます。続けますか？',
-      confirmLabel: 'インポート',
+    // 先に全件読み込んで検証する。ここで失敗しても今のデータには触れない
+    final BackupData data;
+    try {
+      data = BackupService.decode(utf8.decode(bytes));
+    } on FormatException catch (e) {
+      _toast(AppSnackBar.error(e.message));
+      return;
+    } catch (e) {
+      _toast(AppSnackBar.error('読み込みに失敗しました: $e'));
+      return;
+    }
+
+    if (!mounted) return;
+    final confirmed = await AppDialogs.confirm(
+      context,
+      title: 'バックアップから復元',
+      message: 'アイテム ${data.items.length}件・プレイリスト ${data.playlists.length}件・'
+          'タグ ${data.tags.length}件で、今のデータをすべて置き換えます。',
+      confirmLabel: '置き換える',
+      destructive: true,
     );
     if (!confirmed) return;
 
     setState(() => _busy = true);
     try {
-      final jsonStr = utf8.decode(result.files.single.bytes!);
-      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-
-      final itemBox = AppBoxes.loopItems;
-      final plBox = AppBoxes.playlists;
-      final tagBox = AppBoxes.tags;
-
-      await itemBox.clear();
-      await plBox.clear();
-      await tagBox.clear();
-
-      for (final j in (data['items'] as List? ?? [])) {
-        final item = _itemFromJson(j as Map<String, dynamic>);
-        await itemBox.put(item.id, item);
-      }
-      for (final j in (data['playlists'] as List? ?? [])) {
-        final pl = _playlistFromJson(j as Map<String, dynamic>);
-        await plBox.put(pl.id, pl);
-      }
-      for (final j in (data['tags'] as List? ?? [])) {
-        final tag = _tagFromJson(j as Map<String, dynamic>);
-        await tagBox.put(tag.id, tag);
-      }
-
+      await BackupService.restore(data);
       ref.invalidate(loopItemsProvider);
       ref.invalidate(playlistsProvider);
       ref.invalidate(tagsProvider);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.success('インポート完了: ${data['items']?.length ?? 0}件のアイテム, '
-            '${data['playlists']?.length ?? 0}件のプレイリスト, '
-            '${data['tags']?.length ?? 0}件のタグ'),
-      );
-      setState(() {});
-
-      // サムネイルを再取得（進捗表示）
+      _toast(AppSnackBar.success('復元しました'));
+      if (mounted) setState(() {});
+      // サムネイル画像は端末固有なのでバックアップに含めていない。取り直す
       _repairThumbnailsWithProgress();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.error('インポート失敗: $e'),
-      );
+      _toast(AppSnackBar.error('復元に失敗しました: $e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   String _formatEta(Duration d) {
-    if (d.inHours > 0) {
-      return '約${d.inHours}時間${d.inMinutes % 60}分';
-    } else if (d.inMinutes > 0) {
-      return '約${d.inMinutes}分';
-    }
+    if (d.inHours > 0) return '約${d.inHours}時間${d.inMinutes % 60}分';
+    if (d.inMinutes > 0) return '約${d.inMinutes}分';
     return '1分未満';
   }
 
@@ -340,17 +189,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     if (total > 0) ...[
                       const SizedBox(height: AppSpacing.lg),
-                      LinearProgressIndicator(
-                          value: total > 0 ? done / total : 0),
+                      LinearProgressIndicator(value: done / total),
                       const SizedBox(height: AppSpacing.xs),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('$done / $total',
-                              style: textTheme.bodySmall),
+                          Text('$done / $total', style: textTheme.bodySmall),
                           if (eta.isNotEmpty)
-                            Text('残り $eta',
-                                style: textTheme.bodySmall),
+                            Text('残り $eta', style: textTheme.bodySmall),
                         ],
                       ),
                     ],
@@ -370,9 +216,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (done >= 3) {
           final elapsed = DateTime.now().difference(startTime);
           final perItem = elapsed.inMilliseconds / done;
-          final remaining = Duration(
-              milliseconds: (perItem * (total - done)).round());
-          etaNotifier.value = _formatEta(remaining);
+          etaNotifier.value = _formatEta(
+              Duration(milliseconds: (perItem * (total - done)).round()));
         }
       },
     ).whenComplete(() {
@@ -384,24 +229,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }).catchError((_) {});
   }
 
-  // ─── Clear ───
+  // ─── 危険な操作 ───
 
-  Future<void> _clearData() async {
-    final confirmed = await _showConfirmDialog(
-      title: '全データ削除',
-      message:
-          '全てのアイテム・プレイリスト・タグが削除されます。\nこの操作は元に戻せません。',
+  Future<void> _clearAllOfflineVideos() async {
+    final cached =
+        ref.read(loopItemsProvider).where((i) => i.isCached).toList();
+    if (cached.isEmpty) {
+      _toast(AppSnackBar.info('オフライン動画はありません'));
+      return;
+    }
+    final ok = await AppDialogs.confirmDelete(context,
+        title: 'オフライン動画をすべて削除',
+        message: '${cached.length}件の保存済み動画と字幕を削除します。'
+            '曲の登録やAB区間はそのまま残ります。');
+    if (!ok) return;
+    final notifier = ref.read(loopItemsProvider.notifier);
+    for (final item in cached) {
+      await notifier.clearCache(item.id);
+    }
+    if (mounted) setState(() {}); // 容量表示を再計算
+    _toast(AppSnackBar.success('${cached.length}件のオフライン動画を削除しました'));
+  }
+
+  Future<void> _clearAllData() async {
+    final confirmed = await AppDialogs.confirm(
+      context,
+      title: 'すべてのデータを削除',
+      message: 'アイテム・プレイリスト・タグがすべて削除されます。\n'
+          'この操作は元に戻せません。',
       confirmLabel: '削除',
-      isDestructive: true,
+      destructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
 
-    final really = await _showConfirmDialog(
+    final really = await AppDialogs.confirm(
+      context,
       title: '本当に削除しますか？',
-      message:
-          '$_itemCount件のアイテム、$_playlistCount件のプレイリスト、$_tagCount件のタグが完全に失われます。',
+      message: '$_itemCount件のアイテム、$_playlistCount件のプレイリスト、'
+          '$_tagCount件のタグが完全に失われます。',
       confirmLabel: '完全に削除',
-      isDestructive: true,
+      destructive: true,
     );
     if (!really) return;
 
@@ -421,259 +288,217 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ref.invalidate(tagsProvider);
       ref.invalidate(easterEggProvider);
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.success('全データを削除しました'),
-      );
-      setState(() {});
+      _toast(AppSnackBar.success('すべてのデータを削除しました'));
+      if (mounted) setState(() {});
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ─── Helpers ───
+  // ─── アプリ情報 ───
 
-  Future<bool> _showConfirmDialog({
-    required String title,
-    required String message,
-    required String confirmLabel,
-    bool isDestructive = false,
-  }) =>
-      AppDialogs.confirm(context,
-          title: title,
-          message: message,
-          confirmLabel: confirmLabel,
-          destructive: isDestructive);
+  void _onVersionTap() {
+    _versionTapCount++;
+    if (_versionTapCount < 5) return;
+    _versionTapCount = 0;
+    final unlocked = ref.read(easterEggProvider.notifier).unlockStats();
+    if (unlocked) {
+      _toast(AppSnackBar.success('🎉 隠しステータスがアンロックされました！'));
+    }
+    _showStatsScreen();
+  }
 
   // ─── Build ───
 
   @override
   Widget build(BuildContext context) {
     final isDark = ref.watch(themeProvider);
+    final seekStep = ref.watch(seekStepProvider);
     final textTheme = Theme.of(context).textTheme;
+    final viewPadding = MediaQuery.viewPaddingOf(context);
 
     return Scaffold(
-      appBar:
-          AppBar(title: Text('設定', style: textTheme.displaySmall)),
+      appBar: AppBar(title: Text('設定', style: textTheme.displaySmall)),
       body: Stack(
         children: [
-          ListView(
+          // 説明文はタイトルより一段控えめに（強弱が無いと詰まって見える）
+          ListTileTheme.merge(
+            titleTextStyle: textTheme.bodyLarge,
+            subtitleTextStyle: textTheme.bodySmall,
+            child: ListView(
             padding: EdgeInsets.fromLTRB(
-                16 + MediaQuery.of(context).viewPadding.left,
-                8,
-                16 + MediaQuery.of(context).viewPadding.right,
-                8 + MediaQuery.of(context).viewPadding.bottom),
+                AppSpacing.xl + viewPadding.left,
+                AppSpacing.md,
+                AppSpacing.xl + viewPadding.right,
+                AppSpacing.xxl + viewPadding.bottom),
             children: [
-              // ── 外観 ──
-              _sectionHeader('外観'),
-              Card(
-                child: SwitchListTile(
-                  secondary:
-                      Icon(isDark ? Icons.dark_mode : Icons.light_mode),
-                  title: Text('ダークモード',
-                      style: textTheme.bodyLarge),
-                  value: isDark,
-                  onChanged: (v) =>
-                      ref.read(themeProvider.notifier).value = v,
-                ),
+              _LibrarySummary(
+                items: _itemCount,
+                playlists: _playlistCount,
+                tags: _tagCount,
               ),
 
-              const SizedBox(height: AppSpacing.sm),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.animation),
-                  title: Text('ローディングアニメーション',
-                      style: textTheme.bodyLarge),
-                  subtitle: Text(
-                    _animationLabel(ref.watch(loadingAnimationProvider)),
-                    style: textTheme.bodySmall,
+              _SettingsSection(
+                title: '表示',
+                children: [
+                  SwitchListTile(
+                    secondary:
+                        Icon(isDark ? Icons.dark_mode : Icons.light_mode),
+                    title: const Text('ダークモード'),
+                    value: isDark,
+                    onChanged: (v) =>
+                        ref.read(themeProvider.notifier).value = v,
                   ),
-                  onTap: () => _showAnimationPicker(context),
-                ),
+                  // 値が長い（「パーティクル (Particles)」等）ので右寄せせず説明文に出す
+                  ListTile(
+                    leading: const Icon(Icons.animation),
+                    title: const Text('読み込み中の演出'),
+                    subtitle: Text(
+                        _animationLabel(ref.watch(loadingAnimationProvider))),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _showAnimationPicker(context),
+                  ),
+                ],
               ),
 
-              const SizedBox(height: AppSpacing.xl),
-
-              // ── データ管理 ──
-              _sectionHeader('データ管理'),
-              Card(
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.md),
-                      child: Row(
-                        children: [
-                          _statChip(
-                              Icons.music_note, '$_itemCount', 'アイテム'),
-                          const SizedBox(width: AppSpacing.lg),
-                          _statChip(Icons.queue_music,
-                              '$_playlistCount', 'プレイリスト'),
-                          const SizedBox(width: AppSpacing.lg),
-                          _statChip(
-                              Icons.label_outline, '$_tagCount', 'タグ'),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.upload_file),
-                      title: Text('エクスポート',
-                          style: textTheme.bodyLarge),
-                      subtitle: Text('JSONファイルに書き出し',
-                          style: textTheme.bodySmall),
-                      onTap: _busy ? null : _exportData,
-                    ),
-                    const Divider(height: 1, indent: 56),
-                    ListTile(
-                      leading: const Icon(Icons.download),
-                      title: Text('インポート',
-                          style: textTheme.bodyLarge),
-                      subtitle: Text('JSONファイルから復元',
-                          style: textTheme.bodySmall),
-                      onTap: _busy ? null : _importData,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.delete_forever,
-                          color: Colors.red),
-                      title: Text('データクリア',
-                          style:
-                              textTheme.bodyLarge!.copyWith(color: Colors.red)),
-                      subtitle: Text('全てのデータを削除',
-                          style: textTheme.bodySmall),
-                      onTap: _busy ? null : _clearData,
-                    ),
-                  ],
-                ),
+              _SettingsSection(
+                title: '再生',
+                children: [
+                  _ValueTile(
+                    icon: Icons.forward_10,
+                    title: '早送り・巻き戻しの秒数',
+                    value: '$seekStep秒',
+                    onTap: _pickSeekStep,
+                  ),
+                ],
               ),
 
-              const SizedBox(height: AppSpacing.xl),
+              _SettingsSection(
+                title: 'ストレージ',
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.sd_storage),
+                    title: const Text('オフライン動画を端末に残す'),
+                    subtitle: Text(_keepOfflineVideos
+                        ? 'アプリを削除するまで残ります'
+                        : '容量不足で消えることがあります'),
+                    value: _keepOfflineVideos,
+                    onChanged: (v) {
+                      AppBoxes.settings.put(SettingsKeys.cacheToDocuments, v);
+                      setState(() {});
+                      // 保存先は保存時に決まるので、既存の動画は移動しない
+                      _toast(AppSnackBar.info('これから保存する動画から適用されます'));
+                    },
+                  ),
+                  FutureBuilder<int>(
+                    future: CacheService().totalCacheSize(),
+                    builder: (_, snap) {
+                      final waiting =
+                          snap.connectionState == ConnectionState.waiting;
+                      final mb =
+                          ((snap.data ?? 0) / 1024 / 1024).toStringAsFixed(1);
+                      return _ValueTile(
+                        icon: Icons.folder_open,
+                        title: 'オフライン動画の容量',
+                        value: waiting ? '計算中…' : '$mb MB',
+                      );
+                    },
+                  ),
+                ],
+              ),
 
-              // ── オフライン保存 ──
-              _sectionHeader('オフライン保存'),
+              _SettingsSection(
+                title: 'バックアップ',
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.upload_file),
+                    title: const Text('バックアップを書き出す'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _busy ? null : _exportData,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.download),
+                    title: const Text('バックアップから復元'),
+                    subtitle: const Text('今のデータは置き換わります'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _busy ? null : _importData,
+                  ),
+                ],
+              ),
+
+              _SettingsSection(
+                title: 'アプリ情報',
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.system_update),
+                    title: const Text('アップデートを確認'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      UpdateService.checkForUpdate(context);
+                      _toast(AppSnackBar.info('最新版を確認中...'));
+                    },
+                  ),
+                  FutureBuilder<PackageInfo>(
+                    future: PackageInfo.fromPlatform(),
+                    builder: (_, snap) {
+                      final version = snap.data?.version ?? '…';
+                      final ee = ref.watch(easterEggProvider);
+                      return _ValueTile(
+                        icon: Icons.info_outline,
+                        title: 'バージョン',
+                        value: ee.statsUnlocked
+                            ? 'v$version (${ee.unlockedCount}/3)'
+                            : 'v$version',
+                        onTap: _onVersionTap,
+                        showChevron: false,
+                      );
+                    },
+                  ),
+                ],
+              ),
+
+              // 取り返しのつかない操作は、普段の操作から離して最下部にまとめる
+              _SettingsSection(
+                title: '危険な操作',
+                danger: true,
+                children: [
+                  _DangerTile(
+                    icon: Icons.delete_sweep,
+                    title: 'オフライン動画をすべて削除',
+                    subtitle: '曲の登録やAB区間は残ります',
+                    onTap: _busy ? null : _clearAllOfflineVideos,
+                  ),
+                  _DangerTile(
+                    icon: Icons.delete_forever,
+                    title: 'すべてのデータを削除',
+                    subtitle: '元に戻せません',
+                    onTap: _busy ? null : _clearAllData,
+                  ),
+                ],
+              ),
+
+              // 開発者向けは普段は畳んでおく
               Card(
-                child: Column(
+                clipBehavior: Clip.antiAlias,
+                child: ExpansionTile(
+                  leading: const Icon(Icons.code),
+                  title: const Text('開発者向け'),
+                  shape: const Border(),
+                  collapsedShape: const Border(),
                   children: [
                     SwitchListTile(
-                      secondary: const Icon(Icons.sd_storage),
-                      title: Text('端末に永続保存', style: textTheme.bodyLarge),
-                      subtitle: Text(
-                        _cacheToDocuments
-                            ? 'documentsに保存（OSが自動削除しない）'
-                            : 'キャッシュ領域に保存（容量不足時にOSが削除する場合あり）',
-                        style: textTheme.bodySmall,
-                      ),
-                      value: _cacheToDocuments,
-                      onChanged: (v) {
-                        AppBoxes.settings.put(SettingsKeys.cacheToDocuments, v);
-                        setState(() {});
-                      },
-                    ),
-                    const Divider(height: 1),
-                    FutureBuilder<int>(
-                      future: CacheService().totalCacheSize(),
-                      builder: (_, snap) {
-                        final waiting =
-                            snap.connectionState == ConnectionState.waiting;
-                        final mb =
-                            ((snap.data ?? 0) / 1024 / 1024).toStringAsFixed(1);
-                        return ListTile(
-                          leading: const Icon(Icons.folder_open),
-                          title: Text('オフラインデータ', style: textTheme.bodyLarge),
-                          subtitle: Text(waiting ? '計算中...' : '合計 ${mb}MB',
-                              style: textTheme.bodySmall),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1, indent: 56),
-                    ListTile(
-                      leading: const Icon(Icons.delete_sweep, color: Colors.red),
-                      title: Text('全オフラインデータを削除',
-                          style: textTheme.bodyLarge!
-                              .copyWith(color: Colors.red)),
-                      subtitle: Text('保存した動画・字幕をすべて削除',
-                          style: textTheme.bodySmall),
-                      onTap: _busy ? null : _clearAllOfflineCache,
+                      secondary: const Icon(Icons.speed),
+                      title: const Text('パフォーマンスオーバーレイ'),
+                      subtitle: const Text('FPS・描画負荷を表示'),
+                      value: ref.watch(perfOverlayProvider),
+                      onChanged: (_) =>
+                          ref.read(perfOverlayProvider.notifier).toggle(),
                     ),
                   ],
                 ),
               ),
-
-              const SizedBox(height: AppSpacing.xl),
-
-              // ── デバッグ ──
-              _sectionHeader('デバッグ'),
-              Card(
-                child: SwitchListTile(
-                  secondary: const Icon(Icons.speed),
-                  title: Text('パフォーマンスオーバーレイ',
-                      style: textTheme.bodyLarge),
-                  subtitle: Text('FPS・描画負荷を表示',
-                      style: textTheme.bodySmall),
-                  value: ref.watch(perfOverlayProvider),
-                  onChanged: (_) =>
-                      ref.read(perfOverlayProvider.notifier).toggle(),
-                ),
-              ),
-
-              const SizedBox(height: AppSpacing.xl),
-
-              // ── アプリ情報 ──
-              _sectionHeader('アプリ情報'),
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.system_update),
-                      title: Text('アップデートを確認',
-                          style: textTheme.bodyLarge),
-                      onTap: () {
-                        UpdateService.checkForUpdate(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          AppSnackBar.info('最新版を確認中...'),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1, indent: 56),
-                    FutureBuilder<PackageInfo>(
-                      future: PackageInfo.fromPlatform(),
-                      builder: (ctx, snap) {
-                        final version = snap.data?.version ?? '...';
-                        final ee = ref.watch(easterEggProvider);
-                        return ListTile(
-                          leading: const Icon(Icons.info_outline),
-                          title: Text('バージョン',
-                              style: textTheme.bodyLarge),
-                          subtitle: Text(
-                              ee.statsUnlocked
-                                  ? 'v$version (${ee.unlockedCount}/3)'
-                                  : 'v$version',
-                              style: textTheme.bodySmall),
-                          onTap: () {
-                            _versionTapCount++;
-                            if (_versionTapCount >= 5) {
-                              _versionTapCount = 0;
-                              final unlocked = ref
-                                  .read(easterEggProvider.notifier)
-                                  .unlockStats();
-                              if (unlocked) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  AppSnackBar.success(
-                                      '🎉 隠しステータスがアンロックされました！'),
-                                );
-                              }
-                              _showStatsScreen();
-                            }
-                          },
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: AppSpacing.xxl),
             ],
+          ),
           ),
           if (_busy)
             Container(
@@ -685,19 +510,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _sectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: AppSpacing.xs, bottom: AppSpacing.sm),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.labelMedium!.copyWith(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
+  // ─── 読み込み中のアニメーション ───
 
   Map<LoadingAnimationType?, String> _getAnimationLabels() {
     final ee = ref.read(easterEggProvider);
@@ -734,37 +547,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (unlocked && mounted) {
             // シートを閉じてからSnackBar
             Navigator.pop(ctx);
-            ScaffoldMessenger.of(context).showSnackBar(
-              AppSnackBar.success(
-                  '🎵 隠しアニメーション「カセット」がアンロックされました！'),
-            );
+            _toast(AppSnackBar.success(
+                '🎵 隠しアニメーション「カセット」がアンロックされました！'));
           }
         },
-      ),
-    );
-  }
-
-  Widget _statChip(IconData icon, String count, String label) {
-    final textTheme = Theme.of(context).textTheme;
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: Theme.of(context)
-              .colorScheme
-              .surfaceContainerHighest
-              .withValues(alpha: 0.5),
-          borderRadius: AppRadius.borderMd,
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: AppIconSizes.s, color: Colors.grey),
-            const SizedBox(height: 2),
-            Text(count, style: textTheme.displaySmall),
-            Text(label,
-                style: textTheme.labelSmall!.copyWith(fontSize: 10)),
-          ],
-        ),
       ),
     );
   }
@@ -983,5 +769,188 @@ class _AnimPickerSheetState extends State<_AnimPickerSheet> {
     }
 
     return tile;
+  }
+}
+
+// ============================================================
+// 設定画面の部品
+// ============================================================
+
+/// 画面上部のライブラリ概要（アイテム・プレイリスト・タグの数）。
+/// 以前は「データ管理」カードの中に操作と混ざって置かれていた。
+class _LibrarySummary extends StatelessWidget {
+  const _LibrarySummary({
+    required this.items,
+    required this.playlists,
+    required this.tags,
+  });
+
+  final int items;
+  final int playlists;
+  final int tags;
+
+  @override
+  Widget build(BuildContext context) {
+    // Card は左右に lg(12) のマージンを持つので、はみ出さないよう揃える
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
+      child: Row(
+        children: [
+          _stat(context, Icons.music_note, items, 'アイテム'),
+          const SizedBox(width: AppSpacing.md),
+          _stat(context, Icons.queue_music, playlists, 'プレイリスト'),
+          const SizedBox(width: AppSpacing.md),
+          _stat(context, Icons.label_outline, tags, 'タグ'),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(BuildContext context, IconData icon, int count, String label) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: AppRadius.borderMd,
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: AppIconSizes.s, color: Colors.grey),
+            const SizedBox(height: 2),
+            Text('$count', style: theme.textTheme.displaySmall),
+            Text(label,
+                style: theme.textTheme.labelSmall!.copyWith(fontSize: 10)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 見出し＋1枚のカードにまとめたセクション。
+/// 以前は「外観」だけ1項目1カードで、他と見た目の粒度が揃っていなかった。
+class _SettingsSection extends StatelessWidget {
+  const _SettingsSection({
+    required this.title,
+    required this.children,
+    this.danger = false,
+  });
+
+  final String title;
+  final List<Widget> children;
+
+  /// 取り返しのつかない操作のセクション。見出しを赤くする
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final headerColor = danger ? Colors.red : theme.colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding:
+                const EdgeInsets.only(left: AppSpacing.xs, bottom: AppSpacing.sm),
+            child: Text(
+              title,
+              style: theme.textTheme.labelMedium!.copyWith(
+                fontWeight: FontWeight.bold,
+                color: headerColor,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            shape: danger
+                ? RoundedRectangleBorder(
+                    borderRadius: AppRadius.borderMd,
+                    side: BorderSide(color: Colors.red.withValues(alpha: 0.4)),
+                  )
+                : null,
+            child: Column(
+              children: [
+                for (var i = 0; i < children.length; i++) ...[
+                  if (i > 0) const Divider(height: 1, indent: 56),
+                  children[i],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 現在の値を右側に出す行（タップで変更）
+class _ValueTile extends StatelessWidget {
+  const _ValueTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    this.onTap,
+    this.showChevron = true,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+  final VoidCallback? onTap;
+
+  /// タップで別の画面・選択肢を開く行だけ「›」を出す
+  final bool showChevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value,
+              style: theme.textTheme.bodyMedium!
+                  .copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          if (onTap != null && showChevron) ...[
+            const SizedBox(width: AppSpacing.xs),
+            const Icon(Icons.chevron_right),
+          ],
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+/// 取り返しのつかない操作の行（赤）
+class _DangerTile extends StatelessWidget {
+  const _DangerTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.red),
+      title: Text(title, style: const TextStyle(color: Colors.red)),
+      subtitle: Text(subtitle),
+      onTap: onTap,
+    );
   }
 }

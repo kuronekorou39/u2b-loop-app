@@ -113,6 +113,10 @@ final seekStepProvider =
 class SeekStepNotifier extends StateNotifier<int> {
   static const _key = SettingsKeys.seekStep;
 
+  /// 選べるスキップ秒数。再生画面のメニューと設定画面で共有する
+  /// （再生画面のアイコン replay_5/10/30 もこの値に対応している）
+  static const options = [5, 10, 30];
+
   SeekStepNotifier() : super(5) {
     state = AppBoxes.settings.get(_key, defaultValue: 5) as int;
   }
