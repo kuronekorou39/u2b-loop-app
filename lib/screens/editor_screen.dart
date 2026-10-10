@@ -21,6 +21,7 @@ import '../providers/player_provider.dart';
 import '../providers/loading_animation_provider.dart';
 import '../services/export_service.dart';
 import '../services/export_runner.dart';
+import '../services/audio_analysis_service.dart';
 import '../services/waveform_service.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/loop/loop_controls.dart';
@@ -354,6 +355,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         source,
         ref.read(youtubeServiceProvider),
         cachedAudioPath: prefetched,
+        onPcm: AudioAnalysisService.sinkFor(
+            ref.read(loopItemsProvider.notifier), _item),
       );
 
       if (mounted) {

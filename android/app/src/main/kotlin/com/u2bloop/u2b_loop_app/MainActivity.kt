@@ -20,7 +20,14 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
+
+/** テンポ/キー解析用 PCM のサンプルレート（Dart 側 BpmKeyDetector.analysisSampleRate と一致させる） */
+private const val ANALYSIS_SAMPLE_RATE = 11025
+
+/** 解析に使う最大秒数。それ以降の音声は捨てる（8分で約10MB） */
+private const val ANALYSIS_MAX_SECONDS = 480
 
 class MainActivity : FlutterActivity() {
     private val WAVEFORM_CHANNEL = "com.u2bloop/waveform"
@@ -211,6 +218,8 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "extractAmplitudes" -> {
                         val url = call.argument<String>("url")
+                        // true なら波形用RMSに加えてテンポ/キー解析用のPCMも返す（Map形式）
+                        val withPcm = call.argument<Boolean>("withPcm") ?: false
                         if (url == null) {
                             result.error("INVALID", "URL is null", null)
                             return@setMethodCallHandler
@@ -218,14 +227,18 @@ class MainActivity : FlutterActivity() {
                         cancelCurrentExtraction()
                         currentJob = scope.launch {
                             try {
-                                val amplitudes = extractAudioAmplitudes(url)
+                                val extraction = extractAudioAmplitudes(url, withPcm)
                                 withContext(Dispatchers.Main) {
-                                    result.success(amplitudes)
+                                    result.success(
+                                        if (withPcm) extraction.toMap() else extraction.amplitudes
+                                    )
                                 }
                             } catch (e: CancellationException) {
                                 Log.d(TAG, "Extraction cancelled")
                                 withContext(Dispatchers.Main) {
-                                    result.success(intArrayOf())
+                                    result.success(
+                                        if (withPcm) emptyMap<String, Any?>() else intArrayOf()
+                                    )
                                 }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Extraction error: ${e.message}")
@@ -767,10 +780,63 @@ class MainActivity : FlutterActivity() {
         currentExtractor = null
     }
 
-    private suspend fun extractAudioAmplitudes(url: String): IntArray {
+    /** 波形用のRMS列と、テンポ/キー解析用に間引いたモノラルPCM（[withPcm] のときだけ） */
+    private class AudioExtraction(
+        val amplitudes: IntArray,
+        val pcm: ByteArray?,
+        val sampleRate: Int,
+    ) {
+        fun toMap(): Map<String, Any?> =
+            mapOf("amplitudes" to amplitudes, "pcm" to pcm, "sampleRate" to sampleRate)
+    }
+
+    /**
+     * インターリーブPCMをモノラル化し、箱型平均で [ANALYSIS_SAMPLE_RATE] に間引く。
+     * BPM/キー解析には十分な品質で、ストリーミング中に1パスで作れる。
+     */
+    private class MonoDecimator(inRate: Int, private val channels: Int, maxSamples: Int) {
+        private val ratio = inRate.toDouble() / ANALYSIS_SAMPLE_RATE
+        private val out = ShortArray(maxSamples)
+        var size = 0
+            private set
+        private var frameSum = 0
+        private var ch = 0
+        private var acc = 0.0
+        private var count = 0
+        private var pos = 0L
+        private var next = ratio
+
+        fun push(sample: Short) {
+            frameSum += sample
+            ch++
+            if (ch < channels) return
+            acc += frameSum.toDouble() / channels
+            frameSum = 0
+            ch = 0
+            count++
+            pos++
+            if (pos >= next) {
+                if (size < out.size) {
+                    out[size++] = (acc / count).toInt().coerceIn(-32768, 32767).toShort()
+                }
+                acc = 0.0
+                count = 0
+                next += ratio
+            }
+        }
+
+        fun toByteArray(): ByteArray {
+            val buf = ByteBuffer.allocate(size * 2).order(ByteOrder.LITTLE_ENDIAN)
+            buf.asShortBuffer().put(out, 0, size)
+            return buf.array()
+        }
+    }
+
+    private suspend fun extractAudioAmplitudes(url: String, withPcm: Boolean): AudioExtraction {
         val extractor = MediaExtractor()
         currentExtractor = extractor
         var codec: MediaCodec? = null
+        val empty = AudioExtraction(intArrayOf(), null, ANALYSIS_SAMPLE_RATE)
         try {
             Log.d(TAG, "setDataSource starting...")
             extractor.setDataSource(url)
@@ -791,16 +857,23 @@ class MainActivity : FlutterActivity() {
             }
             if (audioTrackIndex == -1 || audioFormat == null) {
                 Log.d(TAG, "No audio track found")
-                return intArrayOf()
+                return empty
             }
+            // ラムダ内で var を参照するとスマートキャストが効かないので val に移す
+            val trackFormat: MediaFormat = audioFormat
 
             extractor.selectTrack(audioTrackIndex)
 
-            val mime = audioFormat.getString(MediaFormat.KEY_MIME) ?: return intArrayOf()
+            val mime = trackFormat.getString(MediaFormat.KEY_MIME) ?: return empty
             Log.d(TAG, "Audio track: $mime")
             codec = MediaCodec.createDecoderByType(mime)
-            codec.configure(audioFormat, null, null, 0)
+            codec.configure(trackFormat, null, null, 0)
             codec.start()
+
+            // デコード後のレート/ch数。INFO_OUTPUT_FORMAT_CHANGED で更新される
+            var inRate = runCatching { trackFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) }.getOrDefault(44100)
+            var channels = runCatching { trackFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }.getOrDefault(2)
+            var decimator: MonoDecimator? = null
 
             val bufferInfo = MediaCodec.BufferInfo()
             val amplitudes = mutableListOf<Int>()
@@ -845,12 +918,20 @@ class MainActivity : FlutterActivity() {
                             outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
                             val shortBuffer = outputBuffer.asShortBuffer()
 
+                            if (withPcm && decimator == null) {
+                                decimator = MonoDecimator(
+                                    inRate, channels, ANALYSIS_SAMPLE_RATE * ANALYSIS_MAX_SECONDS
+                                )
+                            }
+                            val dec = decimator
                             var sumSquares = 0L
                             var count = 0
                             while (shortBuffer.hasRemaining()) {
-                                val sample = shortBuffer.get().toLong()
+                                val s = shortBuffer.get()
+                                val sample = s.toLong()
                                 sumSquares += sample * sample
                                 count++
+                                dec?.push(s)
                             }
                             val rms = if (count > 0)
                                 Math.sqrt(sumSquares.toDouble() / count).toInt()
@@ -859,17 +940,23 @@ class MainActivity : FlutterActivity() {
                         }
                         codec.releaseOutputBuffer(outputIndex, false)
                     }
-                    outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {}
+                    outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        val f = codec.outputFormat
+                        runCatching { inRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE) }
+                        runCatching { channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }
+                    }
                     outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {}
                 }
             }
 
-            Log.d(TAG, "Done: ${amplitudes.size} amplitudes")
+            Log.d(TAG, "Done: ${amplitudes.size} amplitudes, pcm=${decimator?.size ?: 0}")
             codec.stop()
             codec.release()
             codec = null
 
-            return amplitudes.toIntArray()
+            return AudioExtraction(
+                amplitudes.toIntArray(), decimator?.toByteArray(), ANALYSIS_SAMPLE_RATE
+            )
         } finally {
             try { codec?.stop() } catch (_: Exception) {}
             try { codec?.release() } catch (_: Exception) {}

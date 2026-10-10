@@ -4,18 +4,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/audio/musical_key.dart';
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../providers/player_provider.dart';
+import '../services/audio_analysis_service.dart';
 import '../services/cache_service.dart';
 import '../services/export_runner.dart';
 import '../services/export_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/item_thumbnail.dart';
+import '../widgets/tempo_key_sheet.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
@@ -34,6 +38,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   late TextEditingController _titleController;
   late TextEditingController _memoController;
   bool _initialized = false;
+  bool _analyzing = false;
 
   void _initControllers(LoopItem item) {
     if (!_initialized) {
@@ -87,6 +92,59 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PlayerScreen(item: item)),
+    );
+  }
+
+  /// 音声を取得してテンポ/キーを解析する（再生せずに単独で）
+  Future<void> _analyze(LoopItem item) async {
+    setState(() => _analyzing = true);
+    final result = await AudioAnalysisService.analyzeItem(
+      ref.read(loopItemsProvider.notifier),
+      ref.read(youtubeServiceProvider),
+      item,
+    );
+    if (!mounted) return;
+    setState(() => _analyzing = false);
+    final messenger = ScaffoldMessenger.of(context);
+    if (result == null) {
+      messenger.showSnackBar(AppSnackBar.error('テンポ/キーを解析できませんでした'));
+    } else if (result.bpm == null && result.key == null) {
+      messenger.showSnackBar(
+          AppSnackBar.info('テンポ/キーを検出できませんでした。タップして手入力できます'));
+    } else {
+      messenger.showSnackBar(
+          AppSnackBar.success('解析完了: ${_tempoKeyText(result.bpm, result.key)}'));
+    }
+  }
+
+  String _tempoKeyText(double? bpm, String? key) {
+    final parts = <String>[
+      if (bpm != null) '${bpm.round()} BPM',
+      if (key != null) MusicalKey.display(key)!,
+    ];
+    return parts.isEmpty ? '検出できず（タップで入力）' : parts.join(' · ');
+  }
+
+  Widget _buildTempoKeyLine(LoopItem item) {
+    final unanalyzed =
+        item.analyzedAt == null && item.bpm == null && item.musicalKey == null;
+    final label = _analyzing
+        ? '解析中…'
+        : unanalyzed
+            ? 'テンポ/キーを解析'
+            : _tempoKeyText(item.bpm, item.musicalKey);
+    return InkWell(
+      onTap: _analyzing
+          ? null
+          : () => unanalyzed
+              ? _analyze(item)
+              : TempoKeySheet.show(context,
+                  item: item, onReanalyze: () => _analyze(item)),
+      borderRadius: AppRadius.borderXs,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: _metaChip(Icons.music_note, label, isLink: true),
+      ),
     );
   }
 
@@ -498,7 +556,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
               ],
             ),
-            const SizedBox(height: AppSpacing.lg),
+            // テンポ/キー（未解析ならタップで解析、解析済みならタップで補正）
+            _buildTempoKeyLine(item),
+            const SizedBox(height: AppSpacing.md),
 
             // タイトル
             TextField(

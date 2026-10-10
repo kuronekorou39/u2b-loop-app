@@ -33,6 +33,7 @@ import '../services/export_service.dart';
 import '../services/export_runner.dart';
 import '../providers/subtitle_provider.dart';
 import '../services/subtitle_service.dart';
+import '../services/audio_analysis_service.dart';
 import '../services/waveform_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/equalizer_icon.dart';
@@ -1046,10 +1047,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       final item = track.item;
       final service = WaveformService();
+      final onPcm = AudioAnalysisService.sinkFor(
+          ref.read(loopItemsProvider.notifier), item);
       List<double>? waveform;
 
       if (!item.isYouTube) {
-        waveform = await service.generateForLocalFile(item.uri, 4000);
+        waveform =
+            await service.generateForLocalFile(item.uri, 4000, onPcm: onPcm);
       } else if (manifest != null) {
         // YouTube: 音声をダウンロードして波形生成
         final muxed = manifest.muxed.sortByVideoQuality();
@@ -1081,7 +1085,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           }
           if (bytes > 100000) {
             try {
-              waveform = await service.generateForLocalFile(tempFile.path, 4000);
+              waveform = await service.generateForLocalFile(tempFile.path, 4000,
+                  onPcm: onPcm);
             } finally {
               try { await tempFile.delete(); } catch (_) {}
             }
@@ -1855,6 +1860,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         source,
         ref.read(youtubeServiceProvider),
         cachedAudioPath: prefetched,
+        // 未解析ならテンポ/キー解析をデコードに相乗りさせる
+        onPcm: AudioAnalysisService.sinkFor(
+            ref.read(loopItemsProvider.notifier), _currentItem),
       );
 
       if (mounted) {

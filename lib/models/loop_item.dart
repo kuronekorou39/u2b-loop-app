@@ -62,6 +62,15 @@ class LoopItem {
   /// キャッシュした時刻（ミリ秒。LRU削除用）
   int? cachedAt;
 
+  /// 検出したテンポ（手動補正後の値。null=未解析または検出失敗）
+  double? bpm;
+
+  /// 検出したキー。'Gmin' / 'A#maj' 形式（MusicalKey.allKeys のいずれか）
+  String? musicalKey;
+
+  /// テンポ/キーを解析した時刻（ミリ秒。null=未解析。再解析のスキップ判定用）
+  int? analyzedAt;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -88,6 +97,9 @@ class LoopItem {
     this.cachedResolution,
     this.cachedSizeBytes,
     this.cachedAt,
+    this.bpm,
+    this.musicalKey,
+    this.analyzedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
@@ -183,6 +195,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       cachedResolution: fields[22] as String?,
       cachedSizeBytes: fields[23] as int?,
       cachedAt: fields[24] as int?,
+      bpm: (fields[25] as num?)?.toDouble(),
+      musicalKey: fields[26] as String?,
+      analyzedAt: fields[27] as int?,
     );
   }
 
@@ -214,6 +229,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       22: obj.cachedResolution,
       23: obj.cachedSizeBytes,
       24: obj.cachedAt,
+      25: obj.bpm,
+      26: obj.musicalKey,
+      27: obj.analyzedAt,
     });
   }
 }

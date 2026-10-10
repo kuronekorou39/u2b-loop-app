@@ -65,6 +65,23 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
+  /// テンポ/キーの保存。バックグラウンド解析の完了で一覧の並びが変わらないよう
+  /// updatedAt は触らない。[markAnalyzed] が false なら手動補正扱い（analyzedAt 据え置き）
+  Future<void> saveAnalysis(
+    String id, {
+    required double? bpm,
+    required String? musicalKey,
+    bool markAnalyzed = true,
+  }) async {
+    final item = _box.get(id);
+    if (item == null) return;
+    item.bpm = bpm;
+    item.musicalKey = musicalKey;
+    if (markAnalyzed) item.analyzedAt = DateTime.now().millisecondsSinceEpoch;
+    await _box.put(id, item);
+    _refresh();
+  }
+
   Future<void> delete(String id) async {
     // 削除前にオフラインキャッシュのファイルパスを退避して掃除
     final item = _box.get(id);

@@ -1831,6 +1831,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
     if (regionInfo != null) info.add(regionInfo);
     if (item.speed != 1.0) info.add('${item.speed}x');
     if (item.playCount > 0) info.add('${item.playCount}回');
+    if (item.bpm != null) info.add('${item.bpm!.round()} BPM');
+    if (item.musicalKey != null) info.add(item.musicalKey!);
     if (item.memo != null && item.memo!.isNotEmpty) info.add(item.memo!);
     if (info.isNotEmpty) {
       parts.add(Text(info.join('  |  '),

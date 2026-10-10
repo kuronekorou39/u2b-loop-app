@@ -132,6 +132,9 @@ class BackupService {
         'playCount': item.playCount,
         'accumulatedPlayMs': item.accumulatedPlayMs,
         'hasSubtitles': item.hasSubtitles,
+        'bpm': item.bpm,
+        'musicalKey': item.musicalKey,
+        'analyzedAt': item.analyzedAt,
       };
 
   static LoopItem itemFromJson(Map<String, dynamic> j) => LoopItem(
@@ -160,6 +163,9 @@ class BackupService {
         playCount: j['playCount'] as int? ?? 0,
         accumulatedPlayMs: j['accumulatedPlayMs'] as int? ?? 0,
         hasSubtitles: j['hasSubtitles'] as bool?,
+        bpm: (j['bpm'] as num?)?.toDouble(),
+        musicalKey: j['musicalKey'] as String?,
+        analyzedAt: j['analyzedAt'] as int?,
       );
 
   static Map<String, dynamic> playlistToJson(Playlist pl) => {

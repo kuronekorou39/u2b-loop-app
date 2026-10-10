@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/native_channels.dart';
 import '../models/video_source.dart';
 import 'youtube_service.dart';
+
+/// テンポ/キー解析用に間引いたモノラル PCM を受け取る。
+/// 波形生成のデコードに相乗りするので、呼び出し側のデコードコストは増えない。
+typedef PcmCallback = void Function(Int16List pcm, int sampleRate);
 
 class WaveformService {
 
@@ -21,11 +25,29 @@ class WaveformService {
 
   /// Android MediaExtractorで音声サンプルサイズを取得 → 波形データ化
   /// ローカルファイルパスを渡す（YouTube URL は generateFromAudioUrl を使うこと）
-  Future<List<double>?> generateFromUrl(String url, int targetSamples) async {
-    final result = await NativeChannels.waveform.invokeMethod<List<dynamic>>(
+  /// [onPcm] を渡すと解析用 PCM も一緒に取り出して渡す（MediaCodec 経路のみ）
+  Future<List<double>?> generateFromUrl(
+    String url,
+    int targetSamples, {
+    PcmCallback? onPcm,
+  }) async {
+    final withPcm = onPcm != null;
+    final raw = await NativeChannels.waveform.invokeMethod<dynamic>(
       'extractAmplitudes',
-      {'url': url},
+      {'url': url, 'withPcm': withPcm},
     );
+
+    List<dynamic>? result;
+    if (raw is Map) {
+      result = raw['amplitudes'] as List<dynamic>?;
+      final pcm = raw['pcm'];
+      final sampleRate = raw['sampleRate'];
+      if (withPcm && pcm is Uint8List && pcm.isNotEmpty && sampleRate is int) {
+        onPcm(_toInt16(pcm), sampleRate);
+      }
+    } else if (raw is List) {
+      result = raw;
+    }
 
     if (result == null || result.isEmpty) {
       return null;
@@ -35,14 +57,24 @@ class WaveformService {
     return _downsampleAndNormalize(amplitudes, targetSamples);
   }
 
+  /// ネイティブはリトルエンディアンの16bitで返す。奇数オフセットだと view できないのでコピーする
+  static Int16List _toInt16(Uint8List bytes) {
+    if (bytes.offsetInBytes.isEven) {
+      return Int16List.view(
+          bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes ~/ 2);
+    }
+    return Int16List.view(Uint8List.fromList(bytes).buffer);
+  }
+
   /// ローカルファイルから波形データを生成
   Future<List<double>?> generateForLocalFile(
     String path,
-    int targetSamples,
-  ) async {
+    int targetSamples, {
+    PcmCallback? onPcm,
+  }) async {
     // まずMediaCodecデコードで試行
     try {
-      final result = await generateFromUrl(path, targetSamples);
+      final result = await generateFromUrl(path, targetSamples, onPcm: onPcm);
       if (result != null) return result;
     } catch (_) {
       // MediaCodecが失敗したらフォールバックへ
@@ -245,9 +277,10 @@ class WaveformService {
     YouTubeService ytService, {
     String? cachedAudioPath,
     int targetSamples = 4000,
+    PcmCallback? onPcm,
   }) async {
     if (source.type == VideoSourceType.local) {
-      return generateForLocalFile(source.uri, targetSamples);
+      return generateForLocalFile(source.uri, targetSamples, onPcm: onPcm);
     }
     final videoId = source.videoId;
     if (videoId == null) return null;
@@ -260,15 +293,16 @@ class WaveformService {
       path = await prefetchAudio(manifest, ytService);
       if (path == null) return null;
     }
-    return generateFromCachedAudio(path, targetSamples: targetSamples);
+    return generateFromCachedAudio(path, targetSamples: targetSamples, onPcm: onPcm);
   }
 
   Future<List<double>?> generateFromCachedAudio(
     String audioPath, {
     int targetSamples = 4000,
+    PcmCallback? onPcm,
   }) async {
     try {
-      return await generateForLocalFile(audioPath, targetSamples);
+      return await generateForLocalFile(audioPath, targetSamples, onPcm: onPcm);
     } finally {
       try { await File(audioPath).delete(); } catch (_) {}
     }
