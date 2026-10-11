@@ -126,6 +126,27 @@ class SeekStepNotifier extends StateNotifier<int> {
     AppBoxes.settings.put(_key, v);
   }
 }
+
+/// プレイリスト遷移のクロスフェード秒数（0=オフ）
+final crossfadeProvider =
+    StateNotifierProvider<CrossfadeNotifier, int>((ref) => CrossfadeNotifier());
+
+class CrossfadeNotifier extends StateNotifier<int> {
+  static const _key = SettingsKeys.crossfadeSeconds;
+
+  /// 選べる秒数。0はオフ
+  static const options = [0, 2, 4, 6, 8];
+
+  CrossfadeNotifier() : super(0) {
+    state = AppBoxes.settings.get(_key, defaultValue: 0) as int;
+  }
+
+  set value(int v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 final flipHorizontalProvider = StateProvider<bool>((ref) => false);
 final flipVerticalProvider = StateProvider<bool>((ref) => false);
 final previousVolumeProvider = StateProvider<double>((ref) => 100.0);

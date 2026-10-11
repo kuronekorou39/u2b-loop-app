@@ -107,6 +107,20 @@ void main() {
         reason: '再生画面と同じ設定値に保存されること');
   });
 
+  testWidgets('クロスフェード秒数を設定画面から変えられる', (tester) async {
+    await pumpSettings(tester);
+
+    expect(find.text('オフ'), findsOneWidget); // 既定値
+    await tester.tap(find.text('クロスフェード'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('4秒'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('4秒'), findsOneWidget);
+    expect(AppBoxes.settings.get(SettingsKeys.crossfadeSeconds), 4,
+        reason: 'PlaylistEngine が読む設定値に保存されること');
+  });
+
   testWidgets('バージョンが表示される', (tester) async {
     await pumpSettings(tester);
     expect(find.text('v9.9.9'), findsOneWidget);

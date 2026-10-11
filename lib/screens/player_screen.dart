@@ -505,9 +505,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     _lastAdvanceTime = now;
 
-    final shouldFadeIn = ref.read(playlistPlayerProvider).firstVerseMode && _isFading;
+    final crossfading = ref.read(playlistEngineProvider).isCrossfading;
+    final shouldFadeIn = ref.read(playlistPlayerProvider).firstVerseMode &&
+        _isFading &&
+        !crossfading;
     _cancelFade();
-    try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
+    // 交差中は旧プレイヤーの音量を戻さない（stop 直前に一瞬大きく鳴ってしまう）
+    if (!crossfading) {
+      try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
+    }
 
     final plState = ref.read(playlistPlayerProvider);
     final oldTrack = plState.currentTrack;
@@ -844,6 +850,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// ABループでA点に戻った場合も自動的にリセットして次パスで再フェードする。
   void _startFadeOutMonitor(int cutMs) {
     _cancelFade();
+    // クロスフェードが有効なら PlaylistEngine 側が旧曲を下げるので、二重にかけない
+    if (ref.read(crossfadeProvider) > 0) return;
     final fadeStartMs = cutMs - 3000;
     if (fadeStartMs <= 0) return;
 
@@ -914,6 +922,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // --- Preload ---
 
   void _cancelPreload() {
+    ref.read(playlistEngineProvider).disarmCrossfade();
     _preloadGeneration++;
     _preloadedTrackIndex = null;
     _preloadingTargetIndex = null;
@@ -1018,6 +1027,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (isStale()) return;
       _preloadedTrackIndex = nextIdx;
       _preloadFailCount = 0;
+      ref.read(playlistEngineProvider).armCrossfade(nextTrack);
       if (mounted) setState(() {});
 
       // --- 波形の先行読み込み（並行） ---
@@ -2356,6 +2366,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       try {
         await engine.prepare(engine.preloadPlayer, nextTrack);
         preloadedIdx = nextIdx;
+        engine.armCrossfade(nextTrack);
       } catch (e) {
         debugPrint('[MiniPlayer] プリロード失敗: $e');
       } finally {

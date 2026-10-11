@@ -72,6 +72,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (picked != null) ref.read(seekStepProvider.notifier).value = picked;
   }
 
+  static String _crossfadeLabel(int seconds) =>
+      seconds == 0 ? 'オフ' : '$seconds秒';
+
+  Future<void> _pickCrossfade() async {
+    final current = ref.read(crossfadeProvider);
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('クロスフェード'),
+        children: [
+          RadioGroup<int>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(ctx, v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final s in CrossfadeNotifier.options)
+                  RadioListTile<int>(
+                      value: s, title: Text(_crossfadeLabel(s))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) ref.read(crossfadeProvider.notifier).value = picked;
+  }
+
   // ─── バックアップ ───
 
   Future<void> _exportData() async {
@@ -314,6 +342,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final isDark = ref.watch(themeProvider);
     final seekStep = ref.watch(seekStepProvider);
+    final crossfade = ref.watch(crossfadeProvider);
     final textTheme = Theme.of(context).textTheme;
     final viewPadding = MediaQuery.viewPaddingOf(context);
 
@@ -369,6 +398,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     title: '早送り・巻き戻しの秒数',
                     value: '$seekStep秒',
                     onTap: _pickSeekStep,
+                  ),
+                  // プレイリストで次曲がプリロード済みのとき、B点/終端の手前から重ねて鳴らす
+                  _ValueTile(
+                    icon: Icons.multitrack_audio,
+                    title: 'クロスフェード',
+                    value: _crossfadeLabel(crossfade),
+                    onTap: _pickCrossfade,
                   ),
                 ],
               ),

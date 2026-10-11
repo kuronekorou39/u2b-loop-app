@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../models/loop_item.dart';
+import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
 import '../services/cache_service.dart';
 import '../services/youtube_service.dart';
@@ -93,6 +95,9 @@ class PlaylistEngine {
     bool stale() => isStale?.call() ?? false;
     final item = track.item;
 
+    // どちらのプレイヤーを読み直す場合も、進行中のクロスフェードは成立しなくなる
+    disarmCrossfade();
+
     StreamManifest? manifest;
     final cached = CacheService.offlineVideoPath(item);
     if (cached != null) {
@@ -147,9 +152,120 @@ class PlaylistEngine {
         ? _ref.read(playerAProvider)
         : _ref.read(playerBProvider);
 
+    // 交差中ならここで完了させる。監視は止める（次のプリロードで再び arm される）
+    final session = _crossfade;
+    _crossfade = null;
+    _armedTrack = null;
+    _crossfadeMonitor?.cancel();
+    _crossfadeMonitor = null;
+
     oldPlayer.stop();
+    session?.finish();
     newPlayer.play();
     return newPlayer;
+  }
+
+  // --- クロスフェード ---
+  //
+  // プリロード済みの次曲を切断点（B点 or 終端）の数秒前から鳴らし始め、
+  // 等パワー曲線で音量を交差させる。切断点に達すると従来どおり swapSlots() が
+  // 呼ばれ、そこで交差を完了する（新プレイヤーは既に再生中なので play し直すだけ）。
+  // 監視タイマーはプリロード完了〜スワップの間だけ動く。
+
+  Timer? _crossfadeMonitor;
+  PlaylistTrack? _armedTrack;
+  _CrossfadeSession? _crossfade;
+
+  /// 交差中か。画面側はこの間、旧プレイヤーの音量を触らないこと
+  bool get isCrossfading => _crossfade != null;
+
+  Duration get crossfadeDuration =>
+      Duration(seconds: _ref.read(crossfadeProvider));
+
+  /// 次曲のプリロードが完了したら呼ぶ。切断点の手前で自動的に交差を始める
+  void armCrossfade(PlaylistTrack next) {
+    _armedTrack = next;
+    _crossfadeMonitor ??= Timer.periodic(
+        const Duration(milliseconds: 100), (_) => _crossfadeTick());
+  }
+
+  /// プリロードが無効になったら呼ぶ（キャンセル・取り直し・読み直し）。進行中なら取り消す
+  void disarmCrossfade() {
+    _armedTrack = null;
+    _crossfadeMonitor?.cancel();
+    _crossfadeMonitor = null;
+    _cancelCrossfade();
+  }
+
+  /// 切断点。ABループ有効ならB点、なければ曲の終端。不明なら null
+  Duration? _cutPoint() {
+    final ls = _ref.read(loopProvider);
+    final b = ls.pointB;
+    if (ls.enabled && b != null && (ls.pointA ?? Duration.zero) < b) return b;
+    final d = activePlayer.state.duration;
+    return d > Duration.zero ? d : null;
+  }
+
+  void _crossfadeTick() {
+    final next = _armedTrack;
+    final fade = crossfadeDuration;
+    if (next == null || fade == Duration.zero) return;
+    final active = activePlayer;
+    final pos = active.state.position;
+
+    final session = _crossfade;
+    if (session != null) {
+      // 一時停止・巻き戻し（ABループでA点に戻った場合も）は取り消す
+      if (!active.state.playing || pos < session.start) {
+        _cancelCrossfade();
+        return;
+      }
+      session.step(pos);
+      return;
+    }
+
+    if (!active.state.playing) return;
+    final ls = _ref.read(loopProvider);
+    if (ls.isInGap) return;
+    if (_ref.read(playlistPlayerProvider).repeatMode == RepeatMode.single) {
+      return;
+    }
+    final cut = _cutPoint();
+    if (cut == null) return;
+    final start = cut - fade;
+    // 区間が短いと頭から交差になるので、最低2秒は素で鳴らす
+    final regionStart =
+        ls.enabled ? (ls.pointA ?? Duration.zero) : Duration.zero;
+    if (start < regionStart + const Duration(seconds: 2)) return;
+    if (pos < start || pos >= cut) return;
+    _beginCrossfade(next, start, cut);
+  }
+
+  Future<void> _beginCrossfade(
+      PlaylistTrack next, Duration start, Duration cut) async {
+    final session = _CrossfadeSession(
+      outPlayer: activePlayer,
+      inPlayer: preloadPlayer,
+      start: start,
+      cut: cut,
+      volume: activePlayer.state.volume,
+      inStart: Duration(milliseconds: next.startMs ?? 0),
+    );
+    _crossfade = session;
+    try {
+      await session.inPlayer.setVolume(0);
+      await session.inPlayer.play();
+    } catch (e) {
+      debugPrint('[PlaylistEngine] クロスフェード開始に失敗: $e');
+      if (_crossfade == session) _crossfade = null;
+    }
+  }
+
+  void _cancelCrossfade() {
+    final session = _crossfade;
+    if (session == null) return;
+    _crossfade = null;
+    session.rollback();
   }
 
   // --- 区間の適用 ---
@@ -193,5 +309,52 @@ class PlaylistEngine {
       return AdvanceReadiness.preloaded;
     }
     return AdvanceReadiness.notReady;
+  }
+}
+
+/// クロスフェード1回分。開始時の旧プレイヤーの音量を交差後の目標にする
+class _CrossfadeSession {
+  _CrossfadeSession({
+    required this.outPlayer,
+    required this.inPlayer,
+    required this.start,
+    required this.cut,
+    required this.volume,
+    required this.inStart,
+  });
+
+  final Player outPlayer;
+  final Player inPlayer;
+  final Duration start;
+  final Duration cut;
+  final double volume;
+
+  /// 取り消し時に新プレイヤーを戻す位置（次曲のA点）
+  final Duration inStart;
+
+  void step(Duration pos) {
+    final total = (cut - start).inMilliseconds;
+    final t = total <= 0
+        ? 1.0
+        : ((pos - start).inMilliseconds / total).clamp(0.0, 1.0);
+    // 等パワー曲線（中間点で合計の音圧が落ち込まない）
+    final angle = t * pi / 2;
+    outPlayer.setVolume(volume * cos(angle));
+    inPlayer.setVolume(volume * sin(angle));
+  }
+
+  /// 切断点で呼ぶ（旧プレイヤーは停止済み）。
+  /// 旧プレイヤーを音量0のままにすると、次にプリロード側として再利用されたとき無音になる
+  void finish() {
+    inPlayer.setVolume(volume);
+    outPlayer.setVolume(volume);
+  }
+
+  /// 取り消し。新プレイヤーを頭に戻して待機状態へ
+  void rollback() {
+    inPlayer.pause();
+    inPlayer.seek(inStart);
+    inPlayer.setVolume(volume);
+    outPlayer.setVolume(volume);
   }
 }
