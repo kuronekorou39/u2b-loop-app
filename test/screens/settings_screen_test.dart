@@ -121,6 +121,28 @@ void main() {
         reason: 'PlaylistEngine が読む設定値に保存されること');
   });
 
+  testWidgets('テンポ合わせはクロスフェードがオンのときだけ切り替えられる', (tester) async {
+    await pumpSettings(tester);
+
+    final tile = find.widgetWithText(SwitchListTile, 'テンポ合わせ');
+    expect(tile, findsOneWidget);
+    expect(AppBoxes.settings.get(SettingsKeys.crossfadeSeconds), 4,
+        reason: '前のテストでオンにした値を引き継ぐ（メモリ box は setUpAll で1回だけ開く）');
+    expect(tester.widget<SwitchListTile>(tile).onChanged, isNotNull);
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.tempoMatch), false,
+        reason: '既定オンなので1回タップでオフになり、PlaylistEngine が読む値に保存される');
+
+    // クロスフェードをオフにすると触れなくなる
+    await tester.tap(find.text('クロスフェード'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('オフ'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(tile).onChanged, isNull);
+  });
+
   testWidgets('バージョンが表示される', (tester) async {
     await pumpSettings(tester);
     expect(find.text('v9.9.9'), findsOneWidget);

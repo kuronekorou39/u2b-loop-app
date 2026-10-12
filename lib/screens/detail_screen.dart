@@ -19,6 +19,7 @@ import '../services/export_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/item_thumbnail.dart';
+import '../widgets/similar_tracks_sheet.dart';
 import '../widgets/tempo_key_sheet.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
@@ -133,17 +134,44 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         : unanalyzed
             ? 'テンポ/キーを解析'
             : _tempoKeyText(item.bpm, item.musicalKey);
-    return InkWell(
-      onTap: _analyzing
-          ? null
-          : () => unanalyzed
-              ? _analyze(item)
-              : TempoKeySheet.show(context,
-                  item: item, onReanalyze: () => _analyze(item)),
-      borderRadius: AppRadius.borderXs,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-        child: _metaChip(Icons.music_note, label, isLink: true),
+    return Row(
+      children: [
+        InkWell(
+          onTap: _analyzing
+              ? null
+              : () => unanalyzed
+                  ? _analyze(item)
+                  : TempoKeySheet.show(context,
+                      item: item, onReanalyze: () => _analyze(item)),
+          borderRadius: AppRadius.borderXs,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: _metaChip(Icons.music_note, label, isLink: true),
+          ),
+        ),
+        // 解析済みなら、ライブラリからつなぎやすい曲を探せる
+        if (item.bpm != null || item.musicalKey != null) ...[
+          const SizedBox(width: AppSpacing.lg),
+          InkWell(
+            onTap: () => _showSimilarTracks(item),
+            borderRadius: AppRadius.borderXs,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              child: _metaChip(Icons.join_inner, 'つなぎやすい曲', isLink: true),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showSimilarTracks(LoopItem item) {
+    SimilarTracksSheet.show(
+      context,
+      target: item,
+      candidates: ref.read(loopItemsProvider),
+      onSelect: (other) => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => DetailScreen(itemId: other.id)),
       ),
     );
   }

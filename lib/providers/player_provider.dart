@@ -147,6 +147,24 @@ class CrossfadeNotifier extends StateNotifier<int> {
   }
 }
 
+/// クロスフェード中に次曲の速度を前曲のテンポへ寄せるか（既定オン）。
+/// クロスフェードがオフのときは効かない
+final tempoMatchProvider =
+    StateNotifierProvider<TempoMatchNotifier, bool>((ref) => TempoMatchNotifier());
+
+class TempoMatchNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.tempoMatch;
+
+  TempoMatchNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 final flipHorizontalProvider = StateProvider<bool>((ref) => false);
 final flipVerticalProvider = StateProvider<bool>((ref) => false);
 final previousVolumeProvider = StateProvider<double>((ref) => 100.0);

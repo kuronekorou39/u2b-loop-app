@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/track_compatibility.dart';
 import '../models/loop_item.dart';
 import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
@@ -97,6 +98,8 @@ class PlaylistEngine {
 
     // どちらのプレイヤーを読み直す場合も、進行中のクロスフェードは成立しなくなる
     disarmCrossfade();
+    // 読み直す側がテンポを戻している途中なら、その速度を上書きされないよう止める
+    if (identical(player, _tempoRampPlayer)) _cancelTempoRamp();
 
     StreamManifest? manifest;
     final cached = CacheService.offlineVideoPath(item);
@@ -162,6 +165,10 @@ class PlaylistEngine {
     oldPlayer.stop();
     session?.finish();
     newPlayer.play();
+    // テンポを寄せていたなら、前曲が消えた後にゆっくり本来の速度へ戻す
+    if (session != null && session.inRate != session.inBaseRate) {
+      _startTempoRamp(session.inPlayer, session.inRate, session.inBaseRate);
+    }
     return newPlayer;
   }
 
@@ -243,18 +250,23 @@ class PlaylistEngine {
 
   Future<void> _beginCrossfade(
       PlaylistTrack next, Duration start, Duration cut) async {
+    final inPlayer = preloadPlayer;
+    final baseRate = inPlayer.state.rate;
     final session = _CrossfadeSession(
       outPlayer: activePlayer,
-      inPlayer: preloadPlayer,
+      inPlayer: inPlayer,
       start: start,
       cut: cut,
       volume: activePlayer.state.volume,
       inStart: Duration(milliseconds: next.startMs ?? 0),
+      inBaseRate: baseRate,
+      inRate: _tempoMatchedRate(next, baseRate) ?? baseRate,
     );
     _crossfade = session;
     try {
-      await session.inPlayer.setVolume(0);
-      await session.inPlayer.play();
+      if (session.inRate != baseRate) await inPlayer.setRate(session.inRate);
+      await inPlayer.setVolume(0);
+      await inPlayer.play();
     } catch (e) {
       debugPrint('[PlaylistEngine] クロスフェード開始に失敗: $e');
       if (_crossfade == session) _crossfade = null;
@@ -266,6 +278,52 @@ class PlaylistEngine {
     if (session == null) return;
     _crossfade = null;
     session.rollback();
+  }
+
+  // --- テンポ合わせ ---
+  //
+  // 交差中は次曲の速度を前曲の「実際に鳴っているテンポ」に寄せ、前曲が消えた後に
+  // 本来の速度へ数秒かけて戻す（DJ がピッチフェーダーを戻す動き）。
+  // 倍/半テンポは同一視し、速度変化が大きすぎる組み合わせは何もしない。
+
+  static const _tempoRampDuration = Duration(seconds: 4);
+  static const _tempoRampStep = Duration(milliseconds: 200);
+
+  Timer? _tempoRamp;
+  Player? _tempoRampPlayer;
+
+  /// 次曲に設定すべき速度。合わせない（設定オフ・不明・差が大きい）なら null
+  double? _tempoMatchedRate(PlaylistTrack next, double inBaseRate) {
+    if (!_ref.read(tempoMatchProvider)) return null;
+    final outBpm = _ref.read(playlistPlayerProvider).currentTrack?.item.bpm;
+    final inBpm = next.item.bpm;
+    if (outBpm == null || inBpm == null) return null;
+    final ratio = TrackCompatibility.tempoRatio(
+        outBpm * activePlayer.state.rate, inBpm * inBaseRate);
+    if (ratio == null) return null;
+    if ((ratio - 1).abs() * 100 > TrackCompatibility.maxTempoAdjustPercent) {
+      return null;
+    }
+    final rate = inBaseRate * ratio;
+    return (rate - inBaseRate).abs() < 0.005 ? null : rate;
+  }
+
+  void _startTempoRamp(Player player, double from, double to) {
+    _cancelTempoRamp();
+    _tempoRampPlayer = player;
+    final startedAt = DateTime.now();
+    _tempoRamp = Timer.periodic(_tempoRampStep, (timer) {
+      final elapsed = DateTime.now().difference(startedAt).inMilliseconds;
+      final t = (elapsed / _tempoRampDuration.inMilliseconds).clamp(0.0, 1.0);
+      player.setRate(from + (to - from) * t);
+      if (t >= 1) _cancelTempoRamp();
+    });
+  }
+
+  void _cancelTempoRamp() {
+    _tempoRamp?.cancel();
+    _tempoRamp = null;
+    _tempoRampPlayer = null;
   }
 
   // --- 区間の適用 ---
@@ -321,6 +379,8 @@ class _CrossfadeSession {
     required this.cut,
     required this.volume,
     required this.inStart,
+    required this.inBaseRate,
+    required this.inRate,
   });
 
   final Player outPlayer;
@@ -331,6 +391,10 @@ class _CrossfadeSession {
 
   /// 取り消し時に新プレイヤーを戻す位置（次曲のA点）
   final Duration inStart;
+
+  /// 次曲本来の速度と、交差中にテンポを寄せた速度（寄せないときは同じ値）
+  final double inBaseRate;
+  final double inRate;
 
   void step(Duration pos) {
     final total = (cut - start).inMilliseconds;
@@ -355,6 +419,7 @@ class _CrossfadeSession {
     inPlayer.pause();
     inPlayer.seek(inStart);
     inPlayer.setVolume(volume);
+    if (inRate != inBaseRate) inPlayer.setRate(inBaseRate);
     outPlayer.setVolume(volume);
   }
 }

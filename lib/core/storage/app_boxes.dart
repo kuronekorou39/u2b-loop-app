@@ -38,6 +38,7 @@ class SettingsKeys {
   static const darkMode = 'dark_mode';
   static const seekStep = 'seek_step';
   static const crossfadeSeconds = 'crossfade_seconds';
+  static const tempoMatch = 'tempo_match';
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
   static const loadingAnimation = 'loading_animation';

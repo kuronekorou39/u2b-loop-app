@@ -406,6 +406,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     value: _crossfadeLabel(crossfade),
                     onTap: _pickCrossfade,
                   ),
+                  // クロスフェード中だけ効く。前後の曲の BPM が解析済みのときに
+                  // 次曲の速度を ±8% まで寄せ、交差後に元へ戻す
+                  SwitchListTile(
+                    secondary: const Icon(Icons.speed),
+                    title: const Text('テンポ合わせ'),
+                    subtitle: Text(crossfade == 0
+                        ? 'クロスフェードをオンにすると使えます'
+                        : 'クロスフェード中、次曲の速度を前曲のテンポに寄せる'),
+                    value: ref.watch(tempoMatchProvider),
+                    onChanged: crossfade == 0
+                        ? null
+                        : (v) => ref.read(tempoMatchProvider.notifier).value = v,
+                  ),
                 ],
               ),
 

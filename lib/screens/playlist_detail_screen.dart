@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/audio/track_compatibility.dart';
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
@@ -13,12 +14,16 @@ import '../models/loop_region.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../providers/player_provider.dart';
+import '../services/audio_analysis_service.dart';
 import '../services/share_service.dart';
 import '../widgets/item_thumbnail.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
+
+enum _PlaylistMenu { analyze, sortByCompatibility }
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   final String playlistId;
@@ -50,6 +55,99 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       ref.read(playlistsProvider.notifier).delete(pl.id);
       Navigator.of(context).pop();
     }
+  }
+
+  void _toast(SnackBar bar) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  }
+
+  /// 未解析の曲を1曲ずつ順に解析する。音声の取得に時間がかかるので
+  /// 進捗ダイアログを出し、途中で止められるようにする
+  Future<void> _analyzeUnanalyzed(List<LoopItem> items) async {
+    final targets = AudioAnalysisService.unanalyzed(items);
+    if (targets.isEmpty) {
+      _toast(AppSnackBar.info('すべて解析済みです'));
+      return;
+    }
+    final progress = ValueNotifier<(int done, String title)>((0, targets.first.title));
+    final cancelled = ValueNotifier<bool>(false);
+    BuildContext? dialogContext;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogContext = ctx;
+        final textTheme = Theme.of(ctx).textTheme;
+        return PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: const Text('テンポ/キーを解析中'),
+            content: ValueListenableBuilder<(int, String)>(
+              valueListenable: progress,
+              builder: (_, p, _) => Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LinearProgressIndicator(value: p.$1 / targets.length),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text('${p.$1} / ${targets.length}', style: textTheme.bodySmall),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(p.$2,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall),
+                ],
+              ),
+            ),
+            actions: [
+              ValueListenableBuilder<bool>(
+                valueListenable: cancelled,
+                builder: (_, c, _) => TextButton(
+                  onPressed: c ? null : () => cancelled.value = true,
+                  child: Text(c ? 'この曲で止めます…' : '中止'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    final done = await AudioAnalysisService.analyzeAll(
+      ref.read(loopItemsProvider.notifier),
+      ref.read(youtubeServiceProvider),
+      targets,
+      onProgress: (i, _, current) => progress.value = (i, current.title),
+      shouldStop: () => cancelled.value,
+    );
+    final wasCancelled = cancelled.value;
+    progress.dispose();
+    cancelled.dispose();
+    if (dialogContext != null && dialogContext!.mounted) {
+      Navigator.of(dialogContext!).pop();
+    }
+    if (!mounted) return;
+    final failed = targets.length - done;
+    _toast(AppSnackBar.success(
+      '$done 曲を解析しました'
+      '${wasCancelled ? '（中止）' : failed > 0 ? '（$failed 曲は取得できず）' : ''}',
+    ));
+  }
+
+  /// テンポ/キーの相性が良い曲が続くように並べ替えて保存する
+  void _sortByCompatibility(Playlist pl, List<LoopItem> items) {
+    final unknown = items.where((i) => !TrackCompatibility.isAnalyzed(i)).length;
+    if (items.length - unknown < 2) {
+      _toast(AppSnackBar.info('解析済みの曲が2曲以上必要です'));
+      return;
+    }
+    final ids = TrackCompatibility.order(items).map((e) => e.id).toList();
+    // items は孤児IDを除いた表示用リストなので、残りは末尾に温存する
+    final orphans = pl.itemIds.where((id) => !ids.contains(id)).toList();
+    pl.itemIds = [...ids, ...orphans];
+    ref.read(playlistsProvider.notifier).update(pl);
+    _toast(AppSnackBar.success(
+        '相性順に並べ替えました${unknown > 0 ? '（未解析の $unknown 曲は末尾）' : ''}'));
   }
 
   void _sharePlaylist(Playlist pl, List<LoopItem> items) {
@@ -426,6 +524,41 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             tooltip: '削除',
             onPressed: () => _deletePlaylist(pl),
           ),
+          if (items.isNotEmpty)
+            PopupMenuButton<_PlaylistMenu>(
+              tooltip: 'その他',
+              onSelected: (m) => switch (m) {
+                _PlaylistMenu.analyze => _analyzeUnanalyzed(items),
+                _PlaylistMenu.sortByCompatibility =>
+                  _sortByCompatibility(pl, items),
+              },
+              itemBuilder: (_) {
+                final unanalyzed = AudioAnalysisService.unanalyzed(items).length;
+                return [
+                  PopupMenuItem(
+                    value: _PlaylistMenu.analyze,
+                    enabled: unanalyzed > 0,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.music_note),
+                      title: const Text('テンポ/キーをまとめて解析'),
+                      subtitle: Text(unanalyzed > 0
+                          ? '未解析 $unanalyzed 曲を順に解析'
+                          : 'すべて解析済み'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _PlaylistMenu.sortByCompatibility,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.join_inner),
+                      title: Text('相性順に並べ替え'),
+                      subtitle: Text('テンポとキーが近い曲が続くように'),
+                    ),
+                  ),
+                ];
+              },
+            ),
         ],
       ),
       body: SafeArea(
@@ -735,6 +868,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     }
 
     if (item.speed != 1.0) parts.add('${item.speed}x');
+    if (item.bpm != null) parts.add('${item.bpm!.round()} BPM');
+    if (item.musicalKey != null) parts.add(item.musicalKey!);
 
     final widgets = <Widget>[];
     if (parts.isNotEmpty) {
