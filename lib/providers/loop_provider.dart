@@ -33,6 +33,10 @@ class LoopNotifier extends StateNotifier<LoopState> {
   /// 動画終了検知用コールバック（ABループなし時、動画が終端に達した場合）
   VoidCallback? onTrackEnd;
 
+  /// 曲終了を終端のこれだけ手前で発火する（completed を待つと次曲の開始が遅れる）。
+  /// クロスフェードの曲線はこの時点で 0 に着くように作る（PlaylistEngine）
+  static const trackEndLead = Duration(milliseconds: 500);
+
   /// 現在再生中のアイテムID（再生カウント用、外部からセット）
   String? currentItemId;
 
@@ -103,8 +107,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
 
     // 動画終了検知（ABループが無効、かつ動画終端付近）
     if (!state.enabled && onTrackEnd != null) {
-      if (duration > Duration.zero &&
-          position >= duration - const Duration(milliseconds: 500)) {
+      if (duration > Duration.zero && position >= duration - trackEndLead) {
         onTrackEnd!();
         return;
       }

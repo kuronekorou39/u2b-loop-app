@@ -19,10 +19,13 @@ import 'playlist_player_provider.dart';
 final playlistEngineProvider =
     Provider<PlaylistEngine>((ref) => PlaylistEngine(ref));
 
-/// クロスフェードの進捗（0〜1）と、鳴り始めている次曲。交差していないときは null。
+/// クロスフェードの進捗（0〜1）と、鳴り始めている次曲
+typedef CrossfadeProgress = ({double progress, LoopItem next});
+
+/// 交差していないときは null。
 /// 画面の遷移演出（動画が引いて次曲サムネが出る）がこれを見て描く
 final crossfadeProgressProvider =
-    StateProvider<({double progress, LoopItem next})?>((ref) => null);
+    StateProvider<CrossfadeProgress?>((ref) => null);
 
 /// 次トラックへ進めるかの判定結果。
 enum AdvanceReadiness {
@@ -177,14 +180,37 @@ class PlaylistEngine {
     _crossfadeMonitor = null;
     _ref.read(crossfadeProgressProvider.notifier).state = null;
 
-    oldPlayer.stop();
-    session?.finish();
+    if (session != null && session.outVolume > 1) {
+      // 曲線が 0 に着く前にスワップが来た（YouTube の音声がメタデータの長さより
+      // 早く終わった等）。即 stop すると旧曲がぶつぎりになるので短く落としてから止める
+      session.finishIn();
+      unawaited(_fadeOutAndStop(oldPlayer, session.outVolume, session.volume));
+    } else {
+      oldPlayer.stop();
+      session?.finish();
+    }
     newPlayer.play();
     // テンポを寄せていたなら、前曲が消えた後にゆっくり本来の速度へ戻す
     if (session != null && session.inRate != session.inBaseRate) {
       _startTempoRamp(session.inPlayer, session.inRate, session.inBaseRate);
     }
     return newPlayer;
+  }
+
+  /// 旧プレイヤーを [from] から 150ms で 0 に落として停止し、
+  /// 次にプリロード側として使われたとき無音にならないよう音量を [restore] に戻す
+  Future<void> _fadeOutAndStop(Player player, double from, double restore) async {
+    const steps = 3;
+    try {
+      for (var i = 1; i <= steps; i++) {
+        await Future.delayed(const Duration(milliseconds: 50));
+        await player.setVolume(from * (1 - i / steps));
+      }
+      await player.stop();
+      await player.setVolume(restore);
+    } catch (e) {
+      debugPrint('[PlaylistEngine] 旧プレイヤーの停止に失敗: $e');
+    }
   }
 
   // --- クロスフェード ---
@@ -223,7 +249,10 @@ class PlaylistEngine {
   /// （LoopNotifier は終端の 500ms 手前で onTrackEnd を呼ぶので、それ未満なら任せる）
   static const _minSilenceCut = Duration(milliseconds: 500);
 
-  /// 切断点。ABループ有効ならB点。なければ曲末の無音を除いた位置、不明なら曲の終端。
+  /// 切断点（スワップが実際に起きる位置）。ABループ有効ならB点。
+  /// なければ曲末の無音を除いた位置、不明なら曲の終端の [LoopNotifier.trackEndLead] 手前
+  /// （LoopNotifier がそこで曲終了を発火するため。終端に合わせて曲線を引くと、
+  ///   旧曲が 10〜40% の音量で止まって「ぶつぎり」に聞こえる）。
   /// [advancesAtCut] は、終端より手前で切るため遷移をこちらから起こす必要があるか
   ({Duration cut, bool advancesAtCut})? _cutPoint() {
     final ls = _ref.read(loopProvider);
@@ -236,7 +265,7 @@ class PlaylistEngine {
     final trailing = Duration(
         milliseconds: _ref.read(playlistPlayerProvider).currentTrack?.item.trailingSilenceMs ?? 0);
     if (trailing < _minSilenceCut || trailing >= d) {
-      return (cut: d, advancesAtCut: false);
+      return (cut: d - LoopNotifier.trackEndLead, advancesAtCut: false);
     }
     return (cut: d - trailing, advancesAtCut: true);
   }
@@ -430,7 +459,7 @@ class _CrossfadeSession {
     required this.inStart,
     required this.inBaseRate,
     required this.inRate,
-  });
+  }) : outVolume = volume;
 
   final Player outPlayer;
   final Player inPlayer;
@@ -450,6 +479,9 @@ class _CrossfadeSession {
   final double inBaseRate;
   final double inRate;
 
+  /// 直近に旧プレイヤーへ設定した音量（スワップ時に残っていれば短く落とす）
+  double outVolume;
+
   /// 音量を交差させ、進捗（0〜1）を返す
   double step(Duration pos) {
     final total = (cut - start).inMilliseconds;
@@ -458,7 +490,8 @@ class _CrossfadeSession {
         : ((pos - start).inMilliseconds / total).clamp(0.0, 1.0);
     // 等パワー曲線（中間点で合計の音圧が落ち込まない）
     final angle = t * pi / 2;
-    outPlayer.setVolume(volume * cos(angle));
+    outVolume = volume * cos(angle);
+    outPlayer.setVolume(outVolume);
     inPlayer.setVolume(volume * sin(angle));
     return t;
   }
@@ -466,9 +499,12 @@ class _CrossfadeSession {
   /// 切断点で呼ぶ（旧プレイヤーは停止済み）。
   /// 旧プレイヤーを音量0のままにすると、次にプリロード側として再利用されたとき無音になる
   void finish() {
-    inPlayer.setVolume(volume);
+    finishIn();
     outPlayer.setVolume(volume);
   }
+
+  /// 新プレイヤーだけ本来の音量に戻す（旧プレイヤーは別途落としてから戻す）
+  void finishIn() => inPlayer.setVolume(volume);
 
   /// 取り消し。新プレイヤーを頭に戻して待機状態へ
   void rollback() {
