@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import '../core/audio/bpm_key_detector.dart';
+import '../core/audio/silence_detector.dart';
 import '../models/loop_item.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
@@ -21,10 +22,18 @@ class AudioAnalysisService {
   /// 同じアイテムの解析が重ならないように（再生とプリロードが同時に走ることがある）
   static final _inFlight = <String>{};
 
-  /// 未解析のアイテムなら、PCM を受け取って解析→保存するコールバックを返す。
+  /// ネイティブ側が PCM をここで打ち切る（MainActivity.kt の ANALYSIS_MAX_SECONDS と一致）。
+  /// これに達した PCM は曲末まで届いていないので、曲末の無音は求めない
+  static const maxAnalysisSeconds = 480;
+
+  /// 解析が必要か。未解析のほか、無音情報の無い旧バージョンの解析結果も対象
+  static bool needsAnalysis(LoopItem item) =>
+      item.analyzedAt == null || item.leadingSilenceMs == null;
+
+  /// 解析が必要なアイテムなら、PCM を受け取って解析→保存するコールバックを返す。
   /// 解析済み・解析中なら null（波形生成側は PCM を取り出さない）
   static PcmCallback? sinkFor(LoopItemsNotifier items, LoopItem item) {
-    if (item.analyzedAt != null || _inFlight.contains(item.id)) return null;
+    if (!needsAnalysis(item) || _inFlight.contains(item.id)) return null;
     return (pcm, sampleRate) => run(items, item.id, pcm, sampleRate);
   }
 
@@ -37,9 +46,13 @@ class AudioAnalysisService {
   ) async {
     if (!_inFlight.add(itemId)) return null;
     try {
-      final result =
-          await Isolate.run(() => BpmKeyDetector.analyze(pcm, sampleRate));
-      await items.saveAnalysis(itemId, bpm: result.bpm, musicalKey: result.key);
+      final truncated = pcm.length >= maxAnalysisSeconds * sampleRate;
+      final (result, silence) = await Isolate.run(() => (
+            BpmKeyDetector.analyze(pcm, sampleRate),
+            SilenceDetector.detect(pcm, sampleRate, truncated: truncated),
+          ));
+      await items.saveAnalysis(itemId,
+          bpm: result.bpm, musicalKey: result.key, silence: silence);
       return result;
     } catch (e) {
       debugPrint('[AudioAnalysis] 失敗: $e');
@@ -80,9 +93,9 @@ class AudioAnalysisService {
     return completer.future;
   }
 
-  /// 未解析のアイテムだけを抜き出す（プレイリストの「まとめて解析」用）
+  /// 解析が必要なアイテムだけを抜き出す（プレイリストの「まとめて解析」用）
   static List<LoopItem> unanalyzed(Iterable<LoopItem> items) =>
-      [for (final i in items) if (i.analyzedAt == null) i];
+      [for (final i in items) if (needsAnalysis(i)) i];
 
   /// [targets] を1件ずつ順に解析する。
   /// 並列にすると音声のダウンロードが詰まるので直列。

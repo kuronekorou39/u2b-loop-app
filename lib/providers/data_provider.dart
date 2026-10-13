@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/silence_detector.dart';
 import '../core/constants.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
@@ -66,17 +67,23 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   }
 
   /// テンポ/キーの保存。バックグラウンド解析の完了で一覧の並びが変わらないよう
-  /// updatedAt は触らない。[markAnalyzed] が false なら手動補正扱い（analyzedAt 据え置き）
+  /// updatedAt は触らない。[markAnalyzed] が false なら手動補正扱い（analyzedAt 据え置き）。
+  /// [silence] を渡したときだけ曲頭・曲末の無音も更新する（手動補正では触らない）
   Future<void> saveAnalysis(
     String id, {
     required double? bpm,
     required String? musicalKey,
     bool markAnalyzed = true,
+    SilenceInfo? silence,
   }) async {
     final item = _box.get(id);
     if (item == null) return;
     item.bpm = bpm;
     item.musicalKey = musicalKey;
+    if (silence != null) {
+      item.leadingSilenceMs = silence.leadingMs;
+      item.trailingSilenceMs = silence.trailingMs;
+    }
     if (markAnalyzed) item.analyzedAt = DateTime.now().millisecondsSinceEpoch;
     await _box.put(id, item);
     _refresh();

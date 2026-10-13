@@ -973,11 +973,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     final remaining = endPoint - position;
     // 1番だけモードでは早めにプリロード開始（30秒前）
-    final thresholdSec = isFirstVerse
+    var thresholdSec = isFirstVerse
         ? 30
         : endPoint.inSeconds > 120
             ? 30
             : 10;
+    // クロスフェードは曲末の無音を除いた位置の fade 秒前から始まる。
+    // それまでにプリロードが済むよう、その分だけ早める
+    final fadeSec = ref.read(crossfadeProvider);
+    if (fadeSec > 0 && !isFirstVerse) {
+      final trailingSec =
+          ((_currentItem.trailingSilenceMs ?? 0) / 1000).ceil();
+      thresholdSec = math.max(thresholdSec, fadeSec + trailingSec + 10);
+    }
 
     if (remaining.inSeconds <= thresholdSec) {
       _preloadNextTrack();

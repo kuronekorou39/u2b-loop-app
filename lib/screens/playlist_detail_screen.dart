@@ -543,7 +543,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       leading: const Icon(Icons.music_note),
                       title: const Text('テンポ/キーをまとめて解析'),
                       subtitle: Text(unanalyzed > 0
-                          ? '未解析 $unanalyzed 曲を順に解析'
+                          ? '未解析・要更新 $unanalyzed 曲を順に解析'
                           : 'すべて解析済み'),
                     ),
                   ),

@@ -129,9 +129,18 @@ class PlaylistEngine {
       if (stale()) return manifest;
     }
 
-    await player.seek(Duration(milliseconds: track.startMs ?? 0));
+    await player.seek(effectiveStart(track));
     await player.setRate(item.speed);
     return manifest;
+  }
+
+  /// トラックの再生開始位置。区間があればA点。
+  /// 無ければ、クロスフェード有効時は曲頭の無音を飛ばす（無音同士を重ねない）
+  Duration effectiveStart(PlaylistTrack track) {
+    final startMs = track.startMs;
+    if (startMs != null) return Duration(milliseconds: startMs);
+    if (crossfadeDuration == Duration.zero) return Duration.zero;
+    return Duration(milliseconds: track.item.leadingSilenceMs ?? 0);
   }
 
   // --- スロット入替 ---
@@ -204,13 +213,26 @@ class PlaylistEngine {
     _cancelCrossfade();
   }
 
-  /// 切断点。ABループ有効ならB点、なければ曲の終端。不明なら null
-  Duration? _cutPoint() {
+  /// 曲末の無音をこれより多く飛ばすときだけ、曲末を待たずに自分で遷移を起こす
+  /// （LoopNotifier は終端の 500ms 手前で onTrackEnd を呼ぶので、それ未満なら任せる）
+  static const _minSilenceCut = Duration(milliseconds: 500);
+
+  /// 切断点。ABループ有効ならB点。なければ曲末の無音を除いた位置、不明なら曲の終端。
+  /// [advancesAtCut] は、終端より手前で切るため遷移をこちらから起こす必要があるか
+  ({Duration cut, bool advancesAtCut})? _cutPoint() {
     final ls = _ref.read(loopProvider);
     final b = ls.pointB;
-    if (ls.enabled && b != null && (ls.pointA ?? Duration.zero) < b) return b;
+    if (ls.enabled && b != null && (ls.pointA ?? Duration.zero) < b) {
+      return (cut: b, advancesAtCut: false);
+    }
     final d = activePlayer.state.duration;
-    return d > Duration.zero ? d : null;
+    if (d <= Duration.zero) return null;
+    final trailing = Duration(
+        milliseconds: _ref.read(playlistPlayerProvider).currentTrack?.item.trailingSilenceMs ?? 0);
+    if (trailing < _minSilenceCut || trailing >= d) {
+      return (cut: d, advancesAtCut: false);
+    }
+    return (cut: d - trailing, advancesAtCut: true);
   }
 
   void _crossfadeTick() {
@@ -222,12 +244,19 @@ class PlaylistEngine {
 
     final session = _crossfade;
     if (session != null) {
+      // 終端に達した（playing=false になる）。スワップは LoopNotifier 経由で来る
+      if (active.state.completed) return;
       // 一時停止・巻き戻し（ABループでA点に戻った場合も）は取り消す
       if (!active.state.playing || pos < session.start) {
         _cancelCrossfade();
         return;
       }
       session.step(pos);
+      // 曲末の無音を飛ばす場合、切断点で自分から遷移を起こす（B点到達と同じ経路）
+      if (session.advancesAtCut && !session.advanced && pos >= session.cut) {
+        session.advanced = true;
+        _ref.read(loopProvider.notifier).onTrackEnd?.call();
+      }
       return;
     }
 
@@ -237,19 +266,24 @@ class PlaylistEngine {
     if (_ref.read(playlistPlayerProvider).repeatMode == RepeatMode.single) {
       return;
     }
-    final cut = _cutPoint();
-    if (cut == null) return;
+    final cutPoint = _cutPoint();
+    if (cutPoint == null) return;
+    final cut = cutPoint.cut;
     final start = cut - fade;
     // 区間が短いと頭から交差になるので、最低2秒は素で鳴らす
-    final regionStart =
-        ls.enabled ? (ls.pointA ?? Duration.zero) : Duration.zero;
+    final current = _ref.read(playlistPlayerProvider).currentTrack;
+    final regionStart = ls.enabled
+        ? (ls.pointA ?? Duration.zero)
+        : current != null
+            ? effectiveStart(current)
+            : Duration.zero;
     if (start < regionStart + const Duration(seconds: 2)) return;
     if (pos < start || pos >= cut) return;
-    _beginCrossfade(next, start, cut);
+    _beginCrossfade(next, start, cut, advancesAtCut: cutPoint.advancesAtCut);
   }
 
-  Future<void> _beginCrossfade(
-      PlaylistTrack next, Duration start, Duration cut) async {
+  Future<void> _beginCrossfade(PlaylistTrack next, Duration start, Duration cut,
+      {required bool advancesAtCut}) async {
     final inPlayer = preloadPlayer;
     final baseRate = inPlayer.state.rate;
     final session = _CrossfadeSession(
@@ -257,8 +291,9 @@ class PlaylistEngine {
       inPlayer: inPlayer,
       start: start,
       cut: cut,
+      advancesAtCut: advancesAtCut,
       volume: activePlayer.state.volume,
-      inStart: Duration(milliseconds: next.startMs ?? 0),
+      inStart: effectiveStart(next),
       inBaseRate: baseRate,
       inRate: _tempoMatchedRate(next, baseRate) ?? baseRate,
     );
@@ -377,6 +412,7 @@ class _CrossfadeSession {
     required this.inPlayer,
     required this.start,
     required this.cut,
+    required this.advancesAtCut,
     required this.volume,
     required this.inStart,
     required this.inBaseRate,
@@ -387,6 +423,11 @@ class _CrossfadeSession {
   final Player inPlayer;
   final Duration start;
   final Duration cut;
+
+  /// 切断点が曲の終端より手前（曲末の無音を飛ばす）なので、到達時に遷移を起こす
+  final bool advancesAtCut;
+  bool advanced = false;
+
   final double volume;
 
   /// 取り消し時に新プレイヤーを戻す位置（次曲のA点）

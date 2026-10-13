@@ -71,6 +71,13 @@ class LoopItem {
   /// テンポ/キーを解析した時刻（ミリ秒。null=未解析。再解析のスキップ判定用）
   int? analyzedAt;
 
+  /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
+  /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
+  int? leadingSilenceMs;
+
+  /// 曲末の無音（ミリ秒）。null = 未計測、または曲が長すぎて曲末まで解析していない
+  int? trailingSilenceMs;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -100,6 +107,8 @@ class LoopItem {
     this.bpm,
     this.musicalKey,
     this.analyzedAt,
+    this.leadingSilenceMs,
+    this.trailingSilenceMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
@@ -198,6 +207,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       bpm: (fields[25] as num?)?.toDouble(),
       musicalKey: fields[26] as String?,
       analyzedAt: fields[27] as int?,
+      leadingSilenceMs: fields[28] as int?,
+      trailingSilenceMs: fields[29] as int?,
     );
   }
 
@@ -232,6 +243,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       25: obj.bpm,
       26: obj.musicalKey,
       27: obj.analyzedAt,
+      28: obj.leadingSilenceMs,
+      29: obj.trailingSilenceMs,
     });
   }
 }
