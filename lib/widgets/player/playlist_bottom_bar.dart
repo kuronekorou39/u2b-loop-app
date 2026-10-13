@@ -69,14 +69,16 @@ class PlaylistBottomBar extends ConsumerWidget {
           ),
         ],
       ),
-      padding: EdgeInsets.fromLTRB(0, AppSpacing.xs, 0, AppSpacing.sm + bottomInset),
+      // 下はジェスチャーバー/ナビバーの分（bottomInset）に加えて余白をとる。
+      // 画面の最下段は指が触れにくく、詰めると窮屈に見える
+      padding: EdgeInsets.fromLTRB(0, AppSpacing.lg, 0, AppSpacing.xl + bottomInset),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           seekbar,
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.md),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
             child: Row(
               children: [
                 SizedBox(

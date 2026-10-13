@@ -175,12 +175,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final double viewEnd = (viewStart + vpWidth).clamp(0.0, 1.0).toDouble();
     final isZoomed = _zoomLevel > 1.05;
 
-    if (widget.compact) {
-      return _buildCompactMode(context, position, duration, loop, hasSource);
-    }
     if (widget.bar) {
       return _buildBarMode(context, position, duration, loop, hasSource,
           waveform, waveformLoading, waveformError);
+    }
+    if (widget.compact) {
+      return _buildCompactMode(context, position, duration, loop, hasSource);
     }
 
     return Padding(
@@ -584,7 +584,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     ];
   }
 
-  /// 1段の波形バー: 左右に時刻、中央に全体波形。タップ/ドラッグでシーク
+  /// 1段のシークバー: 全幅の波形（compact なら細いバー）と、その下に時刻と波形切替。
+  /// タップ/ドラッグでシーク
   Widget _buildBarMode(
     BuildContext context,
     Duration position,
@@ -598,59 +599,92 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
           fontFeatures: const [FontFeature('tnum')],
         );
-    const barHeight = 48.0;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-      child: Row(
-        children: [
-          Text(TimeUtils.format(position), style: labelStyle),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: SizedBox(
-              height: barHeight,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth;
-                  void seekTo(double x) {
-                    if (duration.inMilliseconds == 0) return;
-                    final norm = (x / width).clamp(0.0, 1.0);
-                    ref.read(playerProvider).seek(Duration(
-                        milliseconds:
-                            (norm * duration.inMilliseconds).round()));
-                  }
+    final compact = widget.compact;
+    final barHeight = compact ? 28.0 : 72.0;
+    final brightness = Theme.of(context).brightness;
 
-                  return GestureDetector(
-                    onTapUp:
-                        hasSource ? (d) => seekTo(d.localPosition.dx) : null,
-                    onHorizontalDragUpdate:
-                        hasSource ? (d) => seekTo(d.localPosition.dx) : null,
-                    child: Stack(
-                      children: [
-                        CustomPaint(
-                          size: Size(width, barHeight),
-                          painter: _WaveformSeekbarPainter(
-                            position: position,
-                            duration: duration,
-                            pointA: loop.pointA,
-                            pointB: loop.pointB,
-                            loopEnabled: loop.enabled,
-                            waveform: waveform,
-                            brightness: Theme.of(context).brightness,
-                            viewStart: 0,
-                            viewEnd: 1,
-                          ),
-                        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+      child: Column(
+        children: [
+          SizedBox(
+            height: barHeight,
+            width: double.infinity,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                void seekTo(double x) {
+                  if (duration.inMilliseconds == 0) return;
+                  final norm = (x / width).clamp(0.0, 1.0);
+                  ref.read(playerProvider).seek(Duration(
+                      milliseconds: (norm * duration.inMilliseconds).round()));
+                }
+
+                return GestureDetector(
+                  onTapUp:
+                      hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+                  onHorizontalDragUpdate:
+                      hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+                  child: Stack(
+                    children: [
+                      CustomPaint(
+                        size: Size(width, barHeight),
+                        painter: compact
+                            ? _CompactSeekbarPainter(
+                                position: position,
+                                duration: duration,
+                                pointA: loop.pointA,
+                                pointB: loop.pointB,
+                                loopEnabled: loop.enabled,
+                                brightness: brightness,
+                              )
+                            : _WaveformSeekbarPainter(
+                                position: position,
+                                duration: duration,
+                                pointA: loop.pointA,
+                                pointB: loop.pointB,
+                                loopEnabled: loop.enabled,
+                                waveform: waveform,
+                                brightness: brightness,
+                                viewStart: 0,
+                                viewEnd: 1,
+                              ),
+                      ),
+                      if (!compact)
                         ..._waveformStatusOverlays(
                             waveform, waveformLoading, waveformError),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
-          const SizedBox(width: AppSpacing.md),
-          Text(TimeUtils.format(duration), style: labelStyle),
+          SizedBox(
+            height: 24,
+            child: Row(
+              children: [
+                Text(TimeUtils.format(position), style: labelStyle),
+                const Spacer(),
+                Text(TimeUtils.format(duration), style: labelStyle),
+                if (widget.onToggleCompact != null) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: IconButton(
+                      icon: Icon(
+                        compact ? Icons.unfold_more : Icons.unfold_less,
+                        size: AppIconSizes.s,
+                      ),
+                      onPressed: widget.onToggleCompact,
+                      padding: EdgeInsets.zero,
+                      tooltip: compact ? '波形表示' : 'コンパクト表示',
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

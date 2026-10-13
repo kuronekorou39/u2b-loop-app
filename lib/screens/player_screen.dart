@@ -3054,6 +3054,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             seekbar: LoopSeekbar(
               compact: _compactSeekbar,
               bar: true,
+              onToggleCompact: () =>
+                  setState(() => _compactSeekbar = !_compactSeekbar),
               allowMarkerDrag: false,
               onRetryWaveform: _retryWaveform,
             ),
@@ -3162,8 +3164,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         onEditAb: _showAbEditDialog,
         hideVideo: _hideVideo,
         onHideVideoChanged: (v) => setState(() => _hideVideo = v),
-        showWaveform: !_compactSeekbar,
-        onShowWaveformChanged: (v) => setState(() => _compactSeekbar = !v),
       ),
     );
   }

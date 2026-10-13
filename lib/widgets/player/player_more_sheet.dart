@@ -7,9 +7,9 @@ import '../../providers/player_provider.dart';
 
 /// プレイリスト再生画面の「その他」シート。
 /// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・速度・音量・
-/// 動画/波形の表示切替）をまとめる。
+/// 動画の表示切替）をまとめる。波形の表示切替はシークバー右下のボタン。
 ///
-/// 画面側の状態（動画非表示・波形表示）は初期値とコールバックで受け取り、
+/// 画面側の状態（動画非表示）は初期値とコールバックで受け取り、
 /// シート内では自前のコピーを持って即時に反映する。
 class PlayerMoreSheet extends ConsumerStatefulWidget {
   const PlayerMoreSheet({
@@ -20,8 +20,6 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
     required this.onEditAb,
     required this.hideVideo,
     required this.onHideVideoChanged,
-    required this.showWaveform,
-    required this.onShowWaveformChanged,
   });
 
   final bool firstVerseMode;
@@ -30,8 +28,6 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
   final VoidCallback onEditAb;
   final bool hideVideo;
   final ValueChanged<bool> onHideVideoChanged;
-  final bool showWaveform;
-  final ValueChanged<bool> onShowWaveformChanged;
 
   static const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
@@ -51,7 +47,6 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
 class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
   late bool _firstVerse = widget.firstVerseMode;
   late bool _hideVideo = widget.hideVideo;
-  late bool _showWaveform = widget.showWaveform;
   double? _volume;
 
   @override
@@ -191,16 +186,6 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
               onChanged: (v) {
                 setState(() => _hideVideo = !v);
                 widget.onHideVideoChanged(!v);
-              },
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.graphic_eq),
-              title: const Text('波形を表示'),
-              subtitle: const Text('オフにすると細いシークバーになる'),
-              value: _showWaveform,
-              onChanged: (v) {
-                setState(() => _showWaveform = v);
-                widget.onShowWaveformChanged(v);
               },
             ),
           ],
