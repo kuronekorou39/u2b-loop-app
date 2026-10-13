@@ -1,0 +1,211 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/theme/app_theme.dart';
+import '../../providers/loop_provider.dart';
+import '../../providers/player_provider.dart';
+
+/// プレイリスト再生画面の「その他」シート。
+/// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・速度・音量・
+/// 動画/波形の表示切替）をまとめる。
+///
+/// 画面側の状態（動画非表示・波形表示）は初期値とコールバックで受け取り、
+/// シート内では自前のコピーを持って即時に反映する。
+class PlayerMoreSheet extends ConsumerStatefulWidget {
+  const PlayerMoreSheet({
+    super.key,
+    required this.firstVerseMode,
+    required this.onToggleFirstVerse,
+    required this.onToggleVolumeNorm,
+    required this.onEditAb,
+    required this.hideVideo,
+    required this.onHideVideoChanged,
+    required this.showWaveform,
+    required this.onShowWaveformChanged,
+  });
+
+  final bool firstVerseMode;
+  final VoidCallback onToggleFirstVerse;
+  final VoidCallback onToggleVolumeNorm;
+  final VoidCallback onEditAb;
+  final bool hideVideo;
+  final ValueChanged<bool> onHideVideoChanged;
+  final bool showWaveform;
+  final ValueChanged<bool> onShowWaveformChanged;
+
+  static const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+  static Future<void> show(BuildContext context, PlayerMoreSheet sheet) {
+    return showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => sheet,
+    );
+  }
+
+  @override
+  ConsumerState<PlayerMoreSheet> createState() => _PlayerMoreSheetState();
+}
+
+class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
+  late bool _firstVerse = widget.firstVerseMode;
+  late bool _hideVideo = widget.hideVideo;
+  late bool _showWaveform = widget.showWaveform;
+  double? _volume;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final player = ref.read(playerProvider);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    final volumeNorm = ref.watch(volumeNormProvider);
+    final rate = ref.watch(rateProvider).valueOrNull ?? 1.0;
+    final volume =
+        _volume ?? ref.watch(volumeProvider).valueOrNull ?? player.state.volume;
+    final loop = ref.watch(loopProvider);
+
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(bottom: bottomInset + AppSpacing.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.looks_one_outlined),
+              title: const Text('1番だけ'),
+              subtitle: const Text('1番が終わるあたりで次の曲へ'),
+              value: _firstVerse,
+              onChanged: (v) {
+                setState(() => _firstVerse = v);
+                widget.onToggleFirstVerse();
+              },
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.equalizer),
+              title: const Text('音量正規化'),
+              subtitle: const Text('波形から曲ごとの音量差をならす'),
+              value: volumeNorm,
+              onChanged: (_) => widget.onToggleVolumeNorm(),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.tune,
+                color: loop.hasBothPoints ? AppTheme.accentGreen : null,
+              ),
+              title: const Text('AB区間を編集'),
+              subtitle: Text(loop.hasBothPoints ? 'この曲の再生範囲を指定中' : '再生範囲を指定する'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onEditAb();
+              },
+            ),
+            const Divider(),
+            // 速度
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, 0),
+              child: Row(
+                children: [
+                  const Icon(Icons.speed, size: AppIconSizes.lg),
+                  const SizedBox(width: AppSpacing.xl),
+                  Text('速度', style: textTheme.bodyLarge),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.xs),
+              child: Wrap(
+                spacing: AppSpacing.sm,
+                children: [
+                  for (final s in PlayerMoreSheet.speeds)
+                    ChoiceChip(
+                      label: Text('${s}x'),
+                      selected: s == rate,
+                      onSelected: hasSource ? (_) => player.setRate(s) : null,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ),
+            // 音量
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
+                    tooltip: volume > 0 ? 'ミュート' : 'ミュート解除',
+                    onPressed: hasSource
+                        ? () {
+                            double next;
+                            if (volume > 0) {
+                              ref.read(previousVolumeProvider.notifier).state =
+                                  volume;
+                              next = 0;
+                            } else {
+                              final prev = ref.read(previousVolumeProvider);
+                              next = prev > 0 ? prev : 100.0;
+                            }
+                            player.setVolume(next);
+                            setState(() => _volume = next);
+                          }
+                        : null,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: volume.clamp(0, 100),
+                      min: 0,
+                      max: 100,
+                      onChanged: hasSource
+                          ? (v) {
+                              player.setVolume(v);
+                              setState(() => _volume = v);
+                            }
+                          : null,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 40,
+                    child: Text(
+                      '${volume.round()}%',
+                      style: textTheme.labelSmall,
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            SwitchListTile(
+              secondary: const Icon(Icons.videocam_outlined),
+              title: const Text('動画を表示'),
+              subtitle: const Text('オフにすると曲リストを広く使える'),
+              value: !_hideVideo,
+              onChanged: (v) {
+                setState(() => _hideVideo = !v);
+                widget.onHideVideoChanged(!v);
+              },
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.graphic_eq),
+              title: const Text('波形を表示'),
+              subtitle: const Text('オフにすると細いシークバーになる'),
+              value: _showWaveform,
+              onChanged: (v) {
+                setState(() => _showWaveform = v);
+                widget.onShowWaveformChanged(v);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

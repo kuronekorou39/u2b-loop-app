@@ -13,6 +13,10 @@ enum _DragTarget { position, pointA, pointB }
 
 class LoopSeekbar extends ConsumerStatefulWidget {
   final bool compact;
+
+  /// 波形つきの1段表示（ズーム・ミニマップ・時間行なし）。
+  /// 再生画面の下部コントローラー用。compact が true ならそちらが優先
+  final bool bar;
   final VoidCallback? onToggleCompact;
   final bool allowMarkerDrag;
   final VoidCallback? onRetryWaveform;
@@ -20,6 +24,7 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   const LoopSeekbar({
     super.key,
     this.compact = false,
+    this.bar = false,
     this.onToggleCompact,
     this.allowMarkerDrag = true,
     this.onRetryWaveform,
@@ -173,6 +178,10 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     if (widget.compact) {
       return _buildCompactMode(context, position, duration, loop, hasSource);
     }
+    if (widget.bar) {
+      return _buildBarMode(context, position, duration, loop, hasSource,
+          waveform, waveformLoading, waveformError);
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -318,100 +327,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             viewEnd: viewEnd,
                           ),
                         ),
-                        // 波形: 読込中表示
-                        if (waveformLoading && waveform == null)
-                          Positioned(
-                            left: 0, right: 0, bottom: 2,
-                            child: Center(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.black54,
-                                  borderRadius: AppRadius.borderXs,
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SizedBox(
-                                      width: 10, height: 10,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.5, color: Colors.white70),
-                                    ),
-                                    SizedBox(width: AppSpacing.xs),
-                                    Text('波形を読込中...',
-                                      style: TextStyle(fontSize: 10, color: Colors.white70)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        // 波形: エラー + リトライボタン
-                        if (waveformError != null && waveform == null && !waveformLoading) ...[
-                          Builder(builder: (_) {
-                            _scheduleRetry(waveformError);
-                            return Positioned(
-                              left: 0, right: 0, bottom: 2,
-                              child: Center(
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black54,
-                                        borderRadius: AppRadius.borderXs,
-                                      ),
-                                      child: Text(
-                                        '波形: $waveformError',
-                                        style: const TextStyle(
-                                          fontSize: 10, color: Colors.white70),
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
-                                    if (_retrying)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: AppSpacing.sm, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius: AppRadius.borderXs,
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SizedBox(
-                                              width: 10, height: 10,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 1.5, color: Colors.white70),
-                                            ),
-                                            SizedBox(width: AppSpacing.xs),
-                                            Text('再取得中...',
-                                              style: TextStyle(fontSize: 10, color: Colors.white70)),
-                                          ],
-                                        ),
-                                      )
-                                    else if (widget.onRetryWaveform != null)
-                                      GestureDetector(
-                                        onTap: widget.onRetryWaveform,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: AppSpacing.sm, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.accentGreen.withValues(alpha: 0.8),
-                                            borderRadius: AppRadius.borderXs,
-                                          ),
-                                          child: const Text('リトライ',
-                                            style: TextStyle(fontSize: 10, color: Colors.white)),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }),
-                        ],
+                        ..._waveformStatusOverlays(
+                            waveform, waveformLoading, waveformError),
                       ],
                     ),
                   );
@@ -594,6 +511,151 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     );
   }
 
+  /// 波形の「読込中」「エラー + リトライ」の帯（波形の下端に重ねる）
+  List<Widget> _waveformStatusOverlays(
+      List<double>? waveform, bool waveformLoading, String? waveformError) {
+    Widget badge(List<Widget> children) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: AppRadius.borderXs,
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: children),
+        );
+    const spinner = SizedBox(
+      width: 10,
+      height: 10,
+      child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white70),
+    );
+    const textStyle = TextStyle(fontSize: 10, color: Colors.white70);
+
+    return [
+      if (waveformLoading && waveform == null)
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 2,
+          child: Center(
+            child: badge(const [
+              spinner,
+              SizedBox(width: AppSpacing.xs),
+              Text('波形を読込中...', style: textStyle),
+            ]),
+          ),
+        ),
+      if (waveformError != null && waveform == null && !waveformLoading)
+        Builder(builder: (_) {
+          _scheduleRetry(waveformError);
+          return Positioned(
+            left: 0,
+            right: 0,
+            bottom: 2,
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  badge([Text('波形: $waveformError', style: textStyle)]),
+                  const SizedBox(width: AppSpacing.xs),
+                  if (_retrying)
+                    badge(const [
+                      spinner,
+                      SizedBox(width: AppSpacing.xs),
+                      Text('再取得中...', style: textStyle),
+                    ])
+                  else if (widget.onRetryWaveform != null)
+                    GestureDetector(
+                      onTap: widget.onRetryWaveform,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentGreen.withValues(alpha: 0.8),
+                          borderRadius: AppRadius.borderXs,
+                        ),
+                        child: const Text('リトライ',
+                            style: TextStyle(fontSize: 10, color: Colors.white)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }),
+    ];
+  }
+
+  /// 1段の波形バー: 左右に時刻、中央に全体波形。タップ/ドラッグでシーク
+  Widget _buildBarMode(
+    BuildContext context,
+    Duration position,
+    Duration duration,
+    LoopState loop,
+    bool hasSource,
+    List<double>? waveform,
+    bool waveformLoading,
+    String? waveformError,
+  ) {
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontFeatures: const [FontFeature('tnum')],
+        );
+    const barHeight = 48.0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: Row(
+        children: [
+          Text(TimeUtils.format(position), style: labelStyle),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: SizedBox(
+              height: barHeight,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  void seekTo(double x) {
+                    if (duration.inMilliseconds == 0) return;
+                    final norm = (x / width).clamp(0.0, 1.0);
+                    ref.read(playerProvider).seek(Duration(
+                        milliseconds:
+                            (norm * duration.inMilliseconds).round()));
+                  }
+
+                  return GestureDetector(
+                    onTapUp:
+                        hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+                    onHorizontalDragUpdate:
+                        hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+                    child: Stack(
+                      children: [
+                        CustomPaint(
+                          size: Size(width, barHeight),
+                          painter: _WaveformSeekbarPainter(
+                            position: position,
+                            duration: duration,
+                            pointA: loop.pointA,
+                            pointB: loop.pointB,
+                            loopEnabled: loop.enabled,
+                            waveform: waveform,
+                            brightness: Theme.of(context).brightness,
+                            viewStart: 0,
+                            viewEnd: 1,
+                          ),
+                        ),
+                        ..._waveformStatusOverlays(
+                            waveform, waveformLoading, waveformError),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Text(TimeUtils.format(duration), style: labelStyle),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCompactMode(BuildContext context, Duration position,
       Duration duration, LoopState loop, bool hasSource) {
     return Padding(
@@ -659,17 +721,19 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             TimeUtils.format(duration),
             style: Theme.of(context).textTheme.labelSmall,
           ),
-          const SizedBox(width: AppSpacing.xs),
-          SizedBox(
-            width: 28,
-            height: 28,
-            child: IconButton(
-              icon: const Icon(Icons.unfold_more, size: AppIconSizes.s),
-              onPressed: widget.onToggleCompact,
-              padding: EdgeInsets.zero,
-              tooltip: '波形表示',
+          if (widget.onToggleCompact != null) ...[
+            const SizedBox(width: AppSpacing.xs),
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: IconButton(
+                icon: const Icon(Icons.unfold_more, size: AppIconSizes.s),
+                onPressed: widget.onToggleCompact,
+                padding: EdgeInsets.zero,
+                tooltip: '波形表示',
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
