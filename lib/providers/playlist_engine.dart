@@ -227,6 +227,21 @@ class PlaylistEngine {
   /// 交差中か。画面側はこの間、旧プレイヤーの音量を触らないこと
   bool get isCrossfading => _crossfade != null;
 
+  /// 予定または進行中のクロスフェード区間（旧曲の時計で start〜cut）と次曲。
+  /// 次曲がプリロード済みでクロスフェードが有効なときだけ返す（ミックスビュー用）
+  ({Duration start, Duration cut, PlaylistTrack next})? plannedCrossfade() {
+    final next = _armedTrack;
+    final fade = crossfadeDuration;
+    if (next == null || fade == Duration.zero) return null;
+    final session = _crossfade;
+    if (session != null) {
+      return (start: session.start, cut: session.cut, next: next);
+    }
+    final cutPoint = _cutPoint();
+    if (cutPoint == null) return null;
+    return (start: cutPoint.cut - fade, cut: cutPoint.cut, next: next);
+  }
+
   Duration get crossfadeDuration =>
       Duration(seconds: _ref.read(crossfadeProvider));
 

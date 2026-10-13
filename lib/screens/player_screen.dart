@@ -50,6 +50,7 @@ import '../widgets/player/player_controls.dart';
 import '../widgets/player/player_more_sheet.dart';
 import '../widgets/player/player_status_views.dart';
 import '../widgets/player/playlist_bottom_bar.dart';
+import '../widgets/player/playlist_seek_area.dart';
 import '../widgets/player/subtitle_toggle_button.dart';
 import '../widgets/player/track_row_parts.dart';
 import '../widgets/player/transition_stage.dart';
@@ -3052,13 +3053,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         children: [
           Expanded(child: _buildPlaylistStage()),
           PlaylistBottomBar(
-            seekbar: LoopSeekbar(
+            seekbar: PlaylistSeekArea(
               compact: _compactSeekbar,
-              bar: true,
               onToggleCompact: () =>
                   setState(() => _compactSeekbar = !_compactSeekbar),
-              allowMarkerDrag: false,
               onRetryWaveform: _retryWaveform,
+              waveformFor: (item) => _waveformCache[item.id],
+              titleFor: (item) => item.title,
             ),
             trackLabel: currentIdx != null
                 ? '${currentIdx + 1} / ${plState.trackCount}'
