@@ -19,6 +19,11 @@ import 'playlist_player_provider.dart';
 final playlistEngineProvider =
     Provider<PlaylistEngine>((ref) => PlaylistEngine(ref));
 
+/// クロスフェードの進捗（0〜1）と、鳴り始めている次曲。交差していないときは null。
+/// 画面の遷移演出（動画が引いて次曲サムネが出る）がこれを見て描く
+final crossfadeProgressProvider =
+    StateProvider<({double progress, LoopItem next})?>((ref) => null);
+
 /// 次トラックへ進めるかの判定結果。
 enum AdvanceReadiness {
   /// 同一アイテムの別区間 → シークだけで移れる（ロード不要）
@@ -170,6 +175,7 @@ class PlaylistEngine {
     _armedTrack = null;
     _crossfadeMonitor?.cancel();
     _crossfadeMonitor = null;
+    _ref.read(crossfadeProgressProvider.notifier).state = null;
 
     oldPlayer.stop();
     session?.finish();
@@ -251,7 +257,9 @@ class PlaylistEngine {
         _cancelCrossfade();
         return;
       }
-      session.step(pos);
+      final progress = session.step(pos);
+      _ref.read(crossfadeProgressProvider.notifier).state =
+          (progress: progress, next: next.item);
       // 曲末の無音を飛ばす場合、切断点で自分から遷移を起こす（B点到達と同じ経路）
       if (session.advancesAtCut && !session.advanced && pos >= session.cut) {
         session.advanced = true;
@@ -302,6 +310,10 @@ class PlaylistEngine {
       if (session.inRate != baseRate) await inPlayer.setRate(session.inRate);
       await inPlayer.setVolume(0);
       await inPlayer.play();
+      if (_crossfade == session) {
+        _ref.read(crossfadeProgressProvider.notifier).state =
+            (progress: 0, next: next.item);
+      }
     } catch (e) {
       debugPrint('[PlaylistEngine] クロスフェード開始に失敗: $e');
       if (_crossfade == session) _crossfade = null;
@@ -312,6 +324,7 @@ class PlaylistEngine {
     final session = _crossfade;
     if (session == null) return;
     _crossfade = null;
+    _ref.read(crossfadeProgressProvider.notifier).state = null;
     session.rollback();
   }
 
@@ -437,7 +450,8 @@ class _CrossfadeSession {
   final double inBaseRate;
   final double inRate;
 
-  void step(Duration pos) {
+  /// 音量を交差させ、進捗（0〜1）を返す
+  double step(Duration pos) {
     final total = (cut - start).inMilliseconds;
     final t = total <= 0
         ? 1.0
@@ -446,6 +460,7 @@ class _CrossfadeSession {
     final angle = t * pi / 2;
     outPlayer.setVolume(volume * cos(angle));
     inPlayer.setVolume(volume * sin(angle));
+    return t;
   }
 
   /// 切断点で呼ぶ（旧プレイヤーは停止済み）。

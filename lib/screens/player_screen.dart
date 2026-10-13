@@ -52,6 +52,7 @@ import '../widgets/player/player_status_views.dart';
 import '../widgets/player/playlist_bottom_bar.dart';
 import '../widgets/player/subtitle_toggle_button.dart';
 import '../widgets/player/track_row_parts.dart';
+import '../widgets/player/transition_stage.dart';
 import '../widgets/player/video_player_widget.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/storage/app_boxes.dart';
@@ -3105,7 +3106,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// プレイリスト縦画面の上部: 動画の上に曲リストが半透明で重なる。
   /// 動画を隠しているときはリストが上まで伸びる。
-  /// （v1.76 の遷移演出は、この動画レイヤーの中でズーム/次曲サムネを描く想定）
+  /// 曲切替の演出（ズームアウト→次曲サムネ→ズームイン）は TransitionStage が担当
   Widget _buildPlaylistStage() {
     if (_hideVideo) {
       return Column(
@@ -3126,11 +3127,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               top: 0,
               left: 0,
               right: 0,
-              child: Stack(
-                children: [
-                  VideoPlayerWidget(onFullscreen: _enterFullscreen),
-                  const Positioned.fill(child: LyricsOverlay()),
-                ],
+              height: videoH,
+              child: TransitionStage(
+                currentItem: _currentItem,
+                onFullscreen: _enterFullscreen,
               ),
             ),
             // 字幕: リストの上端にぴったり乗せる（動画の下側に重なる）
