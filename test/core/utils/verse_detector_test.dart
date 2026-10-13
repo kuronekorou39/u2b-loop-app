@@ -22,8 +22,9 @@ void main() {
       expect(VerseDetector.findCutPoint(durationMs: 49999), isNull);
     });
 
-    test('1分40秒以下は null（曲全体が検索範囲に収まる）', () {
+    test('3分以下は null（曲全体が検索範囲に収まる）', () {
       expect(VerseDetector.findCutPoint(durationMs: 100000), isNull);
+      expect(VerseDetector.findCutPoint(durationMs: 180000), isNull);
     });
   });
 
@@ -42,7 +43,7 @@ void main() {
   });
 
   group('波形があるとき', () {
-    test('50秒〜1分40秒の静かな部分を切断点にする', () {
+    test('50秒〜3分の静かな部分を切断点にする', () {
       final waveform = _waveformWithQuietGap(
         durationMs: 300000,
         samples: 4000,
@@ -56,7 +57,7 @@ void main() {
       expect(cut, lessThanOrEqualTo(80000));
     });
 
-    test('切断点は必ず検索範囲（50秒〜1分40秒）に収まる', () {
+    test('切断点は必ず検索範囲（50秒〜3分）に収まる', () {
       final waveform = _waveformWithQuietGap(
         durationMs: 400000,
         samples: 4000,
@@ -67,7 +68,20 @@ void main() {
           VerseDetector.findCutPoint(waveform: waveform, durationMs: 400000);
       expect(cut, isNotNull);
       expect(cut, greaterThanOrEqualTo(50000));
-      expect(cut, lessThanOrEqualTo(100000));
+      expect(cut, lessThanOrEqualTo(180000));
+    });
+
+    test('2分台の静かな部分も切断点に選べる', () {
+      final waveform = _waveformWithQuietGap(
+        durationMs: 300000,
+        samples: 4000,
+        quietStartMs: 150000,
+        quietEndMs: 155000,
+      );
+      final cut =
+          VerseDetector.findCutPoint(waveform: waveform, durationMs: 300000);
+      expect(cut, greaterThanOrEqualTo(145000));
+      expect(cut, lessThanOrEqualTo(160000));
     });
 
     test('平坦な波形でも null にはならない', () {

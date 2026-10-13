@@ -7,7 +7,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/native_channels.dart';
+import '../models/loop_item.dart';
 import '../models/video_source.dart';
+import 'audio_analysis_service.dart';
+import 'waveform_cache.dart';
 import 'youtube_service.dart';
 
 /// テンポ/キー解析用に間引いたモノラル PCM を受け取る。
@@ -272,11 +275,36 @@ class WaveformService {
   /// MediaExtractor にリモートURLを直接渡すとプレイヤーとCDN接続が競合するため。
   /// [cachedAudioPath] を渡すとDLを省略する（[prefetchAudio] の結果を使う）。
   /// 使い終わった一時ファイルは内部で削除する。
+  ///
+  /// [cacheKey]（アイテムID）を渡すと [WaveformCache] を使う。
+  /// ただし [onPcm] がある＝解析が必要なときは、PCM を取るために生成し直す。
   Future<List<double>?> generateForVideoSource(
     VideoSource source,
     YouTubeService ytService, {
     String? cachedAudioPath,
     int targetSamples = 4000,
+    PcmCallback? onPcm,
+    String? cacheKey,
+  }) async {
+    if (cacheKey != null && onPcm == null && cachedAudioPath == null) {
+      final cached = await WaveformCache.load(cacheKey);
+      if (cached != null && cached.isNotEmpty) return cached;
+    }
+    final waveform = await _generateForVideoSource(source, ytService,
+        cachedAudioPath: cachedAudioPath,
+        targetSamples: targetSamples,
+        onPcm: onPcm);
+    if (cacheKey != null && waveform != null && waveform.isNotEmpty) {
+      await WaveformCache.save(cacheKey, waveform);
+    }
+    return waveform;
+  }
+
+  Future<List<double>?> _generateForVideoSource(
+    VideoSource source,
+    YouTubeService ytService, {
+    String? cachedAudioPath,
+    required int targetSamples,
     PcmCallback? onPcm,
   }) async {
     if (source.type == VideoSourceType.local) {
@@ -295,6 +323,11 @@ class WaveformService {
     }
     return generateFromCachedAudio(path, targetSamples: targetSamples, onPcm: onPcm);
   }
+
+  /// 波形がキャッシュ済みで、解析も不要なら true（音声 DL を省ける）
+  static Future<bool> canSkipAudioFetch(LoopItem item) async =>
+      !AudioAnalysisService.needsAnalysis(item) &&
+      await WaveformCache.exists(item.id);
 
   Future<List<double>?> generateFromCachedAudio(
     String audioPath, {

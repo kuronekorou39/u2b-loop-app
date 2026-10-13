@@ -19,6 +19,7 @@ import '../providers/theme_provider.dart';
 import '../services/backup_service.dart';
 import '../services/cache_service.dart';
 import '../services/update_service.dart';
+import '../services/waveform_cache.dart';
 import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 
@@ -98,6 +99,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (picked != null) ref.read(crossfadeProvider.notifier).value = picked;
+  }
+
+  Future<void> _clearWaveformCache() async {
+    final ok = await AppDialogs.confirm(
+      context,
+      title: '保存済みの波形を削除',
+      message: '次に再生したときに音声を取得して作り直します。',
+      confirmLabel: '削除',
+      destructive: true,
+    );
+    if (!ok) return;
+    await WaveformCache.clear();
+    if (mounted) setState(() {});
+    _toast(AppSnackBar.success('波形を削除しました'));
   }
 
   // ─── バックアップ ───
@@ -450,6 +465,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         icon: Icons.folder_open,
                         title: 'オフライン動画の容量',
                         value: waiting ? '計算中…' : '$mb MB',
+                      );
+                    },
+                  ),
+                  // 波形は 4KB/曲 なので上限は設けない。作り直したいときだけ消す
+                  FutureBuilder<(int, int)>(
+                    future: WaveformCache.stats(),
+                    builder: (_, snap) {
+                      final (count, bytes) = snap.data ?? (0, 0);
+                      final kb = (bytes / 1024).toStringAsFixed(0);
+                      return _ValueTile(
+                        icon: Icons.graphic_eq,
+                        title: '保存済みの波形',
+                        value: snap.hasData ? '$count 曲 · $kb KB' : '計算中…',
+                        onTap: count == 0 ? null : _clearWaveformCache,
+                        showChevron: count > 0,
                       );
                     },
                   ),

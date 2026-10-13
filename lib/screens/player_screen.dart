@@ -34,6 +34,7 @@ import '../services/export_runner.dart';
 import '../providers/subtitle_provider.dart';
 import '../services/subtitle_service.dart';
 import '../services/audio_analysis_service.dart';
+import '../services/waveform_cache.dart';
 import '../services/waveform_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/equalizer_icon.dart';
@@ -1069,6 +1070,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ref.read(loopItemsProvider.notifier), item);
       List<double>? waveform;
 
+      // 保存済みの波形があれば音声 DL ごと省く（解析が必要なときは作り直す）
+      if (onPcm == null) {
+        waveform = await WaveformCache.load(item.id);
+        if (waveform != null && waveform.isNotEmpty) {
+          if (gen == _preloadGeneration) _waveformCache[item.id] = waveform;
+          return;
+        }
+      }
+
       if (!item.isYouTube) {
         waveform =
             await service.generateForLocalFile(item.uri, 4000, onPcm: onPcm);
@@ -1112,8 +1122,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       }
 
-      if (waveform != null && waveform.isNotEmpty && gen == _preloadGeneration) {
-        _waveformCache[item.id] = waveform;
+      if (waveform != null && waveform.isNotEmpty) {
+        await WaveformCache.save(item.id, waveform);
+        if (gen == _preloadGeneration) _waveformCache[item.id] = waveform;
       }
     } catch (_) {
       // 波形プリロード失敗は無視（再生時に再試行される）
@@ -1265,8 +1276,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         .open(Media(source.uri), play: false)
         .timeout(const Duration(seconds: 60));
 
-    // 波形用音声DLは再生開始後にバックグラウンドで実行→完了後に波形生成
-    WaveformService().prefetchAudio(manifest, ytService).then((path) {
+    // 波形用音声DLは再生開始後にバックグラウンドで実行→完了後に波形生成。
+    // 波形が保存済み（かつ解析不要）なら DL せずにそのまま使う
+    WaveformService.canSkipAudioFetch(item).then((skip) async {
+      if (!mounted) return;
+      if (skip) {
+        _generateWaveform(source);
+        return;
+      }
+      final path = await WaveformService().prefetchAudio(manifest, ytService);
       if (path == null || !mounted) return;
       _cachedAudioPath = path;
       _generateWaveform(source);
@@ -1881,6 +1899,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 未解析ならテンポ/キー解析をデコードに相乗りさせる
         onPcm: AudioAnalysisService.sinkFor(
             ref.read(loopItemsProvider.notifier), _currentItem),
+        cacheKey: _currentItem.id,
       );
 
       if (mounted) {

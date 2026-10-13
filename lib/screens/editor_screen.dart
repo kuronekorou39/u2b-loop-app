@@ -253,8 +253,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       thumbnailUrl: _item.thumbnailUrl,
     );
 
-    // 波形用音声DLをバックグラウンド開始→完了後に波形生成
-    WaveformService().prefetchAudio(manifest, ytService).then((path) {
+    // 波形用音声DLをバックグラウンド開始→完了後に波形生成。
+    // 波形が保存済み（かつ解析不要）なら DL せずにそのまま使う
+    WaveformService.canSkipAudioFetch(_item).then((skip) async {
+      if (!mounted) return;
+      if (skip) {
+        _generateWaveform(source);
+        return;
+      }
+      final path = await WaveformService().prefetchAudio(manifest, ytService);
       if (path == null || !mounted) return;
       _cachedAudioPath = path;
       _generateWaveform(source);
@@ -357,6 +364,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         cachedAudioPath: prefetched,
         onPcm: AudioAnalysisService.sinkFor(
             ref.read(loopItemsProvider.notifier), _item),
+        cacheKey: _item.id,
       );
 
       if (mounted) {

@@ -13,6 +13,7 @@ import '../models/tag.dart';
 import '../services/cache_service.dart';
 import '../services/share_service.dart';
 import '../services/thumbnail_service.dart';
+import '../services/waveform_cache.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/utils/id_generator.dart';
 
@@ -94,6 +95,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     final item = _box.get(id);
     await _box.delete(id);
     await ThumbnailService().delete(id);
+    await WaveformCache.delete(id);
     if (item != null) {
       await CacheService()
           .deletePaths(item.cachedVideoPath, item.cachedSubtitlePath);
