@@ -80,11 +80,12 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final swappedAt = _swappedAt;
     if (swappedAt != null) {
       final snap = _snapshot!;
-      // 切り替わり後: 新曲の位置を旧曲の時計に換算して、しばらく見せる
-      final now = snap.start + (position - snap.inStart);
-      if (now <= snap.cut + MixView.tail &&
-          DateTime.now().difference(swappedAt) < MixView.tail * 2) {
-        return _mix(snap, now, swapped: true);
+      // 切り替わり後: 経過時間で再生位置を進める。
+      // positionProvider はスワップ直後しばらく旧プレイヤーの最後の位置（≒曲末）を
+      // 返すため、それで換算すると一気に窓の外に出てミックスビューが即消えてしまう
+      final elapsed = DateTime.now().difference(swappedAt);
+      if (elapsed <= MixView.tail) {
+        return _mix(snap, snap.cut + elapsed, swapped: true);
       }
       _snapshot = null;
       _swappedAt = null;
