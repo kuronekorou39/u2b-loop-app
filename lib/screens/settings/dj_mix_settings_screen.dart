@@ -173,7 +173,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
           ],
         ),
         SettingsGroup(
-          title: '実験的（音切れが出ないか確認中）',
+          title: '低音と演出',
           children: [
             // 低音の衝突（混ざる部分がぼやける主因）を避ける DJ の定石
             SettingsSwitchRow(

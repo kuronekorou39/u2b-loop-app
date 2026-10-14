@@ -13,6 +13,9 @@ enum TransitionEffect {
   final String label;
   final String description;
 
+  /// 既定。こもらせて抜くのが一番自然で、効かなくても（開いたままのローパス）害がない
+  static const defaultEffect = filterSweep;
+
   static TransitionEffect fromName(String? name) =>
-      values.where((e) => e.name == name).firstOrNull ?? none;
+      values.where((e) => e.name == name).firstOrNull ?? defaultEffect;
 }

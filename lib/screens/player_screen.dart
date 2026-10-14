@@ -48,6 +48,7 @@ import '../widgets/loop/ab_edit_controls.dart';
 import '../widgets/loop/loop_panel_parts.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/loop/region_panel.dart';
+import '../widgets/player/dj_mix_sheet.dart';
 import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/player_more_sheet.dart';
@@ -3366,6 +3367,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         onToggleFirstVerse: _toggleFirstVerseMode,
         onToggleVolumeNorm: _toggleVolumeNorm,
         onEditAb: _startPlaylistAbEdit,
+        onDjMix: () => DjMixSheet.show(context),
         hideVideo: _hideVideo,
         onHideVideoChanged: (v) => setState(() => _hideVideo = v),
       ),

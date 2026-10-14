@@ -13,10 +13,10 @@ void main() {
     expect(AudioFilters.sweepHz(2), closeTo(AudioFilters.sweepClosedHz, 1e-6));
   });
 
-  test('TransitionEffect.fromName は不明なら なし', () {
+  test('TransitionEffect.fromName は不明なら既定（フィルタースイープ）', () {
     expect(TransitionEffect.fromName('echoOut'), TransitionEffect.echoOut);
-    expect(TransitionEffect.fromName('filterSweep'), TransitionEffect.filterSweep);
-    expect(TransitionEffect.fromName('x'), TransitionEffect.none);
-    expect(TransitionEffect.fromName(null), TransitionEffect.none);
+    expect(TransitionEffect.fromName('none'), TransitionEffect.none);
+    expect(TransitionEffect.fromName('x'), TransitionEffect.filterSweep);
+    expect(TransitionEffect.fromName(null), TransitionEffect.filterSweep);
   });
 }

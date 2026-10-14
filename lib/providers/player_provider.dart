@@ -203,16 +203,15 @@ class CrossfadeCurveNotifier extends StateNotifier<CrossfadeCurve> {
   }
 }
 
-/// ベーススワップ: 交差中は入る曲の低音を切って重ね、途中で出る曲と入れ替える。
-/// フィルタの付け外しの音切れを実機で確認するまで既定オフ（実験的）
+/// ベーススワップ: 交差中は入る曲の低音を切って重ね、途中で出る曲と入れ替える（既定オン）
 final bassSwapProvider =
     StateNotifierProvider<BassSwapNotifier, bool>((ref) => BassSwapNotifier());
 
 class BassSwapNotifier extends StateNotifier<bool> {
   static const _key = SettingsKeys.bassSwap;
 
-  BassSwapNotifier() : super(false) {
-    state = AppBoxes.settings.get(_key, defaultValue: false) as bool;
+  BassSwapNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
   }
 
   set value(bool v) {
@@ -221,7 +220,7 @@ class BassSwapNotifier extends StateNotifier<bool> {
   }
 }
 
-/// 切り替わりの演出（エコーアウト / フィルタースイープ）。既定なし（実験的）
+/// 切り替わりの演出（エコーアウト / フィルタースイープ）。既定はフィルタースイープ
 final transitionEffectProvider =
     StateNotifierProvider<TransitionEffectNotifier, TransitionEffect>(
         (ref) => TransitionEffectNotifier());
@@ -229,7 +228,7 @@ final transitionEffectProvider =
 class TransitionEffectNotifier extends StateNotifier<TransitionEffect> {
   static const _key = SettingsKeys.transitionEffect;
 
-  TransitionEffectNotifier() : super(TransitionEffect.none) {
+  TransitionEffectNotifier() : super(TransitionEffect.defaultEffect) {
     state = TransitionEffect.fromName(AppBoxes.settings.get(_key) as String?);
   }
 

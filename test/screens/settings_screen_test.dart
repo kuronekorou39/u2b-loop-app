@@ -133,11 +133,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.mixPointAlign), false);
 
-    // ベーススワップは既定オフ（実験的）
-    expect(switchOf('ベーススワップ').value, isFalse);
+    // ベーススワップは既定オン
+    expect(switchOf('ベーススワップ').value, isTrue);
     await tester.tap(find.text('ベーススワップ'));
     await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.bassSwap), true);
+    expect(AppBoxes.settings.get(SettingsKeys.bassSwap), false);
 
     // つなぎ方と演出はダイアログで選ぶ
     await tester.tap(find.text('つなぎ方'));
@@ -147,6 +147,8 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
     expect(find.textContaining('次曲先行:'), findsOneWidget);
 
+    // 演出の既定はフィルタースイープ
+    expect(find.textContaining('フィルタースイープ:'), findsOneWidget);
     await tester.tap(find.text('切り替えの演出'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('エコーアウト'));
@@ -166,6 +168,8 @@ void main() {
 
   testWidgets('トップの DJ ミックスの行に今の設定が要約される', (tester) async {
     AppBoxes.settings.put(SettingsKeys.crossfadeSeconds, 6);
+    // 前のテストでオフにしたベーススワップを戻す（オンのときだけ要約に出る）
+    AppBoxes.settings.put(SettingsKeys.bassSwap, true);
     await pumpPage(tester, const SettingsScreen());
     expect(find.textContaining('クロスフェード 6秒'), findsOneWidget);
     expect(find.textContaining('次曲先行'), findsOneWidget);

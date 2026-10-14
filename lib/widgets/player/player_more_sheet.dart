@@ -4,9 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../screens/settings/dj_mix_settings_screen.dart';
 
 /// プレイリスト再生画面の「その他」シート。
-/// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・速度・音量・
+/// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・DJ ミックス・速度・音量・
 /// 動画の表示切替）をまとめる。波形の表示切替はシークバー右下のボタン。
 ///
 /// 画面側の状態（動画非表示）は初期値とコールバックで受け取り、
@@ -18,6 +19,7 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
     required this.onToggleFirstVerse,
     required this.onToggleVolumeNorm,
     required this.onEditAb,
+    required this.onDjMix,
     required this.hideVideo,
     required this.onHideVideoChanged,
   });
@@ -26,6 +28,9 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
   final VoidCallback onToggleFirstVerse;
   final VoidCallback onToggleVolumeNorm;
   final VoidCallback onEditAb;
+
+  /// 「DJ ミックス」の行。このシートを閉じてから呼ばれる（呼び先で DjMixSheet を開く）
+  final VoidCallback onDjMix;
   final bool hideVideo;
   final ValueChanged<bool> onHideVideoChanged;
 
@@ -95,6 +100,23 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
               onTap: () {
                 Navigator.pop(context);
                 widget.onEditAb();
+              },
+            ),
+            // 聴きながら変えたい DJ の設定。設定画面と同じ値を別のシートで
+            ListTile(
+              leading: Icon(
+                Icons.multitrack_audio,
+                color: ref.watch(crossfadeProvider) > 0
+                    ? AppTheme.accentGreen
+                    : null,
+              ),
+              title: const Text('DJ ミックス'),
+              subtitle: Text(DjMixSettingsScreen.summary(ref),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onDjMix();
               },
             ),
             const Divider(),
