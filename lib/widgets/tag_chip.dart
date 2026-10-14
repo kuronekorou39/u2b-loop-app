@@ -56,10 +56,15 @@ class TagChip extends StatelessWidget {
         children: [
           Text(tag.name, style: textStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
           if (onDeleted != null) ...[
-            const SizedBox(width: 4),
+            const SizedBox(width: 2),
+            // × は見た目より広く押せるように、透明な余白を足す
             GestureDetector(
               onTap: onDeleted,
-              child: Icon(Icons.close, size: small ? 11 : 13, color: fg),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                child: Icon(Icons.close, size: small ? 12 : 14, color: fg),
+              ),
             ),
           ],
         ],

@@ -28,6 +28,7 @@ import 'player_screen.dart';
 import 'playlist_item_picker_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_sheets.dart';
 
 enum _PlaylistMenu { analyze, sortByCompatibility }
 
@@ -191,64 +192,35 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
     final canQr = url.length <= AppLimits.qrMaxLength;
 
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('「${pl.name}」を共有',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('${youtubeItems.length}曲（${url.length}文字）',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ),
-            const Divider(height: 16),
-            ListTile(
-              leading: const Icon(Icons.share_outlined),
-              title: const Text('テキストで共有'),
-              subtitle: Text('LINE、メールなどで送信',
-                  style: Theme.of(context).textTheme.bodySmall),
-              onTap: () {
-                Navigator.pop(ctx);
-                Share.share(url);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.content_copy),
-              title: const Text('URLをコピー'),
-              onTap: () {
-                Navigator.pop(ctx);
-                Clipboard.setData(ClipboardData(text: url));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  AppSnackBar.success('URLをコピーしました'),
-                );
-              },
-            ),
-            if (canQr)
-              ListTile(
-                leading: const Icon(Icons.qr_code),
-                title: const Text('QRコードを表示'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showQrDialog(pl.name, url);
-                },
-              ),
-            if (!canQr)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('曲数が多いためQRコードは使用できません',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+    AppSheets.actions(
+      context,
+      title: '「${pl.name}」を共有',
+      subtitle: '${youtubeItems.length} 曲（${url.length} 文字）',
+      note: canQr ? null : '曲数が多いため QR コードは使えません',
+      actions: [
+        SheetAction(
+          icon: Icons.share_outlined,
+          label: 'テキストで共有',
+          subtitle: 'LINE、メールなどで送信',
+          onTap: () => Share.share(url),
         ),
-      ),
+        SheetAction(
+          icon: Icons.content_copy,
+          label: 'URL をコピー',
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: url));
+            ScaffoldMessenger.of(context).showSnackBar(
+              AppSnackBar.success('URL をコピーしました'),
+            );
+          },
+        ),
+        if (canQr)
+          SheetAction(
+            icon: Icons.qr_code,
+            label: 'QR コードを表示',
+            onTap: () => _showQrDialog(pl.name, url),
+          ),
+      ],
     );
   }
 
@@ -373,37 +345,54 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       ));
   }
 
+  /// 行の ⋮ と長押しから。スワイプでしかできなかった「外す」と、
+  /// サムネのタップでしかできなかった有効・無効もここに置く
   void _showItemMenu(Playlist pl, LoopItem item, int index) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (index > 0)
-              ListTile(
-                leading: const Icon(Icons.vertical_align_top),
-                title: const Text('先頭に移動'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  final id = pl.itemIds.removeAt(index);
-                  pl.itemIds.insert(0, id);
-                  ref.read(playlistsProvider.notifier).update(pl);
-                },
-              ),
-            if (_hasItemRegions(item))
-              ListTile(
-                leading: const Icon(Icons.tune),
-                title: const Text('区間を選択'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showRegionEditSheet(pl, item);
-                },
-              ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+    final disabled = pl.disabledItemIds.contains(item.id);
+    AppSheets.actions(
+      context,
+      title: item.title,
+      actions: [
+        if (index > 0)
+          SheetAction(
+            icon: Icons.vertical_align_top,
+            label: '先頭に移動',
+            onTap: () {
+              // 表示の index は孤児を除いた並びなので ID で動かす
+              pl.itemIds.remove(item.id);
+              pl.itemIds.insert(0, item.id);
+              ref.read(playlistsProvider.notifier).update(pl);
+            },
+          ),
+        if (_hasItemRegions(item))
+          SheetAction(
+            icon: Icons.tune,
+            label: '区間を選択',
+            onTap: () => _showRegionEditSheet(pl, item),
+          ),
+        SheetAction(
+          icon: disabled ? Icons.play_circle_outline : Icons.block,
+          label: disabled ? '再生に含める' : '再生から外す（スキップ）',
+          subtitle: disabled ? null : 'プレイリストには残したまま飛ばします',
+          onTap: () {
+            ref
+                .read(playlistsProvider.notifier)
+                .toggleItemEnabled(pl.id, item.id);
+            ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.success(
+                disabled ? '「${item.title}」を再生に含めます' : '「${item.title}」をスキップします'));
+          },
         ),
-      ),
+        SheetAction(
+          icon: Icons.playlist_remove,
+          label: 'プレイリストから外す',
+          destructive: true,
+          onTap: () async {
+            final ok = await AppDialogs.confirmDelete(context,
+                message: '「${item.title}」をプレイリストから削除しますか？');
+            if (ok && mounted) _removeItem(pl, item.id);
+          },
+        ),
+      ],
     );
   }
 
@@ -597,19 +586,20 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     ),
                     if (items.isNotEmpty)
                       Positioned(
-                        right: 4,
-                        top: 4,
-                        child: GestureDetector(
-                          onTap: () => _selectThumbnail(pl, items),
-                          child: Container(
-                            padding: const EdgeInsets.all(AppSpacing.xs),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: AppRadius.borderXs,
-                            ),
-                            child: const Icon(Icons.photo_camera,
-                                size: AppIconSizes.s, color: Colors.white70),
+                        right: 2,
+                        top: 2,
+                        child: IconButton(
+                          onPressed: () => _selectThumbnail(pl, items),
+                          tooltip: 'サムネイルを選ぶ',
+                          visualDensity: VisualDensity.compact,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.black54,
+                            foregroundColor: Colors.white70,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: AppRadius.borderSm),
                           ),
+                          icon: const Icon(Icons.photo_camera,
+                              size: AppIconSizes.s),
                         ),
                       ),
                   ],
@@ -630,13 +620,12 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          GestureDetector(
-                            onTap: () => _renamePlaylist(pl),
-                            child: const Padding(
-                              padding: EdgeInsets.all(AppSpacing.xs),
-                              child: Icon(Icons.edit, size: AppIconSizes.sm,
-                                  color: Colors.grey),
-                            ),
+                          IconButton(
+                            onPressed: () => _renamePlaylist(pl),
+                            tooltip: '名前を変更',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.edit,
+                                size: AppIconSizes.sm, color: Colors.grey),
                           ),
                         ],
                       ),
@@ -818,10 +807,25 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         ),
                       ),
                       subtitle: _buildSubtitle(item, itemTags, pl),
-                      trailing: ReorderableDragStartListener(
-                        index: i,
-                        child: const Icon(Icons.drag_handle,
-                            color: Colors.grey),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.more_vert,
+                                size: AppIconSizes.md),
+                            tooltip: 'メニュー',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _showItemMenu(pl, item, i),
+                          ),
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: const Padding(
+                              padding: EdgeInsets.all(AppSpacing.md),
+                              child: Icon(Icons.drag_handle,
+                                  color: Colors.grey),
+                            ),
+                          ),
+                        ],
                       ),
                       onTap: () {
                         Navigator.of(context).push(

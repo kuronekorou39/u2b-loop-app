@@ -32,22 +32,27 @@ class SubtitleToggleButton extends ConsumerWidget {
 
     final IconData icon;
     final Color color;
+    final String name;
     switch (mode) {
       case SubtitleMode.off:
         icon = Icons.subtitles_off;
         color = Colors.grey;
+        name = 'オフ';
       case SubtitleMode.subtitle:
         icon = Icons.subtitles;
         color = AppTheme.accentGreen;
+        name = 'カラオケ';
       case SubtitleMode.lyrics:
         icon = Icons.lyrics;
         color = AppTheme.accentGreen;
+        name = '歌詞';
     }
 
     return GestureDetector(
       onLongPress: onLongPress,
       child: IconButton(
         icon: Icon(icon, size: AppIconSizes.md, color: color),
+        tooltip: '字幕: $name（タップで切替、長押しで言語）',
         onPressed: () {
           ref.read(subtitleModeProvider.notifier).state = switch (mode) {
             SubtitleMode.off => SubtitleMode.subtitle,

@@ -67,6 +67,7 @@ import '../core/storage/app_boxes.dart';
 import '../core/native_channels.dart';
 import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_sheets.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
 /// ミニプレイヤー中に通知・PiPから届くメディア操作の受け口。
@@ -1562,80 +1563,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     String label(SubtitleTrackInfo t) =>
         t.languageName.isNotEmpty ? t.languageName : t.languageCode;
 
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.xl),
-                child: Text('字幕の言語',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-              const Divider(height: 1),
-              // メイン字幕
-              Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.xs),
-                child: Text('メイン', style: Theme.of(context).textTheme.labelSmall!
-                    .copyWith(color: AppTheme.accentGreen, fontWeight: FontWeight.bold)),
-              ),
-              for (final track in tracks)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.subtitles, size: AppIconSizes.sm),
-                  title: Text(label(track)),
-                  trailing: track.languageCode == mainLang
-                      ? const Icon(Icons.check, color: AppTheme.accentGreen, size: AppIconSizes.sm)
-                      : null,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    final videoId = _currentItem.videoId;
-                    if (videoId != null) {
-                      _fetchSubtitles(videoId, language: track.languageCode);
-                    }
-                  },
-                ),
-              const Divider(height: 1),
-              // サブ字幕
-              Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.xs),
-                child: Text('サブ（小さく表示）', style: Theme.of(context).textTheme.labelSmall!
-                    .copyWith(color: Colors.grey)),
-              ),
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.subtitles_off, size: AppIconSizes.sm),
-                title: const Text('なし'),
-                trailing: subLang == null
-                    ? const Icon(Icons.check, color: Colors.grey, size: AppIconSizes.sm)
-                    : null,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  ref.read(subtitleSubDataProvider.notifier).state = null;
-                  ref.read(subtitleSubLanguageProvider.notifier).state = null;
-                },
-              ),
-              for (final track in tracks)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.subtitles, size: AppIconSizes.sm),
-                  title: Text(label(track)),
-                  trailing: track.languageCode == subLang
-                      ? const Icon(Icons.check, color: Colors.grey, size: AppIconSizes.sm)
-                      : null,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _fetchSubSubtitle(track);
-                  },
-                ),
-              const SizedBox(height: AppSpacing.md),
-            ],
+    AppSheets.actions(
+      context,
+      title: '字幕の言語',
+      actions: [
+        const SheetAction.heading('メイン'),
+        for (final track in tracks)
+          SheetAction(
+            icon: Icons.subtitles,
+            label: label(track),
+            selected: track.languageCode == mainLang,
+            onTap: () {
+              final videoId = _currentItem.videoId;
+              if (videoId != null) {
+                _fetchSubtitles(videoId, language: track.languageCode);
+              }
+            },
           ),
+        const SheetAction.heading('サブ（小さく表示）'),
+        SheetAction(
+          icon: Icons.subtitles_off,
+          label: 'なし',
+          selected: subLang == null,
+          onTap: () {
+            ref.read(subtitleSubDataProvider.notifier).state = null;
+            ref.read(subtitleSubLanguageProvider.notifier).state = null;
+          },
         ),
-      ),
+        for (final track in tracks)
+          SheetAction(
+            icon: Icons.subtitles,
+            label: label(track),
+            selected: track.languageCode == subLang,
+            onTap: () => _fetchSubSubtitle(track),
+          ),
+      ],
     );
   }
 
@@ -1782,32 +1744,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           maxLength: AppLimits.regionNameMaxLength);
 
   void _showRegionMenu(int index) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('リネーム'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _renameRegion(index);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('削除',
-                  style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _deleteRegion(index);
-              },
-            ),
-          ],
+    final regions = _currentItem.effectiveRegions;
+    if (index < 0 || index >= regions.length) return;
+    AppSheets.actions(
+      context,
+      title: regions[index].name,
+      actions: [
+        SheetAction(
+          icon: Icons.edit,
+          label: '名前を変更',
+          onTap: () => _renameRegion(index),
         ),
-      ),
+        SheetAction(
+          icon: Icons.delete_outline,
+          label: '削除',
+          destructive: true,
+          onTap: () => _deleteRegion(index),
+        ),
+      ],
     );
   }
 
@@ -2024,54 +1978,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _showTrackMenu(int trackIndex, PlaylistTrack track) {
     final isCurrent =
         ref.read(playlistPlayerProvider).currentTrackIndex == trackIndex;
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.md),
-              child: Text(
-                track.displayName,
-                style: Theme.of(ctx).textTheme.titleSmall!.copyWith(fontWeight: FontWeight.bold),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const Divider(height: 1),
-            if (!isCurrent)
-              ListTile(
-                leading: const Icon(Icons.play_arrow),
-                title: const Text('この曲にスキップ'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _selectTrack(trackIndex);
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.label_outline),
-              title: const Text('タグを編集'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showTrackTagEditor(track);
-              },
-            ),
-            if (widget.playlistId != null)
-              ListTile(
-                leading:
-                    const Icon(Icons.playlist_remove, color: Colors.redAccent),
-                title: const Text('プレイリストから削除',
-                    style: TextStyle(color: Colors.redAccent)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _removeTrackFromPlaylist(trackIndex, track);
-                },
-              ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+    AppSheets.actions(
+      context,
+      title: track.displayName,
+      actions: [
+        if (!isCurrent)
+          SheetAction(
+            icon: Icons.play_arrow,
+            label: 'この曲にスキップ',
+            onTap: () => _selectTrack(trackIndex),
+          ),
+        SheetAction(
+          icon: Icons.label_outline,
+          label: 'タグを編集',
+          onTap: () => _showTrackTagEditor(track),
         ),
-      ),
+        if (widget.playlistId != null)
+          SheetAction(
+            icon: Icons.playlist_remove,
+            label: 'プレイリストから削除',
+            destructive: true,
+            onTap: () => _removeTrackFromPlaylist(trackIndex, track),
+          ),
+      ],
     );
   }
 
@@ -2301,6 +2230,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ),
             // タグ: 右端に配置
             ...trackTagChips(ctx, track, tagMap),
+            // メニューは長押しでも開くが、入口が見えるように ⋮ も置く
+            IconButton(
+              icon: Icon(Icons.more_vert,
+                  size: AppIconSizes.sm,
+                  color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.5)),
+              tooltip: 'メニュー',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              onPressed: () => _showTrackMenu(i, track),
+            ),
           ],
         ),
       ),
@@ -2803,6 +2743,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   pointBMs: regions[i].pointBMs,
                   onTap: () => _selectRegion(i),
                   onLongPress: () => _showRegionMenu(i),
+                  onMenu: () => _showRegionMenu(i),
                 ),
                 if (i < regions.length - 1)
                   Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.3)),

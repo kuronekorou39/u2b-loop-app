@@ -13,6 +13,7 @@ class RegionTile extends StatelessWidget {
     this.pointAMs,
     this.pointBMs,
     this.onLongPress,
+    this.onMenu,
   });
 
   final String name;
@@ -21,6 +22,9 @@ class RegionTile extends StatelessWidget {
   final int? pointAMs;
   final int? pointBMs;
   final VoidCallback? onLongPress;
+
+  /// 右端の ⋮（長押しと同じメニュー。入口が見えるように）
+  final VoidCallback? onMenu;
 
   bool get _hasAnyPoint => pointAMs != null || pointBMs != null;
 
@@ -57,26 +61,45 @@ class RegionTile extends StatelessWidget {
             width: 1,
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(
-              name,
-              style: textTheme.labelMedium!.copyWith(
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                color: isActive ? theme.colorScheme.primary : null,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: textTheme.labelMedium!.copyWith(
+                      fontWeight:
+                          isActive ? FontWeight.bold : FontWeight.normal,
+                      color: isActive ? theme.colorScheme.primary : null,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    _timeText,
+                    style: textTheme.labelSmall!.copyWith(
+                      color: _hasAnyPoint
+                          ? null
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ],
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 1),
-            Text(
-              _timeText,
-              style: textTheme.labelSmall!.copyWith(
-                fontSize: 10,
-                color: _hasAnyPoint ? Colors.grey.shade400 : Colors.grey.shade600,
+            if (onMenu != null)
+              IconButton(
+                icon: Icon(Icons.more_vert,
+                    size: AppIconSizes.sm,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                tooltip: 'メニュー',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: EdgeInsets.zero,
+                onPressed: onMenu,
               ),
-            ),
           ],
         ),
       ),

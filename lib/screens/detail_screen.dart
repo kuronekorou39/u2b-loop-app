@@ -8,7 +8,9 @@ import '../core/audio/musical_key.dart';
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
+import '../core/utils/id_generator.dart';
 import '../models/loop_item.dart';
+import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../providers/player_provider.dart';
@@ -32,6 +34,7 @@ import 'editor_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_sheets.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -251,41 +254,47 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   void _showAddToPlaylist(LoopItem item) {
     final playlists = ref.read(playlistsProvider);
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
-              child: Text('プレイリストに追加',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            if (playlists.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.xl),
-                child: Text('プレイリストがありません',
-                    style: Theme.of(context).textTheme.bodyMedium!.copyWith(color: Colors.grey)),
-              ),
-            for (final pl in playlists)
-              ListTile(
-                leading: const Icon(Icons.playlist_play),
-                title: Text(pl.name),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  ref
-                      .read(playlistsProvider.notifier)
-                      .addItems(pl.id, [item.id]);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    AppSnackBar.success('「${pl.name}」に追加しました'),
-                  );
-                },
-              ),
-          ],
+    // 件数が多くても流れる共通シート。すでに入っているものは印を付けて選べない
+    AppSheets.actions(
+      context,
+      title: 'プレイリストに追加',
+      note: playlists.isEmpty ? 'プレイリストがありません' : null,
+      actions: [
+        SheetAction(
+          icon: Icons.playlist_add,
+          label: '新しいプレイリストを作って追加',
+          onTap: () => _addToNewPlaylist(item),
         ),
-      ),
+        for (final pl in playlists)
+          SheetAction(
+            icon: Icons.playlist_play,
+            label: pl.name,
+            subtitle: '${pl.itemIds.length} 曲',
+            selected: pl.itemIds.contains(item.id),
+            enabled: !pl.itemIds.contains(item.id),
+            onTap: () {
+              ref.read(playlistsProvider.notifier).addItems(pl.id, [item.id]);
+              ScaffoldMessenger.of(context).showSnackBar(
+                AppSnackBar.success('「${pl.name}」に追加しました'),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Future<void> _addToNewPlaylist(LoopItem item) async {
+    final name = await AppDialogs.prompt(context,
+        title: '新しいプレイリスト',
+        hintText: 'プレイリスト名',
+        confirmLabel: '作成',
+        maxLength: AppLimits.playlistNameMaxLength);
+    if (name == null || !mounted) return;
+    final pl = Playlist(id: IdGenerator.next(), name: name, itemIds: [item.id]);
+    await ref.read(playlistsProvider.notifier).add(pl);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      AppSnackBar.success('「$name」を作って追加しました'),
     );
   }
 
@@ -800,6 +809,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('メモ'),
+        // 横画面でキーボードが出ても溢れないように
+        scrollable: true,
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -832,53 +843,35 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   void _showRegionEditMenu(LoopItem item, int index) {
     final region = item.effectiveRegions[index];
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('名前を変更'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _renameRegion(item, index);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer),
-              title: Text(
-                'A: ${region.hasA ? TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!)) : "--:--"}'
-                '  B: ${region.hasB ? TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!)) : "--:--"}',
-              ),
-              subtitle: const Text('AB時間を編集'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _editRegionTimes(item, index);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.file_download_outlined),
-              title: const Text('書き出し'),
-              subtitle: const Text('この区間をMP4/音声で保存'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _exportRegion(item, index);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('削除',
-                  style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _deleteRegion(item, index);
-              },
-            ),
-          ],
+    AppSheets.actions(
+      context,
+      title: region.name,
+      actions: [
+        SheetAction(
+          icon: Icons.edit,
+          label: '名前を変更',
+          onTap: () => _renameRegion(item, index),
         ),
-      ),
+        SheetAction(
+          icon: Icons.timer,
+          label: 'AB 時間を編集',
+          subtitle: 'A ${TimeUtils.formatShortMs(region.pointAMs)}'
+              '  B ${TimeUtils.formatShortMs(region.pointBMs)}',
+          onTap: () => _editRegionTimes(item, index),
+        ),
+        SheetAction(
+          icon: Icons.file_download_outlined,
+          label: '書き出し',
+          subtitle: 'この区間を MP4 / 音声で保存',
+          onTap: () => _exportRegion(item, index),
+        ),
+        SheetAction(
+          icon: Icons.delete_outline,
+          label: '削除',
+          destructive: true,
+          onTap: () => _deleteRegion(item, index),
+        ),
+      ],
     );
   }
 
@@ -1033,7 +1026,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   // --- タグセクション ---
 
-  /// タグチップ（長押しで外す）と「+ 追加」
+  /// タグを外す。見えない長押しではなく × で外し、「元に戻す」を出す
+  void _removeTag(LoopItem item, Tag tag) {
+    ref.read(loopItemsProvider.notifier).removeTagFromItems([item.id], tag.id);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(AppSnackBar.action(
+        'タグ「${tag.name}」を外しました',
+        label: '元に戻す',
+        onPressed: () => ref
+            .read(loopItemsProvider.notifier)
+            .addTagToItems([item.id], tag.id),
+      ));
+  }
+
+  /// タグチップ（× で外す）と「+ 追加」
   Widget _buildTagSection(LoopItem item, List<Tag> itemTags) {
     final textTheme = Theme.of(context).textTheme;
     return Wrap(
@@ -1041,13 +1048,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       runSpacing: AppSpacing.sm,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        ...itemTags.map((t) => GestureDetector(
-              onLongPress: () {
-                ref
-                    .read(loopItemsProvider.notifier)
-                    .removeTagFromItems([item.id], t.id);
-              },
-              child: TagChip(tag: t),
+        ...itemTags.map((t) => TagChip(
+              tag: t,
+              onDeleted: () => _removeTag(item, t),
             )),
         GlassPill(
           onTap: () => _showTagPicker(item),

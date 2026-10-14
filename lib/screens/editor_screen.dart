@@ -34,6 +34,7 @@ import '../widgets/player/video_player_widget.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_sheets.dart';
 
 /// AB区間専用エディタ。LoopItem を受け取って AB 区間を編集する。
 class EditorScreen extends ConsumerStatefulWidget {
@@ -1071,29 +1072,44 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                   width: 1)
               : null,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(
-              region.name,
-              style: textTheme.labelMedium!.copyWith(
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected
-                    ? theme.colorScheme.primary
-                    : null,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    region.name,
+                    style: textTheme.labelMedium!.copyWith(
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected ? theme.colorScheme.primary : null,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    timeText,
+                    style: textTheme.labelSmall!.copyWith(
+                      color: (region.hasA || region.hasB)
+                          ? null
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ],
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 1),
-            Text(
-              timeText,
-              style: textTheme.labelSmall!.copyWith(
-                fontSize: 10,
-                color: (region.hasA || region.hasB)
-                    ? Colors.grey.shade400
-                    : Colors.grey.shade600,
-              ),
+            // メニューは長押しでも開くが、入口が見えるように ⋮ も置く
+            IconButton(
+              icon: Icon(Icons.more_vert,
+                  size: AppIconSizes.sm,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+              tooltip: 'メニュー',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              onPressed: () => _showRegionMenu(index),
             ),
           ],
         ),
@@ -1102,34 +1118,25 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   void _showRegionMenu(int index) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('名前を変更'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _renameRegion(index);
-              },
-            ),
-            if (_regions.length > 1)
-              ListTile(
-                leading:
-                    const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('削除',
-                    style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _deleteRegion(index);
-                },
-              ),
-          ],
+    if (index < 0 || index >= _regions.length) return;
+    AppSheets.actions(
+      context,
+      title: _regions[index].name,
+      actions: [
+        SheetAction(
+          icon: Icons.edit,
+          label: '名前を変更',
+          onTap: () => _renameRegion(index),
         ),
-      ),
+        SheetAction(
+          icon: Icons.delete_outline,
+          label: '削除',
+          subtitle: _regions.length > 1 ? null : '最後の 1 つは削除できません',
+          destructive: true,
+          enabled: _regions.length > 1,
+          onTap: () => _deleteRegion(index),
+        ),
+      ],
     );
   }
 }

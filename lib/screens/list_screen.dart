@@ -31,6 +31,7 @@ import 'settings_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_sheets.dart';
 
 /// 表示モード: リスト / 2列 / 4列
 enum _ViewMode { list, grid2, grid4 }
@@ -51,7 +52,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   // 複数選択
   final Set<String> _selectedIds = {};
-  bool get _isSelecting => _selectedIds.isNotEmpty;
+
+  /// AppBar の「選択」で入ったとき（まだ何も選んでいなくても選択中として扱う）
+  bool _selectMode = false;
+  bool get _isSelecting => _selectMode || _selectedIds.isNotEmpty;
 
   String _searchQuery = '';
   _SortMode _sortMode = _SortMode.updatedDesc;
@@ -185,6 +189,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('追加', style: Theme.of(context).textTheme.displaySmall),
+        // 横画面でキーボードが出ても溢れないように
+        scrollable: true,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+        ],
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -650,32 +662,23 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _showErrorOptions(LoopItem item) {
-    _showSheet(builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.refresh),
-              title: const Text('再試行'),
-              onTap: () {
-                Navigator.pop(ctx);
-                ref.read(loopItemsProvider.notifier).retryFetch(item);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('削除', style: TextStyle(color: Colors.red)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final ok = await AppDialogs.confirmDelete(context,
-                    message: '「${item.title}」を削除しますか？');
-                if (!ok || !mounted) return;
-                ref.read(loopItemsProvider.notifier).delete(item.id);
-              },
-            ),
-          ],
+    AppSheets.actions(
+      context,
+      title: item.title,
+      subtitle: '情報を取得できませんでした',
+      actions: [
+        SheetAction(
+          icon: Icons.refresh,
+          label: '再試行',
+          onTap: () => ref.read(loopItemsProvider.notifier).retryFetch(item),
         ),
-      ),
+        SheetAction(
+          icon: Icons.delete_outline,
+          label: '削除',
+          destructive: true,
+          onTap: () => _deleteItem(item),
+        ),
+      ],
     );
   }
 
@@ -692,7 +695,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _startSelect(LoopItem item) {
-    setState(() => _selectedIds.add(item.id));
+    setState(() {
+      _selectMode = true;
+      _selectedIds.add(item.id);
+    });
+  }
+
+  /// AppBar の「選択」から。長押しを知らなくても入れるように
+  void _enterSelectMode() {
+    setState(() => _selectMode = true);
   }
 
   void _selectAll(List<LoopItem> items) {
@@ -704,7 +715,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _clearSelection() {
-    setState(() => _selectedIds.clear());
+    setState(() {
+      _selectMode = false;
+      _selectedIds.clear();
+    });
   }
 
   Future<void> _deleteSelected() async {
@@ -1201,6 +1215,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
             onPressed: _cycleViewMode,
             tooltip: _viewModeTooltip,
           ),
+          if (items.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.checklist, size: AppIconSizes.ml),
+              onPressed: _enterSelectMode,
+              tooltip: '複数選択',
+            ),
         ],
         IconButton(
           icon: const Icon(Icons.settings, size: AppIconSizes.ml),
@@ -1217,14 +1237,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget _buildSelectionBar(List<LoopItem> items) {
     return GlassPanel(
       radius: 999,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: _clearSelection,
-            child: const Icon(Icons.close, size: AppIconSizes.md),
+          IconButton(
+            icon: const Icon(Icons.close, size: AppIconSizes.md),
+            tooltip: '選択をやめる',
+            onPressed: _clearSelection,
           ),
-          const SizedBox(width: AppSpacing.md),
           Text('${_selectedIds.length} 件選択',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
           const Spacer(),
@@ -1245,16 +1265,26 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget _selectionAction(
       IconData icon, String label, VoidCallback onTap,
       {Color? color}) {
-    return GestureDetector(
+    // 押せる範囲を 44px 以上にし、押した波紋も出す（以前は GestureDetector で 34px・9px の文字）
+    return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: AppIconSizes.sm, color: color),
+            Icon(icon, size: AppIconSizes.md, color: color),
             Text(label,
-                style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9, color: color ?? Colors.grey)),
+                style: Theme.of(context).textTheme.labelSmall!.copyWith(
+                    fontSize: 11,
+                    color: color ??
+                        Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.7))),
           ],
         ),
       ),
@@ -1926,8 +1956,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
               child: Icon(Icons.label, size: AppIconSizes.xs, color: tag.color),
             ),
             title: Text(tag.name, style: Theme.of(context).textTheme.bodyLarge),
-            trailing: Text('$count 曲',
-                style: Theme.of(context).textTheme.bodySmall),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$count 曲',
+                    style: Theme.of(context).textTheme.bodySmall),
+                IconButton(
+                  icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
+                  tooltip: 'メニュー',
+                  onPressed: () => _showTagMenu(tag),
+                ),
+              ],
+            ),
             onTap: () {
               // 曲リストタブに移動してこのタグでフィルター
               ref.read(tagFilterProvider.notifier).state = {tag.id: true};
@@ -1951,54 +1991,47 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   void _showTagMenu(Tag tag) {
-    _showSheet(builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('リネーム'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _renameTagFromTab(tag);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('色を変更'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showTagColorPicker(tag);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('削除',
-                  style: TextStyle(color: Colors.red)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                // 全曲からこのタグが外れて戻せないので、使われている曲数を出して確認する
-                final used = ref
-                    .read(loopItemsProvider)
-                    .where((i) => i.tagIds.contains(tag.id))
-                    .length;
-                final ok = await AppDialogs.confirmDelete(context,
-                    title: 'タグを削除',
-                    message: used == 0
-                        ? 'タグ「${tag.name}」を削除しますか？'
-                        : 'タグ「${tag.name}」を削除しますか？'
-                            '\n$used 曲からこのタグが外れます（曲は残ります）');
-                if (!ok || !mounted) return;
-                ref.read(tagFilterProvider.notifier).update(
-                    (s) => Map<String, bool>.from(s)..remove(tag.id));
-                ref.read(tagsProvider.notifier).delete(tag.id);
-                ref.read(loopItemsProvider.notifier).removeTagFromAll(tag.id);
-              },
-            ),
-          ],
+    AppSheets.actions(
+      context,
+      title: tag.name,
+      actions: [
+        SheetAction(
+          icon: Icons.edit,
+          label: '名前を変更',
+          onTap: () => _renameTagFromTab(tag),
         ),
-      ),
+        SheetAction(
+          icon: Icons.palette_outlined,
+          label: '色を変更',
+          onTap: () => _showTagColorPicker(tag),
+        ),
+        SheetAction(
+          icon: Icons.delete_outline,
+          label: '削除',
+          destructive: true,
+          onTap: () => _deleteTag(tag),
+        ),
+      ],
     );
+  }
+
+  /// 全曲からこのタグが外れて戻せないので、使われている曲数を出して確認する
+  Future<void> _deleteTag(Tag tag) async {
+    final used = ref
+        .read(loopItemsProvider)
+        .where((i) => i.tagIds.contains(tag.id))
+        .length;
+    final ok = await AppDialogs.confirmDelete(context,
+        title: 'タグを削除',
+        message: used == 0
+            ? 'タグ「${tag.name}」を削除しますか？'
+            : 'タグ「${tag.name}」を削除しますか？'
+                '\n$used 曲からこのタグが外れます（曲は残ります）');
+    if (!ok || !mounted) return;
+    ref.read(tagFilterProvider.notifier).update(
+        (s) => Map<String, bool>.from(s)..remove(tag.id));
+    ref.read(tagsProvider.notifier).delete(tag.id);
+    ref.read(loopItemsProvider.notifier).removeTagFromAll(tag.id);
   }
 
   void _showTagColorPicker(Tag tag) {
