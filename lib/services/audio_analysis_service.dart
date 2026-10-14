@@ -26,21 +26,53 @@ class AudioAnalysisService {
   /// これに達した PCM は曲末まで届いていないので、曲末の無音は求めない
   static const maxAnalysisSeconds = 480;
 
-  /// 拍の格子を解析に入れた日。これより前の解析結果は拍合わせに使えないので解析し直す
-  /// （この後に手動補正しただけの曲は analyzedAt が据え置きなので対象のまま）
-  static final beatGridSince = DateTime(2026, 10, 15).millisecondsSinceEpoch;
+  /// 拍の格子を解析に入れた時刻（v1.86.0 のビルド）。これより前の解析結果は拍合わせに
+  /// 使えないので解析し直す（この後に手動補正しただけの曲は analyzedAt が据え置きなので対象のまま）。
+  /// v1.86.0 ではこれを翌日にしていたため、その日のうちは解析したばかりの曲も毎回対象になっていた
+  static final beatGridSince = DateTime(2026, 10, 14, 15).millisecondsSinceEpoch;
 
-  /// 解析が必要か。未解析のほか、無音情報や拍の格子の無い旧バージョンの解析結果も対象
+  /// これより長い曲（ミックス音源・配信の録画など）は解析しない。
+  /// 1 曲として BPM / キーを出しても意味がなく、音声の取得にも時間がかかる
+  static const maxAnalyzableMinutes = 10;
+
+  /// 長すぎて解析しない曲か。長さが不明なら false（解析の前に [ensureDuration] で埋める）
+  static bool isTooLong(LoopItem item) =>
+      item.durationMs != null &&
+      item.durationMs! > maxAnalyzableMinutes * 60 * 1000;
+
+  /// 解析が必要か。未解析のほか、無音情報や拍の格子の無い旧バージョンの解析結果も対象。
+  /// 長すぎる曲は対象外
   static bool needsAnalysis(LoopItem item) =>
-      item.analyzedAt == null ||
-      item.leadingSilenceMs == null ||
-      item.analyzedAt! < beatGridSince;
+      !isTooLong(item) &&
+      (item.analyzedAt == null ||
+          item.leadingSilenceMs == null ||
+          item.analyzedAt! < beatGridSince);
 
   /// 解析が必要なアイテムなら、PCM を受け取って解析→保存するコールバックを返す。
-  /// 解析済み・解析中なら null（波形生成側は PCM を取り出さない）
-  static PcmCallback? sinkFor(LoopItemsNotifier items, LoopItem item) {
+  /// 解析済み・解析中・長すぎる曲なら null（波形生成側は PCM を取り出さない）。
+  /// [duration] はプレイヤーが知っている曲の長さ（まだ保存されていないことがあるので別に渡す）
+  static PcmCallback? sinkFor(LoopItemsNotifier items, LoopItem item,
+      {Duration? duration}) {
+    if (duration != null &&
+        duration > const Duration(minutes: maxAnalyzableMinutes)) {
+      return null;
+    }
     if (!needsAnalysis(item) || _inFlight.contains(item.id)) return null;
     return (pcm, sampleRate) => run(items, item.id, pcm, sampleRate);
+  }
+
+  /// 曲の長さが不明な YouTube の曲なら問い合わせて保存する（ローカルは再生時に埋まる）。
+  /// 戻り値は保存後のアイテム（長さが分かったら [isTooLong] で判定できる）
+  static Future<void> ensureDuration(
+    LoopItemsNotifier items,
+    YouTubeService ytService,
+    LoopItem item,
+  ) async {
+    if (item.durationMs != null || !item.isYouTube || item.videoId == null) {
+      return;
+    }
+    final d = await ytService.getDuration(item.videoId!);
+    if (d != null) await items.saveDuration(item.id, d.inMilliseconds);
   }
 
   /// isolate で解析して保存する。失敗時は null
@@ -74,13 +106,16 @@ class AudioAnalysisService {
   }
 
   /// 音声の取得から解析・保存までを単独で行う（再生していないときの手動解析用）。
-  /// PCM が取れない形式（MP4 フォールバック経路）や取得失敗は null
+  /// PCM が取れない形式（MP4 フォールバック経路）や取得失敗、長すぎる曲は null
+  /// （長すぎるかは呼び出し側が [isTooLong] で見分けられる）
   static Future<AudioAnalysisResult?> analyzeItem(
     LoopItemsNotifier items,
     YouTubeService ytService,
     LoopItem item,
   ) async {
     if (_inFlight.contains(item.id)) return null;
+    await ensureDuration(items, ytService, item);
+    if (isTooLong(item)) return null;
     final completer = Completer<AudioAnalysisResult?>();
     final useLocal = item.isLocal || item.isCached;
     final source = VideoSource(
@@ -112,21 +147,25 @@ class AudioAnalysisService {
   /// 並列にすると音声のダウンロードが詰まるので直列。
   /// [onProgress] は各曲の開始時に (完了数, 総数, これから解析する曲) で呼ぶ。
   /// [shouldStop] が true を返したら、進行中の1件が終わった時点で打ち切る。
-  /// 戻り値は解析できた件数
-  static Future<int> analyzeAll(
+  /// 戻り値は解析できた件数と、長すぎて省いた件数
+  static Future<({int done, int skipped})> analyzeAll(
     LoopItemsNotifier items,
     YouTubeService ytService,
     List<LoopItem> targets, {
     void Function(int done, int total, LoopItem current)? onProgress,
     bool Function()? shouldStop,
   }) async {
-    var succeeded = 0;
+    var succeeded = 0, skipped = 0;
     for (var i = 0; i < targets.length; i++) {
       if (shouldStop?.call() ?? false) break;
       onProgress?.call(i, targets.length, targets[i]);
       final result = await analyzeItem(items, ytService, targets[i]);
-      if (result != null) succeeded++;
+      if (result != null) {
+        succeeded++;
+      } else if (isTooLong(targets[i])) {
+        skipped++;
+      }
     }
-    return succeeded;
+    return (done: succeeded, skipped: skipped);
   }
 }

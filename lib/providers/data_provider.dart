@@ -165,6 +165,16 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
+  /// 曲の長さを保存する（再生開始時・解析前の問い合わせで分かったとき）。
+  /// 一覧の並びを変えないよう updatedAt は触らない。変わらなければ書かない
+  Future<void> saveDuration(String itemId, int durationMs) async {
+    final item = _box.get(itemId);
+    if (item == null || durationMs <= 0 || item.durationMs == durationMs) return;
+    item.durationMs = durationMs;
+    await _box.put(item.id, item);
+    _refresh();
+  }
+
   /// 未カウント分の累積再生時間だけを保存する（アプリ終了対策の定期保存）。
   /// 画面に出ない値なので通知はしない（5秒ごとに一覧を再構築しないため）。
   Future<void> saveAccumulatedPlayMs(String itemId, int accumulatedPlayMs) async {

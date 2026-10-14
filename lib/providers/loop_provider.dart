@@ -204,6 +204,9 @@ class LoopNotifier extends StateNotifier<LoopState> {
     state = LoopState(adjustStep: step);
   }
 
+  /// 曲の長さを保存済みのアイテム ID
+  String? _durationSavedFor;
+
   /// 再生時間を累積し、しきい値到達で再生回数をインクリメント
   void _trackPlayTime() {
     final player = _ref.read(playerProvider);
@@ -212,6 +215,12 @@ class LoopNotifier extends StateNotifier<LoopState> {
 
     final durationMs = player.state.duration.inMilliseconds;
     if (durationMs <= 0) return;
+
+    // 曲の長さは再生が始まって初めて分かる。曲ごとに 1 回だけ覚えておく（解析の要否に使う）
+    if (_durationSavedFor != currentItemId) {
+      _durationSavedFor = currentItemId;
+      _ref.read(loopItemsProvider.notifier).saveDuration(currentItemId!, durationMs);
+    }
 
     _playCountAccMs += 100;
     _msSinceLastSave += 100;

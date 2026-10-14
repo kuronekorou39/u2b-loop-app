@@ -94,6 +94,10 @@ class LoopItem {
   double? beatOffsetMs;
   double? beatBpm;
 
+  /// 曲の長さ（ミリ秒）。再生したとき、または解析の前に YouTube へ問い合わせて埋まる。
+  /// 長すぎる曲（ミックス音源・配信など）を解析から外す判定に使う。null = 不明
+  int? durationMs;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -129,6 +133,7 @@ class LoopItem {
     this.mixOutMs,
     this.beatOffsetMs,
     this.beatBpm,
+    this.durationMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
@@ -238,6 +243,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       mixOutMs: fields[31] as int?,
       beatOffsetMs: (fields[32] as num?)?.toDouble(),
       beatBpm: (fields[33] as num?)?.toDouble(),
+      durationMs: fields[34] as int?,
     );
   }
 
@@ -278,6 +284,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       31: obj.mixOutMs,
       32: obj.beatOffsetMs,
       33: obj.beatBpm,
+      34: obj.durationMs,
     });
   }
 }

@@ -113,7 +113,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!mounted) return;
     setState(() => _analyzing = false);
     final messenger = ScaffoldMessenger.of(context);
-    if (result == null) {
+    if (result == null && AudioAnalysisService.isTooLong(item)) {
+      messenger.showSnackBar(AppSnackBar.info(
+          '${AudioAnalysisService.maxAnalyzableMinutes} 分以上の曲は解析しません。タップして手入力できます'));
+    } else if (result == null) {
       messenger.showSnackBar(AppSnackBar.error('テンポ/キーを解析できませんでした'));
     } else if (result.bpm == null && result.key == null) {
       messenger.showSnackBar(
@@ -138,11 +141,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final textTheme = Theme.of(context).textTheme;
     final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
     final analyzed = item.bpm != null || item.musicalKey != null;
+    // 長い曲（ミックス音源など）は解析しない。手入力はできる
+    final tooLong = unanalyzed && AudioAnalysisService.isTooLong(item);
     final label = _analyzing
         ? '解析中…'
-        : unanalyzed
-            ? 'タップして解析（BPM とキー）'
-            : '${_tempoKeyText(item.bpm, item.musicalKey)}。タップで補正';
+        : tooLong
+            ? '${AudioAnalysisService.maxAnalyzableMinutes} 分以上の曲は解析しません。タップで手入力'
+            : unanalyzed
+                ? 'タップして解析（BPM とキー）'
+                : '${_tempoKeyText(item.bpm, item.musicalKey)}。タップで補正';
     Widget row({
       required IconData icon,
       required String title,
@@ -183,7 +190,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             subtitle: label,
             onTap: _analyzing
                 ? null
-                : () => unanalyzed
+                : () => unanalyzed && !tooLong
                     ? _analyze(item)
                     : TempoKeySheet.show(context,
                         item: item, onReanalyze: () => _analyze(item)),

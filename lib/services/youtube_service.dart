@@ -49,6 +49,15 @@ class YouTubeService {
   Future<String> resolveStreamUrl(String videoId) async =>
       pickStreamUrl(await getManifestWithFallback(videoId));
 
+  /// 動画の長さだけを問い合わせる（解析の前に長すぎる曲を省くため）。取れなければ null
+  Future<Duration?> getDuration(String videoId) async {
+    try {
+      return (await yt.videos.get(videoId).timeout(_networkTimeout)).duration;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<VideoSource> getVideoSource(String videoId) async {
     final video = await yt.videos.get(videoId).timeout(_networkTimeout);
     final manifest = await getManifestWithFallback(videoId);

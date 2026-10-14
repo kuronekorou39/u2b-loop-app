@@ -119,7 +119,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       },
     );
 
-    final done = await AudioAnalysisService.analyzeAll(
+    final (:done, :skipped) = await AudioAnalysisService.analyzeAll(
       ref.read(loopItemsProvider.notifier),
       ref.read(youtubeServiceProvider),
       targets,
@@ -133,10 +133,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       Navigator.of(dialogContext!).pop();
     }
     if (!mounted) return;
-    final failed = targets.length - done;
+    final failed = targets.length - done - skipped;
+    final notes = <String>[
+      if (wasCancelled) '中止',
+      if (skipped > 0)
+        '$skipped 曲は ${AudioAnalysisService.maxAnalyzableMinutes} 分以上なので省略',
+      if (!wasCancelled && failed > 0) '$failed 曲は取得できず',
+    ];
     _toast(AppSnackBar.success(
-      '$done 曲を解析しました'
-      '${wasCancelled ? '（中止）' : failed > 0 ? '（$failed 曲は取得できず）' : ''}',
+      '$done 曲を解析しました${notes.isEmpty ? '' : '（${notes.join('、')}）'}',
     ));
   }
 

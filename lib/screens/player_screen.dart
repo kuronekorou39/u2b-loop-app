@@ -1109,8 +1109,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       final item = track.item;
       final service = WaveformService();
+      // プリロード側のプレイヤーは準備済みなので長さが分かる（0 なら不明として扱われる）
+      final preloadDuration = ref.read(preloadPlayerProvider).state.duration;
       final onPcm = AudioAnalysisService.sinkFor(
-          ref.read(loopItemsProvider.notifier), item);
+          ref.read(loopItemsProvider.notifier), item,
+          duration: preloadDuration == Duration.zero ? null : preloadDuration);
       List<double>? waveform;
 
       // 保存済みの波形があれば音声 DL ごと省く（解析が必要なときは作り直す）
@@ -1945,9 +1948,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         source,
         ref.read(youtubeServiceProvider),
         cachedAudioPath: prefetched,
-        // 未解析ならテンポ/キー解析をデコードに相乗りさせる
+        // 未解析ならテンポ/キー解析をデコードに相乗りさせる（長すぎる曲は除く）
         onPcm: AudioAnalysisService.sinkFor(
-            ref.read(loopItemsProvider.notifier), _currentItem),
+            ref.read(loopItemsProvider.notifier), _currentItem,
+            duration: ref.read(playerProvider).state.duration),
         cacheKey: _currentItem.id,
       );
 
