@@ -499,6 +499,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ? null
                         : (v) => ref.read(mixPointAlignProvider.notifier).value = v,
                   ),
+                  // 低音の衝突（混ざる部分がぼやける主因）を避ける DJ の定石。
+                  // フィルタの付け外しで音が一瞬途切れる端末があるかもしれないので既定オフ
+                  SwitchListTile(
+                    secondary: const Icon(Icons.graphic_eq),
+                    title: const Text('ベーススワップ（実験的）'),
+                    subtitle: Text(crossfade == 0
+                        ? 'クロスフェードをオンにすると使えます'
+                        : '次の曲の低音を切って重ね、途中で前の曲と低音を入れ替える'),
+                    value: ref.watch(bassSwapProvider),
+                    onChanged: crossfade == 0
+                        ? null
+                        : (v) => ref.read(bassSwapProvider.notifier).value = v,
+                  ),
                 ],
               ),
 

@@ -145,6 +145,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       swapped: swapped,
       height: widget.mixHeight,
       curve: ref.watch(crossfadeCurveProvider),
+      bassSwap: ref.watch(bassSwapProvider),
     );
   }
 }

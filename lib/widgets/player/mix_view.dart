@@ -27,10 +27,14 @@ class MixView extends StatelessWidget {
     required this.swapped,
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
+    this.bassSwap = false,
   });
 
   /// つなぎ方（音量曲線）。エンジンと同じものを描く
   final CrossfadeCurve curve;
+
+  /// ベーススワップの位置に印を出す
+  final bool bassSwap;
 
   /// 旧曲（上段）
   final List<double>? outWaveform;
@@ -90,6 +94,7 @@ class MixView extends StatelessWidget {
                       now: now,
                       swapped: swapped,
                       curve: curve,
+                      bassSwap: bassSwap,
                     ),
                   ),
                 ),
@@ -189,8 +194,10 @@ class _MixPainter extends CustomPainter {
     required this.now,
     required this.swapped,
     required this.curve,
+    required this.bassSwap,
   });
 
+  final bool bassSwap;
   final List<double>? outWaveform;
   final Duration outDuration;
   final List<double>? inWaveform;
@@ -317,6 +324,17 @@ class _MixPainter extends CustomPainter {
         ..strokeWidth = 1,
     );
 
+    // ベーススワップの位置（点線）
+    if (bassSwap && curve.bassSwapAt < 1) {
+      final bx = startX + (cutX - startX) * curve.bassSwapAt;
+      final paint = Paint()
+        ..color = Colors.amber.withValues(alpha: 0.7)
+        ..strokeWidth = 1;
+      for (var y = 0.0; y < h; y += 6) {
+        canvas.drawLine(Offset(bx, y), Offset(bx, min(y + 3, h)), paint);
+      }
+    }
+
     // 再生位置
     if (nowX >= 0 && nowX <= w) {
       canvas.drawLine(
@@ -370,6 +388,7 @@ class _MixPainter extends CustomPainter {
       now != old.now ||
       swapped != old.swapped ||
       curve != old.curve ||
+      bassSwap != old.bassSwap ||
       start != old.start ||
       cut != old.cut ||
       outWaveform != old.outWaveform ||

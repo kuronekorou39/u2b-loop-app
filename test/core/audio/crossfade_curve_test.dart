@@ -46,6 +46,15 @@ void main() {
     });
   });
 
+  test('ベーススワップの位置は入る曲が主役になる所', () {
+    expect(CrossfadeCurve.equalPower.bassSwapAt, 0.5);
+    expect(CrossfadeCurve.linear.bassSwapAt, 0.5);
+    expect(CrossfadeCurve.nextFirst.bassSwapAt, 0.7);
+    expect(CrossfadeCurve.cut.bassSwapAt, 1.0);
+    // 次曲先行ではその時点で入る曲が 7 割に達している
+    expect(CrossfadeCurve.nextFirst.levels(0.7).in_, greaterThanOrEqualTo(0.7));
+  });
+
   test('fromName は不明なら既定', () {
     expect(CrossfadeCurve.fromName('nextFirst'), CrossfadeCurve.nextFirst);
     expect(CrossfadeCurve.fromName('x'), CrossfadeCurve.defaultCurve);

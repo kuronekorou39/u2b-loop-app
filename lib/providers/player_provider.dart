@@ -202,6 +202,24 @@ class CrossfadeCurveNotifier extends StateNotifier<CrossfadeCurve> {
   }
 }
 
+/// ベーススワップ: 交差中は入る曲の低音を切って重ね、途中で出る曲と入れ替える。
+/// フィルタの付け外しの音切れを実機で確認するまで既定オフ（実験的）
+final bassSwapProvider =
+    StateNotifierProvider<BassSwapNotifier, bool>((ref) => BassSwapNotifier());
+
+class BassSwapNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.bassSwap;
+
+  BassSwapNotifier() : super(false) {
+    state = AppBoxes.settings.get(_key, defaultValue: false) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 final flipHorizontalProvider = StateProvider<bool>((ref) => false);
 final flipVerticalProvider = StateProvider<bool>((ref) => false);
 final previousVolumeProvider = StateProvider<double>((ref) => 100.0);

@@ -29,6 +29,14 @@ enum CrossfadeCurve {
   static CrossfadeCurve fromName(String? name) =>
       values.where((c) => c.name == name).firstOrNull ?? defaultCurve;
 
+  /// ベーススワップ（出る曲と入る曲の低音を入れ替える）をする進捗。
+  /// 入る曲が主役になる所: 等パワー・直線は中間、次曲先行は出る曲を落とし始める所、カットは切替点
+  double get bassSwapAt => switch (this) {
+        equalPower || linear => 0.5,
+        nextFirst => 0.7,
+        cut => 1.0,
+      };
+
   /// [t] は 0〜1。戻り値は 0〜1 の音量比
   ({double out, double in_}) levels(double t) {
     final p = t.clamp(0.0, 1.0);

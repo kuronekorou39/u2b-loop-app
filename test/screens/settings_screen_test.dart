@@ -46,8 +46,8 @@ void main() {
   });
 
   Future<void> pumpSettings(WidgetTester tester) async {
-    // 縦長の画面で全セクションが収まるようにする
-    tester.view.physicalSize = const Size(1080, 4000);
+    // 縦長の画面で全セクションが収まるようにする（項目が増えたら伸ばす）
+    tester.view.physicalSize = const Size(1080, 5200);
     tester.view.devicePixelRatio = 2.5;
     addTearDown(tester.view.reset);
 
@@ -144,6 +144,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.mixPointAlign), false);
 
+    // ベーススワップは既定オフ（実験的）
+    final bass = find.widgetWithText(SwitchListTile, 'ベーススワップ（実験的）');
+    expect(bass, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(bass).value, isFalse);
+    await tester.ensureVisible(bass);
+    await tester.tap(bass);
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.bassSwap), true);
+
     // クロスフェードをオフにすると触れなくなる
     await tester.tap(find.text('クロスフェード'));
     await tester.pumpAndSettle();
@@ -151,6 +160,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<SwitchListTile>(tile).onChanged, isNull);
     expect(tester.widget<SwitchListTile>(align).onChanged, isNull);
+    expect(tester.widget<SwitchListTile>(bass).onChanged, isNull);
   });
 
   testWidgets('つなぎ方はクロスフェードがオンのときだけ選べて、選ぶと保存される', (tester) async {
