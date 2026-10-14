@@ -10,11 +10,12 @@ import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist.dart';
 import 'package:u2b_loop_app/models/tag.dart';
+import 'package:u2b_loop_app/screens/settings/dj_mix_settings_screen.dart';
 import 'package:u2b_loop_app/screens/settings_screen.dart';
+import 'package:u2b_loop_app/widgets/settings/settings_parts.dart';
 
-/// 設定画面を実際に描画して、セクションの並び・描画エラーの有無を確認する。
-/// （見た目の整理で並びを変えたので、誤って順番が崩れたりレイアウト例外が
-///   出たりしないことを固定しておく）
+/// 設定画面を実際に描画して、トップの並び・各ページへの遷移・値の保存を確認する。
+/// トップはスクロール無しで収まる数だけ置き、残りは各ページ（DJ ミックス など）にある
 void main() {
   late Directory tempDir;
 
@@ -45,59 +46,41 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  Future<void> pumpSettings(WidgetTester tester) async {
-    // 縦長の画面で全セクションが収まるようにする（項目が増えたら伸ばす）
-    tester.view.physicalSize = const Size(1080, 5200);
+  Future<void> pumpPage(WidgetTester tester, Widget page) async {
+    tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 2.5;
     addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(const ProviderScope(
-      child: MaterialApp(home: SettingsScreen()),
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(home: page),
     ));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('セクションが決めた順に並ぶ', (tester) async {
-    await pumpSettings(tester);
+  testWidgets('トップは 7 行で、スクロールせずに全部見える', (tester) async {
+    await pumpPage(tester, const SettingsScreen());
 
-    const order = ['表示', '再生', 'ストレージ', 'バックアップ', 'アプリ情報', '危険な操作', '開発者向け'];
-    final ys = [
-      for (final title in order) tester.getTopLeft(find.text(title)).dy,
+    const order = [
+      'ダークモード', 'DJ ミックス', '早送り・巻き戻し', 'オフライン保存',
+      'バックアップ', 'アップデートを確認', '詳細設定',
     ];
+    final ys = [for (final t in order) tester.getTopLeft(find.text(t)).dy];
     for (var i = 1; i < ys.length; i++) {
       expect(ys[i], greaterThan(ys[i - 1]),
           reason: '「${order[i]}」が「${order[i - 1]}」より上にある');
     }
+    // 最後の行が画面（2280/2.5 = 912）に収まっている
+    expect(tester.getBottomLeft(find.text('詳細設定')).dy, lessThan(912));
+    // 行数は 7（ふだん触らないものはトップに出さない）
+    expect(find.byType(SettingsRow), findsNWidgets(7));
+    expect(find.text('クロスフェード'), findsNothing);
+    expect(find.text('すべてのデータを削除'), findsNothing);
   });
 
-  testWidgets('危険な操作は通常の操作より下にまとまっている', (tester) async {
-    await pumpSettings(tester);
+  testWidgets('スキップ秒数をトップから変えられる', (tester) async {
+    await pumpPage(tester, const SettingsScreen());
 
-    final dangerHeader = tester.getTopLeft(find.text('危険な操作')).dy;
-    for (final normal in ['バックアップを書き出す', 'バックアップから復元', 'アップデートを確認']) {
-      expect(tester.getTopLeft(find.text(normal)).dy, lessThan(dangerHeader),
-          reason: '「$normal」が危険な操作より下にある');
-    }
-    for (final danger in ['オフライン動画をすべて削除', 'すべてのデータを削除']) {
-      expect(tester.getTopLeft(find.text(danger)).dy, greaterThan(dangerHeader),
-          reason: '「$danger」が危険な操作セクションの外にある');
-    }
-  });
-
-  testWidgets('開発者向けは畳まれていて、開くと中身が出る', (tester) async {
-    await pumpSettings(tester);
-
-    expect(find.text('パフォーマンスオーバーレイ'), findsNothing);
-    await tester.tap(find.text('開発者向け'));
-    await tester.pumpAndSettle();
-    expect(find.text('パフォーマンスオーバーレイ'), findsOneWidget);
-  });
-
-  testWidgets('スキップ秒数を設定画面から変えられる', (tester) async {
-    await pumpSettings(tester);
-
-    expect(find.text('5秒'), findsOneWidget); // 既定値
-    await tester.tap(find.text('早送り・巻き戻しの秒数'));
+    expect(find.text('5秒'), findsOneWidget); // 既定値（説明文）
+    await tester.tap(find.text('早送り・巻き戻し'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('10秒'));
     await tester.pumpAndSettle();
@@ -107,8 +90,18 @@ void main() {
         reason: '再生画面と同じ設定値に保存されること');
   });
 
-  testWidgets('クロスフェード秒数を設定画面から変えられる', (tester) async {
-    await pumpSettings(tester);
+  testWidgets('DJ ミックスの行から DJ ミックスのページへ', (tester) async {
+    await pumpPage(tester, const SettingsScreen());
+    expect(find.text('クロスフェード オフ'), findsOneWidget);
+    await tester.tap(find.text('DJ ミックス'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DjMixSettingsScreen), findsOneWidget);
+    expect(find.text('クロスフェード'), findsOneWidget);
+    expect(find.text('つなぎ方'), findsOneWidget);
+  });
+
+  testWidgets('クロスフェード秒数を DJ ミックスのページで変えられる', (tester) async {
+    await pumpPage(tester, const DjMixSettingsScreen());
 
     expect(find.text('オフ'), findsOneWidget); // 既定値
     await tester.tap(find.text('クロスフェード'));
@@ -121,82 +114,67 @@ void main() {
         reason: 'PlaylistEngine が読む設定値に保存されること');
   });
 
-  testWidgets('テンポ合わせはクロスフェードがオンのときだけ切り替えられる', (tester) async {
-    await pumpSettings(tester);
-
-    final tile = find.widgetWithText(SwitchListTile, 'テンポ合わせ');
-    expect(tile, findsOneWidget);
+  testWidgets('クロスフェード中の設定は、クロスフェードがオンのときだけ触れる', (tester) async {
+    await pumpPage(tester, const DjMixSettingsScreen());
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeSeconds), 4,
         reason: '前のテストでオンにした値を引き継ぐ（メモリ box は setUpAll で1回だけ開く）');
-    expect(tester.widget<SwitchListTile>(tile).onChanged, isNotNull);
 
-    await tester.tap(tile);
+    Switch switchOf(String title) => tester.widget<Switch>(find.descendant(
+        of: find.widgetWithText(SettingsSwitchRow, title),
+        matching: find.byType(Switch)));
+
+    expect(switchOf('テンポ合わせ').onChanged, isNotNull);
+    await tester.tap(find.text('テンポ合わせ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.tempoMatch), false,
         reason: '既定オンなので1回タップでオフになり、PlaylistEngine が読む値に保存される');
 
-    // 「ドロップに合わせる」も同じ条件（既定オン）
-    final align = find.widgetWithText(SwitchListTile, 'ドロップに合わせる');
-    expect(align, findsOneWidget);
-    expect(tester.widget<SwitchListTile>(align).onChanged, isNotNull);
-    await tester.ensureVisible(align);
-    await tester.tap(align);
+    await tester.tap(find.text('ドロップに合わせる'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.mixPointAlign), false);
 
     // ベーススワップは既定オフ（実験的）
-    final bass = find.widgetWithText(SwitchListTile, 'ベーススワップ（実験的）');
-    expect(bass, findsOneWidget);
-    expect(tester.widget<SwitchListTile>(bass).value, isFalse);
-    await tester.ensureVisible(bass);
-    await tester.tap(bass);
+    expect(switchOf('ベーススワップ').value, isFalse);
+    await tester.tap(find.text('ベーススワップ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.bassSwap), true);
 
-    // クロスフェードをオフにすると触れなくなる
-    await tester.tap(find.text('クロスフェード'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('オフ'));
-    await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(tile).onChanged, isNull);
-    expect(tester.widget<SwitchListTile>(align).onChanged, isNull);
-    expect(tester.widget<SwitchListTile>(bass).onChanged, isNull);
-  });
-
-  testWidgets('つなぎ方はクロスフェードがオンのときだけ選べて、選ぶと保存される', (tester) async {
-    await pumpSettings(tester);
-    // 前のテストでクロスフェードをオフにしているので触れない
-    final tile = find.widgetWithText(ListTile, 'つなぎ方');
-    expect(tile, findsOneWidget);
-    expect(tester.widget<ListTile>(tile).enabled, isFalse);
-
-    await tester.tap(find.text('クロスフェード'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('4秒'));
-    await tester.pumpAndSettle();
-    expect(tester.widget<ListTile>(tile).enabled, isTrue);
-
-    await tester.ensureVisible(tile);
-    await tester.tap(tile);
+    // つなぎ方と演出はダイアログで選ぶ
+    await tester.tap(find.text('つなぎ方'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('次曲先行'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
     expect(find.textContaining('次曲先行:'), findsOneWidget);
 
-    // 切り替えの演出も同じ形
-    final effect = find.widgetWithText(ListTile, '切り替えの演出（実験的）');
-    expect(tester.widget<ListTile>(effect).enabled, isTrue);
-    await tester.ensureVisible(effect);
-    await tester.tap(effect);
+    await tester.tap(find.text('切り替えの演出'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('エコーアウト'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'echoOut');
+
+    // クロスフェードをオフにすると触れなくなる
+    await tester.tap(find.text('クロスフェード'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('オフ'));
+    await tester.pumpAndSettle();
+    expect(switchOf('テンポ合わせ').onChanged, isNull);
+    expect(switchOf('ドロップに合わせる').onChanged, isNull);
+    expect(switchOf('ベーススワップ').onChanged, isNull);
+    expect(find.text('クロスフェードをオンにすると使えます'), findsNWidgets(5));
+  });
+
+  testWidgets('トップの DJ ミックスの行に今の設定が要約される', (tester) async {
+    AppBoxes.settings.put(SettingsKeys.crossfadeSeconds, 6);
+    await pumpPage(tester, const SettingsScreen());
+    expect(find.textContaining('クロスフェード 6秒'), findsOneWidget);
+    expect(find.textContaining('次曲先行'), findsOneWidget);
+    expect(find.textContaining('ベーススワップ'), findsOneWidget);
+    expect(find.textContaining('エコーアウト'), findsOneWidget);
   });
 
   testWidgets('バージョンが表示される', (tester) async {
-    await pumpSettings(tester);
+    await pumpPage(tester, const SettingsScreen());
     expect(find.text('v9.9.9'), findsOneWidget);
   });
 }

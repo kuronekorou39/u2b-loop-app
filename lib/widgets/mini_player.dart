@@ -3,19 +3,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-
 import '../app.dart';
+import '../core/native_channels.dart';
+import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../screens/player_screen.dart';
-import '../core/storage/app_boxes.dart';
-import '../core/native_channels.dart';
+import 'glass_panel.dart';
 
-
+/// 画面の下に浮くミニプレイヤー（ガラス板）。
+/// 各画面の下端は [reservedHeight] ぶん余白を取る（App が MediaQuery の padding に足す）
 class MiniPlayerBar extends ConsumerWidget {
   const MiniPlayerBar({super.key});
+
+  /// 板の高さ（余白を除く）
+  static const height = 60.0;
+
+  /// 板の下の余白（画面下端との間）。システムのインセットはこれに加える
+  static const margin = 12.0;
+
+  /// 出ているとき、下の画面が避けるべき高さ
+  static const reservedHeight = height + margin * 2;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,73 +36,91 @@ class MiniPlayerBar extends ConsumerWidget {
     final playing = ref.watch(playingProvider).valueOrNull ?? false;
     final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
     final duration = ref.watch(durationProvider).valueOrNull ?? Duration.zero;
-    final player = ref.read(playerProvider);
+    final textTheme = Theme.of(context).textTheme;
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
-    final progress =
-        duration > Duration.zero ? position.inMilliseconds / duration.inMilliseconds : 0.0;
+    final progress = duration > Duration.zero
+        ? position.inMilliseconds / duration.inMilliseconds
+        : 0.0;
 
     return GestureDetector(
       onTap: () => _openFullPlayer(ref, miniState),
-      child: Container(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      child: GlassPanel(
+        radius: 18,
+        margin: EdgeInsets.fromLTRB(margin, 0, margin, margin + bottomInset),
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
+        child: SizedBox(
+          height: height - AppSpacing.md * 2,
+          child: Row(
             children: [
-              LinearProgressIndicator(
-                value: progress,
-                minHeight: 2,
-                backgroundColor: Colors.transparent,
+              // 映像
+              ClipRRect(
+                borderRadius: AppRadius.borderMd,
+                child: SizedBox(
+                  width: 72,
+                  child: Video(controller: controller, controls: NoVideoControls),
+                ),
               ),
-              SizedBox(
-                height: 60,
-                child: Row(
+              const SizedBox(width: AppSpacing.lg),
+              // タイトル + 進捗
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 映像
-                    SizedBox(
-                      width: 96,
-                      child: Video(
-                        controller: controller,
-                        controls: NoVideoControls,
+                    Text(
+                      miniState.item?.title ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelMedium!
+                          .copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: progress.clamp(0.0, 1.0),
+                        minHeight: 3,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.12),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.md),
-                    // タイトル
-                    Expanded(
-                      child: Text(
-                        miniState.item?.title ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    // 再生/停止
-                    IconButton(
-                      icon: Icon(
-                        playing ? Icons.pause : Icons.play_arrow,
-                        size: AppIconSizes.lg,
-                      ),
-                      onPressed: () => player.playOrPause(),
-                    ),
-                    // 閉じる
-                    IconButton(
-                      icon: const Icon(Icons.close, size: AppIconSizes.md),
-                      onPressed: () {
-                        player.stop();
-                        ref.read(miniPlayerProvider.notifier).deactivate();
-                        // 自動PiP無効化 + バックグラウンド再生停止
-                        NativeChannels.pip.invokeMethod(
-                            'setAutoPiP', {'enabled': false}).catchError((_) {});
-                        NativeChannels.pip
-                            .invokeMethod('stopPlaybackService')
-                            .catchError((_) {});
-                        WakelockPlus.disable();
-                      },
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
                   ],
                 ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              // 再生/停止
+              IconButton(
+                icon: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  size: AppIconSizes.xl,
+                ),
+                tooltip: playing ? '一時停止' : '再生',
+                onPressed: () => ref.read(playerProvider).playOrPause(),
+              ),
+              // 閉じる
+              IconButton(
+                icon: Icon(Icons.close,
+                    size: AppIconSizes.md,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6)),
+                tooltip: '閉じる',
+                onPressed: () {
+                  ref.read(playerProvider).stop();
+                  ref.read(miniPlayerProvider.notifier).deactivate();
+                  // 自動PiP無効化 + バックグラウンド再生停止
+                  NativeChannels.pip.invokeMethod(
+                      'setAutoPiP', {'enabled': false}).catchError((_) {});
+                  NativeChannels.pip
+                      .invokeMethod('stopPlaybackService')
+                      .catchError((_) {});
+                  WakelockPlus.disable();
+                },
               ),
             ],
           ),

@@ -64,17 +64,29 @@ class App extends ConsumerWidget {
             ],
           );
         }
-        return Column(
+        // ミニプレイヤーは画面の下に浮かせる。出ている間は下の画面の MediaQuery の
+        // 下インセットにその高さを足して、一覧の末尾や FAB が隠れないようにする
+        final miniActive =
+            ref.watch(miniPlayerProvider.select((s) => s.active));
+        final mq = MediaQuery.of(context);
+        final extra = miniActive ? MiniPlayerBar.reservedHeight : 0.0;
+        return Stack(
           children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  child!,
-                  if (showPerfOverlay) const PerfOverlay(),
-                ],
+            MediaQuery(
+              data: mq.copyWith(
+                padding: mq.padding.copyWith(bottom: mq.padding.bottom + extra),
+                viewPadding: mq.viewPadding
+                    .copyWith(bottom: mq.viewPadding.bottom + extra),
               ),
+              child: child!,
             ),
-            const MiniPlayerBar(),
+            if (showPerfOverlay) const PerfOverlay(),
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: MiniPlayerBar(),
+            ),
           ],
         );
       },
