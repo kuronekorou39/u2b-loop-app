@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/crossfade_curve.dart';
 import '../core/audio/track_compatibility.dart';
 import '../models/loop_item.dart';
 import '../models/playlist_mode.dart';
@@ -380,6 +380,7 @@ class PlaylistEngine {
       inStart: effectiveStart(next),
       inBaseRate: baseRate,
       inRate: _tempoMatchedRate(next, baseRate) ?? baseRate,
+      curve: _ref.read(crossfadeCurveProvider),
     );
     _crossfade = session;
     try {
@@ -506,7 +507,11 @@ class _CrossfadeSession {
     required this.inStart,
     required this.inBaseRate,
     required this.inRate,
+    required this.curve,
   }) : outVolume = volume;
+
+  /// つなぎ方（音量曲線）。開始時の設定を交差の間は使い続ける
+  final CrossfadeCurve curve;
 
   final Player outPlayer;
   final Player inPlayer;
@@ -535,11 +540,10 @@ class _CrossfadeSession {
     final t = total <= 0
         ? 1.0
         : ((pos - start).inMilliseconds / total).clamp(0.0, 1.0);
-    // 等パワー曲線（中間点で合計の音圧が落ち込まない）
-    final angle = t * pi / 2;
-    outVolume = volume * cos(angle);
+    final levels = curve.levels(t);
+    outVolume = volume * levels.out;
     outPlayer.setVolume(outVolume);
-    inPlayer.setVolume(volume * sin(angle));
+    inPlayer.setVolume(volume * levels.in_);
     return t;
   }
 

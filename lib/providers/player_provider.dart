@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../core/audio/crossfade_curve.dart';
 import '../models/video_source.dart';
 import '../services/youtube_service.dart';
 import '../core/storage/app_boxes.dart';
@@ -180,6 +181,24 @@ class MixPointAlignNotifier extends StateNotifier<bool> {
   set value(bool v) {
     state = v;
     AppBoxes.settings.put(_key, v);
+  }
+}
+
+/// クロスフェードの音量曲線（つなぎ方）。既定は等パワー
+final crossfadeCurveProvider =
+    StateNotifierProvider<CrossfadeCurveNotifier, CrossfadeCurve>(
+        (ref) => CrossfadeCurveNotifier());
+
+class CrossfadeCurveNotifier extends StateNotifier<CrossfadeCurve> {
+  static const _key = SettingsKeys.crossfadeCurve;
+
+  CrossfadeCurveNotifier() : super(CrossfadeCurve.defaultCurve) {
+    state = CrossfadeCurve.fromName(AppBoxes.settings.get(_key) as String?);
+  }
+
+  set value(CrossfadeCurve v) {
+    state = v;
+    AppBoxes.settings.put(_key, v.name);
   }
 }
 

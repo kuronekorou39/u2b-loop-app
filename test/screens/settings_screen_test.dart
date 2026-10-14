@@ -153,6 +153,28 @@ void main() {
     expect(tester.widget<SwitchListTile>(align).onChanged, isNull);
   });
 
+  testWidgets('つなぎ方はクロスフェードがオンのときだけ選べて、選ぶと保存される', (tester) async {
+    await pumpSettings(tester);
+    // 前のテストでクロスフェードをオフにしているので触れない
+    final tile = find.widgetWithText(ListTile, 'つなぎ方');
+    expect(tile, findsOneWidget);
+    expect(tester.widget<ListTile>(tile).enabled, isFalse);
+
+    await tester.tap(find.text('クロスフェード'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('4秒'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ListTile>(tile).enabled, isTrue);
+
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('次曲先行'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
+    expect(find.textContaining('次曲先行:'), findsOneWidget);
+  });
+
   testWidgets('バージョンが表示される', (tester) async {
     await pumpSettings(tester);
     expect(find.text('v9.9.9'), findsOneWidget);

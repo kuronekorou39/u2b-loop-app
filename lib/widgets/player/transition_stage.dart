@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -153,10 +151,10 @@ class _TransitionStageState extends ConsumerState<TransitionStage>
           height: h * scale,
         );
 
-    // 音量曲線（等パワー）。横並びの間、枠の大きさと明るさをこれに追従させる
-    final angle = progress * pi / 2;
-    final outLevel = cos(angle);
-    final inLevel = sin(angle);
+    // 音量曲線（設定のつなぎ方）。横並びの間、枠の大きさと明るさをこれに追従させる
+    final levels = ref.read(crossfadeCurveProvider).levels(progress);
+    final outLevel = levels.out;
+    final inLevel = levels.in_;
 
     final zooming = _zoomIn.status == AnimationStatus.forward;
     final zoom = Curves.easeOutBack.transform(_zoomIn.value);

@@ -13,6 +13,7 @@ import '../core/ui/app_snack_bar.dart';
 import '../models/loop_item.dart';
 import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
+import '../core/audio/crossfade_curve.dart';
 import '../providers/glass_provider.dart';
 import '../providers/loading_animation_provider.dart';
 import '../providers/player_provider.dart';
@@ -100,6 +101,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (picked != null) ref.read(crossfadeProvider.notifier).value = picked;
+  }
+
+  Future<void> _pickCurve() async {
+    final current = ref.read(crossfadeCurveProvider);
+    final picked = await showDialog<CrossfadeCurve>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('つなぎ方'),
+        children: [
+          RadioGroup<CrossfadeCurve>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(ctx, v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final c in CrossfadeCurve.values)
+                  RadioListTile<CrossfadeCurve>(
+                    value: c,
+                    title: Text(c.label),
+                    subtitle: Text(c.description),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) ref.read(crossfadeCurveProvider.notifier).value = picked;
   }
 
   Future<void> _clearWaveformCache() async {
@@ -431,6 +460,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     title: 'クロスフェード',
                     value: _crossfadeLabel(crossfade),
                     onTap: _pickCrossfade,
+                  ),
+                  // クロスフェードの音量曲線。対称な等パワーだけだと中間がぼやけるので
+                  // DJ らしい非対称（次曲先行）やカットも選べる
+                  ListTile(
+                    leading: const Icon(Icons.show_chart),
+                    title: const Text('つなぎ方'),
+                    subtitle: Text(crossfade == 0
+                        ? 'クロスフェードをオンにすると使えます'
+                        : '${ref.watch(crossfadeCurveProvider).label}: ${ref.watch(crossfadeCurveProvider).description}'),
+                    trailing: const Icon(Icons.chevron_right),
+                    enabled: crossfade != 0,
+                    onTap: _pickCurve,
                   ),
                   // クロスフェード中だけ効く。前後の曲の BPM が解析済みのときに
                   // 次曲の速度を ±8% まで寄せ、交差後に元へ戻す

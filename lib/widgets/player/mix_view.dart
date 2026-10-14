@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../../core/audio/crossfade_curve.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_utils.dart';
 
@@ -25,7 +26,11 @@ class MixView extends StatelessWidget {
     required this.now,
     required this.swapped,
     this.height = 72,
+    this.curve = CrossfadeCurve.defaultCurve,
   });
+
+  /// つなぎ方（音量曲線）。エンジンと同じものを描く
+  final CrossfadeCurve curve;
 
   /// 旧曲（上段）
   final List<double>? outWaveform;
@@ -84,6 +89,7 @@ class MixView extends StatelessWidget {
                       cut: cut,
                       now: now,
                       swapped: swapped,
+                      curve: curve,
                     ),
                   ),
                 ),
@@ -182,6 +188,7 @@ class _MixPainter extends CustomPainter {
     required this.cut,
     required this.now,
     required this.swapped,
+    required this.curve,
   });
 
   final List<double>? outWaveform;
@@ -193,6 +200,7 @@ class _MixPainter extends CustomPainter {
   final Duration cut;
   final Duration now;
   final bool swapped;
+  final CrossfadeCurve curve;
 
   static const _barStep = 3.0;
 
@@ -255,7 +263,7 @@ class _MixPainter extends CustomPainter {
       color: AppTheme.pointBColor,
     );
 
-    // 音量曲線（等パワー）。全高で描き、交差で X に交わる
+    // 音量曲線（設定のつなぎ方）。全高で描く
     final outPath = Path();
     final inPath = Path();
     const pad = 3.0;
@@ -271,8 +279,9 @@ class _MixPainter extends CustomPainter {
         inLevel = 1;
       } else {
         final p = (t - start.inMilliseconds) / max(1, (cut - start).inMilliseconds);
-        outLevel = cos(p * pi / 2);
-        inLevel = sin(p * pi / 2);
+        final levels = curve.levels(p);
+        outLevel = levels.out;
+        inLevel = levels.in_;
       }
       if (x == 0) {
         outPath.moveTo(x, yOf(outLevel));
@@ -360,6 +369,7 @@ class _MixPainter extends CustomPainter {
   bool shouldRepaint(covariant _MixPainter old) =>
       now != old.now ||
       swapped != old.swapped ||
+      curve != old.curve ||
       start != old.start ||
       cut != old.cut ||
       outWaveform != old.outWaveform ||
