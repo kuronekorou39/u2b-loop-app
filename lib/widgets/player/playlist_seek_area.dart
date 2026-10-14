@@ -81,8 +81,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   @override
   Widget build(BuildContext context) {
     ref.listen(activeSlotProvider, (_, _) => _onSlotChanged());
-    final position =
-        ref.watch(positionProvider).valueOrNull ?? Duration.zero;
+    final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
     final engine = ref.read(playlistEngineProvider);
 
     final swappedAt = _swappedAt;
@@ -146,6 +145,32 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       height: widget.mixHeight,
       curve: ref.watch(crossfadeCurveProvider),
       bassSwap: ref.watch(bassSwapProvider),
+      onSeek: (t) => _seekInMix(snap, t, swapped: swapped),
     );
+  }
+
+  /// ミックスビュー上のシーク。[t] は旧曲の時計。
+  /// 切り替わる前は旧曲をそのまま動かす（交差の手前へ戻せばエンジンが交差を取り消し、
+  /// 切断点を越えれば従来どおり切り替わる）。
+  /// 切り替わった後は旧曲はもう止まっているので、次曲の時計に直して動かし、
+  /// ミックスビューは閉じてふつうのシークバーに戻す
+  void _seekInMix(_MixSnapshot snap, Duration t, {required bool swapped}) {
+    final player = ref.read(playerProvider);
+    if (!swapped) {
+      player.seek(_clamp(t, snap.outDuration));
+      return;
+    }
+    final pos = snap.inStart + (t - snap.start);
+    player.seek(_clamp(pos, snap.inDuration));
+    setState(() {
+      _snapshot = null;
+      _swappedAt = null;
+    });
+  }
+
+  static Duration _clamp(Duration d, Duration max) {
+    if (d < Duration.zero) return Duration.zero;
+    if (max > Duration.zero && d > max) return max;
+    return d;
   }
 }

@@ -28,7 +28,12 @@ class MixView extends StatelessWidget {
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
     this.bassSwap = false,
+    this.onSeek,
   });
+
+  /// タップ・横ドラッグで時間軸上の位置（旧曲の時計）を返す。null なら操作できない。
+  /// 以前はジェスチャーが無く、交差の前後 8 秒ずつ + 交差中はシークの入口が無かった
+  final ValueChanged<Duration>? onSeek;
 
   /// つなぎ方（音量曲線）。エンジンと同じものを描く
   final CrossfadeCurve curve;
@@ -63,6 +68,21 @@ class MixView extends StatelessWidget {
   static const lead = Duration(seconds: 8);
   static const tail = Duration(seconds: 8);
 
+  /// 幅 [width] のビューの x 座標を時間軸（旧曲の時計）に直す。
+  /// 窓は start − [lead] 〜 cut + [tail]。端を超えた分は窓の端に丸める
+  static Duration timeAtX(
+    double x,
+    double width, {
+    required Duration start,
+    required Duration cut,
+  }) {
+    final winStart = start - lead;
+    final winEnd = cut + tail;
+    if (width <= 0) return winStart;
+    final p = (x / width).clamp(0.0, 1.0);
+    return winStart + (winEnd - winStart) * p;
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -79,66 +99,83 @@ class MixView extends StatelessWidget {
           SizedBox(
             height: height,
             width: double.infinity,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _MixPainter(
-                      outWaveform: outWaveform,
-                      outDuration: outDuration,
-                      inWaveform: inWaveform,
-                      inDuration: inDuration,
-                      inStart: inStart,
-                      start: start,
-                      cut: cut,
-                      now: now,
-                      swapped: swapped,
-                      curve: curve,
-                      bassSwap: bassSwap,
-                    ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final onSeek = this.onSeek;
+                void seekAt(double x) => onSeek?.call(
+                  timeAtX(x, constraints.maxWidth, start: start, cut: cut),
+                );
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: onSeek == null
+                      ? null
+                      : (d) => seekAt(d.localPosition.dx),
+                  onHorizontalDragUpdate: onSeek == null
+                      ? null
+                      : (d) => seekAt(d.localPosition.dx),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _MixPainter(
+                            outWaveform: outWaveform,
+                            outDuration: outDuration,
+                            inWaveform: inWaveform,
+                            inDuration: inDuration,
+                            inStart: inStart,
+                            start: start,
+                            cut: cut,
+                            now: now,
+                            swapped: swapped,
+                            curve: curve,
+                            bassSwap: bassSwap,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 4,
+                        top: 2,
+                        right: 4,
+                        child: _LaneLabel(
+                          text: outTitle,
+                          color: AppTheme.pointAColor,
+                          style: laneLabel,
+                        ),
+                      ),
+                      Positioned(
+                        left: 4,
+                        bottom: 2,
+                        right: 4,
+                        child: _LaneLabel(
+                          text: '次: $inTitle',
+                          color: AppTheme.pointBColor,
+                          style: laneLabel,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                Positioned(
-                  left: 4,
-                  top: 2,
-                  right: 4,
-                  child: _LaneLabel(
-                    text: outTitle,
-                    color: AppTheme.pointAColor,
-                    style: laneLabel,
-                  ),
-                ),
-                Positioned(
-                  left: 4,
-                  bottom: 2,
-                  right: 4,
-                  child: _LaneLabel(
-                    text: '次: $inTitle',
-                    color: AppTheme.pointBColor,
-                    style: laneLabel,
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
           SizedBox(
             height: 24,
             child: Row(
               children: [
-                Icon(Icons.swap_horiz,
-                    size: AppIconSizes.xs, color: Colors.grey.shade400),
-                const SizedBox(width: AppSpacing.xs),
-                Text(
-                  'ミックス ${(cut - start).inSeconds}s',
-                  style: labelStyle,
+                Icon(
+                  Icons.swap_horiz,
+                  size: AppIconSizes.xs,
+                  color: Colors.grey.shade400,
                 ),
+                const SizedBox(width: AppSpacing.xs),
+                Text('ミックス ${(cut - start).inSeconds}s', style: labelStyle),
                 const Spacer(),
                 Text(
                   swapped
                       ? '切替から ${TimeUtils.formatShort(now - cut)}'
                       : untilCut.isNegative
-                          ? '切替中'
-                          : '切替まで ${TimeUtils.formatShort(untilCut)}',
+                      ? '切替中'
+                      : '切替まで ${TimeUtils.formatShort(untilCut)}',
                   style: labelStyle,
                 ),
               ],
@@ -151,7 +188,11 @@ class MixView extends StatelessWidget {
 }
 
 class _LaneLabel extends StatelessWidget {
-  const _LaneLabel({required this.text, required this.color, required this.style});
+  const _LaneLabel({
+    required this.text,
+    required this.color,
+    required this.style,
+  });
   final String text;
   final Color color;
   final TextStyle style;
@@ -264,8 +305,9 @@ class _MixPainter extends CustomPainter {
       waveform: inWaveform,
       durationMs: inDuration.inMilliseconds,
       // 次曲は交差開始で inStart から鳴り始める
-      toTrackMs: (t) =>
-          t < start.inMilliseconds ? null : inStart.inMilliseconds + (t - start.inMilliseconds),
+      toTrackMs: (t) => t < start.inMilliseconds
+          ? null
+          : inStart.inMilliseconds + (t - start.inMilliseconds),
       playedUntilMs: nowMs,
       color: AppTheme.pointBColor,
     );
@@ -285,7 +327,8 @@ class _MixPainter extends CustomPainter {
         outLevel = 0;
         inLevel = 1;
       } else {
-        final p = (t - start.inMilliseconds) / max(1, (cut - start).inMilliseconds);
+        final p =
+            (t - start.inMilliseconds) / max(1, (cut - start).inMilliseconds);
         final levels = curve.levels(p);
         outLevel = levels.out;
         inLevel = levels.in_;
@@ -373,9 +416,10 @@ class _MixPainter extends CustomPainter {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
-              center: Offset(x + _barStep / 2, midY),
-              width: _barStep * 0.7,
-              height: bar * 2),
+            center: Offset(x + _barStep / 2, midY),
+            width: _barStep * 0.7,
+            height: bar * 2,
+          ),
           const Radius.circular(1),
         ),
         Paint()..color = color.withValues(alpha: alpha),
