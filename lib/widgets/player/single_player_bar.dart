@@ -30,7 +30,12 @@ class SinglePlayerBar extends ConsumerWidget {
     this.onSetA,
     this.onSetB,
     this.editBlock,
+    this.editorMode = false,
   });
+
+  /// AB 編集画面（専用エディタ）用。常に編集ブロックを出し、保存は AppBar 側なので
+  /// ピルは「区間 ▴」「今を A」「今を B」「速度」
+  final bool editorMode;
 
   /// 編集中のピル「今を A」「今を B」。動画未ロード時は null で無効化
   final VoidCallback? onSetA;
@@ -71,10 +76,91 @@ class SinglePlayerBar extends ConsumerWidget {
       player.seek(target < Duration.zero ? Duration.zero : target);
     }
 
+    final regionsPill = GlassPill(
+      onTap: onToggleRegions,
+      tooltip: 'AB 区間の一覧を開く',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.format_list_bulleted, size: AppIconSizes.sm),
+          const SizedBox(width: AppSpacing.sm),
+          Text('区間', style: theme.textTheme.labelMedium),
+          const SizedBox(width: AppSpacing.xs),
+          Icon(Icons.keyboard_arrow_up, size: AppIconSizes.sm, color: dim),
+        ],
+      ),
+    );
+    final speedPill = _SpeedPill(rate: rate, enabled: hasSource);
+    final morePill = GlassPill(
+      onTap: onMore,
+      tooltip: 'その他',
+      padding: const EdgeInsets.all(9),
+      child: const Icon(Icons.more_horiz, size: AppIconSizes.md),
+    );
+
+    final List<Widget> pills;
+    if (editorMode) {
+      pills = [
+        regionsPill,
+        const Spacer(),
+        _SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
+        const SizedBox(width: AppSpacing.md),
+        _SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
+        const SizedBox(width: AppSpacing.md),
+        speedPill,
+      ];
+    } else if (editing) {
+      pills = [
+        GlassPill(
+          onTap: onFinishEdit,
+          active: true,
+          tooltip: 'AB 区間を保存して編集を終える',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check, size: AppIconSizes.sm,
+                  color: AppTheme.accentGreen),
+              const SizedBox(width: AppSpacing.sm),
+              Text('保存して終了',
+                  style: theme.textTheme.labelMedium!
+                      .copyWith(color: AppTheme.accentGreen)),
+            ],
+          ),
+        ),
+        const Spacer(),
+        _SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
+        const SizedBox(width: AppSpacing.md),
+        _SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
+      ];
+    } else {
+      pills = [
+        regionsPill,
+        const Spacer(),
+        if (canEdit) ...[
+          GlassPill(
+            onTap: onEdit,
+            tooltip: 'AB 区間を編集',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.edit_outlined, size: AppIconSizes.sm, color: dim),
+                const SizedBox(width: AppSpacing.sm),
+                Text('編集', style: theme.textTheme.labelMedium),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+        ],
+        speedPill,
+        const SizedBox(width: AppSpacing.md),
+        morePill,
+      ];
+    }
+
     return PlayerGlassBar(
       seekbar: seekbar,
       compact: compact,
-      extra: editing ? editBlock : null,
+      extra: editing || editorMode ? editBlock : null,
       transport: [
         // 先頭へ（ループ中は A へ）
         TransportIconButton(
@@ -115,102 +201,7 @@ class SinglePlayerBar extends ConsumerWidget {
           tooltip: loop.enabled ? 'ループ ON' : 'ループ OFF',
         ),
       ],
-      pills: editing
-          ? [
-              GlassPill(
-                onTap: onFinishEdit,
-                active: true,
-                tooltip: 'AB 区間を保存して編集を終える',
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.check, size: AppIconSizes.sm,
-                        color: AppTheme.accentGreen),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text('保存して終了',
-                        style: theme.textTheme.labelMedium!
-                            .copyWith(color: AppTheme.accentGreen)),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              _SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
-              const SizedBox(width: AppSpacing.md),
-              _SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
-            ]
-          : [
-              GlassPill(
-                onTap: onToggleRegions,
-                tooltip: 'AB 区間の一覧を開く',
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.format_list_bulleted, size: AppIconSizes.sm),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text('区間', style: theme.textTheme.labelMedium),
-                    const SizedBox(width: AppSpacing.xs),
-                    Icon(Icons.keyboard_arrow_up,
-                        size: AppIconSizes.sm, color: dim),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              if (canEdit) ...[
-                GlassPill(
-                  onTap: onEdit,
-                  tooltip: 'AB 区間を編集',
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.edit_outlined, size: AppIconSizes.sm, color: dim),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text('編集', style: theme.textTheme.labelMedium),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-              ],
-              // 速度: タップでメニュー
-              PopupMenuButton<double>(
-                initialValue: rate,
-                tooltip: '速度',
-                enabled: hasSource,
-                onSelected: (s) => ref.read(playerProvider).setRate(s),
-                itemBuilder: (context) => [
-                  for (final s in PlayerControls.speeds)
-                    PopupMenuItem(
-                      value: s,
-                      child: Text(
-                        '${s}x',
-                        style: TextStyle(
-                          fontWeight: s == rate ? FontWeight.bold : null,
-                          color: s == rate ? theme.colorScheme.primary : null,
-                        ),
-                      ),
-                    ),
-                ],
-                child: GlassPill(
-                  onTap: null,
-                  active: rate != 1.0,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: 9),
-                  child: Text(
-                    '${rate}x',
-                    style: theme.textTheme.labelMedium!.copyWith(
-                      color: rate != 1.0 ? AppTheme.accentGreen : null,
-                      fontFeatures: const [FontFeature('tnum')],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              GlassPill(
-                onTap: onMore,
-                tooltip: 'その他',
-                padding: const EdgeInsets.all(9),
-                child: const Icon(Icons.more_horiz, size: AppIconSizes.md),
-              ),
-            ],
+      pills: pills,
     );
   }
 }
@@ -242,6 +233,51 @@ class _SetPointPill extends StatelessWidget {
           const SizedBox(width: AppSpacing.sm),
           Text('今を$label', style: textTheme.labelMedium),
         ],
+      ),
+    );
+  }
+}
+
+/// 速度のピル。タップでメニュー
+class _SpeedPill extends ConsumerWidget {
+  const _SpeedPill({required this.rate, required this.enabled});
+
+  final double rate;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return PopupMenuButton<double>(
+      initialValue: rate,
+      tooltip: '速度',
+      enabled: enabled,
+      onSelected: (s) => ref.read(playerProvider).setRate(s),
+      itemBuilder: (context) => [
+        for (final s in PlayerControls.speeds)
+          PopupMenuItem(
+            value: s,
+            child: Text(
+              '${s}x',
+              style: TextStyle(
+                fontWeight: s == rate ? FontWeight.bold : null,
+                color: s == rate ? theme.colorScheme.primary : null,
+              ),
+            ),
+          ),
+      ],
+      child: GlassPill(
+        onTap: null,
+        active: rate != 1.0,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg, vertical: 9),
+        child: Text(
+          '${rate}x',
+          style: theme.textTheme.labelMedium!.copyWith(
+            color: rate != 1.0 ? AppTheme.accentGreen : null,
+            fontFeatures: const [FontFeature('tnum')],
+          ),
+        ),
       ),
     );
   }

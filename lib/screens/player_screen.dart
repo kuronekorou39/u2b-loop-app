@@ -46,6 +46,7 @@ import '../widgets/marquee_text.dart';
 import '../widgets/loop/ab_edit_controls.dart';
 import '../widgets/loop/loop_panel_parts.dart';
 import '../widgets/loop/loop_seekbar.dart';
+import '../widgets/loop/region_panel.dart';
 import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/player_more_sheet.dart';
@@ -3234,134 +3235,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  /// 開閉できる AB 区間の一覧（ガラス板）。見出しに件数と「追加」、▾ で閉じる。
-  /// 行: 全体 / 各区間（タップで切替、⋮ でリネーム・削除）
+  /// 開閉できる AB 区間の一覧（共通部品）。行: 全体 / 各区間
   Widget _buildRegionPanel(List<LoopRegion> regions) {
-    final textTheme = Theme.of(context).textTheme;
-    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
-
-    Widget row({
-      required String name,
-      required String time,
-      required bool isCurrent,
-      required IconData icon,
-      required VoidCallback onTap,
-      VoidCallback? onMenu,
-    }) {
-      return InkWell(
-        onTap: onTap,
-        onLongPress: onMenu,
-        child: Container(
-          decoration: BoxDecoration(
-            color: isCurrent ? AppTheme.accentGreen.withValues(alpha: 0.12) : null,
-            border: Border(
-              top: BorderSide(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06)),
-            ),
-          ),
-          padding: EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.md + 2,
-              onMenu == null ? AppSpacing.xl : AppSpacing.xs, AppSpacing.md + 2),
-          child: Row(
-            children: [
-              Icon(icon, size: AppIconSizes.sm,
-                  color: isCurrent ? AppTheme.accentGreen : dim),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodyMedium!.copyWith(
-                    fontSize: 14,
-                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
-                    color: isCurrent ? AppTheme.accentGreen : null,
-                  ),
-                ),
-              ),
-              Text(
-                time,
-                style: textTheme.labelSmall!
-                    .copyWith(fontFeatures: const [FontFeature('tnum')]),
-              ),
-              if (onMenu != null)
-                IconButton(
-                  icon: Icon(Icons.more_vert, size: AppIconSizes.sm, color: dim),
-                  onPressed: onMenu,
-                  tooltip: 'リネーム・削除',
-                  visualDensity: VisualDensity.compact,
-                )
-              else
-                const SizedBox(height: 40),
-            ],
-          ),
-        ),
-      );
-    }
-
-    String timeOf(LoopRegion r) {
-      if (r.pointAMs == null && r.pointBMs == null) return '未設定';
-      final a = TimeUtils.formatShortNullable(
-          r.pointAMs != null ? Duration(milliseconds: r.pointAMs!) : null);
-      final b = TimeUtils.formatShortNullable(
-          r.pointBMs != null ? Duration(milliseconds: r.pointBMs!) : null);
-      if (r.pointAMs == null || r.pointBMs == null) return '$a - $b';
-      final sec = (r.pointBMs! - r.pointAMs!).abs() / 1000;
-      return '$a - $b (${sec.toStringAsFixed(1)}s)';
-    }
-
-    return GlassPanel(
+    return RegionPanel(
       key: const ValueKey('regionPanel'),
-      margin: const EdgeInsets.fromLTRB(
-          PlayerShell.margin, 0, PlayerShell.margin, AppSpacing.lg),
-      padding: const EdgeInsets.only(top: AppSpacing.sm),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.sm, 0),
-            child: Row(
-              children: [
-                Text('AB 区間', style: textTheme.titleSmall),
-                const SizedBox(width: AppSpacing.md),
-                Text('${regions.length} 件', style: textTheme.labelSmall),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: regions.length < _maxRegions ? _addRegion : null,
-                  icon: const Icon(Icons.add, size: AppIconSizes.s),
-                  label: Text(regions.length < _maxRegions ? '追加' : '上限'),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                  onPressed: () => _setPanelOpen(false),
-                  tooltip: '一覧を閉じる',
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              children: [
-                row(
-                  name: '全体',
-                  time: '',
-                  isCurrent: _activeRegionIdx == -1,
-                  icon: Icons.all_inclusive,
-                  onTap: _clearRegion,
-                ),
-                for (var i = 0; i < regions.length; i++)
-                  row(
-                    name: regions[i].name,
-                    time: timeOf(regions[i]),
-                    isCurrent: i == _activeRegionIdx,
-                    icon: Icons.repeat,
-                    onTap: () => _selectRegion(i),
-                    onMenu: () => _showRegionMenu(i),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      regions: regions,
+      selectedIndex: _activeRegionIdx,
+      showAll: true,
+      onSelectAll: _clearRegion,
+      onSelect: _selectRegion,
+      onMenu: _showRegionMenu,
+      onAdd: regions.length < _maxRegions ? _addRegion : null,
+      onClose: () => _setPanelOpen(false),
     );
   }
 

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,9 +23,13 @@ import '../services/export_runner.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/waveform_service.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
-import '../widgets/loop/loop_controls.dart';
+import '../widgets/loop/ab_edit_controls.dart';
 import '../widgets/loop/loop_seekbar.dart';
+import '../widgets/loop/region_panel.dart';
+import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_controls.dart';
+import '../widgets/player/player_shell.dart';
+import '../widgets/player/single_player_bar.dart';
 import '../widgets/player/video_player_widget.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/id_generator.dart';
@@ -60,6 +63,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   // Region management
   late List<LoopRegion> _regions;
   int _selectedRegionIdx = 0;
+
+  /// 縦画面の中段に区間パネルを開いているか
+  bool _panelOpen = false;
 
   LoopItem get _item => widget.item;
 
@@ -531,6 +537,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // _hasChanges が再生速度を見ているので、速度変更だけでも再ビルドさせる
     // （watchしないと速度だけ変えたときに保存ボタンが出ない）
     ref.watch(rateProvider);
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    // 縦画面の編集中はガラス風（再生画面と同じ骨組み）: AppBar を透明にして背景を上まで通す
+    final glassLook = !_loading && _loadError == null && !isLandscape;
+    final loop = ref.watch(loopProvider);
+    final hasSource = ref.watch(videoSourceProvider) != null;
 
     return PopScope(
       canPop: false,
@@ -546,17 +558,54 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         }
       },
       child: Scaffold(
+        extendBodyBehindAppBar: glassLook,
         appBar: AppBar(
-          title: Text(
-            'AB設定 - ${_item.title}',
-            style: textTheme.bodyLarge,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          backgroundColor: glassLook ? Colors.transparent : null,
+          surfaceTintColor: glassLook ? Colors.transparent : null,
+          centerTitle: glassLook,
+          title: glassLook
+              ? Text('AB 設定',
+                  style: textTheme.labelMedium!
+                      .copyWith(color: textTheme.bodySmall!.color))
+              : Text(
+                  'AB設定 - ${_item.title}',
+                  style: textTheme.bodyLarge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
           actions: [
             if (!_loading && _loadError == null) _buildWaveformAction(),
             if (!_loading && _loadError == null && _hasChanges)
               _buildSaveButton(),
+            // 書き出し・クリアは使う頻度が低いのでメニューに
+            if (glassLook)
+              PopupMenuButton<String>(
+                tooltip: 'その他',
+                onSelected: (v) {
+                  if (v == 'export') _showExportDialog();
+                  if (v == 'clear') ref.read(loopProvider.notifier).reset();
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'export',
+                    enabled: loop.hasBothPoints,
+                    child: const ListTile(
+                      leading: Icon(Icons.file_download_outlined),
+                      title: Text('区間を書き出し'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'clear',
+                    enabled: hasSource,
+                    child: const ListTile(
+                      leading: Icon(Icons.clear),
+                      title: Text('A・B をクリア'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
         body: SafeArea(
@@ -750,19 +799,80 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       return _buildLandscapeEditorView(bottomInset);
     }
 
-    return Column(
-      children: [
-        const VideoPlayerWidget(),
-        const PlayerControls(),
-        const LoopSeekbar(),
-        // Unified region + AB controls panel
-        Expanded(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.xs, AppSpacing.md, max(bottomInset + AppSpacing.xl, 40)),
-            child: _buildUnifiedPanel(),
-          ),
+    // 縦画面: 再生画面と同じ骨組み（PlayerShell）。常に編集ブロックを出す
+    final loop = ref.watch(loopProvider);
+    final loopNotifier = ref.read(loopProvider.notifier);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    final duration = ref.watch(durationProvider).valueOrNull;
+
+    // 選択中の区間の値をループ状態からリアルタイムに同期
+    if (_regions.isNotEmpty) {
+      _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
+        pointAMs: () => loop.pointA?.inMilliseconds,
+        pointBMs: () => loop.pointB?.inMilliseconds,
+      );
+    }
+    final region = _regions[_selectedRegionIdx];
+    final subParts = <String>[
+      if (_item.bpm != null) 'BPM ${_item.bpm!.round()}',
+      if (_item.musicalKey != null) _item.musicalKey!,
+      if (duration != null && duration > Duration.zero)
+        TimeUtils.formatShort(duration),
+    ];
+
+    return PlayerShell(
+      item: _item,
+      video: const VideoPlayerWidget(useAspectRatio: false),
+      header: NowPlayingHeader(
+        title: _item.title,
+        subtitle: subParts.join('  ·  '),
+        chip: HeaderChip(
+          leading: const Icon(Icons.repeat,
+              size: AppIconSizes.s, color: AppTheme.accentGreen),
+          label: '区間',
+          text: '${region.name}  ${RegionPanel.timeText(region)}',
+          onTap: () => setState(() => _panelOpen = true),
         ),
-      ],
+      ),
+      panel: _panelOpen
+          ? RegionPanel(
+              key: const ValueKey('regionPanel'),
+              regions: _regions,
+              selectedIndex: _selectedRegionIdx,
+              onSelect: _selectRegion,
+              onMenu: _showRegionMenu,
+              onAdd: _regions.length < _maxRegions ? _addRegion : null,
+              onClose: () => setState(() => _panelOpen = false),
+            )
+          : null,
+      controller: SinglePlayerBar(
+        seekbar: _panelOpen
+            ? const LoopSeekbar(bar: true, barHeight: 44, allowMarkerDrag: false)
+            : const LoopSeekbar(),
+        compact: _panelOpen,
+        loop: loop,
+        onToggleLoop: loopNotifier.toggleEnabled,
+        editing: true,
+        editorMode: true,
+        canEdit: false,
+        onToggleRegions: () => setState(() => _panelOpen = !_panelOpen),
+        onEdit: () {},
+        onFinishEdit: () {},
+        onMore: () {},
+        onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
+        onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
+        editBlock: AbEditControls(
+          loop: loop,
+          step: loop.adjustStep,
+          onStepChanged: loopNotifier.setStep,
+          onSeek: (t) => ref.read(playerProvider).seek(t),
+          onPointA: loopNotifier.setPointA,
+          onPointB: loopNotifier.setPointB,
+          onSwap: loopNotifier.swapPoints,
+          onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
+          onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
+        ),
+      ),
     );
   }
 
@@ -815,10 +925,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         pointBMs: () => loop.pointB?.inMilliseconds,
       );
     }
-
-    final stepLabel = loop.adjustStep < 1
-        ? '${loop.adjustStep}s'
-        : '${loop.adjustStep.toInt()}s';
 
     return Column(
       children: [
@@ -904,377 +1010,23 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           ),
         ),
         const Divider(height: 1),
-        // ABコントロール
+        // ABコントロール（縦画面と同じ部品の小さい版）
         Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              LoopControls.buildPointRow(
-                label: 'A',
-                color: AppTheme.pointAColor,
-                time: loop.pointA,
-                stepLabel: stepLabel,
-                onSet: hasSource
-                    ? () => loopNotifier.setPointAToCurrentPosition()
-                    : null,
-                onTimeTap: loop.hasA
-                    ? () => ref.read(playerProvider).seek(loop.pointA!)
-                    : null,
-                onMinus: () => loopNotifier.adjustPointA(-1),
-                onPlus: () => loopNotifier.adjustPointA(1),
-              ),
-              if (loop.hasBothPoints &&
-                  loop.pointA!.compareTo(loop.pointB!) > 0)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: SizedBox(
-                    height: 24,
-                    child: TextButton.icon(
-                      onPressed: () => loopNotifier.swapPoints(),
-                      icon: Icon(Icons.swap_vert,
-                          size: AppIconSizes.xs, color: Colors.amber.shade300),
-                      label: Text('A⇔B',
-                          style: textTheme.labelSmall!.copyWith(
-                              fontSize: 10, color: Colors.amber.shade300)),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                  ),
-                )
-              else
-                const SizedBox(height: AppSpacing.sm),
-              LoopControls.buildPointRow(
-                label: 'B',
-                color: AppTheme.pointBColor,
-                time: loop.pointB,
-                stepLabel: stepLabel,
-                onSet: hasSource
-                    ? () => loopNotifier.setPointBToCurrentPosition()
-                    : null,
-                onTimeTap: loop.hasB
-                    ? () => ref.read(playerProvider).seek(loop.pointB!)
-                    : null,
-                onMinus: () => loopNotifier.adjustPointB(-1),
-                onPlus: () => loopNotifier.adjustPointB(1),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              // ステップ選択
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text('Step',
-                      style: textTheme.labelSmall!.copyWith(
-                          fontSize: 9, fontWeight: FontWeight.w500,
-                          color: Colors.grey)),
-                  const SizedBox(width: 5),
-                  ...LoopControls.steps.map((s) {
-                    final isSelected = loop.adjustStep == s;
-                    final label = s < 1 ? '${s}s' : '${s.toInt()}s';
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 3),
-                      child: GestureDetector(
-                        onTap: () => loopNotifier.setStep(s),
-                        child: Container(
-                          height: 22,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.sm),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? Colors.grey.shade800
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(label,
-                            style: textTheme.labelSmall!.copyWith(
-                              fontFamily: 'monospace',
-                              color: isSelected
-                                  ? Colors.grey.shade300
-                                  : Colors.grey.shade600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ],
+          child: AbEditControls(
+            loop: loop,
+            step: loop.adjustStep,
+            onStepChanged: loopNotifier.setStep,
+            onSeek: (t) => ref.read(playerProvider).seek(t),
+            onPointA: loopNotifier.setPointA,
+            onPointB: loopNotifier.setPointB,
+            onSwap: loopNotifier.swapPoints,
+            onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
+            onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
+            compact: true,
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildUnifiedPanel() {
-    final loop = ref.watch(loopProvider);
-    final loopNotifier = ref.read(loopProvider.notifier);
-    final hasSource = ref.watch(videoSourceProvider) != null;
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final canAdd = _regions.length < _maxRegions;
-
-    // Sync current region values from loop provider in real-time
-    if (_regions.isNotEmpty) {
-      _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
-        pointAMs: () => loop.pointA?.inMilliseconds,
-        pointBMs: () => loop.pointB?.inMilliseconds,
-      );
-    }
-
-    final stepLabel = loop.adjustStep < 1
-        ? '${loop.adjustStep}s'
-        : '${loop.adjustStep.toInt()}s';
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Left: Region list (vertical)
-            SizedBox(
-              width: 120,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: ListView(
-                      padding: EdgeInsets.zero,
-                      children: [
-                        for (var i = 0; i < _regions.length; i++) ...[
-                          _buildRegionTile(i),
-                          if (i < _regions.length - 1)
-                            Divider(
-                                height: 1,
-                                color: theme.dividerColor
-                                    .withValues(alpha: 0.3)),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 28,
-                    child: OutlinedButton.icon(
-                      onPressed: canAdd ? _addRegion : null,
-                      icon: const Icon(Icons.add, size: AppIconSizes.xs),
-                      label: Text(canAdd ? '追加' : '上限',
-                          style: textTheme.labelSmall),
-                      style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        side: BorderSide(color: Colors.grey.shade700),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Separator
-            VerticalDivider(
-              width: AppSpacing.xl,
-              thickness: 1,
-              color: theme.dividerColor.withValues(alpha: 0.3),
-            ),
-            // Right: AB controls
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Loop toggle + duration display (top row)
-                  Row(
-                    children: [
-                      SizedBox(
-                        height: 28,
-                        child: FilledButton.icon(
-                          onPressed: hasSource
-                              ? () => loopNotifier.toggleEnabled()
-                              : null,
-                          icon: Icon(
-                            loop.enabled ? Icons.repeat_on : Icons.repeat,
-                            size: AppIconSizes.s,
-                          ),
-                          label: Text(
-                              loop.enabled ? 'Loop ON' : 'Loop OFF'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: loop.enabled
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.surfaceContainerHighest,
-                            foregroundColor:
-                                loop.enabled ? Colors.black : Colors.grey,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 10),
-                            minimumSize: Size.zero,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      if (loop.hasBothPoints)
-                        Text(
-                          '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
-                          style: textTheme.bodySmall!.copyWith(
-                              color: Colors.grey.shade500),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-
-                  // Point A row
-                  LoopControls.buildPointRow(
-                    label: 'A',
-                    color: AppTheme.pointAColor,
-                    time: loop.pointA,
-                    stepLabel: stepLabel,
-                    onSet: hasSource
-                        ? () => loopNotifier.setPointAToCurrentPosition()
-                        : null,
-                    onTimeTap: loop.hasA
-                        ? () => ref.read(playerProvider).seek(loop.pointA!)
-                        : null,
-                    onMinus: () => loopNotifier.adjustPointA(-1),
-                    onPlus: () => loopNotifier.adjustPointA(1),
-                  ),
-
-                  // Swap button (shown when A > B)
-                  if (loop.hasBothPoints &&
-                      loop.pointA!.compareTo(loop.pointB!) > 0)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: SizedBox(
-                        height: 24,
-                        child: TextButton.icon(
-                          onPressed: () => loopNotifier.swapPoints(),
-                          icon: Icon(Icons.swap_vert,
-                              size: AppIconSizes.xs, color: Colors.amber.shade300),
-                          label: Text('A⇔B 入れ替え',
-                              style: textTheme.labelSmall!.copyWith(
-                                  fontSize: 10,
-                                  color: Colors.amber.shade300)),
-                          style: TextButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    const SizedBox(height: AppSpacing.sm),
-
-                  // Point B row
-                  LoopControls.buildPointRow(
-                    label: 'B',
-                    color: AppTheme.pointBColor,
-                    time: loop.pointB,
-                    stepLabel: stepLabel,
-                    onSet: hasSource
-                        ? () => loopNotifier.setPointBToCurrentPosition()
-                        : null,
-                    onTimeTap: loop.hasB
-                        ? () => ref.read(playerProvider).seek(loop.pointB!)
-                        : null,
-                    onMinus: () => loopNotifier.adjustPointB(-1),
-                    onPlus: () => loopNotifier.adjustPointB(1),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-
-                  // Step selector (inline chips, right-aligned)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text('Step',
-                          style: textTheme.labelSmall!.copyWith(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 0.5,
-                              color: Colors.grey.shade500)),
-                      const SizedBox(width: 5),
-                      ...LoopControls.steps.map((s) {
-                        final isSelected = loop.adjustStep == s;
-                        final label = s < 1 ? '${s}s' : '${s.toInt()}s';
-                        return Padding(
-                          padding: const EdgeInsets.only(left: 3),
-                          child: GestureDetector(
-                            onTap: () => loopNotifier.setStep(s),
-                            child: Container(
-                              height: 22,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.sm),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? Colors.grey.shade800
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(11),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                label,
-                                style: textTheme.labelSmall!.copyWith(
-                                  fontFamily: 'monospace',
-                                  color: isSelected
-                                      ? Colors.grey.shade300
-                                      : Colors.grey.shade600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-
-                  const Spacer(),
-
-                  // Export + Clear buttons (bottom)
-                  Row(
-                    children: [
-                      TextButton.icon(
-                          onPressed: loop.hasBothPoints
-                              ? () => _showExportDialog()
-                              : null,
-                          icon: const Icon(Icons.file_download,
-                              size: AppIconSizes.xs),
-                          label: Text('書き出し',
-                              style: textTheme.labelSmall),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md),
-                            minimumSize: Size.zero,
-                            tapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            foregroundColor: AppTheme.accentGreen,
-                          ),
-                        ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed:
-                            hasSource ? () => loopNotifier.reset() : null,
-                        style: TextButton.styleFrom(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                          minimumSize: Size.zero,
-                          tapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          foregroundColor: Colors.grey,
-                        ),
-                        child: Text('クリア',
-                            style: textTheme.labelSmall),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
