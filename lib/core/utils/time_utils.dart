@@ -30,6 +30,28 @@ class TimeUtils {
   static String formatShortMs(int? ms) =>
       ms == null ? nullTimeShort : formatShort(Duration(milliseconds: ms));
 
+  /// 手入力向け: 「1:23.5」「1:23」でも「83.5」（秒）でもよい。全体が時刻でなければ null。
+  /// [parse] は文字列の中から時刻らしい部分を拾うので、入力の検証には使わない
+  static Duration? parseFlexible(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return null;
+    if (t.contains(':')) {
+      final m = RegExp(r'^(\d+):(\d{1,2})(?:\.(\d{1,3}))?$').firstMatch(t);
+      if (m == null) return null;
+      final seconds = int.parse(m.group(2)!);
+      if (seconds >= 60) return null;
+      return Duration(
+        minutes: int.parse(m.group(1)!),
+        seconds: seconds,
+        milliseconds:
+            m.group(3) == null ? 0 : int.parse(m.group(3)!.padRight(3, '0')),
+      );
+    }
+    final sec = double.tryParse(t);
+    if (sec == null || sec < 0 || !sec.isFinite) return null;
+    return Duration(milliseconds: (sec * 1000).round());
+  }
+
   /// Parse M:SS.mmm or M:SS to Duration
   static Duration? parse(String s) {
     final match = RegExp(r'(\d+):(\d{1,2})(?:\.(\d{1,3}))?').firstMatch(s);

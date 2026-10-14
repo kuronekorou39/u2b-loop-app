@@ -581,9 +581,16 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             if (glassLook)
               PopupMenuButton<String>(
                 tooltip: 'その他',
-                onSelected: (v) {
+                onSelected: (v) async {
                   if (v == 'export') _showExportDialog();
-                  if (v == 'clear') ref.read(loopProvider.notifier).reset();
+                  if (v == 'clear') {
+                    final ok = await AppDialogs.confirm(context,
+                        title: 'A・B をクリア',
+                        message: 'この区間の A・B を未設定に戻しますか？',
+                        confirmLabel: 'クリア',
+                        destructive: true);
+                    if (ok && mounted) ref.read(loopProvider.notifier).reset();
+                  }
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem(

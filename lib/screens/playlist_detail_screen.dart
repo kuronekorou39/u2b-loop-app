@@ -344,8 +344,33 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
+  /// スワイプで外したあと「元に戻す」で同じ位置に戻せる
   void _removeItem(Playlist pl, String itemId) {
+    final itemIds = List<String>.from(pl.itemIds);
+    final regions = pl.regionSelections[itemId];
+    final title = ref
+            .read(loopItemsProvider)
+            .where((i) => i.id == itemId)
+            .firstOrNull
+            ?.title ??
+        '曲';
     ref.read(playlistsProvider.notifier).removeItem(pl.id, itemId);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(AppSnackBar.action(
+        '「$title」をプレイリストから外しました',
+        label: '元に戻す',
+        onPressed: () {
+          final current = ref
+              .read(playlistsProvider)
+              .where((p) => p.id == pl.id)
+              .firstOrNull;
+          if (current == null) return;
+          current.itemIds = itemIds;
+          if (regions != null) current.regionSelections[itemId] = regions;
+          ref.read(playlistsProvider.notifier).update(current);
+        },
+      ));
   }
 
   void _showItemMenu(Playlist pl, LoopItem item, int index) {

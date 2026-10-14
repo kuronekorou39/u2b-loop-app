@@ -665,8 +665,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除', style: TextStyle(color: Colors.red)),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(ctx);
+                final ok = await AppDialogs.confirmDelete(context,
+                    message: '「${item.title}」を削除しますか？');
+                if (!ok || !mounted) return;
                 ref.read(loopItemsProvider.notifier).delete(item.id);
               },
             ),
@@ -1972,8 +1975,20 @@ class _ListScreenState extends ConsumerState<ListScreen>
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除',
                   style: TextStyle(color: Colors.red)),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(ctx);
+                // 全曲からこのタグが外れて戻せないので、使われている曲数を出して確認する
+                final used = ref
+                    .read(loopItemsProvider)
+                    .where((i) => i.tagIds.contains(tag.id))
+                    .length;
+                final ok = await AppDialogs.confirmDelete(context,
+                    title: 'タグを削除',
+                    message: used == 0
+                        ? 'タグ「${tag.name}」を削除しますか？'
+                        : 'タグ「${tag.name}」を削除しますか？'
+                            '\n$used 曲からこのタグが外れます（曲は残ります）');
+                if (!ok || !mounted) return;
                 ref.read(tagFilterProvider.notifier).update(
                     (s) => Map<String, bool>.from(s)..remove(tag.id));
                 ref.read(tagsProvider.notifier).delete(tag.id);
@@ -2242,7 +2257,14 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                 const Spacer(),
                 if (_tags.isNotEmpty)
                   TextButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      final ok = await AppDialogs.confirm(context,
+                          title: 'タグをすべて解除',
+                          message:
+                              '選んだ ${widget.selectedItems.length} 件からタグをすべて外しますか？',
+                          confirmLabel: '解除',
+                          destructive: true);
+                      if (!ok || !mounted) return;
                       widget.onClearTags();
                       setState(() {
                         for (final t in _tags) {

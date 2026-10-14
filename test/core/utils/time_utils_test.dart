@@ -73,4 +73,30 @@ void main() {
       expect(TimeUtils.parse(TimeUtils.format(d)), d);
     });
   });
+
+  group('TimeUtils.parseFlexible（手入力の検証用）', () {
+    test('M:SS.mmm と M:SS を読める', () {
+      expect(TimeUtils.parseFlexible('1:23.5'),
+          const Duration(minutes: 1, seconds: 23, milliseconds: 500));
+      expect(TimeUtils.parseFlexible(' 0:05 '), const Duration(seconds: 5));
+      expect(TimeUtils.parseFlexible('12:34.567'),
+          const Duration(minutes: 12, seconds: 34, milliseconds: 567));
+    });
+
+    test('コロンが無ければ秒として読む', () {
+      expect(TimeUtils.parseFlexible('83.5'),
+          const Duration(seconds: 83, milliseconds: 500));
+      expect(TimeUtils.parseFlexible('0'), Duration.zero);
+    });
+
+    test('全体が時刻でなければ null（parse と違い途中の数字を拾わない）', () {
+      expect(TimeUtils.parseFlexible(''), isNull);
+      expect(TimeUtils.parseFlexible('abc'), isNull);
+      expect(TimeUtils.parseFlexible('1:2:3'), isNull);
+      expect(TimeUtils.parseFlexible('1:75'), isNull);
+      expect(TimeUtils.parseFlexible('-5'), isNull);
+      expect(TimeUtils.parseFlexible('1:30 ごろ'), isNull);
+      expect(TimeUtils.parse('1:30 ごろ'), isNotNull);
+    });
+  });
 }

@@ -1752,9 +1752,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _saveRegions();
   }
 
-  void _deleteRegion(int index) {
+  void _deleteRegion(int index) async {
     final regions = _currentItem.effectiveRegions;
     if (index < 0 || index >= regions.length) return;
+    final ok = await AppDialogs.confirmDelete(context,
+        message: '区間「${regions[index].name}」を削除しますか？');
+    if (!ok || !mounted) return;
     setState(() {
       regions.removeAt(index);
       _currentItem.regions = List.from(regions);
@@ -2102,6 +2105,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _removeTrackFromPlaylist(int trackIndex, PlaylistTrack track) async {
+    // プレイリスト詳細のスワイプ削除と同じく確認してから
+    final ok = await AppDialogs.confirmDelete(context,
+        message: '「${track.item.title}」をプレイリストから削除しますか？');
+    if (!ok || !mounted) return;
     final isCurrent =
         ref.read(playlistPlayerProvider).currentTrackIndex == trackIndex;
 

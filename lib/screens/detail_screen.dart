@@ -24,6 +24,7 @@ import '../widgets/glass_scaffold.dart';
 import '../widgets/glass_surface.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/item_thumbnail.dart';
+import '../widgets/loop/region_time_dialog.dart';
 import '../widgets/similar_tracks_sheet.dart';
 import '../widgets/tag_chip.dart';
 import '../widgets/tempo_key_sheet.dart';
@@ -438,6 +439,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Future<void> _clearOffline(LoopItem item) async {
+    // 保存のピルと同じ場所にあるので、押し間違いで消えないよう確認する
+    final ok = await AppDialogs.confirmDelete(context,
+        title: 'オフラインデータを削除',
+        message: '「${item.title}」のオフライン保存した動画と字幕を削除しますか？'
+            '\n（曲の設定は残ります）');
+    if (!ok || !mounted) return;
     await ref.read(loopItemsProvider.notifier).clearCache(item.id);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -985,70 +992,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   void _editRegionTimes(LoopItem item, int index) async {
     final regions = item.effectiveRegions;
     final region = regions[index];
-    final aController = TextEditingController(
-        text: region.hasA ? (region.pointAMs! / 1000).toStringAsFixed(1) : '');
-    final bController = TextEditingController(
-        text: region.hasB ? (region.pointBMs! / 1000).toStringAsFixed(1) : '');
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('${region.name} のAB時間'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: aController,
-              decoration: const InputDecoration(
-                labelText: 'A (秒)',
-                hintText: '例: 10.5',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: bController,
-              decoration: const InputDecoration(
-                labelText: 'B (秒)',
-                hintText: '例: 45.0',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    // dispose後のcontrollerから .text を読むのはAPI契約違反なので先に取り出す
-    final aText = aController.text.trim();
-    final bText = bController.text.trim();
-    aController.dispose();
-    bController.dispose();
-    if (result != true) return;
-
-    final aParsed = aText.isNotEmpty ? double.tryParse(aText) : null;
-    final bParsed = bText.isNotEmpty ? double.tryParse(bText) : null;
-    final aMs = aParsed != null ? (aParsed * 1000).round() : null;
-    final bMs = bParsed != null ? (bParsed * 1000).round() : null;
+    // 検証付きのダイアログ（読めない値や A ≧ B は保存できない）
+    final result = await showRegionTimeDialog(context,
+        title: '${region.name} の AB 時間',
+        aMs: region.pointAMs,
+        bMs: region.pointBMs);
+    if (result == null || !mounted) return;
 
     regions[index] = regions[index].copyWith(
-      pointAMs: () => aMs,
-      pointBMs: () => bMs,
+      pointAMs: () => result.aMs,
+      pointBMs: () => result.bMs,
     );
     item.regions = List.from(regions);
     if (regions.isNotEmpty) {
@@ -1061,6 +1014,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   void _deleteRegion(LoopItem item, int index) async {
     final regions = item.effectiveRegions;
+    if (index < 0 || index >= regions.length) return;
+    final ok = await AppDialogs.confirmDelete(context,
+        message: '区間「${regions[index].name}」を削除しますか？');
+    if (!ok || !mounted) return;
     regions.removeAt(index);
     item.regions = List.from(regions);
     if (regions.isNotEmpty) {
