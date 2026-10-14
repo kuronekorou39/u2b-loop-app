@@ -1008,6 +1008,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
         items.sort((a, b) => b.playCount.compareTo(a.playCount));
     }
 
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     return PopScope(
       canPop: !_isSelecting,
       onPopInvokedWithResult: (didPop, _) {
@@ -1146,7 +1147,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
         ),
           ],
         ),
-        floatingActionButton: _isSelecting
+        // キーボードが出ている間は FAB を出さない。出したままだとキーボードの上に
+        // 逃げ、閉じるときは先に定位置へ飛んでキーボードの裏に隠れ、キーボードが
+        // 下がりきってから下から現れる、という動きに見える
+        floatingActionButton: _isSelecting || keyboardOpen
             ? null
             : _tabController.index == 0
                 ? GreenButton(

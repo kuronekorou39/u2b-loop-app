@@ -8,6 +8,7 @@ import '../../models/loop_state.dart';
 import '../../core/utils/time_utils.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
+import '../glass_panel.dart';
 
 enum _DragTarget { position, pointA, pointB }
 
@@ -179,14 +180,20 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final double viewEnd = (viewStart + vpWidth).clamp(0.0, 1.0).toDouble();
     final isZoomed = _zoomLevel > 1.05;
 
-    if (widget.bar) {
+    // 開閉ボタンの無い compact（横画面の 1 行）だけ時刻を左右に置く。
+    // 開閉できる compact は、開いたときと同じく時刻を下の行に出す（左右に置くと
+    // バーが短くなる）
+    if (widget.compact && widget.onToggleCompact == null) {
+      return _buildCompactMode(context, position, duration, loop, hasSource);
+    }
+    if (widget.bar || widget.compact) {
       return _buildBarMode(context, position, duration, loop, hasSource,
           waveform, waveformLoading, waveformError);
     }
-    if (widget.compact) {
-      return _buildCompactMode(context, position, duration, loop, hasSource);
-    }
 
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontFeatures: const [FontFeature('tnum')],
+        );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Column(
@@ -393,125 +400,88 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 ),
               ),
 
-          // --- Zoom controls + time display (combined row) ---
+          // --- 時刻（左右）+ ズーム（中央）の行 ---
+          // ズームは左右の幅に関係なく画面の真ん中に置く（Row の Spacer で挟むと、
+          // 右端の開閉ボタンのぶんだけ中心がずれて見える）
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-            child: Row(
-              children: [
-                // Current time (left)
-                Text(
-                  TimeUtils.format(position),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                    fontFeatures: [FontFeature('tnum')],
-                  ),
-                ),
-                const Spacer(),
-                // Zoom controls (center)
-                if (hasSource) ...[
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: IconButton(
-                      icon: const Icon(Icons.remove, size: AppIconSizes.s),
-                      tooltip: 'ズームアウト',
-                      onPressed: _zoomLevel > 1.05 ? _zoomOut : null,
-                      padding: EdgeInsets.zero,
-                      style: IconButton.styleFrom(
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: AppRadius.borderXs,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                    child: Text(
-                      '${_zoomLevel.toStringAsFixed(_zoomLevel >= 10 ? 0 : 1)}x',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isZoomed
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.grey,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: IconButton(
-                      icon: const Icon(Icons.add, size: AppIconSizes.s),
-                      tooltip: 'ズームイン',
-                      onPressed: _zoomLevel < 128.0 ? _zoomIn : null,
-                      padding: EdgeInsets.zero,
-                      style: IconButton.styleFrom(
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: AppRadius.borderXs,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (isZoomed && !_autoFollow) ...[
-                    const SizedBox(width: AppSpacing.sm),
-                    GestureDetector(
-                      onTap: () => setState(() => _autoFollow = true),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '追従',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Theme.of(context).colorScheme.primary,
+            child: SizedBox(
+              height: 28,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Row(
+                    children: [
+                      Text(TimeUtils.format(position), style: labelStyle),
+                      const Spacer(),
+                      Text(TimeUtils.format(duration), style: labelStyle),
+                      if (widget.onToggleCompact != null) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: IconButton(
+                            icon: const Icon(Icons.unfold_less,
+                                size: AppIconSizes.s),
+                            onPressed: widget.onToggleCompact,
+                            padding: EdgeInsets.zero,
+                            tooltip: 'コンパクト表示',
                           ),
                         ),
-                      ),
-                    ),
-                  ],
-                ],
-                const Spacer(),
-                // Total duration (right)
-                Text(
-                  TimeUtils.format(duration),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                    fontFeatures: [FontFeature('tnum')],
+                      ],
+                    ],
                   ),
-                ),
-                // Compact toggle
-                if (widget.onToggleCompact != null) ...[
-                  const SizedBox(width: AppSpacing.xs),
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: IconButton(
-                      icon: const Icon(Icons.unfold_less, size: AppIconSizes.s),
-                      onPressed: widget.onToggleCompact,
-                      padding: EdgeInsets.zero,
-                      tooltip: 'コンパクト表示',
-                    ),
-                  ),
+                  if (hasSource) _buildZoomControls(context, isZoomed),
                 ],
-              ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// ズームの − / 倍率 / ＋（ズーム中に追従を切ったら「追従」）。
+  /// 板の上のピルと同じ見た目（以前は角丸四角の IconButton で浮いていた）
+  Widget _buildZoomControls(BuildContext context, bool isZoomed) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final dim = scheme.onSurface.withValues(alpha: 0.3);
+    Widget pill(IconData icon, String tooltip, VoidCallback? onTap) => GlassPill(
+          onTap: onTap,
+          tooltip: tooltip,
+          padding: const EdgeInsets.all(5),
+          child: Icon(icon,
+              size: AppIconSizes.s, color: onTap == null ? dim : null),
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        pill(Icons.remove, 'ズームアウト', isZoomed ? _zoomOut : null),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          child: Text(
+            '${_zoomLevel.toStringAsFixed(_zoomLevel >= 10 ? 0 : 1)}x',
+            style: textTheme.labelSmall?.copyWith(
+              color: isZoomed ? AppTheme.accentGreen : null,
+              fontFeatures: const [FontFeature('tnum')],
+            ),
+          ),
+        ),
+        pill(Icons.add, 'ズームイン', _zoomLevel < 128.0 ? _zoomIn : null),
+        if (isZoomed && !_autoFollow) ...[
+          const SizedBox(width: AppSpacing.sm),
+          GlassPill(
+            onTap: () => setState(() => _autoFollow = true),
+            active: true,
+            tooltip: '再生位置に追従する',
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Text('追従',
+                style: textTheme.labelSmall
+                    ?.copyWith(color: AppTheme.accentGreen)),
+          ),
+        ],
+      ],
     );
   }
 

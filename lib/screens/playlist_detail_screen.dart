@@ -866,12 +866,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       ),
         ],
       ),
-      floatingActionButton: GreenButton(
-        icon: Icons.playlist_add,
-        size: 56,
-        tooltip: '曲を追加',
-        onPressed: () => _showAddSheet(pl),
-      ),
+      // キーボードが出ている間は出さない（list_screen と同じ理由）
+      floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+          ? null
+          : GreenButton(
+              icon: Icons.playlist_add,
+              size: 56,
+              tooltip: '曲を追加',
+              onPressed: () => _showAddSheet(pl),
+            ),
     );
   }
 

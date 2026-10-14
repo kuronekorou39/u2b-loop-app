@@ -52,6 +52,7 @@ class RegionPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4);
     return GlassPanel(
       margin: const EdgeInsets.fromLTRB(
           PlayerShell.margin, 0, PlayerShell.margin, AppSpacing.lg),
@@ -61,28 +62,40 @@ class RegionPanel extends StatelessWidget {
       scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
       child: Column(
         children: [
+          // 見出しはトラック一覧と同じ余白。「追加」は板の上のピル
           Padding(
-            padding:
-                const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.sm, 0),
+            padding: EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.sm,
+                onClose != null ? AppSpacing.sm : AppSpacing.lg, AppSpacing.sm),
             child: Row(
               children: [
                 Text('AB 区間', style: textTheme.titleSmall),
                 const SizedBox(width: AppSpacing.md),
                 Text('${regions.length} 件', style: textTheme.labelSmall),
                 const Spacer(),
-                TextButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add, size: AppIconSizes.s),
-                  label: Text(onAdd != null ? '追加' : '上限'),
+                GlassPill(
+                  onTap: onAdd,
+                  tooltip: onAdd != null ? '区間を追加' : '区間は上限です',
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md + 2, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add,
+                          size: AppIconSizes.s,
+                          color: onAdd != null ? AppTheme.accentGreen : dim),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(onAdd != null ? '追加' : '上限',
+                          style: textTheme.labelMedium?.copyWith(
+                              color: onAdd != null ? null : dim)),
+                    ],
+                  ),
                 ),
                 if (onClose != null)
                   IconButton(
                     icon: const Icon(Icons.keyboard_arrow_down),
                     onPressed: onClose,
                     tooltip: '一覧を閉じる',
-                  )
-                else
-                  const SizedBox(width: AppSpacing.md),
+                  ),
               ],
             ),
           ),
