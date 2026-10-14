@@ -72,6 +72,14 @@ class LoopItem {
   /// テンポ/キーを解析した時刻（ミリ秒。null=未解析。再解析のスキップ判定用）
   int? analyzedAt;
 
+  /// 解析結果の形式の版（[currentAnalysisVersion]）。これより古い解析結果は解析し直す。
+  /// null = 版を持たない旧い解析結果。手動補正では触らない（解析の時刻で判定すると、
+  /// 境目の前後に旧いアプリで解析した曲を取りこぼす）
+  int? analysisVersion;
+
+  /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子）
+  static const currentAnalysisVersion = 2;
+
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
   int? leadingSilenceMs;
@@ -127,6 +135,7 @@ class LoopItem {
     this.bpm,
     this.musicalKey,
     this.analyzedAt,
+    this.analysisVersion,
     this.leadingSilenceMs,
     this.trailingSilenceMs,
     this.mixInMs,
@@ -244,6 +253,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       beatOffsetMs: (fields[32] as num?)?.toDouble(),
       beatBpm: (fields[33] as num?)?.toDouble(),
       durationMs: fields[34] as int?,
+      analysisVersion: fields[35] as int?,
     );
   }
 
@@ -285,6 +295,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       32: obj.beatOffsetMs,
       33: obj.beatBpm,
       34: obj.durationMs,
+      35: obj.analysisVersion,
     });
   }
 }

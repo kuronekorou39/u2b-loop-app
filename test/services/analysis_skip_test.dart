@@ -3,7 +3,12 @@ import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/providers/data_provider.dart';
 import 'package:u2b_loop_app/services/audio_analysis_service.dart';
 
-LoopItem _item({int? durationMs, int? analyzedAt, int? leadingSilenceMs}) =>
+LoopItem _item({
+  int? durationMs,
+  int? analyzedAt,
+  int? leadingSilenceMs,
+  int? analysisVersion,
+}) =>
     LoopItem(
       id: 'x',
       title: 't',
@@ -12,6 +17,7 @@ LoopItem _item({int? durationMs, int? analyzedAt, int? leadingSilenceMs}) =>
       durationMs: durationMs,
       analyzedAt: analyzedAt,
       leadingSilenceMs: leadingSilenceMs,
+      analysisVersion: analysisVersion,
     );
 
 void main() {
@@ -27,17 +33,28 @@ void main() {
     expect(AudioAnalysisService.needsAnalysis(_item()), isTrue);
   });
 
-  test('拍の格子を入れる前の解析結果は解析し直す', () {
+  test('形式の版が古い解析結果は解析し直す（時刻は見ない）', () {
+    expect(
+        AudioAnalysisService.needsAnalysis(_item(
+            analyzedAt: now,
+            leadingSilenceMs: 0,
+            analysisVersion: LoopItem.currentAnalysisVersion)),
+        isFalse);
     expect(
         AudioAnalysisService.needsAnalysis(
             _item(analyzedAt: now, leadingSilenceMs: 0)),
-        isFalse);
+        isTrue,
+        reason: '版を持たない（拍の格子の無い）解析結果は、解析した直後でも対象');
     expect(
         AudioAnalysisService.needsAnalysis(_item(
-            analyzedAt: AudioAnalysisService.beatGridSince - 1,
-            leadingSilenceMs: 0)),
+            analyzedAt: now,
+            leadingSilenceMs: 0,
+            analysisVersion: LoopItem.currentAnalysisVersion - 1)),
         isTrue);
-    expect(AudioAnalysisService.needsAnalysis(_item(analyzedAt: now)), isTrue,
+    expect(
+        AudioAnalysisService.needsAnalysis(_item(
+            analyzedAt: now, analysisVersion: LoopItem.currentAnalysisVersion)),
+        isTrue,
         reason: '無音情報が無い旧い解析結果');
   });
 

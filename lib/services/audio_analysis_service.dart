@@ -26,13 +26,6 @@ class AudioAnalysisService {
   /// これに達した PCM は曲末まで届いていないので、曲末の無音は求めない
   static const maxAnalysisSeconds = 480;
 
-  /// 拍の格子を解析に入れた時刻（v1.86.0 のビルド）。これより前の解析結果は拍合わせに
-  /// 使えないので解析し直す（この後に手動補正しただけの曲は analyzedAt が据え置きなので対象のまま）。
-  /// v1.86.0 ではこれを翌日にしていたため、その日のうちは解析したばかりの曲も毎回対象になっていた。
-  /// タイムゾーンで境目がずれないよう UTC で書く（2026-10-14 15:00 JST）
-  static final beatGridSince =
-      DateTime.utc(2026, 10, 14, 6).millisecondsSinceEpoch;
-
   /// これより長い曲（ミックス音源・配信の録画など）は解析しない。
   /// 1 曲として BPM / キーを出しても意味がなく、音声の取得にも時間がかかる
   static const maxAnalyzableMinutes = 10;
@@ -42,13 +35,15 @@ class AudioAnalysisService {
       item.durationMs != null &&
       item.durationMs! > maxAnalyzableMinutes * 60 * 1000;
 
-  /// 解析が必要か。未解析のほか、無音情報や拍の格子の無い旧バージョンの解析結果も対象。
-  /// 長すぎる曲は対象外
+  /// 解析が必要か。未解析のほか、形式の版が古い解析結果（無音情報や拍の格子の無い
+  /// 旧バージョンのもの。手動補正しただけの曲は版が据え置きなので対象のまま）も対象。
+  /// v1.86.2 までは解析の時刻で判定していたが、境目の後に旧いアプリで解析した曲が
+  /// 「解析済み」になって拍の格子が付かなかった。長すぎる曲は対象外
   static bool needsAnalysis(LoopItem item) =>
       !isTooLong(item) &&
       (item.analyzedAt == null ||
           item.leadingSilenceMs == null ||
-          item.analyzedAt! < beatGridSince);
+          (item.analysisVersion ?? 0) < LoopItem.currentAnalysisVersion);
 
   /// 解析が必要なアイテムなら、PCM を受け取って解析→保存するコールバックを返す。
   /// 解析済み・解析中・長すぎる曲なら null（波形生成側は PCM を取り出さない）。

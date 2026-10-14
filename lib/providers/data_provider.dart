@@ -93,6 +93,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     }
     if (markAnalyzed) {
       item.analyzedAt = DateTime.now().millisecondsSinceEpoch;
+      item.analysisVersion = LoopItem.currentAnalysisVersion;
       item.beatBpm = beatGrid?.bpm;
       item.beatOffsetMs = beatGrid?.offsetMs;
     } else if (bpm == null ||
