@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/mix_point_detector.dart';
 import '../core/audio/silence_detector.dart';
 import '../core/constants.dart';
 import '../models/loop_item.dart';
@@ -86,6 +87,18 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       item.trailingSilenceMs = silence.trailingMs;
     }
     if (markAnalyzed) item.analyzedAt = DateTime.now().millisecondsSinceEpoch;
+    await _box.put(id, item);
+    _refresh();
+  }
+
+  /// ミックス点（波形から求めたドロップ / アウトロ）の保存。
+  /// 再生中にバックグラウンドで決まるので updatedAt は触らない。変化が無ければ書かない
+  Future<void> saveMixPoints(String id, MixPoints points) async {
+    final item = _box.get(id);
+    if (item == null) return;
+    if (item.mixInMs == points.mixInMs && item.mixOutMs == points.mixOutMs) return;
+    item.mixInMs = points.mixInMs;
+    item.mixOutMs = points.mixOutMs;
     await _box.put(id, item);
     _refresh();
   }

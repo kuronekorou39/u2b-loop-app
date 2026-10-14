@@ -445,6 +445,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ? null
                         : (v) => ref.read(tempoMatchProvider.notifier).value = v,
                   ),
+                  // クロスフェード中だけ効く。波形から求めたドロップ（音量が上がる点）が
+                  // 切り替わりに来るよう次曲の開始位置をずらし、出る曲はアウトロで切る
+                  SwitchListTile(
+                    secondary: const Icon(Icons.trending_up),
+                    title: const Text('ドロップに合わせる'),
+                    subtitle: Text(crossfade == 0
+                        ? 'クロスフェードをオンにすると使えます'
+                        : '次の曲の盛り上がりが切り替わりに来るよう開始位置をずらし、前の曲はアウトロで切る'),
+                    value: ref.watch(mixPointAlignProvider),
+                    onChanged: crossfade == 0
+                        ? null
+                        : (v) => ref.read(mixPointAlignProvider.notifier).value = v,
+                  ),
                 ],
               ),
 

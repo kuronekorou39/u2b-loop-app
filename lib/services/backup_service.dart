@@ -137,6 +137,8 @@ class BackupService {
         'analyzedAt': item.analyzedAt,
         'leadingSilenceMs': item.leadingSilenceMs,
         'trailingSilenceMs': item.trailingSilenceMs,
+        'mixInMs': item.mixInMs,
+        'mixOutMs': item.mixOutMs,
       };
 
   static LoopItem itemFromJson(Map<String, dynamic> j) => LoopItem(
@@ -170,6 +172,8 @@ class BackupService {
         analyzedAt: j['analyzedAt'] as int?,
         leadingSilenceMs: j['leadingSilenceMs'] as int?,
         trailingSilenceMs: j['trailingSilenceMs'] as int?,
+        mixInMs: j['mixInMs'] as int?,
+        mixOutMs: j['mixOutMs'] as int?,
       );
 
   static Map<String, dynamic> playlistToJson(Playlist pl) => {

@@ -135,12 +135,22 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.tempoMatch), false,
         reason: '既定オンなので1回タップでオフになり、PlaylistEngine が読む値に保存される');
 
+    // 「ドロップに合わせる」も同じ条件（既定オン）
+    final align = find.widgetWithText(SwitchListTile, 'ドロップに合わせる');
+    expect(align, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(align).onChanged, isNotNull);
+    await tester.ensureVisible(align);
+    await tester.tap(align);
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.mixPointAlign), false);
+
     // クロスフェードをオフにすると触れなくなる
     await tester.tap(find.text('クロスフェード'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('オフ'));
     await tester.pumpAndSettle();
     expect(tester.widget<SwitchListTile>(tile).onChanged, isNull);
+    expect(tester.widget<SwitchListTile>(align).onChanged, isNull);
   });
 
   testWidgets('バージョンが表示される', (tester) async {

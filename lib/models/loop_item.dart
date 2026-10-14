@@ -78,6 +78,15 @@ class LoopItem {
   /// 曲末の無音（ミリ秒）。null = 未計測、または曲が長すぎて曲末まで解析していない
   int? trailingSilenceMs;
 
+  /// ミックスイン点（ミリ秒）: 曲頭側で音量がぐっと上がる点（ドロップ）。
+  /// クロスフェードで入るとき、ここが切り替わりに来るよう開始位置をずらす。
+  /// 波形から求める（MixPointDetector）。null = 未計測または無し
+  int? mixInMs;
+
+  /// ミックスアウト点（ミリ秒）: 曲末側で音量が落ち込む点（アウトロの始まり）。
+  /// 出ていく曲はここで切る。null = 未計測または無し
+  int? mixOutMs;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -109,6 +118,8 @@ class LoopItem {
     this.analyzedAt,
     this.leadingSilenceMs,
     this.trailingSilenceMs,
+    this.mixInMs,
+    this.mixOutMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
@@ -209,6 +220,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       analyzedAt: fields[27] as int?,
       leadingSilenceMs: fields[28] as int?,
       trailingSilenceMs: fields[29] as int?,
+      mixInMs: fields[30] as int?,
+      mixOutMs: fields[31] as int?,
     );
   }
 
@@ -245,6 +258,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       27: obj.analyzedAt,
       28: obj.leadingSilenceMs,
       29: obj.trailingSilenceMs,
+      30: obj.mixInMs,
+      31: obj.mixOutMs,
     });
   }
 }

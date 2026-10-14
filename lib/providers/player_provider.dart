@@ -165,6 +165,24 @@ class TempoMatchNotifier extends StateNotifier<bool> {
   }
 }
 
+/// クロスフェードで次曲のドロップ（音量が上がる点）が切り替わりに来るよう開始位置をずらし、
+/// 出ていく曲はアウトロの落ち込みで切るか（既定オン）。クロスフェードがオフのときは効かない
+final mixPointAlignProvider =
+    StateNotifierProvider<MixPointAlignNotifier, bool>((ref) => MixPointAlignNotifier());
+
+class MixPointAlignNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.mixPointAlign;
+
+  MixPointAlignNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 final flipHorizontalProvider = StateProvider<bool>((ref) => false);
 final flipVerticalProvider = StateProvider<bool>((ref) => false);
 final previousVolumeProvider = StateProvider<double>((ref) => 100.0);

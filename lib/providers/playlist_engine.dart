@@ -143,12 +143,35 @@ class PlaylistEngine {
   }
 
   /// トラックの再生開始位置。区間があればA点。
-  /// 無ければ、クロスフェード有効時は曲頭の無音を飛ばす（無音同士を重ねない）
+  /// 無ければ、クロスフェード有効時は曲頭の無音を飛ばす（無音同士を重ねない）。
+  /// さらに「ドロップに合わせる」がオンでミックスイン点が分かっていれば、
+  /// 交差が終わる瞬間（切替点）にドロップが来るよう、その fade 秒前から始める
   Duration effectiveStart(PlaylistTrack track) {
     final startMs = track.startMs;
     if (startMs != null) return Duration(milliseconds: startMs);
-    if (crossfadeDuration == Duration.zero) return Duration.zero;
-    return Duration(milliseconds: track.item.leadingSilenceMs ?? 0);
+    final fade = crossfadeDuration;
+    if (fade == Duration.zero) return Duration.zero;
+    final leading = Duration(milliseconds: track.item.leadingSilenceMs ?? 0);
+    final mixIn = track.item.mixInMs;
+    if (mixIn != null && _ref.read(mixPointAlignProvider)) {
+      final aligned = Duration(milliseconds: mixIn) - fade;
+      if (aligned > leading) return aligned;
+    }
+    return leading;
+  }
+
+  /// プリロード済みの次曲の開始位置を今の設定・ミックス点で取り直す。
+  /// 波形が後から届いてミックス点が決まったときに呼ぶ（交差が始まっていれば何もしない）
+  Future<void> realignPreload(PlaylistTrack track) async {
+    final armed = _armedTrack;
+    if (armed == null || armed.item.id != track.item.id || _crossfade != null) {
+      return;
+    }
+    try {
+      await preloadPlayer.seek(effectiveStart(track));
+    } catch (e) {
+      debugPrint('[PlaylistEngine] 次曲の開始位置の取り直しに失敗: $e');
+    }
   }
 
   // --- スロット入替 ---
@@ -265,7 +288,8 @@ class PlaylistEngine {
   static const _minSilenceCut = Duration(milliseconds: 500);
 
   /// 切断点（スワップが実際に起きる位置）。ABループ有効ならB点。
-  /// なければ曲末の無音を除いた位置、不明なら曲の終端の [LoopNotifier.trackEndLead] 手前
+  /// なければ「ドロップに合わせる」がオンならアウトロの落ち込み（ミックスアウト点）、
+  /// 無ければ曲末の無音を除いた位置、不明なら曲の終端の [LoopNotifier.trackEndLead] 手前
   /// （LoopNotifier がそこで曲終了を発火するため。終端に合わせて曲線を引くと、
   ///   旧曲が 10〜40% の音量で止まって「ぶつぎり」に聞こえる）。
   /// [advancesAtCut] は、終端より手前で切るため遷移をこちらから起こす必要があるか
@@ -277,8 +301,16 @@ class PlaylistEngine {
     }
     final d = activePlayer.state.duration;
     if (d <= Duration.zero) return null;
-    final trailing = Duration(
-        milliseconds: _ref.read(playlistPlayerProvider).currentTrack?.item.trailingSilenceMs ?? 0);
+    final item = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    final mixOut = item?.mixOutMs;
+    if (mixOut != null && _ref.read(mixPointAlignProvider)) {
+      final cut = Duration(milliseconds: mixOut);
+      // すでに通り過ぎていたら曲末で切る
+      if (cut < d - _minSilenceCut && activePlayer.state.position < cut) {
+        return (cut: cut, advancesAtCut: true);
+      }
+    }
+    final trailing = Duration(milliseconds: item?.trailingSilenceMs ?? 0);
     if (trailing < _minSilenceCut || trailing >= d) {
       return (cut: d - LoopNotifier.trackEndLead, advancesAtCut: false);
     }

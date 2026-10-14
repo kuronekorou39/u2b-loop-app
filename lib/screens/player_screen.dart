@@ -11,6 +11,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../app.dart';
+import '../core/audio/mix_point_detector.dart';
 import '../core/constants.dart';
 import '../core/tips.dart';
 import '../core/utils/verse_detector.dart';
@@ -1076,6 +1077,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 波形からミックス点（ドロップ / アウトロ）を求めて LoopItem に残す。
+  /// 一度求めたものは使い回す（将来の手動上書きを壊さないため）。
+  /// 次曲（[preload]）なら、決まった開始位置へプリロード側を取り直す
+  Future<void> _updateMixPoints(PlaylistTrack track, List<double> waveform,
+      {required bool preload}) async {
+    final item = track.item;
+    if (item.mixInMs != null || item.mixOutMs != null) return;
+    final engine = ref.read(playlistEngineProvider);
+    final duration = (preload ? engine.preloadPlayer : engine.activePlayer)
+        .state
+        .duration;
+    if (duration <= Duration.zero) return;
+    final points = MixPointDetector.fromWaveform(
+      waveform,
+      duration.inMilliseconds,
+      leadingSilenceMs: item.leadingSilenceMs ?? 0,
+      trailingSilenceMs: item.trailingSilenceMs,
+    );
+    if (points == MixPoints.none) return;
+    await ref.read(loopItemsProvider.notifier).saveMixPoints(item.id, points);
+    // Hive の box にあるのと同じインスタンスなので item 自体も更新されている
+    debugPrint('[MixPoint] ${item.title}: $points');
+    if (preload) await engine.realignPreload(track);
+  }
+
   /// 波形を先行生成してキャッシュに保存（fire-and-forget）
   Future<void> _preloadWaveform(
       PlaylistTrack track, StreamManifest? manifest, int gen) async {
@@ -1090,7 +1116,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (onPcm == null) {
         waveform = await WaveformCache.load(item.id);
         if (waveform != null && waveform.isNotEmpty) {
-          if (gen == _preloadGeneration) _waveformCache[item.id] = waveform;
+          if (gen == _preloadGeneration) {
+            _waveformCache[item.id] = waveform;
+            await _updateMixPoints(track, waveform, preload: true);
+          }
           return;
         }
       }
@@ -1140,7 +1169,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (waveform != null && waveform.isNotEmpty) {
         await WaveformCache.save(item.id, waveform);
-        if (gen == _preloadGeneration) _waveformCache[item.id] = waveform;
+        if (gen == _preloadGeneration) {
+          _waveformCache[item.id] = waveform;
+          await _updateMixPoints(track, waveform, preload: true);
+        }
       }
     } catch (_) {
       // 波形プリロード失敗は無視（再生時に再試行される）
@@ -1930,6 +1962,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ref.read(playlistPlayerProvider).currentTrack;
             if (track != null && !track.hasRegion) {
               _applyFirstVerseCut(track);
+            }
+            if (track != null) {
+              unawaited(_updateMixPoints(track, waveform, preload: false));
             }
           }
           // 音量正規化
