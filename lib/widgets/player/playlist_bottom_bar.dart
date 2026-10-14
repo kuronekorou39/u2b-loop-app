@@ -28,7 +28,24 @@ class PlaylistBottomBar extends ConsumerWidget {
     required this.onToggleList,
     required this.firstVerse,
     required this.onToggleFirstVerse,
+    this.editing = false,
+    this.editBlock,
+    this.onFinishEdit,
+    this.onSetA,
+    this.onSetB,
+    this.onRegister,
   });
+
+  /// いまの曲の AB 区間を編集中。[editBlock] をシーク領域の下に出し、
+  /// ピルは「終了」「今を A」「今を B」「区間として登録」になる
+  final bool editing;
+  final Widget? editBlock;
+  final VoidCallback? onFinishEdit;
+  final VoidCallback? onSetA;
+  final VoidCallback? onSetB;
+
+  /// A・B が揃っていないときは null で無効化
+  final VoidCallback? onRegister;
 
   final Widget seekbar;
 
@@ -66,6 +83,8 @@ class PlaylistBottomBar extends ConsumerWidget {
     return PlayerGlassBar(
       seekbar: seekbar,
       compact: compact,
+      // 一覧を開いている間は編集ブロックをしまう（閉じれば戻る）
+      extra: editing && !compact ? editBlock : null,
       transport: [
         ToggleIconButton(
           icon: Icons.shuffle,
@@ -98,7 +117,41 @@ class PlaylistBottomBar extends ConsumerWidget {
           tooltip: repeatTooltip,
         ),
       ],
-      pills: [
+      pills: editing
+          ? [
+              GlassPill(
+                onTap: onFinishEdit,
+                active: true,
+                tooltip: 'AB 区間の編集を終える',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check,
+                        size: AppIconSizes.sm, color: AppTheme.accentGreen),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text('終了',
+                        style: theme.textTheme.labelMedium!
+                            .copyWith(color: AppTheme.accentGreen)),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
+              const SizedBox(width: AppSpacing.md),
+              SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
+              const SizedBox(width: AppSpacing.md),
+              GlassPill(
+                onTap: onRegister,
+                tooltip: onRegister == null
+                    ? 'A と B を決めると区間として登録できます'
+                    : 'この A–B を区間として登録',
+                padding: const EdgeInsets.all(9),
+                child: Icon(Icons.save_alt,
+                    size: AppIconSizes.md,
+                    color: onRegister == null ? dim.withValues(alpha: 0.35) : null),
+              ),
+            ]
+          : [
         GlassPill(
           onTap: onToggleList,
           tooltip: 'トラック一覧を開く',

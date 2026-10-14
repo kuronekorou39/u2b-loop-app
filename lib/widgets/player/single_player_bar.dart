@@ -103,9 +103,9 @@ class SinglePlayerBar extends ConsumerWidget {
       pills = [
         regionsPill,
         const Spacer(),
-        _SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
+        SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
         const SizedBox(width: AppSpacing.md),
-        _SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
+        SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
         const SizedBox(width: AppSpacing.md),
         speedPill,
       ];
@@ -128,9 +128,9 @@ class SinglePlayerBar extends ConsumerWidget {
           ),
         ),
         const Spacer(),
-        _SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
+        SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
         const SizedBox(width: AppSpacing.md),
-        _SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
+        SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
       ];
     } else {
       pills = [
@@ -202,38 +202,6 @@ class SinglePlayerBar extends ConsumerWidget {
         ),
       ],
       pills: pills,
-    );
-  }
-}
-
-/// 編集中のピル「今を A」「今を B」
-class _SetPointPill extends StatelessWidget {
-  const _SetPointPill({
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return GlassPill(
-      onTap: onTap,
-      tooltip: '今の位置を $label にする',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.vertical_align_bottom,
-              size: AppIconSizes.sm,
-              color: onTap == null ? color.withValues(alpha: 0.4) : color),
-          const SizedBox(width: AppSpacing.sm),
-          Text('今を$label', style: textTheme.labelMedium),
-        ],
-      ),
     );
   }
 }

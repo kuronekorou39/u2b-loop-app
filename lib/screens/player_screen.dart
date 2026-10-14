@@ -809,6 +809,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _loadTrackRegion(PlaylistTrack track) {
+    // 曲が変わったら前の曲の AB 編集は閉じる
+    _editMode = false;
     // AB区間の反映はミニプレイヤー側と共通（PlaylistEngine）
     ref.read(playlistEngineProvider).applyRegion(track);
     if (!track.hasRegion) {
@@ -3063,6 +3065,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_isPlaylist) {
       final plState = ref.watch(playlistPlayerProvider);
       final nextIdx = plState.peekNextTrackIndex();
+      // AB 編集（「その他」→「AB区間を編集」）用
+      final plLoop = ref.watch(loopProvider);
+      final plNotifier = ref.read(loopProvider.notifier);
+      final plHasSource = ref.watch(videoSourceProvider) != null;
       final item = plState.currentTrack?.item;
       final currentIdx = plState.currentTrackIndex;
       final subParts = <String>[
@@ -3113,6 +3119,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           onToggleList: () => _setPanelOpen(!panelOpen),
           firstVerse: plState.firstVerseMode,
           onToggleFirstVerse: _toggleFirstVerseMode,
+          editing: _editMode,
+          onFinishEdit: _finishEdit,
+          onSetA: plHasSource
+              ? () => plNotifier.setPointA(ref.read(playerProvider).state.position)
+              : null,
+          onSetB: plHasSource
+              ? () => plNotifier.setPointB(ref.read(playerProvider).state.position)
+              : null,
+          onRegister: plLoop.hasBothPoints
+              ? () => _saveCurrentAbAsRegion(
+                  plLoop.pointA!.inMilliseconds, plLoop.pointB!.inMilliseconds)
+              : null,
+          editBlock: AbEditControls(
+            loop: plLoop,
+            step: _editStep,
+            onStepChanged: (s) => setState(() => _editStep = s),
+            onSeek: _seekTo,
+            onPointA: plNotifier.setPointA,
+            onPointB: plNotifier.setPointB,
+            onSwap: plNotifier.swapPoints,
+            onSetA: plHasSource
+                ? () => plNotifier.setPointA(ref.read(playerProvider).state.position)
+                : null,
+            onSetB: plHasSource
+                ? () => plNotifier.setPointB(ref.read(playerProvider).state.position)
+                : null,
+          ),
         ),
       );
     }
@@ -3312,7 +3345,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         firstVerseMode: plState.firstVerseMode,
         onToggleFirstVerse: _toggleFirstVerseMode,
         onToggleVolumeNorm: _toggleVolumeNorm,
-        onEditAb: _showAbEditDialog,
+        onEditAb: _startPlaylistAbEdit,
         hideVideo: _hideVideo,
         onHideVideoChanged: (v) => setState(() => _hideVideo = v),
       ),
@@ -3366,7 +3399,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _seekTo(Duration time) => ref.read(playerProvider).seek(time);
 
-  /// プレイリストモード: AB区間の微調整 + 区間登録ダイアログ
+  /// プレイリストモード（縦）: コントローラーに AB 編集ブロックを出す。
+  /// 変更は即ループに反映され、「区間として登録」で LoopItem に残せる。
+  /// B が無いときは曲末を B にして始める（ダイアログ時代と同じ）
+  void _startPlaylistAbEdit() {
+    final loop = ref.read(loopProvider);
+    final notifier = ref.read(loopProvider.notifier);
+    if (!loop.hasA) notifier.setPointA(Duration.zero);
+    if (!loop.hasB) {
+      final total = ref.read(playerProvider).state.duration;
+      if (total > Duration.zero) notifier.setPointB(total);
+    }
+    setState(() {
+      _editMode = true;
+      _panelOpen = false;
+    });
+  }
+
+  /// プレイリストモード（横画面ドロワー）: AB区間の微調整 + 区間登録ダイアログ
   void _showAbEditDialog() {
     final loopNotifier = ref.read(loopProvider.notifier);
     final totalMs = ref.read(playerProvider).state.duration.inMilliseconds;
