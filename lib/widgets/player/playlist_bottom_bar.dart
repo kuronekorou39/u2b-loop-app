@@ -17,7 +17,8 @@ class PlaylistBottomBar extends ConsumerWidget {
   const PlaylistBottomBar({
     super.key,
     required this.seekbar,
-    required this.compact,
+    this.compact = false,
+    this.listOpen = false,
     required this.shuffle,
     required this.onShuffle,
     required this.repeatMode,
@@ -49,8 +50,11 @@ class PlaylistBottomBar extends ConsumerWidget {
 
   final Widget seekbar;
 
-  /// トラック一覧を開いている間の低い形
+  /// 低い形（ピル行なし）。ふだんは使わない
   final bool compact;
+
+  /// トラック一覧を開いているか（ピルの矢印と文言が変わる。同じ場所で開閉できる）
+  final bool listOpen;
   final bool shuffle;
   final VoidCallback? onShuffle;
   final pl.RepeatMode repeatMode;
@@ -154,15 +158,24 @@ class PlaylistBottomBar extends ConsumerWidget {
           : [
         GlassPill(
           onTap: onToggleList,
-          tooltip: 'トラック一覧を開く',
+          active: listOpen,
+          tooltip: listOpen ? 'トラック一覧を閉じる' : 'トラック一覧を開く',
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.queue_music, size: AppIconSizes.sm),
+              Icon(Icons.queue_music,
+                  size: AppIconSizes.sm,
+                  color: listOpen ? AppTheme.accentGreen : null),
               const SizedBox(width: AppSpacing.sm),
-              Text('トラック一覧', style: theme.textTheme.labelMedium),
+              Text('トラック一覧',
+                  style: theme.textTheme.labelMedium!.copyWith(
+                      color: listOpen ? AppTheme.accentGreen : null)),
               const SizedBox(width: AppSpacing.xs),
-              Icon(Icons.keyboard_arrow_up, size: AppIconSizes.sm, color: dim),
+              Icon(
+                listOpen ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                size: AppIconSizes.sm,
+                color: listOpen ? AppTheme.accentGreen : dim,
+              ),
             ],
           ),
         ),

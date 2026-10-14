@@ -74,17 +74,23 @@ void main() {
     expect(ctrl.bottom, lessThanOrEqualTo(700 + 0.5));
   });
 
-  testWidgets('パネルを渡すと中段に出て、null で消える', (tester) async {
+  testWidgets('パネルは動画と曲名行の上に重なり、コントローラーの上で止まる。null で消える',
+      (tester) async {
     await pump(tester,
         height: 900,
         controllerHeight: 200,
         panel: const ColoredBox(color: Colors.red, key: Key('panel')));
     expect(find.byKey(const Key('panel')), findsOneWidget);
     final panel = tester.getRect(find.byKey(const Key('panel')));
+    final video = tester.getRect(find.byKey(const Key('video')));
     final header = tester.getRect(find.byKey(const Key('header')));
     final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
-    expect(panel.top, greaterThan(header.bottom));
-    expect(panel.bottom, lessThanOrEqualTo(ctrl.top));
+    // 動画の上端から曲名行の下端までを覆う
+    expect(panel.top, lessThanOrEqualTo(video.top + 0.5));
+    expect(panel.bottom, greaterThan(header.bottom));
+    expect(panel.bottom, lessThanOrEqualTo(ctrl.top + 0.5));
+    // 開いても動画は縮まない
+    expect(video.height, closeTo((400 - PlayerShell.margin * 2) * 9 / 16, 0.5));
 
     await pump(tester, height: 900, controllerHeight: 200, panel: null);
     expect(find.byKey(const Key('panel')), findsNothing);

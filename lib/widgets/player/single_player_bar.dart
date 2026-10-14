@@ -18,7 +18,8 @@ class SinglePlayerBar extends ConsumerWidget {
   const SinglePlayerBar({
     super.key,
     required this.seekbar,
-    required this.compact,
+    this.compact = false,
+    this.regionsOpen = false,
     required this.loop,
     required this.onToggleLoop,
     required this.editing,
@@ -42,7 +43,12 @@ class SinglePlayerBar extends ConsumerWidget {
   final VoidCallback? onSetB;
 
   final Widget seekbar;
+
+  /// 低い形（ピル行なし）。ふだんは使わない
   final bool compact;
+
+  /// AB 区間の一覧を開いているか（ピルの矢印が変わる。同じ場所で開閉できる）
+  final bool regionsOpen;
 
   /// いまのループ状態（ON/OFF と A 点を使う）
   final LoopState loop;
@@ -78,15 +84,24 @@ class SinglePlayerBar extends ConsumerWidget {
 
     final regionsPill = GlassPill(
       onTap: onToggleRegions,
-      tooltip: 'AB 区間の一覧を開く',
+      active: regionsOpen,
+      tooltip: regionsOpen ? 'AB 区間の一覧を閉じる' : 'AB 区間の一覧を開く',
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.format_list_bulleted, size: AppIconSizes.sm),
+          Icon(Icons.format_list_bulleted,
+              size: AppIconSizes.sm,
+              color: regionsOpen ? AppTheme.accentGreen : null),
           const SizedBox(width: AppSpacing.sm),
-          Text('区間', style: theme.textTheme.labelMedium),
+          Text('区間',
+              style: theme.textTheme.labelMedium!
+                  .copyWith(color: regionsOpen ? AppTheme.accentGreen : null)),
           const SizedBox(width: AppSpacing.xs),
-          Icon(Icons.keyboard_arrow_up, size: AppIconSizes.sm, color: dim),
+          Icon(
+            regionsOpen ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+            size: AppIconSizes.sm,
+            color: regionsOpen ? AppTheme.accentGreen : dim,
+          ),
         ],
       ),
     );

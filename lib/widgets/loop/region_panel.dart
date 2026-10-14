@@ -6,9 +6,9 @@ import '../../models/loop_region.dart';
 import '../glass_panel.dart';
 import '../player/player_shell.dart';
 
-/// 開閉できる AB 区間の一覧（ガラス板）。再生画面（単体）と AB 編集画面で共用。
+/// 開閉できる AB 区間の一覧（動画の上に重ねるガラス板）。再生画面（単体）と AB 編集画面で共用。
 ///
-/// 見出しに件数と「追加」、▾ で閉じる。行は（[showAll] なら）「全体」と各区間。
+/// 見出しに件数と「追加」。行は（[showAll] なら）「全体」と各区間。
 /// 行のタップで切替、⋮ または長押しでリネーム・削除のメニュー。
 class RegionPanel extends StatelessWidget {
   const RegionPanel({
@@ -18,7 +18,7 @@ class RegionPanel extends StatelessWidget {
     required this.onSelect,
     required this.onMenu,
     required this.onAdd,
-    required this.onClose,
+    this.onClose,
     this.showAll = false,
     this.onSelectAll,
   });
@@ -32,7 +32,9 @@ class RegionPanel extends StatelessWidget {
 
   /// null なら上限（追加できない）
   final VoidCallback? onAdd;
-  final VoidCallback onClose;
+
+  /// 見出しの ▾。null なら出さない（開閉はコントローラーのピルで行う）
+  final VoidCallback? onClose;
 
   /// 先頭に「全体」の行を出す（再生画面）
   final bool showAll;
@@ -54,6 +56,9 @@ class RegionPanel extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(
           PlayerShell.margin, 0, PlayerShell.margin, AppSpacing.lg),
       padding: const EdgeInsets.only(top: AppSpacing.sm),
+      // 動画の上に乗るので暗い地を敷き、ぼかしは使わない（動画の上は重い）
+      blur: false,
+      scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.86),
       child: Column(
         children: [
           Padding(
@@ -70,11 +75,14 @@ class RegionPanel extends StatelessWidget {
                   icon: const Icon(Icons.add, size: AppIconSizes.s),
                   label: Text(onAdd != null ? '追加' : '上限'),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                  onPressed: onClose,
-                  tooltip: '一覧を閉じる',
-                ),
+                if (onClose != null)
+                  IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down),
+                    onPressed: onClose,
+                    tooltip: '一覧を閉じる',
+                  )
+                else
+                  const SizedBox(width: AppSpacing.md),
               ],
             ),
           ),

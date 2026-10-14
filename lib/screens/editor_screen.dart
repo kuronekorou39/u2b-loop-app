@@ -842,14 +842,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               onSelect: _selectRegion,
               onMenu: _showRegionMenu,
               onAdd: _regions.length < _maxRegions ? _addRegion : null,
-              onClose: () => setState(() => _panelOpen = false),
             )
           : null,
       controller: SinglePlayerBar(
-        seekbar: _panelOpen
-            ? const LoopSeekbar(bar: true, barHeight: 44, allowMarkerDrag: false)
-            : const LoopSeekbar(),
-        compact: _panelOpen,
+        seekbar: const LoopSeekbar(),
+        regionsOpen: _panelOpen,
         loop: loop,
         onToggleLoop: loopNotifier.toggleEnabled,
         editing: true,

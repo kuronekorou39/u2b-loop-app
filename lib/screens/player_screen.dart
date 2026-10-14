@@ -3135,15 +3135,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         controller: PlaylistBottomBar(
           seekbar: PlaylistSeekArea(
             compact: _compactSeekbar,
-            waveHeight: panelOpen ? 44 : 96,
-            mixHeight: panelOpen ? 64 : 120,
+            waveHeight: 96,
+            mixHeight: 120,
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
             onRetryWaveform: _retryWaveform,
             waveformFor: (item) => _waveformCache[item.id],
             titleFor: (item) => item.title,
           ),
-          compact: panelOpen,
+          listOpen: panelOpen,
           shuffle: plState.shuffle,
           onShuffle: _isPreloading ? null : _toggleShuffle,
           repeatMode: plState.repeatMode,
@@ -3242,21 +3242,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       ),
       panel: panelOpen ? _buildRegionPanel(regions) : null,
       controller: SinglePlayerBar(
-        seekbar: panelOpen
-            ? LoopSeekbar(
-                bar: true,
-                barHeight: 44,
-                allowMarkerDrag: false,
-                onRetryWaveform: _retryWaveform,
-              )
-            : LoopSeekbar(
-                compact: _compactSeekbar,
-                onToggleCompact: () =>
-                    setState(() => _compactSeekbar = !_compactSeekbar),
-                allowMarkerDrag: _editMode,
-                onRetryWaveform: _retryWaveform,
-              ),
-        compact: panelOpen,
+        seekbar: LoopSeekbar(
+          compact: _compactSeekbar,
+          onToggleCompact: () =>
+              setState(() => _compactSeekbar = !_compactSeekbar),
+          allowMarkerDrag: _editMode,
+          onRetryWaveform: _retryWaveform,
+        ),
+        regionsOpen: panelOpen,
         loop: loop,
         onToggleLoop: notifier.toggleEnabled,
         editing: _editMode,
@@ -3314,7 +3307,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onSelect: _selectRegion,
       onMenu: _showRegionMenu,
       onAdd: regions.length < _maxRegions ? _addRegion : null,
-      onClose: () => _setPanelOpen(false),
     );
   }
 
@@ -3333,7 +3325,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
-  /// 開閉できるトラック一覧（ガラス板）。見出しに曲数、「…」でその他、▾ で閉じる
+  /// 開閉できるトラック一覧（動画の上に重ねるガラス板）。見出しに曲数。
+  /// 開閉はコントローラーの「トラック一覧」ピル（同じ場所で開いて閉じる）
   Widget _buildTrackListPanel() {
     final plState = ref.watch(playlistPlayerProvider);
     final textTheme = Theme.of(context).textTheme;
@@ -3342,27 +3335,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       margin: const EdgeInsets.fromLTRB(
           PlayerShell.margin, 0, PlayerShell.margin, AppSpacing.lg),
       padding: const EdgeInsets.only(top: AppSpacing.sm),
+      // 動画の上に乗るので暗い地を敷いて読めるようにし、ぼかしは使わない（動画の上は重い）
+      blur: false,
+      scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.86),
       child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl, 0, AppSpacing.sm, 0),
+                AppSpacing.xl, AppSpacing.md, AppSpacing.xl, AppSpacing.md),
             child: Row(
               children: [
                 Text('トラック一覧', style: textTheme.titleSmall),
                 const SizedBox(width: AppSpacing.md),
                 Text('${plState.trackCount} 曲', style: textTheme.labelSmall),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.more_horiz, size: AppIconSizes.md),
-                  onPressed: _showMoreSheet,
-                  tooltip: 'その他',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                  onPressed: () => _setPanelOpen(false),
-                  tooltip: '一覧を閉じる',
-                ),
               ],
             ),
           ),

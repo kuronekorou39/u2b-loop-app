@@ -20,6 +20,7 @@ class GlassPanel extends ConsumerWidget {
     this.padding,
     this.fill = 0.07,
     this.blur = true,
+    this.scrim,
   });
 
   final Widget child;
@@ -33,6 +34,9 @@ class GlassPanel extends ConsumerWidget {
   /// 背景をぼかすか。false なら半透明の板だけ
   final bool blur;
 
+  /// 白を重ねる前に敷く色。動画のような明るいものの上に置くとき、文字が読めるように暗くする
+  final Color? scrim;
+
   static const blurSigma = 24.0;
 
   @override
@@ -43,6 +47,7 @@ class GlassPanel extends ConsumerWidget {
     Widget panel = Container(
       padding: padding,
       decoration: BoxDecoration(
+        color: scrim,
         borderRadius: borderRadius,
         // 左上をわずかに明るくして、板に厚みがあるように見せる
         gradient: LinearGradient(

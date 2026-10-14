@@ -9,9 +9,11 @@ import '../karaoke_subtitle.dart';
 
 /// 再生画面（縦）の骨組み。プレイリスト再生と単体再生で共通。
 ///
-/// 上から: サムネ色の背景 / 角丸の動画 / 字幕 / 曲名行（[header]）/ 開閉する中段（[panel]）/
-/// ガラス板のコントローラー（[controller]）。モードごとに違うのは中身だけで、
-/// AppBar は透明（`extendBodyBehindAppBar`）にして背景を上まで通す前提。
+/// 上から: サムネ色の背景 / 角丸の動画 / 字幕 / 曲名行（[header]）/ 空き /
+/// ガラス板のコントローラー（[controller]）。[panel]（トラック一覧・AB 区間）は
+/// 開いている間、動画と曲名行の上に重ねて出す（動画は下で動き続ける）。
+/// モードごとに違うのは中身だけで、AppBar は透明（`extendBodyBehindAppBar`）にして
+/// 背景を上まで通す前提。
 ///
 /// 画面が短くてコントローラーが収まらないときは、動画を 16:9 の [videoMinScale] まで
 /// 縮めて（レターボックス）コントローラーを優先する。曲名行とコントローラーの高さは
@@ -43,9 +45,6 @@ class PlayerShell extends ConsumerStatefulWidget {
   /// 動画を縮めるときの下限（16:9 の高さに対する割合）
   static const videoMinScale = 0.6;
 
-  /// パネルを開いているときに最低限確保したい高さ
-  static const _panelMinHeight = 120.0;
-
   @override
   ConsumerState<PlayerShell> createState() => _PlayerShellState();
 }
@@ -70,15 +69,47 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                 AppSpacing.sm +
                 gap * 2 +
                 _headerHeight +
-                _controllerHeight +
-                (widget.panel != null ? PlayerShell._panelMinHeight : 0);
+                _controllerHeight;
             final videoH = (constraints.maxHeight - fixed)
                 .clamp(videoMax * PlayerShell.videoMinScale, videoMax);
             // 曲名行とコントローラーを測る前の最初のフレームは、溢れないように
             // 伸縮する枠に入れておく（1 フレームだけなので見た目には出ない）
             final measured = _headerHeight > 0 && _controllerHeight > 0;
 
-            return Column(
+            return Stack(
+              children: [
+                _buildColumn(topInset, gap, videoMax, videoH, measured),
+                // パネルは動画と曲名行の上に重ねる（開いている間はそれらを隠す）。
+                // 下端はコントローラーの上端（コントローラーは測った高さ）
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: topInset + AppSpacing.sm,
+                  bottom: _controllerHeight,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    // パネルは縦に伸ばして置きたいので、既定の中央寄せ Stack ではなく expand
+                    layoutBuilder: (current, previous) => Stack(
+                      fit: StackFit.expand,
+                      children: [...previous, ?current],
+                    ),
+                    child: widget.panel ??
+                        const SizedBox.shrink(key: ValueKey('noPanel')),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildColumn(
+      double topInset, double gap, double videoMax, double videoH, bool measured) {
+    return Column(
               children: [
                 SizedBox(height: topInset + AppSpacing.sm),
                 if (widget.video != null)
@@ -110,37 +141,34 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                         ),
                       ),
                     ),
-                const KaraokeSubtitle(),
-                const SizedBox(height: gap),
+                // パネルを開いている間、曲名行と字幕はパネルの下に隠れる。
+                // 地を透かすので描かない（高さは保ってレイアウトを動かさない）
+                Visibility(
+                  visible: widget.panel == null,
+                  maintainState: true,
+                  maintainAnimation: true,
+                  maintainSize: true,
+                  child: const KaraokeSubtitle(),
+                ),
+                SizedBox(height: gap),
                 _MeasureSize(
                   onChange: (s) => setState(() => _headerHeight = s.height),
-                  child: widget.header,
-                ),
-                const SizedBox(height: gap),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    // パネルは縦に伸ばして置きたいので、既定の中央寄せ Stack ではなく expand
-                    layoutBuilder: (current, previous) => Stack(
-                      fit: StackFit.expand,
-                      children: [...previous, ?current],
-                    ),
-                    child: widget.panel ??
-                        const SizedBox.expand(key: ValueKey('noPanel')),
+                  child: Visibility(
+                    visible: widget.panel == null,
+                    maintainState: true,
+                    maintainAnimation: true,
+                    maintainSize: true,
+                    child: widget.header,
                   ),
                 ),
+                SizedBox(height: gap),
+                const Spacer(),
                 _MeasureSize(
                   onChange: (s) => setState(() => _controllerHeight = s.height),
                   child: widget.controller,
                 ),
               ],
             );
-          },
-        ),
-      ],
-    );
   }
 }
 
