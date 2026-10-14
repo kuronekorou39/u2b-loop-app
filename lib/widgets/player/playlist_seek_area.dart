@@ -21,11 +21,19 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
     required this.onRetryWaveform,
     required this.waveformFor,
     required this.titleFor,
+    this.waveHeight = 72,
+    this.mixHeight = 72,
   });
 
   final bool compact;
   final VoidCallback onToggleCompact;
   final VoidCallback onRetryWaveform;
+
+  /// 波形シークバーの高さ（compact でないとき）
+  final double waveHeight;
+
+  /// ミックスビューの高さ（2 段ぶん）
+  final double mixHeight;
 
   /// 次曲の波形（プリロード時に先行生成したもの）。無ければ null
   final List<double>? Function(LoopItem item) waveformFor;
@@ -115,6 +123,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     return LoopSeekbar(
       compact: widget.compact,
       bar: true,
+      barHeight: widget.waveHeight,
       onToggleCompact: widget.onToggleCompact,
       allowMarkerDrag: false,
       onRetryWaveform: widget.onRetryWaveform,
@@ -134,6 +143,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       cut: snap.cut,
       now: now,
       swapped: swapped,
+      height: widget.mixHeight,
     );
   }
 }

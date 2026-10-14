@@ -17,6 +17,9 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// 波形つきの1段表示（ズーム・ミニマップ・時間行なし）。
   /// 再生画面の下部コントローラー用。compact が true ならそちらが優先
   final bool bar;
+
+  /// bar モードの波形の高さ（compact のときは使わない）
+  final double barHeight;
   final VoidCallback? onToggleCompact;
   final bool allowMarkerDrag;
   final VoidCallback? onRetryWaveform;
@@ -25,6 +28,7 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     super.key,
     this.compact = false,
     this.bar = false,
+    this.barHeight = 72,
     this.onToggleCompact,
     this.allowMarkerDrag = true,
     this.onRetryWaveform,
@@ -600,7 +604,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
           fontFeatures: const [FontFeature('tnum')],
         );
     final compact = widget.compact;
-    final barHeight = compact ? 28.0 : 72.0;
+    final barHeight = compact ? 28.0 : widget.barHeight;
     final brightness = Theme.of(context).brightness;
 
     return Padding(

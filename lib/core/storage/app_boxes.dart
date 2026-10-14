@@ -42,6 +42,7 @@ class SettingsKeys {
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
   static const loadingAnimation = 'loading_animation';
+  static const glassBlur = 'glass_blur';
 
   // イースターエッグの解放フラグ
   static const eeStats = 'ee_stats';

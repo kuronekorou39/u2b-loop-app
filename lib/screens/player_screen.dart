@@ -33,12 +33,14 @@ import '../services/cache_service.dart';
 import '../services/export_service.dart';
 import '../services/export_runner.dart';
 import '../providers/subtitle_provider.dart';
+import '../providers/thumb_tone_provider.dart';
 import '../services/subtitle_service.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/waveform_cache.dart';
 import '../services/waveform_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/equalizer_icon.dart';
+import '../widgets/glass_panel.dart';
 import '../widgets/karaoke_subtitle.dart';
 import '../widgets/lyrics_overlay.dart';
 import '../widgets/item_tag_sheet.dart';
@@ -46,6 +48,7 @@ import '../widgets/marquee_text.dart';
 import '../widgets/loop/ab_edit_controls.dart';
 import '../widgets/loop/loop_panel_parts.dart';
 import '../widgets/loop/loop_seekbar.dart';
+import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/player_more_sheet.dart';
 import '../widgets/player/player_status_views.dart';
@@ -119,6 +122,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showRightDrawer = false;
   Timer? _overlayHideTimer;
   bool _hideVideo = false;
+
+  /// プレイリスト縦画面でトラック一覧を開いているか（ふだんは閉じている）
+  bool _showTrackList = false;
+  final _trackListController = ScrollController();
   bool _editMode = false;
   double _editStep = 0.1;
   int? _preloadingTargetIndex;
@@ -326,6 +333,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _tipTimer?.cancel();
     _overlayHideTimer?.cancel();
     _loadingTimeoutTimer?.cancel();
+    _trackListController.dispose();
     _cancelFade();
     // 全画面モード解除（バックジェスチャ等で全画面のまま離脱しても向きを戻す）
     if (_isFullscreen) {
@@ -2084,54 +2092,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // --- Playlist panel (inline) ---
 
-  /// 曲リスト。
-  /// - overlay: 縦画面で動画の上に半透明で重ねる（背景を透かす）
-  /// - transparent: 横画面ドロワー用。背景なし・行を詰める
-  Widget _buildPlaylistPanel(double bottomInset,
-      {bool transparent = false, bool overlay = false}) {
+  /// 通常の行の高さ（itemExtent で固定し、開いたときに再生中の行まで送れるようにする）
+  static const _trackRowHeight = 64.0;
+
+  /// 曲リストの中身（背景なし）。
+  /// - 縦画面: ガラス板の一覧パネルの中に入る。行の高さは固定
+  /// - transparent: 横画面ドロワー用。行を詰める
+  Widget _buildPlaylistPanel(double bottomInset, {bool transparent = false}) {
     final plState = ref.watch(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
     final allTags = ref.watch(tagsProvider);
     final tagMap = {for (final t in allTags) t.id: t};
     // タグ変更時にトラック一覧を再描画するために監視
     ref.watch(loopItemsProvider);
-    final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
 
-    final BoxDecoration? decoration;
-    if (overlay) {
-      decoration = BoxDecoration(color: scaffoldBg.withValues(alpha: 0.78));
-    } else if (transparent) {
-      decoration = null;
-    } else {
-      decoration = BoxDecoration(
-        color: scaffoldBg,
-        border: Border(
-          top: BorderSide(color: Colors.grey.shade800, width: 0.5),
-        ),
-      );
-    }
-
-    return Container(
-      decoration: decoration,
-      child: ListView.builder(
-        padding: EdgeInsets.only(bottom: bottomInset + AppSpacing.xxl),
-        itemCount: plState.tracks.length,
-        itemBuilder: (ctx, i) => _buildTrackRow(
-          ctx,
-          i,
-          plState.tracks[i],
-          tagMap,
-          isCurrent: i == currentIdx,
-          isPreloading: _preloadingTargetIndex == i,
-          isPreloaded: _preloadedTrackIndex == i,
-          dense: transparent,
-        ),
+    return ListView.builder(
+      controller: transparent ? null : _trackListController,
+      itemExtent: transparent ? null : _trackRowHeight,
+      padding: EdgeInsets.only(
+          bottom: bottomInset + (transparent ? AppSpacing.xxl : AppSpacing.md)),
+      itemCount: plState.tracks.length,
+      itemBuilder: (ctx, i) => _buildTrackRow(
+        ctx,
+        i,
+        plState.tracks[i],
+        tagMap,
+        isCurrent: i == currentIdx,
+        isPreloading: _preloadingTargetIndex == i,
+        isPreloaded: _preloadedTrackIndex == i,
+        dense: transparent,
       ),
     );
   }
 
   /// 曲リストの1行: 状態 / サムネ / タイトル + BPM・キー・区間 / タグ。
-  /// 再生中は左端に緑のバー、プリロード済みは「次」バッジ
+  /// 再生中は緑の薄い帯、プリロード済みは「次」バッジ
   Widget _buildTrackRow(
     BuildContext ctx,
     int i,
@@ -2186,15 +2181,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         decoration: BoxDecoration(
           color: isCurrent ? AppTheme.accentGreen.withValues(alpha: 0.12) : null,
           border: Border(
-            left: BorderSide(
-              color: isCurrent ? AppTheme.accentGreen : Colors.transparent,
-              width: 3,
-            ),
-            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+            top: BorderSide(
+                color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.06)),
           ),
         ),
         padding: EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
+          horizontal: AppSpacing.lg + 2,
           vertical: dense ? AppSpacing.sm : AppSpacing.md + 2,
         ),
         child: Row(
@@ -2286,6 +2278,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     final textTheme = Theme.of(context).textTheme;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     // Watch playlist provider for reactivity
     final plState = _isPlaylist ? ref.watch(playlistPlayerProvider) : null;
@@ -2293,16 +2287,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? (plState?.currentTrack?.displayName ?? _currentItem.title)
         : _currentItem.title;
 
+    // プレイリスト縦画面はガラス風: AppBar を透明にして背景を上まで通し、
+    // 曲名は動画の下に出すので AppBar にはプレイリスト名だけ
+    final glassLook =
+        _isPlaylist && !_loading && _loadError == null && !isLandscape;
+
     return PopScope(
       canPop: true,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) _activateMiniPlayer();
       },
       child: Scaffold(
-      appBar: MediaQuery.orientationOf(context) == Orientation.landscape
+      extendBodyBehindAppBar: glassLook,
+      appBar: isLandscape
           ? null
           : AppBar(
-        title: Column(
+        backgroundColor: glassLook ? Colors.transparent : null,
+        surfaceTintColor: glassLook ? Colors.transparent : null,
+        centerTitle: glassLook,
+        title: glassLook
+            ? Text(
+                widget.playlistName ?? '',
+                style: textTheme.labelMedium!
+                    .copyWith(color: textTheme.bodySmall!.color),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              )
+            : Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_isPlaylist && widget.playlistName != null)
@@ -3045,32 +3056,84 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final regions = _currentItem.effectiveRegions;
     final loop = ref.watch(loopProvider);
 
-    // プレイリスト: 動画 + 半透明で重なる曲リスト + 下部固定コントローラー
+    // プレイリスト: サムネ色の背景の上に、角丸の動画・曲名・（開いていれば）トラック一覧・
+    // ガラス板のコントローラー。AppBar は透明で背景が上まで通っている
     if (_isPlaylist) {
       final plState = ref.watch(playlistPlayerProvider);
-      final currentIdx = plState.currentTrackIndex;
-      return Column(
+      final nextIdx = plState.peekNextTrackIndex();
+      final listOpen = _showTrackList;
+      // extendBodyBehindAppBar なので padding.top が AppBar の下端
+      final topInset = MediaQuery.paddingOf(context).top;
+      return Stack(
         children: [
-          Expanded(child: _buildPlaylistStage()),
-          PlaylistBottomBar(
-            seekbar: PlaylistSeekArea(
-              compact: _compactSeekbar,
-              onToggleCompact: () =>
-                  setState(() => _compactSeekbar = !_compactSeekbar),
-              onRetryWaveform: _retryWaveform,
-              waveformFor: (item) => _waveformCache[item.id],
-              titleFor: (item) => item.title,
-            ),
-            trackLabel: currentIdx != null
-                ? '${currentIdx + 1} / ${plState.trackCount}'
-                : '- / ${plState.trackCount}',
-            shuffle: plState.shuffle,
-            onShuffle: _isPreloading ? null : _toggleShuffle,
-            repeatMode: plState.repeatMode,
-            onRepeat: _cycleRepeatMode,
-            onPrev: plState.hasPrev && !_trackLoading ? _manualPrev : null,
-            onNext: plState.hasNext && !_trackLoading ? _manualNext : null,
-            onMore: _showMoreSheet,
+          Positioned.fill(child: _buildToneBackground()),
+          Column(
+            children: [
+              SizedBox(height: topInset + AppSpacing.sm),
+              if (!_hideVideo)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: PlaylistBottomBar.margin),
+                  child: ClipRRect(
+                    borderRadius: AppRadius.borderXl,
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: TransitionStage(
+                        currentItem: _currentItem,
+                        onFullscreen: _enterFullscreen,
+                      ),
+                    ),
+                  ),
+                ),
+              const KaraokeSubtitle(),
+              const SizedBox(height: AppSpacing.lg + 2),
+              NowPlayingHeader(
+                track: plState.currentTrack,
+                index: plState.currentTrackIndex,
+                count: plState.trackCount,
+                next: nextIdx != null ? plState.tracks[nextIdx] : null,
+                onNextTap: () => _setTrackListOpen(true),
+              ),
+              const SizedBox(height: AppSpacing.lg + 2),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  // 一覧は縦に伸ばして置きたいので、既定の中央寄せ Stack ではなく expand
+                  layoutBuilder: (current, previous) => Stack(
+                    fit: StackFit.expand,
+                    children: [...previous, ?current],
+                  ),
+                  child: listOpen
+                      ? _buildTrackListPanel()
+                      : const SizedBox.expand(key: ValueKey('noList')),
+                ),
+              ),
+              PlaylistBottomBar(
+                seekbar: PlaylistSeekArea(
+                  compact: _compactSeekbar,
+                  waveHeight: listOpen ? 44 : 96,
+                  mixHeight: listOpen ? 64 : 120,
+                  onToggleCompact: () =>
+                      setState(() => _compactSeekbar = !_compactSeekbar),
+                  onRetryWaveform: _retryWaveform,
+                  waveformFor: (item) => _waveformCache[item.id],
+                  titleFor: (item) => item.title,
+                ),
+                compact: listOpen,
+                shuffle: plState.shuffle,
+                onShuffle: _isPreloading ? null : _toggleShuffle,
+                repeatMode: plState.repeatMode,
+                onRepeat: _cycleRepeatMode,
+                onPrev: plState.hasPrev && !_trackLoading ? _manualPrev : null,
+                onNext: plState.hasNext && !_trackLoading ? _manualNext : null,
+                onMore: _showMoreSheet,
+                onToggleList: () => _setTrackListOpen(!listOpen),
+                firstVerse: plState.firstVerseMode,
+                onToggleFirstVerse: _toggleFirstVerseMode,
+              ),
+            ],
           ),
         ],
       );
@@ -3102,55 +3165,78 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  /// 動画の下端から曲リストが重なり始める位置（動画の高さに対する割合）
-  static const _listOverlapStart = 0.58;
+  /// サムネの色味を薄く敷いた背景。曲が変わるとなめらかに移る
+  Widget _buildToneBackground() {
+    final path = _currentItem.thumbnailPath;
+    final tone =
+        path == null ? null : ref.watch(thumbToneProvider(path)).valueOrNull;
+    final theme = Theme.of(context);
+    final colors = (tone ?? ThumbTone.fallback).gradient(
+      theme.scaffoldBackgroundColor,
+      dark: theme.brightness == Brightness.dark,
+    );
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 700),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: colors,
+        ),
+      ),
+    );
+  }
 
-  /// プレイリスト縦画面の上部: 動画の上に曲リストが半透明で重なる。
-  /// 動画を隠しているときはリストが上まで伸びる。
-  /// 曲切替の演出（ズームアウト→次曲サムネ→ズームイン）は TransitionStage が担当
-  Widget _buildPlaylistStage() {
-    if (_hideVideo) {
-      return Column(
+  /// トラック一覧の開閉。開いたら再生中の曲が上の方に来るように送る
+  void _setTrackListOpen(bool open) {
+    if (open == _showTrackList) return;
+    setState(() => _showTrackList = open);
+    if (!open) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_trackListController.hasClients) return;
+      final idx = ref.read(playlistPlayerProvider).currentTrackIndex ?? 0;
+      final target = ((idx - 1) * _trackRowHeight)
+          .clamp(0.0, _trackListController.position.maxScrollExtent);
+      _trackListController.jumpTo(target);
+    });
+  }
+
+  /// 開閉できるトラック一覧（ガラス板）。見出しに曲数、「…」でその他、▾ で閉じる
+  Widget _buildTrackListPanel() {
+    final plState = ref.watch(playlistPlayerProvider);
+    final textTheme = Theme.of(context).textTheme;
+    return GlassPanel(
+      key: const ValueKey('trackList'),
+      margin: const EdgeInsets.fromLTRB(PlaylistBottomBar.margin, 0,
+          PlaylistBottomBar.margin, AppSpacing.lg),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Column(
         children: [
-          const KaraokeSubtitle(),
-          Expanded(child: _buildPlaylistPanel(0, overlay: true)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl, 0, AppSpacing.sm, 0),
+            child: Row(
+              children: [
+                Text('トラック一覧', style: textTheme.titleSmall),
+                const SizedBox(width: AppSpacing.md),
+                Text('${plState.trackCount} 曲', style: textTheme.labelSmall),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.more_horiz, size: AppIconSizes.md),
+                  onPressed: _showMoreSheet,
+                  tooltip: 'その他',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                  onPressed: () => _setTrackListOpen(false),
+                  tooltip: '一覧を閉じる',
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _buildPlaylistPanel(0)),
         ],
-      );
-    }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final videoH = constraints.maxWidth * 9 / 16;
-        final listTop =
-            math.min(videoH * _listOverlapStart, constraints.maxHeight * 0.5);
-        return Stack(
-          children: [
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: videoH,
-              child: TransitionStage(
-                currentItem: _currentItem,
-                onFullscreen: _enterFullscreen,
-              ),
-            ),
-            // 字幕: リストの上端にぴったり乗せる（動画の下側に重なる）
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: constraints.maxHeight - listTop,
-              child: const IgnorePointer(child: KaraokeSubtitle()),
-            ),
-            Positioned(
-              top: listTop,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _buildPlaylistPanel(0, overlay: true),
-            ),
-          ],
-        );
-      },
+      ),
     );
   }
 

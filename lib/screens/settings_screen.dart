@@ -13,6 +13,7 @@ import '../core/ui/app_snack_bar.dart';
 import '../models/loop_item.dart';
 import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
+import '../providers/glass_provider.dart';
 import '../providers/loading_animation_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
@@ -401,6 +402,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         _animationLabel(ref.watch(loadingAnimationProvider))),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => _showAnimationPicker(context),
+                  ),
+                  // プレイリスト再生画面のガラス板。ぼかしは GPU 負荷があるので
+                  // 重い端末では切れるようにしてある
+                  SwitchListTile(
+                    secondary: const Icon(Icons.blur_on),
+                    title: const Text('再生画面のぼかし'),
+                    subtitle: const Text('コントローラーの背景をぼかす。重い端末ではオフに'),
+                    value: ref.watch(glassBlurProvider),
+                    onChanged: (v) =>
+                        ref.read(glassBlurProvider.notifier).value = v,
                   ),
                 ],
               ),
