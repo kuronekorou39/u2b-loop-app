@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../core/audio/crossfade_curve.dart';
+import '../core/audio/transition_effect.dart';
 import '../models/video_source.dart';
 import '../services/youtube_service.dart';
 import '../core/storage/app_boxes.dart';
@@ -217,6 +218,24 @@ class BassSwapNotifier extends StateNotifier<bool> {
   set value(bool v) {
     state = v;
     AppBoxes.settings.put(_key, v);
+  }
+}
+
+/// 切り替わりの演出（エコーアウト / フィルタースイープ）。既定なし（実験的）
+final transitionEffectProvider =
+    StateNotifierProvider<TransitionEffectNotifier, TransitionEffect>(
+        (ref) => TransitionEffectNotifier());
+
+class TransitionEffectNotifier extends StateNotifier<TransitionEffect> {
+  static const _key = SettingsKeys.transitionEffect;
+
+  TransitionEffectNotifier() : super(TransitionEffect.none) {
+    state = TransitionEffect.fromName(AppBoxes.settings.get(_key) as String?);
+  }
+
+  set value(TransitionEffect v) {
+    state = v;
+    AppBoxes.settings.put(_key, v.name);
   }
 }
 

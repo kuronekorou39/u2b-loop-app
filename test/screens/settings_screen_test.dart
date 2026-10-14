@@ -183,6 +183,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
     expect(find.textContaining('次曲先行:'), findsOneWidget);
+
+    // 切り替えの演出も同じ形
+    final effect = find.widgetWithText(ListTile, '切り替えの演出（実験的）');
+    expect(tester.widget<ListTile>(effect).enabled, isTrue);
+    await tester.ensureVisible(effect);
+    await tester.tap(effect);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('エコーアウト'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'echoOut');
   });
 
   testWidgets('バージョンが表示される', (tester) async {

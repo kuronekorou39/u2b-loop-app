@@ -7,6 +7,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/track_compatibility.dart';
+import '../core/audio/transition_effect.dart';
 import '../models/loop_item.dart';
 import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
@@ -109,8 +110,8 @@ class PlaylistEngine {
     disarmCrossfade();
     // 読み直す側がテンポを戻している途中なら、その速度を上書きされないよう止める
     if (identical(player, _tempoRampPlayer)) _cancelTempoRamp();
-    // 前回のベーススワップのフィルタが残っていたら外す（2 枚のプレイヤーを使い回すため）
-    await AudioFilters.setBassCut(player, false);
+    // 前回の交差のフィルタ（低音カット・演出）が残っていたら外す（2 枚のプレイヤーを使い回すため）
+    await AudioFilters.clear(player);
 
     StreamManifest? manifest;
     final cached = CacheService.offlineVideoPath(item);
@@ -386,13 +387,18 @@ class PlaylistEngine {
       inRate: _tempoMatchedRate(next, baseRate) ?? baseRate,
       curve: _ref.read(crossfadeCurveProvider),
       bassSwap: _ref.read(bassSwapProvider),
+      effect: _ref.read(transitionEffectProvider),
     );
     _crossfade = session;
     try {
       if (session.inRate != baseRate) await inPlayer.setRate(session.inRate);
       await inPlayer.setVolume(0);
       // 入る曲は低音を切った状態で重ね始める（鳴らす前に付けるので音切れしない）
-      if (session.bassSwap) await AudioFilters.setBassCut(inPlayer, true);
+      if (session.bassSwap) await AudioFilters.apply(inPlayer, bassCut: true);
+      // スイープは開いた状態のローパスを先に付けておき、後はカットオフだけ動かす
+      if (session.effect == TransitionEffect.filterSweep) {
+        await AudioFilters.apply(activePlayer, sweep: true);
+      }
       await inPlayer.play();
       if (_crossfade == session) {
         _ref.read(crossfadeProgressProvider.notifier).state =
@@ -516,6 +522,7 @@ class _CrossfadeSession {
     required this.inRate,
     required this.curve,
     required this.bassSwap,
+    required this.effect,
   }) : outVolume = volume;
 
   /// つなぎ方（音量曲線）。開始時の設定を交差の間は使い続ける
@@ -524,10 +531,16 @@ class _CrossfadeSession {
   /// ベーススワップをするか。開始時に入る曲の低音を切り、[CrossfadeCurve.bassSwapAt] で
   /// 出る曲の低音を切って入る曲の低音を戻す
   final bool bassSwap;
-  bool _bassSwapped = false;
 
-  /// 出る曲に低音カットが付いているか（停止後に外す必要がある）
-  bool get _outFiltered => bassSwap && _bassSwapped;
+  /// 出る曲にかける演出。ベーススワップと同じ位置から切替点までかける
+  final TransitionEffect effect;
+
+  /// [CrossfadeCurve.bassSwapAt] を通過したか（低音の入れ替えとエコーの開始は一度だけ）
+  bool _swapped = false;
+
+  /// 出る曲に何かフィルタが付いているか（停止後に外す必要がある）
+  bool get _outFiltered =>
+      (bassSwap && _swapped) || effect != TransitionEffect.none;
 
   final Player outPlayer;
   final Player inPlayer;
@@ -560,11 +573,26 @@ class _CrossfadeSession {
     outVolume = volume * levels.out;
     outPlayer.setVolume(outVolume);
     inPlayer.setVolume(volume * levels.in_);
-    // 低音の入れ替え（一度だけ）: 出る曲の低音を切り、入る曲の低音を戻す
-    if (bassSwap && !_bassSwapped && t >= curve.bassSwapAt && t < 1) {
-      _bassSwapped = true;
-      unawaited(AudioFilters.setBassCut(outPlayer, true));
-      unawaited(AudioFilters.setBassCut(inPlayer, false));
+    final at = curve.bassSwapAt;
+    if (t >= at && t < 1) {
+      // ベーススワップの位置（一度だけ）: 出る曲の低音を切り、入る曲の低音を戻す。
+      // エコーアウトもここで出る曲に付ける（グラフの作り直しはこの 1 回だけ）
+      if (!_swapped) {
+        _swapped = true;
+        final echo = effect == TransitionEffect.echoOut;
+        if (bassSwap || echo) {
+          unawaited(AudioFilters.apply(outPlayer,
+              bassCut: bassSwap,
+              sweep: effect == TransitionEffect.filterSweep,
+              echo: echo));
+        }
+        if (bassSwap) unawaited(AudioFilters.clear(inPlayer));
+      }
+      // スイープ: 位置から切替点にかけてローパスを閉じていく
+      if (effect == TransitionEffect.filterSweep && at < 1) {
+        unawaited(AudioFilters.setSweep(
+            outPlayer, AudioFilters.sweepHz((t - at) / (1 - at))));
+      }
     }
     return t;
   }
@@ -581,14 +609,12 @@ class _CrossfadeSession {
   /// 低音カットが残っていれば外す（入れ替え前にスワップが来た場合）
   void finishIn() {
     inPlayer.setVolume(volume);
-    if (bassSwap && !_bassSwapped) {
-      unawaited(AudioFilters.setBassCut(inPlayer, false));
-    }
+    if (bassSwap && !_swapped) unawaited(AudioFilters.clear(inPlayer));
   }
 
-  /// 出る曲の低音カットを外す（停止した後に呼ぶ。次にプリロード側として使うため）
+  /// 出る曲のフィルタを外す（停止した後に呼ぶ。次にプリロード側として使うため）
   void clearOutFilter() {
-    if (_outFiltered) unawaited(AudioFilters.setBassCut(outPlayer, false));
+    if (_outFiltered) unawaited(AudioFilters.clear(outPlayer));
   }
 
   /// 取り消し。新プレイヤーを頭に戻して待機状態へ
@@ -598,9 +624,7 @@ class _CrossfadeSession {
     inPlayer.setVolume(volume);
     if (inRate != inBaseRate) inPlayer.setRate(inBaseRate);
     outPlayer.setVolume(volume);
-    if (bassSwap) {
-      unawaited(AudioFilters.setBassCut(inPlayer, false));
-      clearOutFilter();
-    }
+    if (bassSwap) unawaited(AudioFilters.clear(inPlayer));
+    clearOutFilter();
   }
 }

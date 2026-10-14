@@ -14,6 +14,7 @@ import '../models/loop_item.dart';
 import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
 import '../core/audio/crossfade_curve.dart';
+import '../core/audio/transition_effect.dart';
 import '../providers/glass_provider.dart';
 import '../providers/loading_animation_provider.dart';
 import '../providers/player_provider.dart';
@@ -129,6 +130,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (picked != null) ref.read(crossfadeCurveProvider.notifier).value = picked;
+  }
+
+  Future<void> _pickEffect() async {
+    final current = ref.read(transitionEffectProvider);
+    final picked = await showDialog<TransitionEffect>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('切り替えの演出'),
+        children: [
+          RadioGroup<TransitionEffect>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(ctx, v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final e in TransitionEffect.values)
+                  RadioListTile<TransitionEffect>(
+                    value: e,
+                    title: Text(e.label),
+                    subtitle: Text(e.description),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) {
+      ref.read(transitionEffectProvider.notifier).value = picked;
+    }
   }
 
   Future<void> _clearWaveformCache() async {
@@ -511,6 +542,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onChanged: crossfade == 0
                         ? null
                         : (v) => ref.read(bassSwapProvider.notifier).value = v,
+                  ),
+                  // 出る曲にかける演出。ベーススワップの位置から切替点までの間にかける
+                  ListTile(
+                    leading: const Icon(Icons.auto_awesome),
+                    title: const Text('切り替えの演出（実験的）'),
+                    subtitle: Text(crossfade == 0
+                        ? 'クロスフェードをオンにすると使えます'
+                        : '${ref.watch(transitionEffectProvider).label}: ${ref.watch(transitionEffectProvider).description}'),
+                    trailing: const Icon(Icons.chevron_right),
+                    enabled: crossfade != 0,
+                    onTap: _pickEffect,
                   ),
                 ],
               ),
