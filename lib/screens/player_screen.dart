@@ -3062,14 +3062,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final plState = ref.watch(playlistPlayerProvider);
       final nextIdx = plState.peekNextTrackIndex();
       final listOpen = _showTrackList;
-      // extendBodyBehindAppBar なので padding.top が AppBar の下端
-      final topInset = MediaQuery.paddingOf(context).top;
+      // extendBodyBehindAppBar なので body 内の padding.top が AppBar の下端になる。
+      // State の context は Scaffold の外側でステータスバーの分しか入っていないため、
+      // Builder で body 内の context から取る（取り違えると動画が AppBar に被る）
       return Stack(
         children: [
           Positioned.fill(child: _buildToneBackground()),
-          Column(
+          Builder(builder: (bodyContext) => Column(
             children: [
-              SizedBox(height: topInset + AppSpacing.sm),
+              SizedBox(height: MediaQuery.paddingOf(bodyContext).top + AppSpacing.sm),
               if (!_hideVideo)
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -3134,7 +3135,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 onToggleFirstVerse: _toggleFirstVerseMode,
               ),
             ],
-          ),
+          )),
         ],
       );
     }
