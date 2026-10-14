@@ -82,6 +82,7 @@ class GlassPill extends StatelessWidget {
     super.key,
     required this.child,
     required this.onTap,
+    this.onLongPress,
     this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
     this.tooltip,
     this.active = false,
@@ -89,6 +90,7 @@ class GlassPill extends StatelessWidget {
 
   final Widget child;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final EdgeInsetsGeometry padding;
   final String? tooltip;
 
@@ -107,6 +109,7 @@ class GlassPill extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         customBorder: const StadiumBorder(),
         child: Padding(padding: padding, child: child),
       ),

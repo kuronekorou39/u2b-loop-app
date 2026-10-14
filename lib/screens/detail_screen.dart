@@ -17,9 +17,15 @@ import '../services/cache_service.dart';
 import '../services/export_runner.dart';
 import '../services/export_service.dart';
 import '../services/youtube_service.dart';
+import '../providers/thumb_tone_provider.dart';
+import '../widgets/glass_controls.dart';
+import '../widgets/glass_panel.dart';
+import '../widgets/glass_scaffold.dart';
+import '../widgets/glass_surface.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/item_thumbnail.dart';
 import '../widgets/similar_tracks_sheet.dart';
+import '../widgets/tag_chip.dart';
 import '../widgets/tempo_key_sheet.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
@@ -129,39 +135,74 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Widget _buildTempoKeyLine(LoopItem item) {
     final unanalyzed =
         item.analyzedAt == null && item.bpm == null && item.musicalKey == null;
+    final textTheme = Theme.of(context).textTheme;
+    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
+    final analyzed = item.bpm != null || item.musicalKey != null;
     final label = _analyzing
         ? '解析中…'
         : unanalyzed
-            ? 'テンポ/キーを解析'
-            : _tempoKeyText(item.bpm, item.musicalKey);
-    return Row(
-      children: [
-        InkWell(
-          onTap: _analyzing
-              ? null
-              : () => unanalyzed
-                  ? _analyze(item)
-                  : TempoKeySheet.show(context,
-                      item: item, onReanalyze: () => _analyze(item)),
-          borderRadius: AppRadius.borderXs,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-            child: _metaChip(Icons.music_note, label, isLink: true),
+            ? 'タップして解析（BPM とキー）'
+            : '${_tempoKeyText(item.bpm, item.musicalKey)}。タップで補正';
+    Widget row({
+      required IconData icon,
+      required String title,
+      required String subtitle,
+      required VoidCallback? onTap,
+    }) {
+      return InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
+          child: Row(
+            children: [
+              Icon(icon, size: AppIconSizes.md, color: AppTheme.accentGreen),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: textTheme.titleSmall),
+                    Text(subtitle, style: textTheme.labelSmall),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: dim),
+            ],
           ),
         ),
-        // 解析済みなら、ライブラリからつなぎやすい曲を探せる
-        if (item.bpm != null || item.musicalKey != null) ...[
-          const SizedBox(width: AppSpacing.lg),
-          InkWell(
-            onTap: () => _showSimilarTracks(item),
-            borderRadius: AppRadius.borderXs,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-              child: _metaChip(Icons.join_inner, 'つなぎやすい曲', isLink: true),
-            ),
+      );
+    }
+
+    return GlassSurface(
+      child: Column(
+        children: [
+          row(
+            icon: Icons.speed,
+            title: 'テンポ / キー',
+            subtitle: label,
+            onTap: _analyzing
+                ? null
+                : () => unanalyzed
+                    ? _analyze(item)
+                    : TempoKeySheet.show(context,
+                        item: item, onReanalyze: () => _analyze(item)),
           ),
+          // 解析済みなら、ライブラリからつなぎやすい曲を探せる
+          if (analyzed) ...[
+            Divider(
+                height: 1,
+                indent: 52,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06)),
+            row(
+              icon: Icons.join_inner,
+              title: 'つなぎやすい曲',
+              subtitle: 'テンポとキーが近い曲をライブラリから探す',
+              onTap: () => _showSimilarTracks(item),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -474,6 +515,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final ytUrl = _getYouTubeUrl(item);
     final itemTags = tags.where((t) => item.tagIds.contains(t.id)).toList();
     final regions = item.effectiveRegions;
+    final thumbPath = item.thumbnailPath;
+    final tone = thumbPath == null
+        ? null
+        : ref.watch(thumbToneProvider(thumbPath)).valueOrNull;
 
     return PopScope(
       canPop: false,
@@ -489,8 +534,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         }
       },
       child: Scaffold(
+        // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
-          title: Text('詳細', style: textTheme.displaySmall),
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          title: Text('詳細', style: textTheme.titleMedium),
           actions: [
             if (_hasChanges(item))
               TextButton.icon(
@@ -526,171 +577,243 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             ),
           ],
         ),
-        body: ListView(
-          padding: EdgeInsets.fromLTRB(
-              16 + MediaQuery.viewPaddingOf(context).left,
-              8,
-              16 + MediaQuery.viewPaddingOf(context).right,
-              8),
+        body: Stack(
           children: [
-            // サムネイル
-            ClipRRect(
-              borderRadius: AppRadius.borderMd,
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: ItemThumbnail(
-                  item: item,
-                  heroTag: 'thumb_${item.id}',
-                  placeholder: ItemThumbnailPlaceholderLarge(item: item),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-
-            // 再生ボタン + メタ情報
-            Row(
-              children: [
-                FilledButton.icon(
-                  onPressed: () => _openPlayer(item),
-                  icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
-                  label: const Text('再生'),
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xl, vertical: AppSpacing.xs),
+            Positioned.fill(child: AppBackdrop(tone: tone)),
+            Builder(builder: (bodyContext) {
+              final padding = MediaQuery.paddingOf(bodyContext);
+              final viewPadding = MediaQuery.viewPaddingOf(bodyContext);
+              final dim = Theme.of(context).colorScheme.onSurface;
+              return ListView(
+                padding: EdgeInsets.fromLTRB(
+                    AppSpacing.lg + viewPadding.left,
+                    padding.top + AppSpacing.xs,
+                    AppSpacing.lg + viewPadding.right,
+                    padding.bottom + AppSpacing.xxl),
+                children: [
+                  // サムネイル
+                  ClipRRect(
+                    borderRadius: AppRadius.borderXl,
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: ItemThumbnail(
+                        item: item,
+                        heroTag: 'thumb_${item.id}',
+                        placeholder: ItemThumbnailPlaceholderLarge(item: item),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.xl),
-                _metaChip(Icons.headphones, '${item.playCount}回'),
-                if (item.speed != 1.0) ...[
-                  const SizedBox(width: AppSpacing.lg),
-                  _metaChip(Icons.speed, '${item.speed}x'),
+                  const SizedBox(height: AppSpacing.lg + 2),
+
+                  // 曲名（タップで編集）+ 補足
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                    child: InkWell(
+                      onTap: _editTitle,
+                      borderRadius: AppRadius.borderMd,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _titleController.text,
+                                    style: textTheme.titleLarge!.copyWith(fontSize: 18),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                Icon(Icons.edit_outlined,
+                                    size: AppIconSizes.s,
+                                    color: dim.withValues(alpha: 0.4)),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(_subtitleText(item),
+                                style: textTheme.labelSmall!
+                                    .copyWith(color: dim.withValues(alpha: 0.7))),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // 再生 / AB 設定 / オフライン / URL
+                  Row(
+                    children: [
+                      GreenButton(
+                        icon: Icons.play_arrow_rounded,
+                        label: '再生',
+                        onPressed: () => _openPlayer(item),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      GlassPill(
+                        onTap: () => _openAbEditor(item),
+                        tooltip: 'AB 区間を設定',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.tune, size: AppIconSizes.sm),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text('AB 設定', style: textTheme.labelMedium),
+                          ],
+                        ),
+                      ),
+                      if (item.isYouTube && item.videoId != null) ...[
+                        const SizedBox(width: AppSpacing.md),
+                        GlassPill(
+                          active: item.isCached,
+                          tooltip: item.isCached
+                              ? 'オフライン保存済み。タップで削除'
+                              : 'オフライン保存（字幕付き）',
+                          padding: const EdgeInsets.all(10),
+                          onTap: () => item.isCached
+                              ? _clearOffline(item)
+                              : _downloadOffline(item),
+                          child: Icon(
+                            item.isCached ? Icons.offline_pin : Icons.download_outlined,
+                            size: AppIconSizes.md,
+                            color: item.isCached ? AppTheme.accentGreen : null,
+                          ),
+                        ),
+                      ],
+                      if (ytUrl != null) ...[
+                        const SizedBox(width: AppSpacing.md),
+                        GlassPill(
+                          tooltip: 'URL をコピー（長押しで開く）',
+                          padding: const EdgeInsets.all(10),
+                          onTap: () => _copyUrl(ytUrl),
+                          onLongPress: () => _openUrl(ytUrl),
+                          child: const Icon(Icons.open_in_new, size: AppIconSizes.md),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // AB 区間
+                  _buildRegionsSection(item, regions),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // テンポ / キー（未解析ならタップで解析、解析済みならタップで補正）
+                  _buildTempoKeyLine(item),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // タグ
+                  GlassSurface(
+                    padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('タグ', style: textTheme.titleSmall),
+                        const SizedBox(height: AppSpacing.md),
+                        _buildTagSection(item, itemTags),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // メモ（タップで編集）
+                  GlassSurface(
+                    onTap: _editMemo,
+                    padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text('メモ', style: textTheme.titleSmall),
+                            const Spacer(),
+                            Icon(Icons.edit_outlined,
+                                size: AppIconSizes.s,
+                                color: dim.withValues(alpha: 0.4)),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          _memoController.text.isEmpty
+                              ? '練習メモなど'
+                              : _memoController.text,
+                          style: textTheme.bodyMedium!.copyWith(
+                            color: dim.withValues(
+                                alpha: _memoController.text.isEmpty ? 0.4 : 0.8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
-                if (item.isCached) ...[
-                  const SizedBox(width: AppSpacing.lg),
-                  _metaChip(
-                    Icons.offline_pin,
-                    'オフライン${item.cachedResolution != null ? ' ${item.cachedResolution}' : ''}',
-                    isLink: true,
-                  ),
-                ],
-                const Spacer(),
-                if (ytUrl != null)
-                  InkWell(
-                    onTap: () => _copyUrl(ytUrl),
-                    onLongPress: () => _openUrl(ytUrl),
-                    borderRadius: AppRadius.borderXs,
-                    child: _metaChip(Icons.link, 'URL', isLink: true),
-                  ),
-              ],
-            ),
-            // テンポ/キー（未解析ならタップで解析、解析済みならタップで補正）
-            _buildTempoKeyLine(item),
-            const SizedBox(height: AppSpacing.md),
-
-            // タイトル
-            TextField(
-              controller: _titleController,
-              // 保存ボタンの出し分けが _hasChanges 依存なので、入力のたびに再ビルドする
-              onChanged: (_) => setState(() {}),
-              maxLength: AppLimits.titleMaxLength,
-              decoration: const InputDecoration(
-                labelText: 'タイトル',
-                isDense: true,
-                border: OutlineInputBorder(),
-                counterText: '',
-              ),
-              style: textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppSpacing.md),
-
-            // 備考
-            TextField(
-              controller: _memoController,
-              onChanged: (_) => setState(() {}),
-              maxLength: AppLimits.memoMaxLength,
-              decoration: const InputDecoration(
-                labelText: '備考',
-                isDense: true,
-                border: OutlineInputBorder(),
-                hintText: '練習メモなど',
-                counterText: '',
-              ),
-              style: textTheme.bodySmall,
-              maxLines: 2,
-              minLines: 1,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            // タグ
-            _buildTagSection(item, itemTags),
-            const SizedBox(height: AppSpacing.md),
-
-            // AB区間（ExpansionTile + 編集ボタン統合）
-            _buildRegionsSection(item, regions),
-
-            SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 16),
+              );
+            }),
           ],
         ),
       ),
     );
   }
 
-  // --- Regions list ---
+  /// 曲名の下の補足: BPM・キー・再生回数・速度・出どころ
+  String _subtitleText(LoopItem item) {
+    final parts = <String>[
+      if (item.bpm != null) 'BPM ${item.bpm!.round()}',
+      if (item.musicalKey != null) item.musicalKey!,
+      '${item.playCount} 回再生',
+      if (item.speed != 1.0) '${item.speed}x',
+      if (item.isYouTube) 'YouTube' else 'ローカル',
+    ];
+    return parts.join('  ·  ');
+  }
 
-  Widget _buildRegionsList(LoopItem item, List<dynamic> regions) {
-    final textTheme = Theme.of(context).textTheme;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        leading: const Icon(Icons.segment, size: AppIconSizes.sm, color: Colors.grey),
-        title: Text('AB区間 (${regions.length})',
-            style: textTheme.bodyMedium!.copyWith(color: Colors.grey)),
-        initiallyExpanded: false,
-        dense: true,
-        shape: const Border(),
-        collapsedShape: const Border(),
-        tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        childrenPadding:
-            const EdgeInsets.only(left: AppSpacing.lg, right: AppSpacing.lg, bottom: AppSpacing.md),
-        children: [
-          for (var i = 0; i < regions.length; i++)
-            InkWell(
-              onLongPress: () => _showRegionEditMenu(item, i),
-              borderRadius: AppRadius.borderXs,
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(vertical: AppSpacing.sm, horizontal: AppSpacing.xs),
-                child: Row(
-                  children: [
-                    Text(
-                      regions[i].name,
-                      style: textTheme.bodyMedium,
-                    ),
-                    const Spacer(),
-                    Text(
-                      TimeUtils.formatShortMs(regions[i].pointAMs),
-                      style: textTheme.labelMedium!.copyWith(
-                          color: AppTheme.pointAColor),
-                    ),
-                    Text(' - ',
-                        style: textTheme.labelMedium!.copyWith(
-                            color: Colors.grey)),
-                    Text(
-                      TimeUtils.formatShortMs(regions[i].pointBMs),
-                      style: textTheme.labelMedium!.copyWith(
-                          color: AppTheme.pointBColor),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Icon(Icons.more_vert, size: AppIconSizes.xs,
-                        color: Colors.grey[700]),
-                  ],
-                ),
-              ),
-            ),
+  Future<void> _editTitle() async {
+    final name = await AppDialogs.prompt(context,
+        title: 'タイトル',
+        initialValue: _titleController.text,
+        maxLength: AppLimits.titleMaxLength);
+    if (name == null) return;
+    setState(() => _titleController.text = name);
+  }
+
+  /// メモは空にもできるので AppDialogs.prompt（空 = キャンセル扱い）は使わない
+  Future<void> _editMemo() async {
+    final controller = TextEditingController(text: _memoController.text);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('メモ'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: AppLimits.memoMaxLength,
+          maxLines: 4,
+          minLines: 2,
+          decoration: const InputDecoration(
+            hintText: '練習メモなど',
+            isDense: true,
+            border: OutlineInputBorder(),
+            counterText: '',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('OK'),
+          ),
         ],
       ),
     );
+    controller.dispose();
+    if (result == null) return;
+    setState(() => _memoController.text = result);
   }
 
   void _showRegionEditMenu(LoopItem item, int index) {
@@ -946,11 +1069,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   // --- タグセクション ---
 
+  /// タグチップ（長押しで外す）と「+ 追加」
   Widget _buildTagSection(LoopItem item, List<Tag> itemTags) {
     final textTheme = Theme.of(context).textTheme;
     return Wrap(
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.sm,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         ...itemTags.map((t) => GestureDetector(
               onLongPress: () {
@@ -958,80 +1083,80 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     .read(loopItemsProvider.notifier)
                     .removeTagFromItems([item.id], t.id);
               },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                decoration: BoxDecoration(
-                  color: t.color.withValues(alpha: 0.25),
-                  borderRadius: AppRadius.borderXs,
-                ),
-                child: Text(t.name,
-                    style: textTheme.labelMedium!.copyWith(color: t.color)),
-              ),
+              child: TagChip(tag: t),
             )),
-        GestureDetector(
+        GlassPill(
           onTap: () => _showTagPicker(item),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade700),
-              borderRadius: AppRadius.borderXs,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add, size: AppIconSizes.xs, color: Colors.grey),
-                const SizedBox(width: 3),
-                Text(itemTags.isEmpty ? 'タグ追加' : '追加',
-                    style: textTheme.labelMedium!.copyWith(color: Colors.grey)),
-              ],
-            ),
-          ),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md + 1, vertical: 3),
+          child: Text(itemTags.isEmpty ? '+ タグを追加' : '+ 追加',
+              style: textTheme.labelSmall),
         ),
       ],
     );
   }
 
-  Widget _metaChip(IconData icon, String label, {bool isLink = false}) {
-    final textTheme = Theme.of(context).textTheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: AppIconSizes.xs,
-            color: isLink ? AppTheme.accentGreen : textTheme.bodySmall!.color),
-        const SizedBox(width: 3),
-        Text(label, style: textTheme.labelSmall!.copyWith(
-            color: isLink ? AppTheme.accentGreen : null)),
-      ],
-    );
-  }
-
+  /// AB 区間の一覧（ガラス面）。行のタップでメニュー（名前・時間・書き出し・削除）、
+  /// 見出しの「編集」で AB 設定画面へ
   Widget _buildRegionsSection(LoopItem item, List<dynamic> regions) {
-    return Card(
-      margin: EdgeInsets.zero,
+    final textTheme = Theme.of(context).textTheme;
+    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
+    return GlassSurface(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl, AppSpacing.md, AppSpacing.md, AppSpacing.md),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (regions.isNotEmpty)
-            _buildRegionsList(item, regions),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-            child: SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
+          Row(
+            children: [
+              Text('AB 区間', style: textTheme.titleSmall),
+              const SizedBox(width: AppSpacing.md),
+              Text(regions.isEmpty ? '未設定' : '${regions.length} 件',
+                  style: textTheme.labelSmall),
+              const Spacer(),
+              TextButton.icon(
                 onPressed: () => _openAbEditor(item),
-                icon: const Icon(Icons.tune, size: AppIconSizes.s),
-                label: Text(
-                  regions.isNotEmpty ? 'AB区間を編集' : 'AB区間を設定',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
+                icon: Icon(regions.isEmpty ? Icons.add : Icons.edit_outlined,
+                    size: AppIconSizes.s),
+                label: Text(regions.isEmpty ? '設定' : '編集'),
+              ),
+            ],
+          ),
+          for (var i = 0; i < regions.length; i++)
+            InkWell(
+              onTap: () => _showRegionEditMenu(item, i),
+              onLongPress: () => _showRegionEditMenu(item, i),
+              borderRadius: AppRadius.borderSm,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, AppSpacing.sm, AppSpacing.sm, AppSpacing.sm),
+                child: Row(
+                  children: [
+                    Icon(Icons.repeat, size: AppIconSizes.s, color: dim),
+                    const SizedBox(width: AppSpacing.md + 2),
+                    Expanded(
+                      child: Text(regions[i].name,
+                          style: textTheme.bodyMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    Text(TimeUtils.formatShortMs(regions[i].pointAMs),
+                        style: textTheme.labelSmall!
+                            .copyWith(color: AppTheme.pointAColor)),
+                    Text('  -  ', style: textTheme.labelSmall),
+                    Text(TimeUtils.formatShortMs(regions[i].pointBMs),
+                        style: textTheme.labelSmall!
+                            .copyWith(color: AppTheme.pointBColor)),
+                    if (regions[i].hasA && regions[i].hasB) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      Text(
+                        '${((regions[i].pointBMs - regions[i].pointAMs).abs() / 1000).toStringAsFixed(1)}s',
+                        style: textTheme.labelSmall,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

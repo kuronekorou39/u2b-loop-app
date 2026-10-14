@@ -17,7 +17,13 @@ import '../providers/data_provider.dart';
 import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/share_service.dart';
+import '../providers/thumb_tone_provider.dart';
+import '../widgets/glass_controls.dart';
+import '../widgets/glass_panel.dart';
+import '../widgets/glass_scaffold.dart';
+import '../widgets/glass_surface.dart';
 import '../widgets/item_thumbnail.dart';
+import '../widgets/tag_chip.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
@@ -508,10 +514,20 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         : null;
 
     final textTheme = Theme.of(context).textTheme;
+    final thumbPath = thumbItem?.thumbnailPath;
+    final tone = thumbPath == null
+        ? null
+        : ref.watch(thumbToneProvider(thumbPath)).valueOrNull;
 
     return Scaffold(
+      // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('プレイリスト', style: textTheme.displaySmall),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: Text('プレイリスト', style: textTheme.titleMedium),
         actions: [
           if (items.isNotEmpty)
             IconButton(
@@ -561,14 +577,18 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             ),
         ],
       ),
-      body: SafeArea(
+      body: Stack(
+        children: [
+          Positioned.fill(child: AppBackdrop(tone: tone)),
+          SafeArea(
         top: false,
         bottom: false,
-        child: Column(
+        child: Builder(builder: (bodyContext) => Column(
         children: [
+          SizedBox(height: MediaQuery.paddingOf(bodyContext).top + AppSpacing.xs),
           // ヘッダー
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -576,7 +596,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 Stack(
                   children: [
                     ClipRRect(
-                      borderRadius: AppRadius.borderMd,
+                      borderRadius: BorderRadius.circular(14),
                       child: SizedBox(
                         width: 120,
                         height: 90,
@@ -585,7 +605,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                             : Container(
                                 color: Theme.of(context)
                                     .colorScheme
-                                    .surfaceContainerHighest,
+                                    .onSurface
+                                    .withValues(alpha: 0.08),
                                 child: const Icon(Icons.playlist_play,
                                     color: Colors.grey, size: 40),
                               ),
@@ -643,7 +664,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       Row(
                         children: [
                           if (items.isNotEmpty)
-                            FilledButton.icon(
+                            GreenButton(
+                              icon: Icons.play_arrow_rounded,
+                              label: '再生',
+                              size: 38,
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => PlayerScreen(
@@ -662,16 +686,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                   ),
                                 ),
                               ),
-                              icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
-                              label: const Text('再生'),
-                              style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12),
-                                minimumSize: const Size(0, 32),
-                              ),
                             ),
                           const SizedBox(width: AppSpacing.md),
-                          GestureDetector(
+                          GlassPill(
+                            active: pl.defaultShuffle,
+                            tooltip: pl.defaultShuffle ? 'シャッフル再生' : '順に再生',
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.lg, vertical: 8),
                             onTap: () {
                               pl.defaultShuffle = !pl.defaultShuffle;
                               ref.read(playlistsProvider.notifier).update(pl);
@@ -683,14 +704,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                     size: AppIconSizes.sm,
                                     color: pl.defaultShuffle
                                         ? AppTheme.accentGreen
-                                        : Colors.grey),
-                                const SizedBox(width: 2),
+                                        : null),
+                                const SizedBox(width: AppSpacing.xs),
                                 Text(
                                   'シャッフル',
                                   style: textTheme.labelSmall!.copyWith(
                                     color: pl.defaultShuffle
                                         ? AppTheme.accentGreen
-                                        : Colors.grey,
+                                        : null,
                                   ),
                                 ),
                               ],
@@ -704,8 +725,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               ],
             ),
           ),
-          const Divider(height: 1),
-          // トラック一覧
+          // トラック一覧（1 枚のガラス面）
           Expanded(
             child: items.isEmpty
                 ? Center(
@@ -735,9 +755,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       ],
                     ),
                   )
-                : ReorderableListView.builder(
-              padding: EdgeInsets.only(
-                  bottom: 80 + MediaQuery.of(context).viewPadding.bottom),
+                : GlassSurface(
+              margin: EdgeInsets.fromLTRB(
+                  AppSpacing.lg, 0, AppSpacing.lg,
+                  MediaQuery.of(context).viewPadding.bottom + AppSpacing.lg),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: ReorderableListView.builder(
+              padding: const EdgeInsets.only(top: 4, bottom: 80),
               itemCount: items.length,
               // items は実体のないID（孤児）を除いた表示用リストなので、
               // itemIds の生インデックスではなくID経由で並べ替える
@@ -827,14 +852,20 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   ),
                 );
               },
+                ),
+              ),
             ),
           ),
         ],
+      )),
       ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: GreenButton(
+        icon: Icons.playlist_add,
+        size: 56,
+        tooltip: '曲を追加',
         onPressed: () => _showAddSheet(pl),
-        child: const Icon(Icons.playlist_add),
       ),
     );
   }
@@ -880,21 +911,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 2),
         child: Wrap(
-          spacing: 3,
-          children: itemTags
-              .map((t) => Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: 0),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primaryContainer
-                          .withValues(alpha: 0.5),
-                      borderRadius: AppRadius.borderXs,
-                    ),
-                    child: Text(t.name, style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9)),
-                  ))
-              .toList(),
+          spacing: AppSpacing.xs,
+          runSpacing: 2,
+          children: [for (final t in itemTags) TagChip(tag: t, small: true)],
         ),
       ));
     }
