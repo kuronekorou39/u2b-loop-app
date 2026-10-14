@@ -27,8 +27,14 @@ class SinglePlayerBar extends ConsumerWidget {
     required this.onEdit,
     required this.onFinishEdit,
     required this.onMore,
+    this.onSetA,
+    this.onSetB,
     this.editBlock,
   });
+
+  /// 編集中のピル「今を A」「今を B」。動画未ロード時は null で無効化
+  final VoidCallback? onSetA;
+  final VoidCallback? onSetB;
 
   final Widget seekbar;
   final bool compact;
@@ -128,12 +134,9 @@ class SinglePlayerBar extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              GlassPill(
-                onTap: onMore,
-                tooltip: 'その他',
-                padding: const EdgeInsets.all(9),
-                child: const Icon(Icons.more_horiz, size: AppIconSizes.md),
-              ),
+              _SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
+              const SizedBox(width: AppSpacing.md),
+              _SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
             ]
           : [
               GlassPill(
@@ -208,6 +211,38 @@ class SinglePlayerBar extends ConsumerWidget {
                 child: const Icon(Icons.more_horiz, size: AppIconSizes.md),
               ),
             ],
+    );
+  }
+}
+
+/// 編集中のピル「今を A」「今を B」
+class _SetPointPill extends StatelessWidget {
+  const _SetPointPill({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return GlassPill(
+      onTap: onTap,
+      tooltip: '今の位置を $label にする',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.vertical_align_bottom,
+              size: AppIconSizes.sm,
+              color: onTap == null ? color.withValues(alpha: 0.4) : color),
+          const SizedBox(width: AppSpacing.sm),
+          Text('今を$label', style: textTheme.labelMedium),
+        ],
+      ),
     );
   }
 }

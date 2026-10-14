@@ -2782,10 +2782,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             child: _editMode
                 ? AbEditControls(
                     loop: loop,
-                    notifier: notifier,
                     step: _editStep,
                     onStepChanged: (s) => setState(() => _editStep = s),
                     onSeek: _seekTo,
+                    onPointA: notifier.setPointA,
+                    onPointB: notifier.setPointB,
+                    onSwap: notifier.swapPoints,
                     compact: true,
                     onSetA: hasSource
                         ? () => notifier.setPointA(
@@ -3194,12 +3196,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         onEdit: () => setState(() => _editMode = true),
         onFinishEdit: _finishEdit,
         onMore: _showSingleMoreSheet,
+        onSetA: hasSource
+            ? () => notifier.setPointA(ref.read(playerProvider).state.position)
+            : null,
+        onSetB: hasSource
+            ? () => notifier.setPointB(ref.read(playerProvider).state.position)
+            : null,
         editBlock: AbEditControls(
           loop: loop,
-          notifier: notifier,
           step: _editStep,
           onStepChanged: (s) => setState(() => _editStep = s),
           onSeek: _seekTo,
+          onPointA: notifier.setPointA,
+          onPointB: notifier.setPointB,
+          onSwap: notifier.swapPoints,
           onSetA: hasSource
               ? () => notifier.setPointA(ref.read(playerProvider).state.position)
               : null,
