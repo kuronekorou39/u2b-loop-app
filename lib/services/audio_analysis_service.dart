@@ -28,8 +28,10 @@ class AudioAnalysisService {
 
   /// 拍の格子を解析に入れた時刻（v1.86.0 のビルド）。これより前の解析結果は拍合わせに
   /// 使えないので解析し直す（この後に手動補正しただけの曲は analyzedAt が据え置きなので対象のまま）。
-  /// v1.86.0 ではこれを翌日にしていたため、その日のうちは解析したばかりの曲も毎回対象になっていた
-  static final beatGridSince = DateTime(2026, 10, 14, 15).millisecondsSinceEpoch;
+  /// v1.86.0 ではこれを翌日にしていたため、その日のうちは解析したばかりの曲も毎回対象になっていた。
+  /// タイムゾーンで境目がずれないよう UTC で書く（2026-10-14 15:00 JST）
+  static final beatGridSince =
+      DateTime.utc(2026, 10, 14, 6).millisecondsSinceEpoch;
 
   /// これより長い曲（ミックス音源・配信の録画など）は解析しない。
   /// 1 曲として BPM / キーを出しても意味がなく、音声の取得にも時間がかかる
