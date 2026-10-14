@@ -10,7 +10,6 @@ import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
-import '../models/loop_region.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
@@ -26,6 +25,7 @@ import '../widgets/item_thumbnail.dart';
 import '../widgets/tag_chip.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
+import 'playlist_item_picker_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
 
@@ -384,54 +384,29 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
   // --- アイテム追加 ---
 
-  void _showAddSheet(Playlist pl) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Text('曲を追加',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            ListTile(
-              leading: const Icon(Icons.list),
-              title: const Text('一覧から選択'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showItemPicker(pl);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.label_outline),
-              title: const Text('タグで一括追加'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showTagPicker(pl);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+  /// 入口は他の「追加」と同じく中央のダイアログ（以前は下からのシートだった）
+  Future<void> _showAddDialog(Playlist pl) async {
+    final choice = await showPlaylistAddDialog(context);
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case PlaylistAddChoice.pick:
+        _showItemPicker(pl);
+      case PlaylistAddChoice.byTag:
+        await _showTagPicker(pl);
+    }
   }
 
   void _showItemPicker(Playlist pl) {
-    final allItems = ref.read(loopItemsProvider);
-    final readyItems = allItems.where((i) => i.isReady).toList();
+    final readyItems =
+        ref.read(loopItemsProvider).where((i) => i.isReady).toList();
     final tags = ref.read(tagsProvider);
-    final existing = Set<String>.from(pl.itemIds);
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _ItemPickerPage(
+        builder: (_) => PlaylistItemPickerScreen(
           items: readyItems,
           tags: tags,
-          existingIds: existing,
-          existingRegions: pl.regionSelections,
+          existingIds: Set<String>.from(pl.itemIds),
           onAdd: (ids, regions) {
             ref
                 .read(playlistsProvider.notifier)
@@ -445,49 +420,27 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
-  void _showTagPicker(Playlist pl) {
+  Future<void> _showTagPicker(Playlist pl) async {
     final tags = ref.read(tagsProvider);
     final allItems = ref.read(loopItemsProvider);
+    // まだ入っていない曲だけ数える（「3 曲」と出て 0 曲しか増えないのを避ける）
+    int addable(Tag tag) => allItems
+        .where((i) =>
+            i.isReady &&
+            i.tagIds.contains(tag.id) &&
+            !pl.itemIds.contains(i.id))
+        .length;
 
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Text('タグで一括追加',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            if (tags.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('タグがありません',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
-              ),
-            for (final tag in tags)
-              ListTile(
-                leading: const Icon(Icons.label_outline, size: AppIconSizes.md),
-                title: Text(tag.name),
-                subtitle: Text(
-                  '${allItems.where((i) => i.tagIds.contains(tag.id) && i.isReady).length} 曲',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  ref
-                      .read(playlistsProvider.notifier)
-                      .addItemsByTag(pl.id, tag.id, allItems);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    AppSnackBar.success('「${tag.name}」の曲を追加しました'),
-                  );
-                },
-              ),
-          ],
-        ),
-      ),
+    final tag = await showPlaylistTagPickerDialog(context,
+        tags: tags, countOf: addable);
+    if (tag == null || !mounted) return;
+    final count = addable(tag);
+    await ref
+        .read(playlistsProvider.notifier)
+        .addItemsByTag(pl.id, tag.id, allItems);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      AppSnackBar.success('「${tag.name}」の $count 曲を追加しました'),
     );
   }
 
@@ -873,7 +826,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               icon: Icons.playlist_add,
               size: 56,
               tooltip: '曲を追加',
-              onPressed: () => _showAddSheet(pl),
+              onPressed: () => _showAddDialog(pl),
             ),
     );
   }
@@ -1048,450 +1001,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ),
       ),
     );
-  }
-
-}
-
-// ============================================================
-// 一覧から選択ページ（区間選択対応）
-// ============================================================
-
-class _ItemPickerPage extends StatefulWidget {
-  final List<LoopItem> items;
-  final List<Tag> tags;
-  final Set<String> existingIds;
-  final Map<String, List<String>> existingRegions;
-  final void Function(List<String> ids, Map<String, List<String>> regions)
-      onAdd;
-
-  const _ItemPickerPage({
-    required this.items,
-    required this.tags,
-    required this.existingIds,
-    required this.existingRegions,
-    required this.onAdd,
-  });
-
-  @override
-  State<_ItemPickerPage> createState() => _ItemPickerPageState();
-}
-
-class _ItemPickerPageState extends State<_ItemPickerPage> {
-  // itemId → 選択された regionId の Set
-  // マップに存在 = アイテム選択済み
-  // Set が空 = 区間なしアイテム、または全区間選択
-  final Map<String, Set<String>> _selections = {};
-  // 展開中のアイテムID
-  final Set<String> _expanded = {};
-  String _searchQuery = '';
-  final Set<String> _filterTagIds = {};
-
-  int get _selectedCount => _selections.length;
-
-  static const _fullTrackId = _PlaylistDetailScreenState._fullTrackId;
-
-  bool _hasRegions(LoopItem item) {
-    return item.effectiveRegions.isNotEmpty;
-  }
-
-  void _toggleItem(LoopItem item) {
-    setState(() {
-      if (_selections.containsKey(item.id)) {
-        _selections.remove(item.id);
-        _expanded.remove(item.id);
-      } else {
-        if (_hasRegions(item)) {
-          // 区間付き: 全区間を選択して展開（全体は含まない）
-          _selections[item.id] = item.effectiveRegions.map((r) => r.id).toSet();
-          _expanded.add(item.id);
-        } else {
-          _selections[item.id] = {};
-        }
-      }
-    });
-  }
-
-  void _toggleRegion(LoopItem item, String regionId) {
-    setState(() {
-      final sel = _selections[item.id];
-      if (sel == null) return;
-      if (sel.contains(regionId)) {
-        sel.remove(regionId);
-        // 全区間が外されたらアイテム自体を解除
-        if (sel.isEmpty) {
-          _selections.remove(item.id);
-          _expanded.remove(item.id);
-        }
-      } else {
-        sel.add(regionId);
-      }
-    });
-  }
-
-  void _submit() {
-    final ids = <String>[];
-    final regions = <String, List<String>>{};
-
-    for (final entry in _selections.entries) {
-      ids.add(entry.key);
-      if (entry.value.isNotEmpty) {
-        regions[entry.key] = entry.value.toList();
-      }
-    }
-
-    widget.onAdd(ids, regions);
-    Navigator.pop(context);
-  }
-
-  Widget _buildTagFilterButton() {
-    return Stack(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.label_outline, size: AppIconSizes.ml),
-          tooltip: 'タグフィルター',
-          onPressed: () {
-            var selected = Set<String>.from(_filterTagIds);
-            showModalBottomSheet(
-              context: context,
-              builder: (ctx) => StatefulBuilder(
-                builder: (ctx, setSheetState) => SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        child: Row(
-                          children: [
-                            Text('タグフィルター',
-                                style: Theme.of(context).textTheme.titleMedium),
-                            const Spacer(),
-                            if (selected.isNotEmpty)
-                              TextButton(
-                                onPressed: () {
-                                  setState(() => _filterTagIds.clear());
-                                  Navigator.pop(ctx);
-                                },
-                                child: Text('クリア',
-                                    style: Theme.of(context).textTheme.bodyMedium),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      Flexible(
-                        child: ListView(
-                          shrinkWrap: true,
-                          children: [
-                            for (final tag in widget.tags)
-                              CheckboxListTile(
-                                title: Text(tag.name,
-                                    style: Theme.of(context).textTheme.bodyLarge),
-                                secondary: Icon(Icons.label,
-                                    size: AppIconSizes.md, color: tag.color),
-                                value: selected.contains(tag.id),
-                                onChanged: (_) {
-                                  setSheetState(() {
-                                    if (selected.contains(tag.id)) {
-                                      selected.remove(tag.id);
-                                    } else {
-                                      selected.add(tag.id);
-                                    }
-                                  });
-                                  setState(() {
-                                    _filterTagIds.clear();
-                                    _filterTagIds.addAll(selected);
-                                  });
-                                },
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-        if (_filterTagIds.isNotEmpty)
-          Positioned(
-            right: 4,
-            top: 4,
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              decoration: const BoxDecoration(
-                color: AppTheme.accentGreen,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '${_filterTagIds.length}',
-                style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9, color: Colors.black),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    var items = widget.items;
-    if (_filterTagIds.isNotEmpty) {
-      items = items.where((i) =>
-          _filterTagIds.every((tid) => i.tagIds.contains(tid))).toList();
-    }
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      items = items.where((i) => i.title.toLowerCase().contains(q)).toList();
-    }
-
-    final textTheme = Theme.of(context).textTheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('曲を選択', style: textTheme.displaySmall),
-        actions: [
-          FilledButton(
-            onPressed: _selectedCount == 0 ? null : _submit,
-            child: Text('追加 ($_selectedCount)'),
-          ),
-          const SizedBox(width: AppSpacing.md),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 36,
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: '検索...',
-                        hintStyle: textTheme.bodyMedium,
-                        prefixIcon: const Icon(Icons.search, size: AppIconSizes.md),
-                        isDense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 0),
-                        border: OutlineInputBorder(
-                          borderRadius: AppRadius.borderXl,
-                          borderSide:
-                              BorderSide(color: Colors.grey.shade700),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: AppRadius.borderXl,
-                          borderSide:
-                              BorderSide(color: Colors.grey.shade700),
-                        ),
-                      ),
-                      style: textTheme.bodyMedium,
-                      onChanged: (v) =>
-                          setState(() => _searchQuery = v),
-                    ),
-                  ),
-                ),
-                if (widget.tags.isNotEmpty)
-                  _buildTagFilterButton(),
-              ],
-            ),
-          ),
-          if (_filterTagIds.isNotEmpty)
-            SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
-                children: [
-                  for (final tag in widget.tags)
-                    if (_filterTagIds.contains(tag.id))
-                      Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.sm),
-                        child: Chip(
-                          label: Text(tag.name,
-                              style: textTheme.labelSmall),
-                          onDeleted: () => setState(() =>
-                              _filterTagIds.remove(tag.id)),
-                          deleteIconColor: Colors.grey,
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                  ActionChip(
-                    label: Text('クリア',
-                        style: textTheme.labelSmall),
-                    onPressed: () =>
-                        setState(() => _filterTagIds.clear()),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize:
-                        MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ],
-              ),
-            ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: items.length,
-              itemBuilder: (context, i) => _buildItemTile(items[i]),
-            ),
-          ),
-        ],
-      ),
-      ),
-    );
-  }
-
-  Widget _buildItemTile(LoopItem item) {
-    final alreadyIn = widget.existingIds.contains(item.id);
-    final isSelected = _selections.containsKey(item.id);
-    final hasRegions = _hasRegions(item);
-    final isExpanded = _expanded.contains(item.id);
-    final regions = item.effectiveRegions;
-    final selectedRegions = _selections[item.id];
-
-    // Checkbox state: tristate for partial region selection
-    bool? checkValue;
-    if (alreadyIn) {
-      checkValue = true;
-    } else if (!isSelected) {
-      checkValue = false;
-    } else if (hasRegions && selectedRegions != null) {
-      checkValue =
-          selectedRegions.length == regions.length ? true : null;
-    } else {
-      checkValue = true;
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ListTile(
-          leading: ClipRRect(
-            borderRadius: AppRadius.borderXs,
-            child: SizedBox(
-              width: 64,
-              height: 36,
-              child: ItemThumbnail(item: item, iconSize: AppIconSizes.sm),
-            ),
-          ),
-          title: Text(
-            item.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: alreadyIn ? Colors.grey : null,
-            ),
-          ),
-          subtitle: alreadyIn
-              ? Text('追加済み',
-                  style: Theme.of(context).textTheme.labelSmall)
-              : hasRegions
-                  ? Text(
-                      '${regions.length + 1} 区間（全体含む）',
-                      style: Theme.of(context).textTheme.labelSmall,
-                    )
-                  : null,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (hasRegions && !alreadyIn)
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (isExpanded) {
-                        _expanded.remove(item.id);
-                      } else {
-                        _expanded.add(item.id);
-                      }
-                    });
-                  },
-                  child: Icon(
-                    isExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: AppIconSizes.lg,
-                    color: Colors.grey,
-                  ),
-                ),
-              Checkbox(
-                value: checkValue,
-                tristate: true,
-                onChanged: alreadyIn ? null : (_) => _toggleItem(item),
-              ),
-            ],
-          ),
-          onTap: alreadyIn ? null : () => _toggleItem(item),
-        ),
-        // Region sub-list (with 全体 option)
-        if (isExpanded && hasRegions && !alreadyIn) ...[
-          // 「全体」オプション
-          Padding(
-            padding: const EdgeInsets.only(left: 80),
-            child: ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(vertical: -3),
-              title: Text('全体',
-                  style: Theme.of(context).textTheme.bodyMedium),
-              subtitle: Text('区間を使わず全体を再生',
-                  style: Theme.of(context).textTheme.labelSmall),
-              trailing: Checkbox(
-                value: selectedRegions?.contains(_fullTrackId) ?? false,
-                onChanged: isSelected
-                    ? (_) => _toggleRegion(item, _fullTrackId)
-                    : null,
-                visualDensity: VisualDensity.compact,
-              ),
-              onTap: isSelected
-                  ? () => _toggleRegion(item, _fullTrackId)
-                  : null,
-            ),
-          ),
-          ...regions.map((region) {
-            final regionSelected =
-                selectedRegions?.contains(region.id) ?? false;
-            final timeStr = _formatRegionTime(region);
-            return Padding(
-              padding: const EdgeInsets.only(left: 80),
-              child: ListTile(
-                dense: true,
-                visualDensity: const VisualDensity(vertical: -3),
-                title: Text(
-                  region.name,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                subtitle: timeStr != null
-                    ? Text(timeStr,
-                        style: Theme.of(context).textTheme.labelSmall)
-                    : null,
-                trailing: Checkbox(
-                  value: regionSelected,
-                  onChanged: isSelected
-                      ? (_) => _toggleRegion(item, region.id)
-                      : null,
-                  visualDensity: VisualDensity.compact,
-                ),
-                onTap: isSelected
-                    ? () => _toggleRegion(item, region.id)
-                    : null,
-              ),
-            );
-          }),
-        ],
-      ],
-    );
-  }
-
-  String? _formatRegionTime(LoopRegion region) {
-    if (!region.hasPoints) return null;
-    final a = TimeUtils.formatShortMs(region.pointAMs);
-    final b = TimeUtils.formatShortMs(region.pointBMs);
-    return '$a - $b';
   }
 
 }
