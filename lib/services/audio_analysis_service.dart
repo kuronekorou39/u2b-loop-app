@@ -122,12 +122,15 @@ class AudioAnalysisService {
       videoId: item.videoId,
     );
     try {
+      // 波形も保存する。渡し忘れていて、まとめて解析した曲でも再生時に
+      // 音声を取り直して「波形を読込中」になっていた
       await WaveformService().generateForVideoSource(
         source,
         ytService,
         onPcm: (pcm, sampleRate) {
           completer.complete(run(items, item.id, pcm, sampleRate));
         },
+        cacheKey: item.id,
       );
     } catch (e) {
       debugPrint('[AudioAnalysis] 音声取得失敗: $e');
