@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/beat_grid.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/audio/transition_effect.dart';
@@ -164,15 +165,55 @@ class PlaylistEngine {
     return leading;
   }
 
-  /// プリロード済みの次曲の開始位置を今の設定・ミックス点で取り直す。
-  /// 波形が後から届いてミックス点が決まったときに呼ぶ（交差が始まっていれば何もしない）
+  /// 交差で入る曲の実際の開始位置: [effectiveStart] に拍合わせのずらし（±半拍）を足したもの。
+  /// [outStart] は出る曲の交差開始位置（省略時は予定の切断点から求める）、
+  /// [inRate] は交差中の入る曲の速度。拍合わせができないときは effectiveStart のまま
+  Duration plannedInStart(PlaylistTrack next,
+      {Duration? outStart, required double inRate}) {
+    final base = effectiveStart(next);
+    final plan = _beatPlan(next, inRate);
+    if (plan == null) return base;
+    final start = outStart ?? _plannedStart();
+    if (start == null) return base;
+    final aligned = BeatMatcher.alignedStartMs(
+      out: plan.outGrid,
+      in_: plan.inGrid,
+      outPosMs: start.inMicroseconds / 1000,
+      outRate: plan.outRate,
+      inStartMs: base.inMicroseconds / 1000,
+      inRate: plan.inRate,
+    );
+    final result = Duration(microseconds: (aligned * 1000).round());
+    return result < Duration.zero ? base : result;
+  }
+
+  /// 予定の交差開始位置（切断点 − フェード秒）。切断点が決まらなければ null
+  Duration? _plannedStart() {
+    final cutPoint = _cutPoint();
+    return cutPoint == null ? null : cutPoint.cut - crossfadeDuration;
+  }
+
+  /// プリロード側の次曲の交差中の速度（テンポ合わせ後）
+  double _preloadInRate(PlaylistTrack next) {
+    final base = preloadPlayer.state.rate;
+    return _tempoMatchedRate(next, base) ?? base;
+  }
+
+  /// この差より小さければシークし直さない
+  static const _seekSlack = Duration(milliseconds: 15);
+
+  /// プリロード済みの次曲の開始位置を今の設定・ミックス点・拍合わせで取り直す。
+  /// 波形が後から届いてミックス点が決まったとき、プリロード完了時（armCrossfade）に呼ぶ
+  /// （交差が始まっていれば何もしない）
   Future<void> realignPreload(PlaylistTrack track) async {
     final armed = _armedTrack;
     if (armed == null || armed.item.id != track.item.id || _crossfade != null) {
       return;
     }
     try {
-      await preloadPlayer.seek(effectiveStart(track));
+      final target = plannedInStart(track, inRate: _preloadInRate(track));
+      if ((preloadPlayer.state.position - target).abs() < _seekSlack) return;
+      await preloadPlayer.seek(target);
     } catch (e) {
       debugPrint('[PlaylistEngine] 次曲の開始位置の取り直しに失敗: $e');
     }
@@ -218,9 +259,10 @@ class PlaylistEngine {
       session?.finish();
     }
     newPlayer.play();
-    // テンポを寄せていたなら、前曲が消えた後にゆっくり本来の速度へ戻す
-    if (session != null && session.inRate != session.inBaseRate) {
-      _startTempoRamp(session.inPlayer, session.inRate, session.inBaseRate);
+    // テンポを寄せていた（拍合わせのナッジ込み）なら、前曲が消えた後にゆっくり本来の速度へ戻す
+    if (session != null && session.appliedInRate != session.inBaseRate) {
+      _startTempoRamp(
+          session.inPlayer, session.appliedInRate, session.inBaseRate);
     }
     return newPlayer;
   }
@@ -273,11 +315,13 @@ class PlaylistEngine {
   Duration get crossfadeDuration =>
       Duration(seconds: _ref.read(crossfadeProvider));
 
-  /// 次曲のプリロードが完了したら呼ぶ。切断点の手前で自動的に交差を始める
+  /// 次曲のプリロードが完了したら呼ぶ。切断点の手前で自動的に交差を始める。
+  /// 拍合わせの分だけ開始位置をずらすシークはここで済ませておく（交差開始時の遅れを減らす）
   void armCrossfade(PlaylistTrack next) {
     _armedTrack = next;
     _crossfadeMonitor ??= Timer.periodic(
         const Duration(milliseconds: 100), (_) => _crossfadeTick());
+    if (crossfadeDuration != Duration.zero) unawaited(realignPreload(next));
   }
 
   /// プリロードが無効になったら呼ぶ（キャンセル・取り直し・読み直し）。進行中なら取り消す
@@ -339,6 +383,7 @@ class PlaylistEngine {
         return;
       }
       final progress = session.step(pos);
+      session.nudgeBeats(pos);
       _ref.read(crossfadeProgressProvider.notifier).state =
           (progress: progress, next: next.item);
       // 曲末の無音を飛ばす場合、切断点で自分から遷移を起こす（B点到達と同じ経路）
@@ -375,6 +420,9 @@ class PlaylistEngine {
       {required bool advancesAtCut}) async {
     final inPlayer = preloadPlayer;
     final baseRate = inPlayer.state.rate;
+    final inRate = _tempoMatchedRate(next, baseRate) ?? baseRate;
+    final beat = _beatPlan(next, inRate);
+    final inStart = plannedInStart(next, outStart: start, inRate: inRate);
     final session = _CrossfadeSession(
       outPlayer: activePlayer,
       inPlayer: inPlayer,
@@ -382,15 +430,25 @@ class PlaylistEngine {
       cut: cut,
       advancesAtCut: advancesAtCut,
       volume: activePlayer.state.volume,
-      inStart: effectiveStart(next),
+      inStart: inStart,
       inBaseRate: baseRate,
-      inRate: _tempoMatchedRate(next, baseRate) ?? baseRate,
+      inRate: inRate,
       curve: _ref.read(crossfadeCurveProvider),
       bassSwap: _ref.read(bassSwapProvider),
       effect: _ref.read(transitionEffectProvider),
+      beat: beat,
     );
     _crossfade = session;
     try {
+      if (beat != null) {
+        debugPrint('[BeatMatch] 入る曲の開始 ${effectiveStart(next)} → $inStart '
+            '(出 ${beat.outGrid} ×${beat.outRate} / 入 ${beat.inGrid} ×$inRate, '
+            '合わせ続ける=${beat.lock})');
+        // ふつうは armCrossfade で置き直してあるので、ずれていたときだけ
+        if ((inPlayer.state.position - inStart).abs() >= _seekSlack) {
+          await inPlayer.seek(inStart);
+        }
+      }
       if (session.inRate != baseRate) await inPlayer.setRate(session.inRate);
       await inPlayer.setVolume(0);
       // 入る曲は低音を切った状態で重ね始める（鳴らす前に付けるので音切れしない）
@@ -416,6 +474,29 @@ class PlaylistEngine {
     _crossfade = null;
     _ref.read(crossfadeProgressProvider.notifier).state = null;
     session.rollback();
+  }
+
+  // --- 拍合わせ ---
+
+  /// 拍合わせの計画。設定オンで両方の曲に拍の格子があるときだけ。
+  /// 実効テンポ（倍/半を同一視）が 0.5% 以内で揃っていれば交差中も合わせ続ける（lock）。
+  /// 揃っていなければ重ね始めの拍だけ揃える（ずれていくのは仕方ない）
+  _BeatPlan? _beatPlan(PlaylistTrack next, double inRate) {
+    if (!_ref.read(beatMatchProvider)) return null;
+    final outGrid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    final inGrid = next.item.beatGrid;
+    if (outGrid == null || inGrid == null) return null;
+    final outRate = activePlayer.state.rate;
+    if (outRate <= 0 || inRate <= 0) return null;
+    final ratio = TrackCompatibility.tempoRatio(
+        outGrid.bpm * outRate, inGrid.bpm * inRate);
+    return _BeatPlan(
+      outGrid: outGrid,
+      inGrid: inGrid,
+      outRate: outRate,
+      inRate: inRate,
+      lock: ratio != null && (ratio - 1).abs() < 0.005,
+    );
   }
 
   // --- テンポ合わせ ---
@@ -508,6 +589,25 @@ class PlaylistEngine {
   }
 }
 
+/// 拍合わせ 1 回分の材料
+class _BeatPlan {
+  const _BeatPlan({
+    required this.outGrid,
+    required this.inGrid,
+    required this.outRate,
+    required this.inRate,
+    required this.lock,
+  });
+
+  final BeatGrid outGrid;
+  final BeatGrid inGrid;
+  final double outRate;
+  final double inRate;
+
+  /// 交差中も位相を測って速度で合わせ続けるか（実効テンポが揃っているときだけ）
+  final bool lock;
+}
+
 /// クロスフェード1回分。開始時の旧プレイヤーの音量を交差後の目標にする
 class _CrossfadeSession {
   _CrossfadeSession({
@@ -523,7 +623,51 @@ class _CrossfadeSession {
     required this.curve,
     required this.bassSwap,
     required this.effect,
-  }) : outVolume = volume;
+    required this.beat,
+  })  : outVolume = volume,
+        appliedInRate = inRate;
+
+  /// 拍合わせの計画（しないときは null）
+  final _BeatPlan? beat;
+
+  /// 直近に入る曲へ設定した速度（テンポ合わせ + ナッジ）。交差後はここから本来の速度へ戻す
+  double appliedInRate;
+
+  double _errSmooth = 0;
+  int _nudgeTicks = 0;
+  bool _measuring = false;
+
+  /// 交差中の拍合わせ: 両プレイヤーの位置から位相のずれを測り、入る曲の速度で寄せる。
+  /// play() 直後は位置が動き出すまで待つ（開始遅延はこの測定で吸収される）
+  void nudgeBeats(Duration outPos) {
+    final plan = beat;
+    if (plan == null || !plan.lock) return;
+    final inPos = inPlayer.state.position;
+    if (!_measuring) {
+      if (inPos <= inStart) return;
+      _measuring = true;
+    }
+    final err = BeatMatcher.phaseErrorMs(
+      out: plan.outGrid,
+      in_: plan.inGrid,
+      outPosMs: outPos.inMicroseconds / 1000,
+      outRate: plan.outRate,
+      inPosMs: inPos.inMicroseconds / 1000,
+      inRate: appliedInRate,
+    );
+    // 位置の報告は粗いので半分ずつ平滑化してから使う
+    _errSmooth = _nudgeTicks == 0 ? err : 0.5 * _errSmooth + 0.5 * err;
+    _nudgeTicks++;
+    final target = inRate * (1 + BeatMatcher.rateAdjust(_errSmooth));
+    if ((target - appliedInRate).abs() >= 0.0005) {
+      appliedInRate = target;
+      unawaited(inPlayer.setRate(target));
+    }
+    if (_nudgeTicks % 10 == 1) {
+      debugPrint('[BeatMatch] 位相誤差 ${err.toStringAsFixed(0)}ms '
+          '(平滑 ${_errSmooth.toStringAsFixed(0)}ms) → rate ${target.toStringAsFixed(4)}');
+    }
+  }
 
   /// つなぎ方（音量曲線）。開始時の設定を交差の間は使い続ける
   final CrossfadeCurve curve;
@@ -622,7 +766,7 @@ class _CrossfadeSession {
     inPlayer.pause();
     inPlayer.seek(inStart);
     inPlayer.setVolume(volume);
-    if (inRate != inBaseRate) inPlayer.setRate(inBaseRate);
+    if (appliedInRate != inBaseRate) inPlayer.setRate(inBaseRate);
     outPlayer.setVolume(volume);
     if (bassSwap) unawaited(AudioFilters.clear(inPlayer));
     clearOutFilter();

@@ -203,6 +203,25 @@ class CrossfadeCurveNotifier extends StateNotifier<CrossfadeCurve> {
   }
 }
 
+/// 拍合わせ: 交差を始めるとき次曲の開始位置を ±半拍ずらして拍の頭を揃え、
+/// テンポが揃っていれば交差中も速度を微調整して合わせ続ける（既定オン）。
+/// 両方の曲に拍の格子（解析結果）があるときだけ効く
+final beatMatchProvider =
+    StateNotifierProvider<BeatMatchNotifier, bool>((ref) => BeatMatchNotifier());
+
+class BeatMatchNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.beatMatch;
+
+  BeatMatchNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 /// ベーススワップ: 交差中は入る曲の低音を切って重ね、途中で出る曲と入れ替える（既定オン）
 final bassSwapProvider =
     StateNotifierProvider<BassSwapNotifier, bool>((ref) => BassSwapNotifier());

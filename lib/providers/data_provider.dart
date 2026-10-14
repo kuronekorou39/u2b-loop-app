@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/beat_grid.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/audio/silence_detector.dart';
 import '../core/constants.dart';
@@ -70,13 +72,16 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   /// テンポ/キーの保存。バックグラウンド解析の完了で一覧の並びが変わらないよう
   /// updatedAt は触らない。[markAnalyzed] が false なら手動補正扱い（analyzedAt 据え置き）。
-  /// [silence] を渡したときだけ曲頭・曲末の無音も更新する（手動補正では触らない）
+  /// [silence] を渡したときだけ曲頭・曲末の無音も更新する（手動補正では触らない）。
+  /// 拍の格子は解析のときに [beatGrid] で置き換える。手動補正では、BPM が倍/半分の
+  /// 範囲なら格子はそのまま（拍の頭は変わらない）、それ以外へ変えたら格子を捨てる
   Future<void> saveAnalysis(
     String id, {
     required double? bpm,
     required String? musicalKey,
     bool markAnalyzed = true,
     SilenceInfo? silence,
+    BeatGrid? beatGrid,
   }) async {
     final item = _box.get(id);
     if (item == null) return;
@@ -86,9 +91,25 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       item.leadingSilenceMs = silence.leadingMs;
       item.trailingSilenceMs = silence.trailingMs;
     }
-    if (markAnalyzed) item.analyzedAt = DateTime.now().millisecondsSinceEpoch;
+    if (markAnalyzed) {
+      item.analyzedAt = DateTime.now().millisecondsSinceEpoch;
+      item.beatBpm = beatGrid?.bpm;
+      item.beatOffsetMs = beatGrid?.offsetMs;
+    } else if (bpm == null ||
+        item.beatBpm == null ||
+        !_isOctaveRatio(bpm / item.beatBpm!)) {
+      item.beatBpm = null;
+      item.beatOffsetMs = null;
+    }
     await _box.put(id, item);
     _refresh();
+  }
+
+  /// 倍率が 2 の冪（…1/2, 1, 2, 4…）に 2% 以内で近いか
+  static bool _isOctaveRatio(double ratio) {
+    if (ratio <= 0) return false;
+    final octaves = log(ratio) / ln2;
+    return (octaves - octaves.round()).abs() < 0.03;
   }
 
   /// ミックス点（波形から求めたドロップ / アウトロ）の保存。

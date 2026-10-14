@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../core/audio/beat_grid.dart';
 import 'loop_region.dart';
 
 /// [LoopItem.sourceType] に入る値。
@@ -87,6 +88,12 @@ class LoopItem {
   /// 出ていく曲はここで切る。null = 未計測または無し
   int? mixOutMs;
 
+  /// 拍の格子: 最初の拍の位置（ミリ秒）と精密な BPM。拍合わせに使う。
+  /// [bpm] は表示・手動補正用の 0.1 刻みで、こちらは解析結果そのまま。
+  /// null = 未計測（v1.85 以前の解析）または BPM が取れなかった
+  double? beatOffsetMs;
+  double? beatBpm;
+
   LoopItem({
     required this.id,
     required this.title,
@@ -120,6 +127,8 @@ class LoopItem {
     this.trailingSilenceMs,
     this.mixInMs,
     this.mixOutMs,
+    this.beatOffsetMs,
+    this.beatBpm,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         tagIds = tagIds ?? [],
@@ -131,6 +140,11 @@ class LoopItem {
     if (durationMs >= 600000) return 480000; // ≥10分: 8分固定
     return (durationMs * 0.8).round(); // その間: 80%
   }
+
+  /// 拍の格子（両方の値が揃っているときだけ）
+  BeatGrid? get beatGrid => beatBpm != null && beatOffsetMs != null
+      ? BeatGrid(bpm: beatBpm!, offsetMs: beatOffsetMs!)
+      : null;
 
   /// YouTube由来か（文字列比較を19箇所に散らさないための入口）
   bool get isYouTube => sourceType == SourceTypes.youtube;
@@ -222,6 +236,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       trailingSilenceMs: fields[29] as int?,
       mixInMs: fields[30] as int?,
       mixOutMs: fields[31] as int?,
+      beatOffsetMs: (fields[32] as num?)?.toDouble(),
+      beatBpm: (fields[33] as num?)?.toDouble(),
     );
   }
 
@@ -260,6 +276,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       29: obj.trailingSilenceMs,
       30: obj.mixInMs,
       31: obj.mixOutMs,
+      32: obj.beatOffsetMs,
+      33: obj.beatBpm,
     });
   }
 }

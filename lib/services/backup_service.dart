@@ -139,6 +139,8 @@ class BackupService {
         'trailingSilenceMs': item.trailingSilenceMs,
         'mixInMs': item.mixInMs,
         'mixOutMs': item.mixOutMs,
+        'beatOffsetMs': item.beatOffsetMs,
+        'beatBpm': item.beatBpm,
       };
 
   static LoopItem itemFromJson(Map<String, dynamic> j) => LoopItem(
@@ -174,6 +176,8 @@ class BackupService {
         trailingSilenceMs: j['trailingSilenceMs'] as int?,
         mixInMs: j['mixInMs'] as int?,
         mixOutMs: j['mixOutMs'] as int?,
+        beatOffsetMs: (j['beatOffsetMs'] as num?)?.toDouble(),
+        beatBpm: (j['beatBpm'] as num?)?.toDouble(),
       );
 
   static Map<String, dynamic> playlistToJson(Playlist pl) => {

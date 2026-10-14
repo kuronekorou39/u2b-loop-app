@@ -85,6 +85,15 @@ class DjMixSheet extends ConsumerWidget {
                   ? (v) => ref.read(tempoMatchProvider.notifier).value = v
                   : null,
             ),
+            SwitchListTile(
+              secondary: const Icon(Icons.align_horizontal_center),
+              title: const Text('拍合わせ'),
+              subtitle: const Text('拍の頭を揃えて重ね、速度を微調整して合わせ続ける'),
+              value: ref.watch(beatMatchProvider),
+              onChanged: on
+                  ? (v) => ref.read(beatMatchProvider.notifier).value = v
+                  : null,
+            ),
             const Divider(),
             SwitchListTile(
               secondary: const Icon(Icons.graphic_eq),

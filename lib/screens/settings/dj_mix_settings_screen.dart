@@ -22,6 +22,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
       ref.watch(crossfadeCurveProvider).label,
       if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
       if (ref.watch(tempoMatchProvider)) 'テンポ合わせ',
+      if (ref.watch(beatMatchProvider)) '拍合わせ',
       if (ref.watch(bassSwapProvider)) 'ベーススワップ',
       if (ref.watch(transitionEffectProvider) != TransitionEffect.none)
         ref.watch(transitionEffectProvider).label,
@@ -168,6 +169,18 @@ class DjMixSettingsScreen extends ConsumerWidget {
               value: ref.watch(tempoMatchProvider),
               onChanged: on
                   ? (v) => ref.read(tempoMatchProvider.notifier).value = v
+                  : null,
+            ),
+            // 解析した拍の格子で、重ね始めの拍の頭を揃え、交差中は速度を微調整して合わせ続ける
+            SettingsSwitchRow(
+              icon: Icons.align_horizontal_center,
+              title: '拍合わせ',
+              subtitle: on
+                  ? '拍の頭を揃えて重ね、交差中は次曲の速度を微調整して合わせ続ける'
+                  : needsFade,
+              value: ref.watch(beatMatchProvider),
+              onChanged: on
+                  ? (v) => ref.read(beatMatchProvider.notifier).value = v
                   : null,
             ),
           ],

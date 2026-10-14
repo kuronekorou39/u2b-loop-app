@@ -26,9 +26,15 @@ class AudioAnalysisService {
   /// これに達した PCM は曲末まで届いていないので、曲末の無音は求めない
   static const maxAnalysisSeconds = 480;
 
-  /// 解析が必要か。未解析のほか、無音情報の無い旧バージョンの解析結果も対象
+  /// 拍の格子を解析に入れた日。これより前の解析結果は拍合わせに使えないので解析し直す
+  /// （この後に手動補正しただけの曲は analyzedAt が据え置きなので対象のまま）
+  static final beatGridSince = DateTime(2026, 10, 15).millisecondsSinceEpoch;
+
+  /// 解析が必要か。未解析のほか、無音情報や拍の格子の無い旧バージョンの解析結果も対象
   static bool needsAnalysis(LoopItem item) =>
-      item.analyzedAt == null || item.leadingSilenceMs == null;
+      item.analyzedAt == null ||
+      item.leadingSilenceMs == null ||
+      item.analyzedAt! < beatGridSince;
 
   /// 解析が必要なアイテムなら、PCM を受け取って解析→保存するコールバックを返す。
   /// 解析済み・解析中なら null（波形生成側は PCM を取り出さない）
@@ -52,7 +58,12 @@ class AudioAnalysisService {
             SilenceDetector.detect(pcm, sampleRate, truncated: truncated),
           ));
       await items.saveAnalysis(itemId,
-          bpm: result.bpm, musicalKey: result.key, silence: silence);
+          bpm: result.bpm,
+          musicalKey: result.key,
+          silence: silence,
+          beatGrid: result.beatGrid);
+      debugPrint('[AudioAnalysis] $itemId: ${result.bpm} BPM ${result.key} '
+          '拍 ${result.beatGrid}');
       return result;
     } catch (e) {
       debugPrint('[AudioAnalysis] 失敗: $e');

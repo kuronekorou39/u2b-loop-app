@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'beat_grid.dart';
 import 'musical_key.dart';
 
 /// BPM 候補（スコア降順で上位数件）
@@ -22,12 +23,35 @@ class KeyCandidate {
 }
 
 class AudioAnalysisResult {
-  const AudioAnalysisResult({required this.bpmCandidates, required this.keyCandidates});
+  const AudioAnalysisResult({
+    required this.bpmCandidates,
+    required this.keyCandidates,
+    this.beatGrid,
+  });
   final List<BpmCandidate> bpmCandidates;
   final List<KeyCandidate> keyCandidates;
 
+  /// 1 位の BPM で求めた拍の格子（BPM が無ければ null）
+  final BeatGrid? beatGrid;
+
   double? get bpm => bpmCandidates.isEmpty ? null : bpmCandidates.first.bpm;
   String? get key => keyCandidates.isEmpty ? null : keyCandidates.first.key;
+}
+
+/// 立ち上がりの強さの時系列（スペクトラルフラックス）。
+/// [full] は全帯域、[low] は 250Hz 以下（キック）。どちらも 1 秒の移動平均を引いてある
+class OnsetEnvelope {
+  const OnsetEnvelope({required this.full, required this.low, required this.fps, required this.frameOffsetMs});
+  final Float64List full;
+  final Float64List low;
+
+  /// 1 秒あたりのフレーム数
+  final double fps;
+
+  /// フレーム i の立ち上がりが曲のどの時刻か: (i + 1) / fps * 1000 + frameOffsetMs
+  final double frameOffsetMs;
+
+  double timeMs(double frame) => (frame + 1) / fps * 1000 + frameOffsetMs;
 }
 
 /// BPM とキーをモノラル PCM から検出する（純Dart・副作用なし）。
@@ -46,24 +70,38 @@ class BpmKeyDetector {
   static const _minor = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
   static AudioAnalysisResult analyze(Int16List pcm, int sampleRate) {
+    final env = onsetEnvelope(pcm, sampleRate);
+    final bpms = env == null ? const <BpmCandidate>[] : bpmFromEnvelope(env);
     return AudioAnalysisResult(
-      bpmCandidates: detectBpm(pcm, sampleRate),
+      bpmCandidates: bpms,
       keyCandidates: detectKey(pcm, sampleRate),
+      beatGrid: env == null || bpms.isEmpty
+          ? null
+          : detectBeatGrid(env, bpms.first.bpm),
     );
   }
 
   /// スペクトラルフラックスの自己相関でテンポを求める。
   /// 戻り値はスコア降順で最大3件。短すぎる入力は空。
   static List<BpmCandidate> detectBpm(Int16List pcm, int sampleRate) {
+    final env = onsetEnvelope(pcm, sampleRate);
+    return env == null ? const [] : bpmFromEnvelope(env);
+  }
+
+  /// 立ち上がりの時系列を求める（BPM と拍の格子の共通の材料）。短すぎる入力は null
+  static OnsetEnvelope? onsetEnvelope(Int16List pcm, int sampleRate) {
     const win = 512, hop = 128;
-    if (pcm.length < win * 4) return const [];
+    if (pcm.length < win * 4) return null;
     final nFrames = 1 + (pcm.length - win) ~/ hop;
     final fft = _Fft(win);
     final w = _hann(win);
     final nb = win ~/ 2 + 1;
+    // 250Hz 以下の bin（キック・ベースの立ち上がり）
+    final nbLow = min(nb, (250 * win / sampleRate).floor() + 1);
     final re = Float64List(win), im = Float64List(win);
     var prev = Float64List(nb), cur = Float64List(nb);
     final flux = Float64List(nFrames - 1);
+    final fluxLow = Float64List(nFrames - 1);
 
     for (var f = 0; f < nFrames; f++) {
       final base = f * hop;
@@ -76,20 +114,35 @@ class BpmKeyDetector {
         cur[k] = log(1 + 100 * sqrt(re[k] * re[k] + im[k] * im[k]));
       }
       if (f > 0) {
-        var s = 0.0;
+        var s = 0.0, sl = 0.0;
         for (var k = 0; k < nb; k++) {
           final d = cur[k] - prev[k];
-          if (d > 0) s += d;
+          if (d > 0) {
+            s += d;
+            if (k < nbLow) sl += d;
+          }
         }
         flux[f - 1] = s;
+        fluxLow[f - 1] = sl;
       }
       final t = prev;
       prev = cur;
       cur = t;
     }
 
-    // 1秒の移動平均を引いて音量の起伏を除く
     final fps = sampleRate / hop;
+    return OnsetEnvelope(
+      full: _detrend(flux, fps),
+      low: _detrend(fluxLow, fps),
+      fps: fps,
+      // flux[i] は frame i+1 と frame i の差。窓の中央に立ち上がりが来たときが最大。
+      // クリック音で測ると、それでもまだ 10ms ほど早く出る（70〜174 BPM で一定）ので足す
+      frameOffsetMs: win / 2 / sampleRate * 1000 + 10,
+    );
+  }
+
+  /// 1秒の移動平均を引いて音量の起伏を除く
+  static Float64List _detrend(Float64List flux, double fps) {
     final k = fps.toInt();
     final n = flux.length;
     final det = Float64List(n);
@@ -101,6 +154,14 @@ class BpmKeyDetector {
       final lo = max(0, i - k ~/ 2), hi = min(n, i - k ~/ 2 + k);
       det[i] = flux[i] - (cum[hi] - cum[lo]) / k;
     }
+    return det;
+  }
+
+  /// 立ち上がりの自己相関からテンポ候補を求める
+  static List<BpmCandidate> bpmFromEnvelope(OnsetEnvelope env) {
+    final det = env.full;
+    final fps = env.fps;
+    final n = det.length;
 
     // 55〜220 BPM に相当するラグだけ自己相関を直接計算
     final lagMin = (fps * 60 / 220).toInt(), lagMax = (fps * 60 / 55).toInt();
@@ -132,6 +193,71 @@ class BpmKeyDetector {
       for (final i in peaks.take(3))
         BpmCandidate((bpms[i] * 10).round() / 10, score[i]),
     ];
+  }
+
+  /// 拍の格子を求める。
+  ///
+  /// 自己相関のラグは整数フレームなので BPM の分解能は 2% ほどしかなく、位相を曲全体で
+  /// 合わせるには足りない。[bpm] の周りで周期を細かく振り、各周期で位相を 0.5 フレーム刻みで
+  /// 動かし、格子の上の立ち上がりの合計（櫛形フィルタ）が最大になる組を選ぶ。
+  /// 立ち上がりは低域を 2 倍に重みづけして、裏拍のハイハットより表拍のキックに寄せる。
+  /// 短すぎる（4 秒未満）か [bpm] が不正なら null
+  static BeatGrid? detectBeatGrid(OnsetEnvelope env, double bpm) {
+    final n = env.full.length;
+    final fps = env.fps;
+    if (bpm <= 0 || n < fps * 4) return null;
+
+    // 低域を強めた立ち上がり（それぞれ RMS で揃えてから足す）
+    final rmsFull = _rms(env.full), rmsLow = _rms(env.low);
+    if (rmsFull <= 0) return null;
+    final onset = Float64List(n);
+    for (var i = 0; i < n; i++) {
+      onset[i] = env.full[i] / rmsFull +
+          (rmsLow > 0 ? 2 * env.low[i] / rmsLow : 0);
+    }
+
+    double comb(double period, double phase) {
+      var s = 0.0;
+      for (var x = phase; x < n - 1; x += period) {
+        final i = x.floor();
+        final f = x - i;
+        s += onset[i] * (1 - f) + onset[i + 1] * f;
+      }
+      return s;
+    }
+
+    var bestBpm = bpm, bestPhase = 0.0, bestScore = double.negativeInfinity;
+    void search(double center, double spanRatio, double stepRatio) {
+      final steps = (spanRatio / stepRatio).round();
+      for (var k = -steps; k <= steps; k++) {
+        final b = center * (1 + k * stepRatio);
+        final period = 60 * fps / b;
+        for (var phase = 0.0; phase < period; phase += 0.5) {
+          final s = comb(period, phase);
+          if (s > bestScore) {
+            bestScore = s;
+            bestBpm = b;
+            bestPhase = phase;
+          }
+        }
+      }
+    }
+
+    // 粗く ±1.5% を 0.1% 刻み → その周りを ±0.1% を 0.005% 刻み
+    search(bpm, 0.015, 0.001);
+    search(bestBpm, 0.001, 0.00005);
+
+    final period = 60000 / bestBpm;
+    return BeatGrid(bpm: bestBpm, offsetMs: env.timeMs(bestPhase) % period);
+  }
+
+  static double _rms(Float64List v) {
+    if (v.isEmpty) return 0;
+    var s = 0.0;
+    for (final x in v) {
+      s += x * x;
+    }
+    return sqrt(s / v.length);
   }
 
   /// 12音階クロマと Krumhansl-Schmuckler プロファイルの相関でキーを求める。
