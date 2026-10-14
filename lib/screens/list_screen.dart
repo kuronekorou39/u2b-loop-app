@@ -14,7 +14,12 @@ import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
 import '../services/playlist_service.dart';
 import '../services/share_service.dart';
+import '../widgets/glass_controls.dart';
+import '../widgets/glass_panel.dart';
+import '../widgets/glass_scaffold.dart';
+import '../widgets/glass_surface.dart';
 import '../widgets/item_thumbnail.dart';
+import '../widgets/tag_chip.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/loading_animations/loading_animation.dart';
 import '../widgets/share_import_dialog.dart';
@@ -1009,8 +1014,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
         if (!didPop && _isSelecting) _clearSelection();
       },
       child: Scaffold(
+        // ガラス風: 背景を AppBar の裏まで通す。本文の上端は Builder の context から取る
+        // （State の context は Scaffold の外なので AppBar の高さが入らない）
+        extendBodyBehindAppBar: true,
         appBar: _buildNormalAppBar(isDataTab, items),
-        body: SafeArea(
+        body: Stack(
+          children: [
+            const Positioned.fill(child: AppBackdrop()),
+            SafeArea(
           top: false,
           bottom: false,
           child: Stack(
@@ -1018,8 +1029,20 @@ class _ListScreenState extends ConsumerState<ListScreen>
             GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
           behavior: HitTestBehavior.translucent,
-          child: Column(
+          child: Builder(builder: (bodyContext) => Column(
           children: [
+            SizedBox(height: MediaQuery.paddingOf(bodyContext).top + AppSpacing.xs),
+            // タブ（選択中は操作バー）: ガラスのセグメント
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: _isSelecting
+                  ? _buildSelectionBar(items)
+                  : GlassSegmentedTabs(
+                      controller: _tabController,
+                      labels: const ['タグ', '曲', 'プレイリスト'],
+                    ),
+            ),
+            const SizedBox(height: AppSpacing.md),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -1032,60 +1055,32 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.xs, 0),
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 0),
                         child: Row(
                           children: [
                             Expanded(
-                              child: SizedBox(
-                                height: 36,
-                                child: TextField(
-                                  controller: _searchController,
-                                  focusNode: _searchFocusNode,
-                                  decoration: InputDecoration(
-                                    hintText: '検索...',
-                                    hintStyle: Theme.of(context).textTheme.bodyMedium,
-                                    prefixIcon:
-                                        const Icon(Icons.search, size: AppIconSizes.md),
-                                    suffixIcon: _searchQuery.isNotEmpty
-                                        ? GestureDetector(
-                                            onTap: () {
-                                              _searchController.clear();
-                                              setState(
-                                                  () => _searchQuery = '');
-                                            },
-                                            child: const Icon(Icons.close,
-                                                size: AppIconSizes.sm),
-                                          )
-                                        : null,
-                                    isDense: true,
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                            vertical: 0),
-                                    border: OutlineInputBorder(
-                                      borderRadius: AppRadius.borderXl,
-                                      borderSide: BorderSide(
-                                          color: Colors.grey.shade700),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: AppRadius.borderXl,
-                                      borderSide: BorderSide(
-                                          color: Colors.grey.shade700),
-                                    ),
-                                  ),
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                  onChanged: (v) {
-                                      setState(() => _searchQuery = v);
-                                      if (v.toLowerCase() == 'matrix') {
-                                        _triggerMatrixEasterEgg();
-                                      }
-                                    },
-                                ),
+                              child: GlassSearchField(
+                                controller: _searchController,
+                                focusNode: _searchFocusNode,
+                                onChanged: (v) {
+                                  setState(() => _searchQuery = v);
+                                  if (v.toLowerCase() == 'matrix') {
+                                    _triggerMatrixEasterEgg();
+                                  }
+                                },
+                                onClear: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
                               ),
                             ),
-                            if (tags.isNotEmpty)
+                            if (tags.isNotEmpty) ...[
+                              const SizedBox(width: AppSpacing.md),
                               _buildTagFilterButton(tags, filterTagIds),
+                            ],
+                            const SizedBox(width: AppSpacing.md),
                             PopupMenuButton<_SortMode>(
-                              icon: const Icon(Icons.sort, size: AppIconSizes.ml),
                               tooltip: '並び替え',
                               onSelected: (mode) =>
                                   setState(() => _sortMode = mode),
@@ -1103,6 +1098,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                 _sortMenuItem(
                                     _SortMode.playCountDesc, '再生回数（多→少）'),
                               ],
+                              child: const GlassPill(
+                                onTap: null,
+                                padding: EdgeInsets.all(10),
+                                child: Icon(Icons.sort, size: AppIconSizes.md),
+                              ),
                             ),
                           ],
                         ),
@@ -1132,7 +1132,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               ),
             ),
           ],
-        )),
+        ))),
             if (_matrixActive)
               Positioned.fill(
                 child: IgnorePointer(
@@ -1144,21 +1144,29 @@ class _ListScreenState extends ConsumerState<ListScreen>
           ],
         ),
         ),
+          ],
+        ),
         floatingActionButton: _isSelecting
             ? null
             : _tabController.index == 0
-                ? FloatingActionButton(
+                ? GreenButton(
+                    icon: Icons.new_label,
+                    size: 56,
+                    tooltip: 'タグを作成',
                     onPressed: _createTagFromTab,
-                    child: const Icon(Icons.new_label),
                   )
                 : _tabController.index == 1
-                    ? FloatingActionButton(
+                    ? GreenButton(
+                        icon: Icons.add,
+                        size: 56,
+                        tooltip: '追加',
                         onPressed: _showAddDialog,
-                        child: const Icon(Icons.add),
                       )
-                    : FloatingActionButton(
+                    : GreenButton(
+                        icon: Icons.playlist_add,
+                        size: 56,
+                        tooltip: 'プレイリストを作成',
                         onPressed: _createPlaylist,
-                        child: const Icon(Icons.playlist_add),
                       ),
       ),
     );
@@ -1168,6 +1176,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     return AppBar(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
       toolbarHeight: landscape ? 44 : null,
       title: Image.asset(
         'assets/images/logo.png',
@@ -1191,30 +1203,19 @@ class _ListScreenState extends ConsumerState<ListScreen>
           tooltip: '設定',
         ),
       ],
-      bottom: _isSelecting
-          ? PreferredSize(
-              preferredSize: const Size.fromHeight(46),
-              child: _buildSelectionBar(items),
-            )
-          : TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: 'タグ管理'),
-                Tab(text: '曲リスト'),
-                Tab(text: 'プレイリスト'),
-              ],
-            ),
     );
   }
 
+  /// 複数選択中の操作バー（タブと同じ場所にガラスの板で出す）
   Widget _buildSelectionBar(List<LoopItem> items) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+    return GlassPanel(
+      radius: 999,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.sm),
       child: Row(
         children: [
           GestureDetector(
             onTap: _clearSelection,
-            child: const Icon(Icons.close, size: AppIconSizes.md, color: Colors.white),
+            child: const Icon(Icons.close, size: AppIconSizes.md),
           ),
           const SizedBox(width: AppSpacing.md),
           Text('${_selectedIds.length} 件選択',
@@ -1328,12 +1329,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Widget _buildTagFilterButton(List<Tag> tags, Map<String, bool> filterTagIds) {
     const untaggedId = '__untagged__';
+    final active = filterTagIds.isNotEmpty;
     return Stack(
+      clipBehavior: Clip.none,
       children: [
-        IconButton(
-          icon: const Icon(Icons.label_outline, size: AppIconSizes.ml),
+        GlassPill(
+          active: active,
           tooltip: 'タグフィルター',
-          onPressed: () {
+          padding: const EdgeInsets.all(10),
+          child: Icon(Icons.filter_alt_outlined,
+              size: AppIconSizes.md,
+              color: active ? AppTheme.accentGreen : null),
+          onTap: () {
             final selected = Map<String, bool?>.from(filterTagIds);
             _showSheet(builder: (ctx) => StatefulBuilder(
                 builder: (ctx, setSheetState) => SafeArea(
@@ -1407,10 +1414,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
             );
           },
         ),
-        if (filterTagIds.isNotEmpty)
+        if (active)
           Positioned(
-            right: 4,
-            top: 4,
+            right: -2,
+            top: -2,
             child: Container(
               padding: const EdgeInsets.all(AppSpacing.xs),
               decoration: const BoxDecoration(
@@ -1427,61 +1434,55 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  Widget _buildFilterChip(String id, String label, bool isInclude, {Widget? avatar}) {
-    final isExclude = !isInclude;
+  Widget _buildFilterChip(Tag tag, bool isInclude) {
     return Padding(
       padding: const EdgeInsets.only(right: AppSpacing.sm),
-      child: Chip(
-        avatar: isExclude
-            ? Icon(Icons.remove_circle, size: AppIconSizes.xs, color: AppTheme.accentRed)
-            : avatar,
-        label: Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall!.copyWith(
-            color: isExclude ? AppTheme.accentRed : null,
-            decoration: isExclude ? TextDecoration.lineThrough : null,
-          ),
-        ),
+      child: TagChip(
+        tag: tag,
+        excluded: !isInclude,
         onDeleted: () {
           ref.read(tagFilterProvider.notifier).update((s) {
             final next = Map<String, bool>.from(s);
-            next.remove(id);
+            next.remove(tag.id);
             return next;
           });
         },
-        deleteIconColor: Colors.grey,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }
 
+  /// 絞り込み中のタグ（× で外す）と「クリア」
   Widget _buildSelectedTagBar(List<Tag> tags, Map<String, bool> filterTagIds) {
     const untaggedId = '__untagged__';
     return SizedBox(
       height: 36,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
+      child: Row(
         children: [
-          if (filterTagIds.containsKey(untaggedId))
-            _buildFilterChip(
-              untaggedId, '未分類', filterTagIds[untaggedId]!,
-              avatar: const Icon(Icons.label_off, size: AppIconSizes.xs),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 6, AppSpacing.sm, 6),
+              children: [
+                if (filterTagIds.containsKey(untaggedId))
+                  _buildFilterChip(
+                    Tag(id: untaggedId, name: '未分類'),
+                    filterTagIds[untaggedId]!,
+                  ),
+                for (final tag in tags)
+                  if (filterTagIds.containsKey(tag.id))
+                    _buildFilterChip(tag, filterTagIds[tag.id]!),
+              ],
             ),
-          for (final tag in tags)
-            if (filterTagIds.containsKey(tag.id))
-              _buildFilterChip(tag.id, tag.name, filterTagIds[tag.id]!),
-          Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.sm),
-            child: ActionChip(
-              label: Text('クリア', style: Theme.of(context).textTheme.labelSmall),
-              onPressed: () {
-                ref.read(tagFilterProvider.notifier).state = {};
-              },
+          ),
+          TextButton(
+            onPressed: () => ref.read(tagFilterProvider.notifier).state = {},
+            style: TextButton.styleFrom(
               visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
             ),
+            child: Text('クリア',
+                style: Theme.of(context).textTheme.labelSmall!
+                    .copyWith(color: AppTheme.accentGreen)),
           ),
         ],
       ),
@@ -1493,8 +1494,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget _buildItemsView(List<LoopItem> items, List<Tag> tags) {
     return switch (_viewMode) {
       _ViewMode.list => _buildListView(items, tags),
+      // サムネ + 曲名 + 情報 + タグが収まる高さ（ガラス面の余白ぶん縦長）
       _ViewMode.grid2 => _buildGridView(items, tags,
-          maxExtent: 220, ratio: 16 / 12, compact: false),
+          maxExtent: 220, ratio: 16 / 15.5, compact: false),
       _ViewMode.grid4 => _buildGridView(items, tags,
           maxExtent: 120, ratio: 16 / 11, compact: true),
     };
@@ -1508,12 +1510,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     // 幅に応じて列数を自動算出（横画面・タブレットで列が増える）
     return GridView.builder(
-      padding: EdgeInsets.fromLTRB(AppSpacing.sm, AppSpacing.sm, AppSpacing.sm, 80 + bottomPad),
+      padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: maxExtent,
         childAspectRatio: ratio,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
+        crossAxisSpacing: compact ? AppSpacing.sm : AppSpacing.md + 2,
+        mainAxisSpacing: compact ? AppSpacing.sm : AppSpacing.md + 2,
       ),
       itemCount: items.length,
       itemBuilder: (context, i) =>
@@ -1521,82 +1524,31 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
+  /// グリッドのカード（ガラス面）。サムネ・曲名・区間/メモ・タグ。
+  /// 選択中は緑の薄い面 + チェック
   Widget _buildCard(LoopItem item, List<Tag> tags, {bool compact = false}) {
     final selected = _selectedIds.contains(item.id);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      shape: selected
-          ? RoundedRectangleBorder(
-              borderRadius: AppRadius.borderLg,
-              side: BorderSide(
-                  color: Theme.of(context).colorScheme.primary, width: 2),
-            )
-          : null,
-      child: InkWell(
-        onTap: () => _openDetail(item),
-        onLongPress: () => _startSelect(item),
+    final pad = compact ? 3.0 : AppSpacing.md;
+    final thumb = ClipRRect(
+      borderRadius: BorderRadius.circular(compact ? 6 : 10),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: ItemThumbnail(
-                      item: item,
-                      heroTag: 'thumb_${item.id}',
-                      iconSize: _viewMode == _ViewMode.grid4
-                          ? AppIconSizes.s
-                          : null),
-                ),
-                if (!compact)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 3, AppSpacing.sm, 3),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          if (item.isReady) ...[
-                            if (_buildRegionInfoText(item) case final regionInfo?)
-                              Text(
-                                regionInfo,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelSmall!.copyWith(
-                                    fontSize: 9, color: Colors.grey),
-                              ),
-                            if (item.memo != null && item.memo!.isNotEmpty)
-                              Text(
-                                item.memo!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelSmall!.copyWith(
-                                    fontSize: 9, color: Colors.grey.shade600),
-                              ),
-                          ],
-                          if (item.tagIds.isNotEmpty)
-                            _buildTagChips(item, tags, tiny: true),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ItemThumbnail(
+                item: item,
+                heroTag: 'thumb_${item.id}',
+                iconSize: _viewMode == _ViewMode.grid4 ? AppIconSizes.s : null),
             // 字幕バッジ
             if (item.hasSubtitles == true)
               Positioned(
                 left: 4,
-                bottom: compact ? 4 : null,
+                bottom: 4,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
+                    color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: AppRadius.borderXs,
                   ),
                   child: const Row(
@@ -1613,41 +1565,40 @@ class _ListScreenState extends ConsumerState<ListScreen>
             if (item.isCached)
               Positioned(
                 right: 4,
-                bottom: 4,
+                top: 4,
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
-                    color: AppTheme.accentGreen.withValues(alpha: 0.85),
-                    borderRadius: AppRadius.borderXs,
+                    color: AppTheme.accentGreen.withValues(alpha: 0.9),
+                    borderRadius: AppRadius.borderSm,
                   ),
                   child: const Icon(Icons.offline_pin,
-                      size: 11, color: Colors.white),
+                      size: 11, color: AppTheme.darkBackground),
                 ),
               ),
-            if (item.isFetching || item.hasError)
-              Positioned.fill(child: _buildStatusOverlay(item)),
+            if (item.isFetching || item.hasError) _buildStatusOverlay(item),
             if (selected)
               Positioned(
                 top: 4,
-                right: 4,
+                left: 4,
                 child: Container(
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primary,
                     shape: BoxShape.circle,
                   ),
                   padding: const EdgeInsets.all(2),
-                  child:
-                      const Icon(Icons.check, size: AppIconSizes.xs, color: Colors.white),
+                  child: const Icon(Icons.check,
+                      size: AppIconSizes.xs, color: AppTheme.darkBackground),
                 ),
               ),
             if (_isSelecting && !selected)
               Positioned(
                 top: 4,
-                right: 4,
+                left: 4,
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white54, width: 2),
+                    border: Border.all(color: Colors.white70, width: 2),
                   ),
                   width: 20,
                   height: 20,
@@ -1657,38 +1608,89 @@ class _ListScreenState extends ConsumerState<ListScreen>
         ),
       ),
     );
+
+    return GlassSurface(
+      radius: compact ? 10 : 16,
+      padding: EdgeInsets.all(pad),
+      tint: selected ? AppTheme.accentGreen.withValues(alpha: 0.15) : null,
+      onTap: () => _openDetail(item),
+      onLongPress: () => _startSelect(item),
+      child: compact
+          ? thumb
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                thumb,
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                if (item.isReady) ...[
+                  if (_buildCardInfoText(item) case final info?)
+                    Text(
+                      info,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 10),
+                    ),
+                ],
+                if (item.tagIds.isNotEmpty) ...[
+                  const Spacer(),
+                  _buildTagChips(item, tags, tiny: true),
+                ],
+              ],
+            ),
+    );
+  }
+
+  /// カードの 2 行目: BPM・キー・区間数（無ければメモ）
+  String? _buildCardInfoText(LoopItem item) {
+    final parts = <String>[
+      if (item.bpm != null) 'BPM ${item.bpm!.round()}',
+      if (item.musicalKey != null) item.musicalKey!,
+      if (item.effectiveRegions.any((r) => r.hasPoints))
+        '区間 ${item.effectiveRegions.where((r) => r.hasPoints).length}',
+    ];
+    if (parts.isNotEmpty) return parts.join('  ·  ');
+    if (item.memo != null && item.memo!.isNotEmpty) return item.memo;
+    return null;
   }
 
   Widget _buildTagChips(LoopItem item, List<Tag> tags, {bool tiny = false}) {
     final itemTags = tags.where((t) => item.tagIds.contains(t.id)).toList();
     if (itemTags.isEmpty) return const SizedBox.shrink();
     return Wrap(
-      spacing: 3,
-      runSpacing: 0,
-      children: itemTags
-          .map((t) => Container(
-                padding: EdgeInsets.symmetric(
-                    horizontal: tiny ? AppSpacing.xs : AppSpacing.sm, vertical: tiny ? 0 : 1),
-                decoration: BoxDecoration(
-                  color: t.color
-                      .withValues(alpha: 0.5),
-                  borderRadius: AppRadius.borderXs,
-                ),
-                child: Text(t.name,
-                    style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: tiny ? 8 : 10)),
-              ))
-          .toList(),
+      spacing: AppSpacing.xs,
+      runSpacing: 2,
+      children: [for (final t in itemTags) TagChip(tag: t, small: tiny)],
+    );
+  }
+
+  /// 一覧（リスト表示・タグ・プレイリスト）を 1 枚のガラス面にまとめる。
+  /// 中の ListView は FAB とミニプレイヤーのぶん下に余白を取る
+  Widget _listSurface({required Widget child}) {
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+    return GlassSurface(
+      margin: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, bottomPad + AppSpacing.lg),
+      child: ClipRRect(borderRadius: BorderRadius.circular(16), child: child),
     );
   }
 
   // === List view ===
 
   Widget _buildListView(List<LoopItem> items, List<Tag> tags) {
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-    return ListView.builder(
-      padding: EdgeInsets.only(top: 4, bottom: 80 + bottomPad),
-      itemCount: items.length,
-      itemBuilder: (context, i) => _buildListTile(items[i], tags),
+    return _listSurface(
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 4, bottom: 80),
+        itemCount: items.length,
+        itemBuilder: (context, i) => _buildListTile(items[i], tags),
+      ),
     );
   }
 
@@ -1893,35 +1895,41 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // === Tag Manager Tab ===
 
   Widget _buildTagManagerTab(List<Tag> tags, List<LoopItem> allItems) {
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-
     if (tags.isEmpty) {
       return _buildEmpty(Icons.label_outline, 'タグがありません', '＋ ボタンで作成');
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.only(top: 4, bottom: 80 + bottomPad),
-      itemCount: tags.length,
-      itemBuilder: (context, i) {
-        final tag = tags[i];
-        final count =
-            allItems.where((item) => item.tagIds.contains(tag.id)).length;
+    return _listSurface(
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 4, bottom: 80),
+        itemCount: tags.length,
+        itemBuilder: (context, i) {
+          final tag = tags[i];
+          final count =
+              allItems.where((item) => item.tagIds.contains(tag.id)).length;
 
-        return ListTile(
-          leading: Icon(Icons.label,
-              size: AppIconSizes.md,
-              color: tag.color),
-          title: Text(tag.name, style: Theme.of(context).textTheme.bodyLarge),
-          trailing: Text('$count 曲',
-              style: Theme.of(context).textTheme.bodySmall),
-          onTap: () {
-            // 曲リストタブに移動してこのタグでフィルター
-            ref.read(tagFilterProvider.notifier).state = {tag.id: true};
-            _tabController.animateTo(1);
-          },
-          onLongPress: () => _showTagMenu(tag),
-        );
-      },
+          return ListTile(
+            leading: Container(
+              width: AppIconSizes.lg,
+              height: AppIconSizes.lg,
+              decoration: BoxDecoration(
+                color: tag.color.withValues(alpha: 0.25),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.label, size: AppIconSizes.xs, color: tag.color),
+            ),
+            title: Text(tag.name, style: Theme.of(context).textTheme.bodyLarge),
+            trailing: Text('$count 曲',
+                style: Theme.of(context).textTheme.bodySmall),
+            onTap: () {
+              // 曲リストタブに移動してこのタグでフィルター
+              ref.read(tagFilterProvider.notifier).state = {tag.id: true};
+              _tabController.animateTo(1);
+            },
+            onLongPress: () => _showTagMenu(tag),
+          );
+        },
+      ),
     );
   }
 
@@ -2038,9 +2046,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   Widget _buildPlaylistList(List<Playlist> playlists) {
     final items = ref.watch(loopItemsProvider);
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-    return ListView.builder(
-      padding: EdgeInsets.only(top: 4, bottom: 80 + bottomPad),
+    return _listSurface(
+      child: ListView.builder(
+      padding: const EdgeInsets.only(top: 4, bottom: 80),
       itemCount: playlists.length,
       itemBuilder: (context, i) {
         final pl = playlists[i];
@@ -2053,7 +2061,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
             : null;
         return ListTile(
           leading: ClipRRect(
-            borderRadius: AppRadius.borderXs,
+            borderRadius: AppRadius.borderMd,
             child: SizedBox(
               width: 56,
               height: 56,
@@ -2062,7 +2070,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   : Container(
                       color: Theme.of(context)
                           .colorScheme
-                          .surfaceContainerHighest,
+                          .onSurface
+                          .withValues(alpha: 0.08),
                       child: const Icon(Icons.playlist_play,
                           color: Colors.grey),
                     ),
@@ -2075,15 +2084,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               if (count > 0)
-                FilledButton.icon(
+                GreenButton(
+                  icon: Icons.play_arrow_rounded,
+                  label: '再生',
+                  size: 34,
                   onPressed: () => _playPlaylist(pl, items),
-                  icon: const Icon(Icons.play_arrow, size: AppIconSizes.sm),
-                  label: const Text('再生'),
-                  style: FilledButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                    minimumSize: const Size(0, 32),
-                  ),
                 ),
               PopupMenuButton<String>(
                 onSelected: (v) {
@@ -2110,6 +2115,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           },
         );
       },
+      ),
     );
   }
 
