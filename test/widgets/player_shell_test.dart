@@ -95,4 +95,57 @@ void main() {
     await pump(tester, height: 900, controllerHeight: 200, panel: null);
     expect(find.byKey(const Key('panel')), findsNothing);
   });
+
+  testWidgets('コントローラーが伸び縮みする途中もパネルの下端が追従する', (tester) async {
+    // 波形の開閉のように、コントローラーの高さは AnimatedSize で変わる
+    final height = ValueNotifier<double>(200);
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        subtitleModeProvider.overrideWith((ref) => SubtitleMode.off),
+        positionProvider.overrideWith((ref) => Stream.value(Duration.zero)),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(backgroundColor: Colors.transparent),
+          body: PlayerShell(
+            item: item,
+            video: const ColoredBox(color: Colors.black, key: Key('video')),
+            header: const SizedBox(height: 40, key: Key('header')),
+            panel: const ColoredBox(color: Colors.red, key: Key('panel')),
+            controller: ValueListenableBuilder<double>(
+              valueListenable: height,
+              // 伸び縮みしているのは AnimatedSize 自身（中の SizedBox は即座に新しい高さ）
+              builder: (_, h, _) => AnimatedSize(
+                key: const Key('ctrl'),
+                duration: const Duration(milliseconds: 300),
+                child: SizedBox(height: h),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    height.value = 320;
+    await tester.pump();
+    // アニメーションの途中（ウィジェットの再構築は起きない）
+    await tester.pump(const Duration(milliseconds: 150));
+    var panel = tester.getRect(find.byKey(const Key('panel')));
+    var ctrl = tester.getRect(find.byKey(const Key('ctrl')));
+    expect(ctrl.height, greaterThan(200));
+    expect(ctrl.height, lessThan(320));
+    expect(panel.bottom, closeTo(ctrl.top, 0.5),
+        reason: '以前は測った高さが更新されず、コントローラーに重なっていた');
+
+    await tester.pumpAndSettle();
+    panel = tester.getRect(find.byKey(const Key('panel')));
+    ctrl = tester.getRect(find.byKey(const Key('ctrl')));
+    expect(ctrl.height, closeTo(320, 0.5));
+    expect(panel.bottom, closeTo(ctrl.top, 0.5));
+  });
 }

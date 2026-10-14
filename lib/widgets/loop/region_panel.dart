@@ -58,7 +58,7 @@ class RegionPanel extends StatelessWidget {
       padding: const EdgeInsets.only(top: AppSpacing.sm),
       // 動画の上に乗るので暗い地を敷き、ぼかしは使わない（動画の上は重い）
       blur: false,
-      scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.86),
+      scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
       child: Column(
         children: [
           Padding(

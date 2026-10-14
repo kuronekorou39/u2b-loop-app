@@ -11,7 +11,8 @@ import '../karaoke_subtitle.dart';
 ///
 /// 上から: サムネ色の背景 / 角丸の動画 / 字幕 / 曲名行（[header]）/ 空き /
 /// ガラス板のコントローラー（[controller]）。[panel]（トラック一覧・AB 区間）は
-/// 開いている間、動画と曲名行の上に重ねて出す（動画は下で動き続ける）。
+/// 開いている間、動画と曲名行の上に重ねて出す（動画は下で動き続けるが暗くする。
+/// 一覧を読むのが優先）。
 /// モードごとに違うのは中身だけで、AppBar は透明（`extendBodyBehindAppBar`）にして
 /// 背景を上まで通す前提。
 ///
@@ -76,28 +77,37 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
             // 伸縮する枠に入れておく（1 フレームだけなので見た目には出ない）
             final measured = _headerHeight > 0 && _controllerHeight > 0;
 
-            return Stack(
+            return Column(
               children: [
-                _buildColumn(topInset, gap, videoMax, videoH, measured),
-                // パネルは動画と曲名行の上に重ねる（開いている間はそれらを隠す）。
-                // 下端はコントローラーの上端（コントローラーは測った高さ）
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: topInset + AppSpacing.sm,
-                  bottom: _controllerHeight,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    // パネルは縦に伸ばして置きたいので、既定の中央寄せ Stack ではなく expand
-                    layoutBuilder: (current, previous) => Stack(
-                      fit: StackFit.expand,
-                      children: [...previous, ?current],
-                    ),
-                    child: widget.panel ??
-                        const SizedBox.shrink(key: ValueKey('noPanel')),
+                SizedBox(height: topInset + AppSpacing.sm),
+                // 上段（動画・字幕・曲名行）の上にパネルを重ねる（開いている間はそれらを隠す）。
+                // パネルの下端はコントローラーの上端。コントローラーと同じ Column に入れて
+                // おくと、波形の開閉でコントローラーが伸び縮みする途中も毎フレーム追従する
+                // （以前は測った高さで Positioned にしていたので、アニメーションの間は
+                // 古い高さのまま止まり、終わってから一気に飛んでいた）
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _buildUpper(gap, videoMax, videoH, measured),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 260),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        // パネルは縦に伸ばして置きたいので、既定の中央寄せ Stack ではなく expand
+                        layoutBuilder: (current, previous) => Stack(
+                          fit: StackFit.expand,
+                          children: [...previous, ?current],
+                        ),
+                        child: widget.panel ??
+                            const SizedBox.shrink(key: ValueKey('noPanel')),
+                      ),
+                    ],
                   ),
+                ),
+                _MeasureSize(
+                  onChange: (s) => setState(() => _controllerHeight = s.height),
+                  child: widget.controller,
                 ),
               ],
             );
@@ -107,12 +117,21 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     );
   }
 
-  Widget _buildColumn(
-      double topInset, double gap, double videoMax, double videoH, bool measured) {
+  /// 動画・字幕・曲名行。余りは下に寄せる（Spacer）
+  Widget _buildUpper(
+      double gap, double videoMax, double videoH, bool measured) {
+    final video = widget.video == null
+        ? null
+        : ClipRRect(
+            borderRadius: AppRadius.borderXl,
+            child: _DimWhenCovered(
+              dim: widget.panel != null,
+              child: widget.video!,
+            ),
+          );
     return Column(
               children: [
-                SizedBox(height: topInset + AppSpacing.sm),
-                if (widget.video != null)
+                if (video != null)
                   if (measured)
                     AnimatedSize(
                       duration: const Duration(milliseconds: 220),
@@ -120,10 +139,7 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                       child: SizedBox(
                         height: videoH,
                         width: videoH * 16 / 9,
-                        child: ClipRRect(
-                          borderRadius: AppRadius.borderXl,
-                          child: widget.video,
-                        ),
+                        child: video,
                       ),
                     )
                   else
@@ -131,13 +147,7 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                       child: Center(
                         child: ConstrainedBox(
                           constraints: BoxConstraints(maxHeight: videoMax),
-                          child: AspectRatio(
-                            aspectRatio: 16 / 9,
-                            child: ClipRRect(
-                              borderRadius: AppRadius.borderXl,
-                              child: widget.video,
-                            ),
-                          ),
+                          child: AspectRatio(aspectRatio: 16 / 9, child: video),
                         ),
                       ),
                     ),
@@ -163,12 +173,31 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                 ),
                 SizedBox(height: gap),
                 const Spacer(),
-                _MeasureSize(
-                  onChange: (s) => setState(() => _controllerHeight = s.height),
-                  child: widget.controller,
-                ),
               ],
             );
+  }
+}
+
+/// パネルに覆われている間、動画を暗くする（一覧を読むのが優先。ぼかしは動画の上では重い）
+class _DimWhenCovered extends StatelessWidget {
+  const _DimWhenCovered({required this.dim, required this.child});
+  final bool dim;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        IgnorePointer(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            color: Colors.black.withValues(alpha: dim ? 0.6 : 0),
+          ),
+        ),
+      ],
+    );
   }
 }
 

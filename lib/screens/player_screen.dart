@@ -3340,9 +3340,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       margin: const EdgeInsets.fromLTRB(
           PlayerShell.margin, 0, PlayerShell.margin, AppSpacing.lg),
       padding: const EdgeInsets.only(top: AppSpacing.sm),
-      // 動画の上に乗るので暗い地を敷いて読めるようにし、ぼかしは使わない（動画の上は重い）
+      // 動画の上に乗るのでほぼ不透明な地を敷いて読めるようにし、ぼかしは使わない
+      // （動画の上は重い）。0.86 では動画が透けて見づらかった
       blur: false,
-      scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.86),
+      scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
       child: Column(
         children: [
           Padding(
