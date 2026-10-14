@@ -72,19 +72,18 @@ class AbEditControls extends StatelessWidget {
         ),
         // A > B のときだけ入れ替えボタンを出す
         if (needsSwap)
+          // 押せる高さを 36px 以上に（以前は 24〜28px・10px の文字で押しにくかった）
           SizedBox(
-            height: compact ? 24 : 28,
+            height: compact ? 36 : 40,
             child: TextButton.icon(
               onPressed: onSwap,
               icon: Icon(Icons.swap_vert,
-                  size: AppIconSizes.xs, color: Colors.amber.shade300),
-              label: Text(compact ? 'A⇔B' : 'A⇔B 入れ替え',
-                  style: textTheme.labelSmall!
-                      .copyWith(fontSize: 10, color: Colors.amber.shade300)),
+                  size: AppIconSizes.s, color: Colors.amber.shade300),
+              label: Text(compact ? 'A⇔B' : 'A と B を入れ替え',
+                  style: textTheme.labelMedium!
+                      .copyWith(color: Colors.amber.shade300)),
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
               ),
             ),
           )
@@ -215,33 +214,37 @@ class _StepSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    return Row(
+    // 幅が足りなければ折り返す（横画面のドロワーで溢れていた）。
+    // チップの高さは 32px 以上（以前は 20〜22px で押しにくかった）
+    return Wrap(
+      spacing: compact ? AppSpacing.xs : AppSpacing.sm,
+      runSpacing: AppSpacing.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text('ステップ', style: textTheme.labelSmall),
-        SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md + 2),
+        Padding(
+          padding: EdgeInsets.only(right: compact ? AppSpacing.xs : AppSpacing.sm),
+          child: Text('ステップ', style: textTheme.labelSmall),
+        ),
         for (final s in LoopControls.steps)
-          Padding(
-            padding: EdgeInsets.only(right: compact ? AppSpacing.xs : AppSpacing.sm),
-            child: Material(
-              color: selected == s
-                  ? AppTheme.accentGreen.withValues(alpha: 0.18)
-                  : scheme.onSurface.withValues(alpha: 0.08),
-              shape: const StadiumBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => onChanged(s),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: compact ? AppSpacing.md : AppSpacing.md + 2,
-                      vertical: compact ? 3 : AppSpacing.xs),
-                  child: Text(
-                    AbEditControls.stepLabel(s),
-                    style: textTheme.labelSmall!.copyWith(
-                      fontFeatures: const [FontFeature('tnum')],
-                      color: selected == s
-                          ? AppTheme.accentGreen
-                          : scheme.onSurface.withValues(alpha: 0.7),
-                    ),
+          Material(
+            color: selected == s
+                ? AppTheme.accentGreen.withValues(alpha: 0.18)
+                : scheme.onSurface.withValues(alpha: 0.08),
+            shape: const StadiumBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => onChanged(s),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                    horizontal: compact ? AppSpacing.md + 2 : AppSpacing.lg,
+                    vertical: compact ? AppSpacing.md : AppSpacing.md + 1),
+                child: Text(
+                  AbEditControls.stepLabel(s),
+                  style: textTheme.labelSmall!.copyWith(
+                    fontFeatures: const [FontFeature('tnum')],
+                    color: selected == s
+                        ? AppTheme.accentGreen
+                        : scheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
               ),

@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../screens/settings/dj_mix_settings_screen.dart';
+import 'player_controls.dart';
 
 /// プレイリスト再生画面の「その他」シート。
 /// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・DJ ミックス・速度・音量・
@@ -34,7 +35,8 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
   final bool hideVideo;
   final ValueChanged<bool> onHideVideoChanged;
 
-  static const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+  /// 速度の候補は全画面・単体のピルと同じ（以前は 6 段で、0.25x のとき何も選ばれていない表示だった）
+  static const speeds = PlayerControls.speeds;
 
   static Future<void> show(BuildContext context, PlayerMoreSheet sheet) {
     return showModalBottomSheet(

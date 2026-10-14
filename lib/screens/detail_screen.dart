@@ -17,7 +17,6 @@ import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/cache_service.dart';
 import '../services/export_runner.dart';
-import '../services/export_service.dart';
 import '../services/youtube_service.dart';
 import '../providers/thumb_tone_provider.dart';
 import '../widgets/glass_controls.dart';
@@ -889,32 +888,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
 
     // 形式選択
-    final format = await showDialog<ExportFormat>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('${region.name} を書き出し'),
-        content: Text(
-          '${TimeUtils.formatShort(Duration(milliseconds: region.pointAMs!))}'
-          ' - ${TimeUtils.formatShort(Duration(milliseconds: region.pointBMs!))}',
-          style: Theme.of(ctx).textTheme.bodyMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton.icon(
-            onPressed: () => Navigator.pop(ctx, ExportFormat.audioOnly),
-            icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
-            label: const Text('音声のみ'),
-          ),
-          TextButton.icon(
-            onPressed: () => Navigator.pop(ctx, ExportFormat.mp4),
-            icon: const Icon(Icons.videocam, size: AppIconSizes.s),
-            label: const Text('MP4'),
-          ),
-        ],
-      ),
+    final format = await showExportFormatDialog(
+      context,
+      title: '${region.name} を書き出し',
+      rangeText: '${TimeUtils.formatShortMs(region.pointAMs)}'
+          ' - ${TimeUtils.formatShortMs(region.pointBMs)}',
     );
     if (format == null || !mounted) return;
 

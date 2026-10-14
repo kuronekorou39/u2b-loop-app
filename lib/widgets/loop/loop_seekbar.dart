@@ -406,7 +406,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
             child: SizedBox(
-              height: 28,
+              height: 36,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -417,17 +417,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                       Text(TimeUtils.format(duration), style: labelStyle),
                       if (widget.onToggleCompact != null) ...[
                         const SizedBox(width: AppSpacing.xs),
-                        SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: IconButton(
-                            icon: const Icon(Icons.unfold_less,
-                                size: AppIconSizes.s),
-                            onPressed: widget.onToggleCompact,
-                            padding: EdgeInsets.zero,
-                            tooltip: 'コンパクト表示',
-                          ),
-                        ),
+                        _toggleButton(Icons.unfold_less, 'コンパクト表示'),
                       ],
                     ],
                   ),
@@ -441,6 +431,16 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     );
   }
 
+  /// 波形の開閉ボタン。見た目は小さいが押せる範囲は 36px（以前は 24〜28px）
+  Widget _toggleButton(IconData icon, String tooltip) => IconButton(
+        icon: Icon(icon, size: AppIconSizes.sm),
+        onPressed: widget.onToggleCompact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        visualDensity: VisualDensity.compact,
+        tooltip: tooltip,
+      );
+
   /// ズームの − / 倍率 / ＋（ズーム中に追従を切ったら「追従」）。
   /// 板の上のピルと同じ見た目（以前は角丸四角の IconButton で浮いていた）
   Widget _buildZoomControls(BuildContext context, bool isZoomed) {
@@ -450,7 +450,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     Widget pill(IconData icon, String tooltip, VoidCallback? onTap) => GlassPill(
           onTap: onTap,
           tooltip: tooltip,
-          padding: const EdgeInsets.all(5),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Icon(icon,
               size: AppIconSizes.s, color: onTap == null ? dim : null),
         );
@@ -475,7 +475,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             onTap: () => setState(() => _autoFollow = true),
             active: true,
             tooltip: '再生位置に追従する',
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Text('追従',
                 style: textTheme.labelSmall
                     ?.copyWith(color: AppTheme.accentGreen)),
@@ -501,7 +501,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
       height: 10,
       child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white70),
     );
-    const textStyle = TextStyle(fontSize: 10, color: Colors.white70);
+    const textStyle = TextStyle(fontSize: 11, color: Colors.white70);
 
     return [
       if (waveformLoading && waveform == null)
@@ -528,7 +528,13 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  badge([Text('波形: $waveformError', style: textStyle)]),
+                  // 例外の生文字列は長押し（tooltip）で見られるようにし、表示は短く
+                  Tooltip(
+                    message: waveformError,
+                    child: badge(const [
+                      Text('波形を取得できませんでした', style: textStyle),
+                    ]),
+                  ),
                   const SizedBox(width: AppSpacing.xs),
                   if (_retrying)
                     badge(const [
@@ -537,17 +543,21 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                       Text('再取得中...', style: textStyle),
                     ])
                   else if (widget.onRetryWaveform != null)
-                    GestureDetector(
-                      onTap: widget.onRetryWaveform,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accentGreen.withValues(alpha: 0.8),
-                          borderRadius: AppRadius.borderXs,
+                    Material(
+                      color: AppTheme.accentGreen.withValues(alpha: 0.85),
+                      borderRadius: AppRadius.borderSm,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: widget.onRetryWaveform,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                          child: Text('リトライ',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
                         ),
-                        child: const Text('リトライ',
-                            style: TextStyle(fontSize: 10, color: Colors.white)),
                       ),
                     ),
                 ],
@@ -634,7 +644,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             ),
           ),
           SizedBox(
-            height: 24,
+            height: 32,
             child: Row(
               children: [
                 Text(TimeUtils.format(position), style: labelStyle),
@@ -642,18 +652,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 Text(TimeUtils.format(duration), style: labelStyle),
                 if (widget.onToggleCompact != null) ...[
                   const SizedBox(width: AppSpacing.sm),
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: IconButton(
-                      icon: Icon(
-                        compact ? Icons.unfold_more : Icons.unfold_less,
-                        size: AppIconSizes.s,
-                      ),
-                      onPressed: widget.onToggleCompact,
-                      padding: EdgeInsets.zero,
-                      tooltip: compact ? '波形表示' : 'コンパクト表示',
-                    ),
+                  _toggleButton(
+                    compact ? Icons.unfold_more : Icons.unfold_less,
+                    compact ? '波形表示' : 'コンパクト表示',
                   ),
                 ],
               ],
@@ -731,16 +732,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
           ),
           if (widget.onToggleCompact != null) ...[
             const SizedBox(width: AppSpacing.xs),
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: IconButton(
-                icon: const Icon(Icons.unfold_more, size: AppIconSizes.s),
-                onPressed: widget.onToggleCompact,
-                padding: EdgeInsets.zero,
-                tooltip: '波形表示',
-              ),
-            ),
+            _toggleButton(Icons.unfold_more, '波形表示'),
           ],
         ],
       ),

@@ -54,6 +54,15 @@ class _TempoKeySheetState extends ConsumerState<TempoKeySheet> {
 
   double? get _bpm => double.tryParse(_bpmController.text.trim());
 
+  /// 入力があるのに数字として読めない / 0 以下ならエラー文（空欄は「未設定」で OK）
+  String? get _bpmError {
+    final text = _bpmController.text.trim();
+    if (text.isEmpty) return null;
+    final bpm = _bpm;
+    if (bpm == null || bpm <= 0) return '1 以上の数字を入れてください';
+    return null;
+  }
+
   void _scaleBpm(double factor) {
     final bpm = _bpm;
     if (bpm == null) return;
@@ -62,10 +71,8 @@ class _TempoKeySheetState extends ConsumerState<TempoKeySheet> {
   }
 
   Future<void> _save() async {
+    if (_bpmError != null) return;
     final bpm = _bpm;
-    if (_bpmController.text.trim().isNotEmpty && (bpm == null || bpm <= 0)) {
-      return;
-    }
     await ref.read(loopItemsProvider.notifier).saveAnalysis(
           widget.item.id,
           bpm: bpm,
@@ -78,8 +85,14 @@ class _TempoKeySheetState extends ConsumerState<TempoKeySheet> {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
+    // キーボードと、下に浮いているミニプレイヤー（viewPadding に入っている）の両方をよける。
+    // 横画面でキーボードが出ても溢れないよう中はスクロール
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom +
+        MediaQuery.viewPaddingOf(context).bottom;
+    return SafeArea(
+      top: false,
+      bottom: false,
+      child: SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
           AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.xl + bottomInset),
       child: Column(
@@ -101,10 +114,12 @@ class _TempoKeySheetState extends ConsumerState<TempoKeySheet> {
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'BPM',
+                    hintText: '空欄で未設定',
+                    errorText: _bpmError,
                     isDense: true,
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ),
@@ -153,10 +168,13 @@ class _TempoKeySheetState extends ConsumerState<TempoKeySheet> {
                 child: const Text('キャンセル'),
               ),
               const SizedBox(width: AppSpacing.sm),
-              FilledButton(onPressed: _save, child: const Text('保存')),
+              FilledButton(
+                  onPressed: _bpmError == null ? _save : null,
+                  child: const Text('保存')),
             ],
           ),
         ],
+      ),
       ),
     );
   }

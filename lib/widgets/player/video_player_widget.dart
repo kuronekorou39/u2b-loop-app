@@ -94,6 +94,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                   _FlipButton(
                     icon: Icons.flip,
                     active: flipH,
+                    tooltip: flipH ? '左右反転を戻す' : '左右反転',
                     onTap: () => ref
                         .read(flipHorizontalProvider.notifier)
                         .state = !flipH,
@@ -103,6 +104,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                     icon: Icons.flip,
                     active: flipV,
                     rotate: true,
+                    tooltip: flipV ? '上下反転を戻す' : '上下反転',
                     onTap: () => ref
                         .read(flipVerticalProvider.notifier)
                         .state = !flipV,
@@ -118,6 +120,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                 child: _FlipButton(
                   icon: Icons.fullscreen,
                   active: false,
+                  tooltip: '全画面',
                   onTap: widget.onFullscreen!,
                 ),
               ),
@@ -133,38 +136,55 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   }
 }
 
+/// 動画の上に置く小さなボタン（反転・全画面）。
+/// 見た目は 32px の角丸だが、押せる範囲は 40px 取る（以前は 28px の GestureDetector で押しにくかった）
 class _FlipButton extends StatelessWidget {
   final IconData icon;
   final bool active;
   final bool rotate;
+  final String tooltip;
   final VoidCallback onTap;
 
   const _FlipButton({
     required this.icon,
     required this.active,
+    required this.tooltip,
     this.rotate = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: active
-              ? Colors.white.withValues(alpha: 0.25)
-              : Colors.black.withValues(alpha: 0.4),
-          borderRadius: AppRadius.borderXs,
-        ),
-        child: Transform.rotate(
-          angle: rotate ? pi / 2 : 0,
-          child: Icon(
-            icon,
-            size: AppIconSizes.s,
-            color: active ? Colors.white : Colors.white60,
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: AppRadius.borderSm,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Center(
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : Colors.black.withValues(alpha: 0.4),
+                  borderRadius: AppRadius.borderSm,
+                ),
+                child: Transform.rotate(
+                  angle: rotate ? pi / 2 : 0,
+                  child: Icon(
+                    icon,
+                    size: AppIconSizes.sm,
+                    color: active ? Colors.white : Colors.white70,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),

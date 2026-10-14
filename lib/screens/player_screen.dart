@@ -1816,35 +1816,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       subtitle = '$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)';
     }
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(fullTrack ? '全体を書き出し' : '区間を書き出し'),
-        content: Text(subtitle, style: Theme.of(ctx).textTheme.bodyMedium),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _executeExport(true, fullTrack: fullTrack);
-            },
-            icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
-            label: const Text('音声のみ'),
-          ),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _executeExport(false, fullTrack: fullTrack);
-            },
-            icon: const Icon(Icons.videocam, size: AppIconSizes.s),
-            label: const Text('MP4'),
-          ),
-        ],
-      ),
-    );
+    showExportFormatDialog(
+      context,
+      title: fullTrack ? '全体を書き出し' : '区間を書き出し',
+      rangeText: subtitle,
+    ).then((format) {
+      if (format == null || !mounted) return;
+      _executeExport(format == ExportFormat.audioOnly, fullTrack: fullTrack);
+    });
   }
 
   Future<void> _executeExport(bool audioOnly,
@@ -2972,8 +2951,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       setState(() => _showRightDrawer = !_showRightDrawer);
                     },
                     child: Container(
-                      width: 24,
-                      height: 64,
+                      // 指で掴める幅に（以前は 24px）
+                      width: 40,
+                      height: 72,
                       decoration: BoxDecoration(
                         color: Theme.of(context)
                             .colorScheme
@@ -3000,17 +2980,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             Positioned(
               right: 12 + padR,
               bottom: 12 + vp.bottom,
-              child: GestureDetector(
-                onTap: _exitFullscreen,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    borderRadius: AppRadius.borderXs,
-                  ),
-                  child: const Icon(Icons.fullscreen_exit,
-                      color: Colors.white, size: AppIconSizes.lg),
+              child: IconButton(
+                onPressed: _exitFullscreen,
+                tooltip: '全画面を解除',
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black.withValues(alpha: 0.5),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(48, 48),
+                  shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
                 ),
+                icon: const Icon(Icons.fullscreen_exit, size: AppIconSizes.lg),
               ),
             ),
         ],

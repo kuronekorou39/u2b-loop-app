@@ -431,7 +431,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final loop = ref.read(loopProvider);
     if (!loop.hasBothPoints) return;
 
-    final textTheme = Theme.of(context).textTheme;
     final region = _regions[_selectedRegionIdx];
     final aStr = TimeUtils.formatShort(loop.pointA!);
     final bStr = TimeUtils.formatShort(loop.pointB!);
@@ -439,45 +438,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         (loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() /
             1000;
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('区間を書き出し'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${region.name}: $aStr - $bStr (${durationSec.toStringAsFixed(1)}s)',
-                style: textTheme.bodyMedium),
-            const SizedBox(height: AppSpacing.xl),
-            Text('形式を選択:',
-                style: textTheme.bodySmall),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _executeExport(ExportFormat.audioOnly);
-            },
-            icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
-            label: const Text('音声のみ'),
-          ),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _executeExport(ExportFormat.mp4);
-            },
-            icon: const Icon(Icons.videocam, size: AppIconSizes.s),
-            label: const Text('MP4'),
-          ),
-        ],
-      ),
-    );
+    showExportFormatDialog(
+      context,
+      title: '${region.name} を書き出し',
+      rangeText: '$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)',
+    ).then((format) {
+      if (format == null || !mounted) return;
+      _executeExport(format);
+    });
   }
 
   Future<void> _executeExport(ExportFormat format) async {

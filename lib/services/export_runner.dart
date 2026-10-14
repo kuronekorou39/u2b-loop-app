@@ -3,7 +3,43 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'export_service.dart';
+import '../core/theme/app_theme.dart';
 import '../core/ui/app_snack_bar.dart';
+
+/// 書き出し形式（音声のみ / MP4）を選ぶダイアログ。キャンセルは null。
+/// [rangeText] は「0:12 - 1:30 (78.0s)」のような区間の説明。
+/// 再生画面・AB 設定画面・曲の詳細で 3 つずつ別に書かれていたものを 1 つに
+Future<ExportFormat?> showExportFormatDialog(
+  BuildContext context, {
+  required String title,
+  String? rangeText,
+}) {
+  return showDialog<ExportFormat>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: rangeText == null
+          ? null
+          : Text(rangeText, style: Theme.of(ctx).textTheme.bodyMedium),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('キャンセル'),
+        ),
+        TextButton.icon(
+          onPressed: () => Navigator.pop(ctx, ExportFormat.audioOnly),
+          icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
+          label: const Text('音声のみ'),
+        ),
+        TextButton.icon(
+          onPressed: () => Navigator.pop(ctx, ExportFormat.mp4),
+          icon: const Icon(Icons.videocam, size: AppIconSizes.s),
+          label: const Text('MP4'),
+        ),
+      ],
+    ),
+  );
+}
 
 /// 書き出しの共通フロー。
 ///

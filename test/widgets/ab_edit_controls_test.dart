@@ -58,13 +58,13 @@ void main() {
 
   testWidgets('A > B のときだけ入れ替えが出る', (tester) async {
     await pump(tester, loop: loop);
-    expect(find.text('A⇔B 入れ替え'), findsNothing);
+    expect(find.text('A と B を入れ替え'), findsNothing);
 
     await pump(
         tester,
         loop: const LoopState(
             pointA: Duration(seconds: 90), pointB: Duration(seconds: 10)));
-    expect(find.text('A⇔B 入れ替え'), findsOneWidget);
+    expect(find.text('A と B を入れ替え'), findsOneWidget);
   });
 
   testWidgets('未設定の点は − / + が無効', (tester) async {
