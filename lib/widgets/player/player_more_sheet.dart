@@ -47,7 +47,6 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
 class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
   late bool _firstVerse = widget.firstVerseMode;
   late bool _hideVideo = widget.hideVideo;
-  double? _volume;
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +56,6 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
     final hasSource = ref.watch(videoSourceProvider) != null;
     final volumeNorm = ref.watch(volumeNormProvider);
     final rate = ref.watch(rateProvider).valueOrNull ?? 1.0;
-    final volume =
-        _volume ?? ref.watch(volumeProvider).valueOrNull ?? player.state.volume;
     final loop = ref.watch(loopProvider);
 
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
@@ -129,54 +126,7 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
                 ],
               ),
             ),
-            // 音量
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
-                    tooltip: volume > 0 ? 'ミュート' : 'ミュート解除',
-                    onPressed: hasSource
-                        ? () {
-                            double next;
-                            if (volume > 0) {
-                              ref.read(previousVolumeProvider.notifier).state =
-                                  volume;
-                              next = 0;
-                            } else {
-                              final prev = ref.read(previousVolumeProvider);
-                              next = prev > 0 ? prev : 100.0;
-                            }
-                            player.setVolume(next);
-                            setState(() => _volume = next);
-                          }
-                        : null,
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: volume.clamp(0, 100),
-                      min: 0,
-                      max: 100,
-                      onChanged: hasSource
-                          ? (v) {
-                              player.setVolume(v);
-                              setState(() => _volume = v);
-                            }
-                          : null,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 40,
-                    child: Text(
-                      '${volume.round()}%',
-                      style: textTheme.labelSmall,
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            const VolumeSliderRow(),
             const Divider(),
             SwitchListTile(
               secondary: const Icon(Icons.videocam_outlined),
@@ -190,6 +140,76 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 音量の行: ミュート切替（前の音量を覚える）+ スライダー + %。
+/// プレイリスト・単体の両方の「その他」シートで使う。
+/// スライダーを動かしている間は自前の値で即時に描き、離したらプロバイダの値に戻る
+class VolumeSliderRow extends ConsumerStatefulWidget {
+  const VolumeSliderRow({super.key});
+
+  @override
+  ConsumerState<VolumeSliderRow> createState() => _VolumeSliderRowState();
+}
+
+class _VolumeSliderRowState extends ConsumerState<VolumeSliderRow> {
+  double? _volume;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final player = ref.read(playerProvider);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    final volume =
+        _volume ?? ref.watch(volumeProvider).valueOrNull ?? player.state.volume;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
+            tooltip: volume > 0 ? 'ミュート' : 'ミュート解除',
+            onPressed: hasSource
+                ? () {
+                    double next;
+                    if (volume > 0) {
+                      ref.read(previousVolumeProvider.notifier).state = volume;
+                      next = 0;
+                    } else {
+                      final prev = ref.read(previousVolumeProvider);
+                      next = prev > 0 ? prev : 100.0;
+                    }
+                    player.setVolume(next);
+                    setState(() => _volume = next);
+                  }
+                : null,
+          ),
+          Expanded(
+            child: Slider(
+              value: volume.clamp(0, 100),
+              min: 0,
+              max: 100,
+              onChanged: hasSource
+                  ? (v) {
+                      player.setVolume(v);
+                      setState(() => _volume = v);
+                    }
+                  : null,
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            child: Text(
+              '${volume.round()}%',
+              style: textTheme.labelSmall,
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
       ),
     );
   }

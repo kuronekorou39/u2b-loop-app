@@ -8,7 +8,7 @@ import '../../providers/player_provider.dart';
 class PlayerControls extends ConsumerWidget {
   const PlayerControls({super.key});
 
-  static const _speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+  static const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
   static const _rewindIcons = <int, IconData>{
     5: Icons.replay_5,
@@ -21,7 +21,13 @@ class PlayerControls extends ConsumerWidget {
     30: Icons.forward_30,
   };
 
-  void _showStepMenu(
+  /// ±N 秒のアイコン（5/10/30 以外は 5 のアイコンで代用）
+  static IconData rewindIcon(int step) => _rewindIcons[step] ?? Icons.replay_5;
+  static IconData forwardIcon(int step) =>
+      _forwardIcons[step] ?? Icons.forward_5;
+
+  /// ±N 秒の秒数を選ぶメニュー（長押しで出す）。単体再生のガラス板コントローラーとも共用
+  static Future<void> showStepMenu(
       BuildContext context, Offset position, WidgetRef ref) async {
     final currentStep = ref.read(seekStepProvider);
     final result = await showMenu<int>(
@@ -113,10 +119,10 @@ class PlayerControls extends ConsumerWidget {
           GestureDetector(
             onLongPressStart: hasSource
                 ? (details) =>
-                    _showStepMenu(context, details.globalPosition, ref)
+                    showStepMenu(context, details.globalPosition, ref)
                 : null,
             child: IconButton(
-              icon: Icon(_rewindIcons[seekStep] ?? Icons.replay_5),
+              icon: Icon(rewindIcon(seekStep)),
               onPressed: hasSource
                   ? () {
                       final pos = player.state.position;
@@ -140,10 +146,10 @@ class PlayerControls extends ConsumerWidget {
           GestureDetector(
             onLongPressStart: hasSource
                 ? (details) =>
-                    _showStepMenu(context, details.globalPosition, ref)
+                    showStepMenu(context, details.globalPosition, ref)
                 : null,
             child: IconButton(
-              icon: Icon(_forwardIcons[seekStep] ?? Icons.forward_5),
+              icon: Icon(forwardIcon(seekStep)),
               onPressed: hasSource
                   ? () {
                       final pos = player.state.position;
@@ -200,7 +206,7 @@ class PlayerControls extends ConsumerWidget {
             initialValue: rate,
             onSelected: (speed) => player.setRate(speed),
             enabled: hasSource,
-            itemBuilder: (context) => _speeds
+            itemBuilder: (context) => speeds
                 .map(
                   (s) => PopupMenuItem(
                     value: s,

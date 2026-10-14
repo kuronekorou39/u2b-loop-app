@@ -18,7 +18,6 @@ import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
-import '../models/loop_state.dart';
 import '../models/playlist_mode.dart' as pl;
 import '../models/playlist_track.dart';
 import '../models/tag.dart';
@@ -33,7 +32,6 @@ import '../services/cache_service.dart';
 import '../services/export_service.dart';
 import '../services/export_runner.dart';
 import '../providers/subtitle_provider.dart';
-import '../providers/thumb_tone_provider.dart';
 import '../services/subtitle_service.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/waveform_cache.dart';
@@ -51,9 +49,12 @@ import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_controls.dart';
 import '../widgets/player/player_more_sheet.dart';
+import '../widgets/player/player_shell.dart';
 import '../widgets/player/player_status_views.dart';
 import '../widgets/player/playlist_bottom_bar.dart';
 import '../widgets/player/playlist_seek_area.dart';
+import '../widgets/player/single_more_sheet.dart';
+import '../widgets/player/single_player_bar.dart';
 import '../widgets/player/subtitle_toggle_button.dart';
 import '../widgets/player/track_row_parts.dart';
 import '../widgets/player/transition_stage.dart';
@@ -123,8 +124,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Timer? _overlayHideTimer;
   bool _hideVideo = false;
 
-  /// プレイリスト縦画面でトラック一覧を開いているか（ふだんは閉じている）
-  bool _showTrackList = false;
+  /// 縦画面の中段パネル（プレイリスト: トラック一覧、単体: AB 区間）を開いているか。
+  /// ふだんは閉じている
+  bool _panelOpen = false;
   final _trackListController = ScrollController();
   bool _editMode = false;
   double _editStep = 0.1;
@@ -2287,10 +2289,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? (plState?.currentTrack?.displayName ?? _currentItem.title)
         : _currentItem.title;
 
-    // プレイリスト縦画面はガラス風: AppBar を透明にして背景を上まで通し、
-    // 曲名は動画の下に出すので AppBar にはプレイリスト名だけ
-    final glassLook =
-        _isPlaylist && !_loading && _loadError == null && !isLandscape;
+    // 縦画面の再生中はガラス風: AppBar を透明にして背景を上まで通し、
+    // 曲名は動画の下に出すので AppBar にはプレイリスト名だけ（単体は空）
+    final glassLook = !_loading && _loadError == null && !isLandscape;
 
     return PopScope(
       canPop: true,
@@ -3053,146 +3054,313 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     if (isLandscape) return _buildFullscreenView(bottomInset);
 
-    final regions = _currentItem.effectiveRegions;
-    final loop = ref.watch(loopProvider);
-
-    // プレイリスト: サムネ色の背景の上に、角丸の動画・曲名・（開いていれば）トラック一覧・
-    // ガラス板のコントローラー。AppBar は透明で背景が上まで通っている
+    // 縦画面はプレイリスト・単体とも同じ骨組み（PlayerShell）。
+    // 違うのは曲名行のチップ・中段のパネル・コントローラーの中身だけ
+    final panelOpen = _panelOpen;
     if (_isPlaylist) {
       final plState = ref.watch(playlistPlayerProvider);
       final nextIdx = plState.peekNextTrackIndex();
-      final listOpen = _showTrackList;
-      // extendBodyBehindAppBar なので body 内の padding.top が AppBar の下端になる。
-      // State の context は Scaffold の外側でステータスバーの分しか入っていないため、
-      // Builder で body 内の context から取る（取り違えると動画が AppBar に被る）
-      return Stack(
-        children: [
-          Positioned.fill(child: _buildToneBackground()),
-          Builder(builder: (bodyContext) => Column(
-            children: [
-              SizedBox(height: MediaQuery.paddingOf(bodyContext).top + AppSpacing.sm),
-              if (!_hideVideo)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: PlaylistBottomBar.margin),
-                  child: ClipRRect(
-                    borderRadius: AppRadius.borderXl,
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: TransitionStage(
-                        currentItem: _currentItem,
-                        onFullscreen: _enterFullscreen,
-                      ),
-                    ),
-                  ),
-                ),
-              const KaraokeSubtitle(),
-              const SizedBox(height: AppSpacing.lg + 2),
-              NowPlayingHeader(
-                track: plState.currentTrack,
-                index: plState.currentTrackIndex,
-                count: plState.trackCount,
-                next: nextIdx != null ? plState.tracks[nextIdx] : null,
-                onNextTap: () => _setTrackListOpen(true),
+      final item = plState.currentTrack?.item;
+      final currentIdx = plState.currentTrackIndex;
+      final subParts = <String>[
+        if (item?.bpm != null) 'BPM ${item!.bpm!.round()}',
+        if (item?.musicalKey != null) item!.musicalKey!,
+        currentIdx != null
+            ? '${currentIdx + 1} / ${plState.trackCount}'
+            : '- / ${plState.trackCount}',
+      ];
+      return PlayerShell(
+        item: _currentItem,
+        video: _hideVideo
+            ? null
+            : TransitionStage(
+                currentItem: _currentItem,
+                onFullscreen: _enterFullscreen,
               ),
-              const SizedBox(height: AppSpacing.lg + 2),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  // 一覧は縦に伸ばして置きたいので、既定の中央寄せ Stack ではなく expand
-                  layoutBuilder: (current, previous) => Stack(
-                    fit: StackFit.expand,
-                    children: [...previous, ?current],
-                  ),
-                  child: listOpen
-                      ? _buildTrackListPanel()
-                      : const SizedBox.expand(key: ValueKey('noList')),
-                ),
-              ),
-              PlaylistBottomBar(
-                seekbar: PlaylistSeekArea(
-                  compact: _compactSeekbar,
-                  waveHeight: listOpen ? 44 : 96,
-                  mixHeight: listOpen ? 64 : 120,
-                  onToggleCompact: () =>
-                      setState(() => _compactSeekbar = !_compactSeekbar),
-                  onRetryWaveform: _retryWaveform,
-                  waveformFor: (item) => _waveformCache[item.id],
-                  titleFor: (item) => item.title,
-                ),
-                compact: listOpen,
-                shuffle: plState.shuffle,
-                onShuffle: _isPreloading ? null : _toggleShuffle,
-                repeatMode: plState.repeatMode,
-                onRepeat: _cycleRepeatMode,
-                onPrev: plState.hasPrev && !_trackLoading ? _manualPrev : null,
-                onNext: plState.hasNext && !_trackLoading ? _manualNext : null,
-                onMore: _showMoreSheet,
-                onToggleList: () => _setTrackListOpen(!listOpen),
-                firstVerse: plState.firstVerseMode,
-                onToggleFirstVerse: _toggleFirstVerseMode,
-              ),
-            ],
-          )),
-        ],
+        header: NowPlayingHeader(
+          title: plState.currentTrack?.displayName ?? '',
+          subtitle: subParts.join('  ·  '),
+          chip: nextIdx != null
+              ? NextTrackChip(
+                  track: plState.tracks[nextIdx],
+                  onTap: () => _setPanelOpen(true),
+                )
+              : null,
+        ),
+        panel: panelOpen ? _buildTrackListPanel() : null,
+        controller: PlaylistBottomBar(
+          seekbar: PlaylistSeekArea(
+            compact: _compactSeekbar,
+            waveHeight: panelOpen ? 44 : 96,
+            mixHeight: panelOpen ? 64 : 120,
+            onToggleCompact: () =>
+                setState(() => _compactSeekbar = !_compactSeekbar),
+            onRetryWaveform: _retryWaveform,
+            waveformFor: (item) => _waveformCache[item.id],
+            titleFor: (item) => item.title,
+          ),
+          compact: panelOpen,
+          shuffle: plState.shuffle,
+          onShuffle: _isPreloading ? null : _toggleShuffle,
+          repeatMode: plState.repeatMode,
+          onRepeat: _cycleRepeatMode,
+          onPrev: plState.hasPrev && !_trackLoading ? _manualPrev : null,
+          onNext: plState.hasNext && !_trackLoading ? _manualNext : null,
+          onMore: _showMoreSheet,
+          onToggleList: () => _setPanelOpen(!panelOpen),
+          firstVerse: plState.firstVerseMode,
+          onToggleFirstVerse: _toggleFirstVerseMode,
+        ),
       );
     }
 
-    // 単体再生: スクロール可能レイアウト
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          Stack(
-            children: [
-              VideoPlayerWidget(onFullscreen: _enterFullscreen),
-              const Positioned.fill(child: LyricsOverlay()),
-            ],
-          ),
-          const KaraokeSubtitle(),
-          const PlayerControls(),
-          LoopSeekbar(
-            compact: _compactSeekbar,
-            onToggleCompact: () =>
-                setState(() => _compactSeekbar = !_compactSeekbar),
-            allowMarkerDrag: _editMode,
-            onRetryWaveform: _retryWaveform,
-          ),
-          _buildRegionAndLoopPanel(regions, loop),
-          SizedBox(height: AppSpacing.xxl + bottomInset),
-        ],
-      ),
-    );
-  }
+    // 単体再生: 区間チップ・区間パネル・単体用コントローラー
+    final loop = ref.watch(loopProvider);
+    final notifier = ref.read(loopProvider.notifier);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    final regions = _currentItem.effectiveRegions;
+    final activeRegion =
+        _activeRegionIdx >= 0 && _activeRegionIdx < regions.length
+            ? regions[_activeRegionIdx]
+            : null;
+    final item = _currentItem;
+    final duration = ref.watch(durationProvider).valueOrNull;
+    final subParts = <String>[
+      if (item.bpm != null) 'BPM ${item.bpm!.round()}',
+      if (item.musicalKey != null) item.musicalKey!,
+      if (duration != null && duration > Duration.zero)
+        TimeUtils.formatShort(duration),
+    ];
+    final String regionText;
+    if (activeRegion == null) {
+      regionText = '全体';
+    } else if (_editMode) {
+      regionText = '${activeRegion.name}（編集中）';
+    } else {
+      regionText =
+          '${activeRegion.name}  ${TimeUtils.formatShortNullable(loop.pointA)} - ${TimeUtils.formatShortNullable(loop.pointB)}';
+    }
 
-  /// サムネの色味を薄く敷いた背景。曲が変わるとなめらかに移る
-  Widget _buildToneBackground() {
-    final path = _currentItem.thumbnailPath;
-    final tone =
-        path == null ? null : ref.watch(thumbToneProvider(path)).valueOrNull;
-    final theme = Theme.of(context);
-    final colors = (tone ?? ThumbTone.fallback).gradient(
-      theme.scaffoldBackgroundColor,
-      dark: theme.brightness == Brightness.dark,
-    );
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 700),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: colors,
+    return PlayerShell(
+      item: item,
+      video: _hideVideo
+          ? null
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                VideoPlayerWidget(
+                  useAspectRatio: false,
+                  onFullscreen: _enterFullscreen,
+                ),
+                const LyricsOverlay(),
+              ],
+            ),
+      header: NowPlayingHeader(
+        title: item.title,
+        subtitle: subParts.join('  ·  '),
+        chip: HeaderChip(
+          leading: Icon(
+            activeRegion == null ? Icons.all_inclusive : Icons.repeat,
+            size: AppIconSizes.s,
+            color: AppTheme.accentGreen,
+          ),
+          label: '区間',
+          text: regionText,
+          onTap: () => _setPanelOpen(true),
+        ),
+      ),
+      panel: panelOpen ? _buildRegionPanel(regions) : null,
+      controller: SinglePlayerBar(
+        seekbar: panelOpen
+            ? LoopSeekbar(
+                bar: true,
+                barHeight: 44,
+                allowMarkerDrag: false,
+                onRetryWaveform: _retryWaveform,
+              )
+            : LoopSeekbar(
+                compact: _compactSeekbar,
+                onToggleCompact: () =>
+                    setState(() => _compactSeekbar = !_compactSeekbar),
+                allowMarkerDrag: _editMode,
+                onRetryWaveform: _retryWaveform,
+              ),
+        compact: panelOpen,
+        loop: loop,
+        onToggleLoop: notifier.toggleEnabled,
+        editing: _editMode,
+        canEdit: activeRegion != null,
+        onToggleRegions: () => _setPanelOpen(!panelOpen),
+        onEdit: () => setState(() => _editMode = true),
+        onFinishEdit: _finishEdit,
+        onMore: _showSingleMoreSheet,
+        editBlock: AbEditControls(
+          loop: loop,
+          notifier: notifier,
+          step: _editStep,
+          onStepChanged: (s) => setState(() => _editStep = s),
+          onSeek: _seekTo,
+          onSetA: hasSource
+              ? () => notifier.setPointA(ref.read(playerProvider).state.position)
+              : null,
+          onSetB: hasSource
+              ? () => notifier.setPointB(ref.read(playerProvider).state.position)
+              : null,
         ),
       ),
     );
   }
 
-  /// トラック一覧の開閉。開いたら再生中の曲が上の方に来るように送る
-  void _setTrackListOpen(bool open) {
-    if (open == _showTrackList) return;
-    setState(() => _showTrackList = open);
-    if (!open) return;
+  /// 単体再生の「その他」シート
+  void _showSingleMoreSheet() {
+    SingleMoreSheet.show(
+      context,
+      SingleMoreSheet(
+        onExport: () => _showExportDialog(
+            fullTrack: !ref.read(loopProvider).hasBothPoints),
+        hideVideo: _hideVideo,
+        onHideVideoChanged: (v) => setState(() => _hideVideo = v),
+      ),
+    );
+  }
+
+  /// 開閉できる AB 区間の一覧（ガラス板）。見出しに件数と「追加」、▾ で閉じる。
+  /// 行: 全体 / 各区間（タップで切替、⋮ でリネーム・削除）
+  Widget _buildRegionPanel(List<LoopRegion> regions) {
+    final textTheme = Theme.of(context).textTheme;
+    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
+
+    Widget row({
+      required String name,
+      required String time,
+      required bool isCurrent,
+      required IconData icon,
+      required VoidCallback onTap,
+      VoidCallback? onMenu,
+    }) {
+      return InkWell(
+        onTap: onTap,
+        onLongPress: onMenu,
+        child: Container(
+          decoration: BoxDecoration(
+            color: isCurrent ? AppTheme.accentGreen.withValues(alpha: 0.12) : null,
+            border: Border(
+              top: BorderSide(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06)),
+            ),
+          ),
+          padding: EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.md + 2,
+              onMenu == null ? AppSpacing.xl : AppSpacing.xs, AppSpacing.md + 2),
+          child: Row(
+            children: [
+              Icon(icon, size: AppIconSizes.sm,
+                  color: isCurrent ? AppTheme.accentGreen : dim),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyMedium!.copyWith(
+                    fontSize: 14,
+                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                    color: isCurrent ? AppTheme.accentGreen : null,
+                  ),
+                ),
+              ),
+              Text(
+                time,
+                style: textTheme.labelSmall!
+                    .copyWith(fontFeatures: const [FontFeature('tnum')]),
+              ),
+              if (onMenu != null)
+                IconButton(
+                  icon: Icon(Icons.more_vert, size: AppIconSizes.sm, color: dim),
+                  onPressed: onMenu,
+                  tooltip: 'リネーム・削除',
+                  visualDensity: VisualDensity.compact,
+                )
+              else
+                const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      );
+    }
+
+    String timeOf(LoopRegion r) {
+      if (r.pointAMs == null && r.pointBMs == null) return '未設定';
+      final a = TimeUtils.formatShortNullable(
+          r.pointAMs != null ? Duration(milliseconds: r.pointAMs!) : null);
+      final b = TimeUtils.formatShortNullable(
+          r.pointBMs != null ? Duration(milliseconds: r.pointBMs!) : null);
+      if (r.pointAMs == null || r.pointBMs == null) return '$a - $b';
+      final sec = (r.pointBMs! - r.pointAMs!).abs() / 1000;
+      return '$a - $b (${sec.toStringAsFixed(1)}s)';
+    }
+
+    return GlassPanel(
+      key: const ValueKey('regionPanel'),
+      margin: const EdgeInsets.fromLTRB(
+          PlayerShell.margin, 0, PlayerShell.margin, AppSpacing.lg),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.sm, 0),
+            child: Row(
+              children: [
+                Text('AB 区間', style: textTheme.titleSmall),
+                const SizedBox(width: AppSpacing.md),
+                Text('${regions.length} 件', style: textTheme.labelSmall),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: regions.length < _maxRegions ? _addRegion : null,
+                  icon: const Icon(Icons.add, size: AppIconSizes.s),
+                  label: Text(regions.length < _maxRegions ? '追加' : '上限'),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                  onPressed: () => _setPanelOpen(false),
+                  tooltip: '一覧を閉じる',
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              children: [
+                row(
+                  name: '全体',
+                  time: '',
+                  isCurrent: _activeRegionIdx == -1,
+                  icon: Icons.all_inclusive,
+                  onTap: _clearRegion,
+                ),
+                for (var i = 0; i < regions.length; i++)
+                  row(
+                    name: regions[i].name,
+                    time: timeOf(regions[i]),
+                    isCurrent: i == _activeRegionIdx,
+                    icon: Icons.repeat,
+                    onTap: () => _selectRegion(i),
+                    onMenu: () => _showRegionMenu(i),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 中段パネル（プレイリスト: トラック一覧、単体: AB 区間）の開閉。
+  /// トラック一覧は開いたら再生中の曲が上の方に来るように送る
+  void _setPanelOpen(bool open) {
+    if (open == _panelOpen) return;
+    setState(() => _panelOpen = open);
+    if (!open || !_isPlaylist) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_trackListController.hasClients) return;
       final idx = ref.read(playlistPlayerProvider).currentTrackIndex ?? 0;
@@ -3208,8 +3376,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final textTheme = Theme.of(context).textTheme;
     return GlassPanel(
       key: const ValueKey('trackList'),
-      margin: const EdgeInsets.fromLTRB(PlaylistBottomBar.margin, 0,
-          PlaylistBottomBar.margin, AppSpacing.lg),
+      margin: const EdgeInsets.fromLTRB(
+          PlayerShell.margin, 0, PlayerShell.margin, AppSpacing.lg),
       padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Column(
         children: [
@@ -3229,7 +3397,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
                 IconButton(
                   icon: const Icon(Icons.keyboard_arrow_down),
-                  onPressed: () => _setTrackListOpen(false),
+                  onPressed: () => _setPanelOpen(false),
                   tooltip: '一覧を閉じる',
                 ),
               ],
@@ -3299,268 +3467,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _baseVolume = 100.0;
       try { ref.read(playerProvider).setVolume(100); } catch (_) {}
     }
-  }
-
-  // --- Region + Loop panel (editor-style 2-panel layout) ---
-
-  Widget _buildRegionAndLoopPanel(
-      List<LoopRegion> regions, LoopState loop) {
-    final notifier = ref.read(loopProvider.notifier);
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final hasSource = ref.watch(videoSourceProvider) != null;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
-        child: SizedBox(
-          height: 200,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // === Left: Region list ===
-              SizedBox(
-                width: 120,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // 「全体」（固定）
-                    RegionTile(
-                      name: '全体',
-                      isActive: _activeRegionIdx == -1,
-                      pointAMs: null,
-                      pointBMs: null,
-                      onTap: _clearRegion,
-                    ),
-                    Divider(height: 1,
-                        color: theme.dividerColor.withValues(alpha: 0.3)),
-                    // 区間リスト（スクロール可能）
-                    if (regions.isNotEmpty)
-                      Expanded(
-                        child: ListView(
-                          padding: EdgeInsets.zero,
-                          children: [
-                            for (var i = 0; i < regions.length; i++) ...[
-                              RegionTile(
-                                name: regions[i].name,
-                                isActive: i == _activeRegionIdx,
-                                pointAMs: regions[i].pointAMs,
-                                pointBMs: regions[i].pointBMs,
-                                onTap: () => _selectRegion(i),
-                                onLongPress: () => _showRegionMenu(i),
-                              ),
-                              if (i < regions.length - 1)
-                                Divider(height: 1,
-                                    color: theme.dividerColor.withValues(alpha: 0.3)),
-                            ],
-                          ],
-                        ),
-                      )
-                    else
-                      const Spacer(),
-                    // 追加ボタン（固定）
-                    const SizedBox(height: AppSpacing.xs),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 28,
-                      child: OutlinedButton.icon(
-                        onPressed: regions.length < _maxRegions ? _addRegion : null,
-                        icon: const Icon(Icons.add, size: AppIconSizes.xs),
-                        label: Text(
-                          regions.length < _maxRegions ? '追加' : '上限',
-                          style: textTheme.labelSmall,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          side: BorderSide(color: Colors.grey.shade700),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              VerticalDivider(
-                width: AppSpacing.xl,
-                thickness: 1,
-                color: theme.dividerColor.withValues(alpha: 0.3),
-              ),
-
-              // === Right: Loop controls ===
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Loop toggle + duration
-                    Row(
-                      children: [
-                        SizedBox(
-                          height: 28,
-                          child: FilledButton.icon(
-                            onPressed: hasSource
-                                ? () => notifier.toggleEnabled()
-                                : null,
-                            icon: Icon(
-                              loop.enabled
-                                  ? Icons.repeat_on
-                                  : Icons.repeat,
-                              size: AppIconSizes.s,
-                            ),
-                            label: Text(
-                              loop.enabled ? 'Loop ON' : 'Loop OFF',
-                            ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: loop.enabled
-                                  ? theme.colorScheme.primary
-                                  : theme
-                                      .colorScheme.surfaceContainerHighest,
-                              foregroundColor: loop.enabled
-                                  ? Colors.black
-                                  : Colors.grey,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10),
-                              minimumSize: Size.zero,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        // 編集/保存ボタン（区間選択時のみ）
-                        if (_activeRegionIdx >= 0)
-                          SizedBox(
-                            height: 26,
-                            child: TextButton.icon(
-                              onPressed: _editMode
-                                  ? _finishEdit
-                                  : () => setState(() => _editMode = true),
-                              icon: Icon(
-                                _editMode ? Icons.check : Icons.edit,
-                                size: AppIconSizes.xs,
-                                color: _editMode
-                                    ? AppTheme.accentGreen
-                                    : Colors.grey,
-                              ),
-                              label: Text(
-                                _editMode ? '保存' : '編集',
-                                style: textTheme.labelSmall!.copyWith(
-                                  color: _editMode
-                                      ? AppTheme.accentGreen
-                                      : Colors.grey,
-                                ),
-                              ),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.sm),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-
-                    // --- Edit mode: full A/B controls ---
-                    if (_editMode)
-                      AbEditControls(
-                        loop: loop,
-                        notifier: notifier,
-                        step: _editStep,
-                        onStepChanged: (s) => setState(() => _editStep = s),
-                        onSeek: _seekTo,
-                        onSetA: hasSource
-                            ? () => notifier.setPointA(
-                                ref.read(playerProvider).state.position)
-                            : null,
-                        onSetB: hasSource
-                            ? () => notifier.setPointB(
-                                ref.read(playerProvider).state.position)
-                            : null,
-                      )
-                    else if (_activeRegionIdx == -1) ...[
-                      // --- 全体 ---
-                      const Spacer(),
-                      // Gap（LoopON時）
-                      if (loop.enabled)
-                        LoopGapSlider(
-                            gapSeconds: loop.gapSeconds,
-                            onChanged: notifier.setGap),
-                      if (hasSource)
-                        SizedBox(
-                          width: double.infinity,
-                          height: 28,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _showExportDialog(
-                                fullTrack: !loop.hasBothPoints),
-                            icon: const Icon(
-                                Icons.file_download_outlined,
-                                size: AppIconSizes.xs),
-                            label: Text(
-                                loop.hasBothPoints
-                                    ? '区間を書き出し'
-                                    : '全体を書き出し',
-                                style: textTheme.labelSmall),
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                  color: Colors.grey.shade700),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      AppRadius.borderSm),
-                            ),
-                          ),
-                        ),
-                    ] else ...[
-                      // --- Non-edit: read-only A/B display ---
-                      LoopPointDisplay(
-                          label: 'A',
-                          color: AppTheme.pointAColor,
-                          time: loop.pointA,
-                          onSeek: _seekTo),
-                      const SizedBox(height: AppSpacing.sm),
-                      LoopPointDisplay(
-                          label: 'B',
-                          color: AppTheme.pointBColor,
-                          time: loop.pointB,
-                          onSeek: _seekTo),
-                      const Spacer(),
-                      // Gap（LoopON時）
-                      if (loop.enabled)
-                        LoopGapSlider(
-                            gapSeconds: loop.gapSeconds,
-                            onChanged: notifier.setGap),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 28,
-                        child: OutlinedButton.icon(
-                          onPressed: loop.hasBothPoints
-                              ? () => _showExportDialog(fullTrack: false)
-                              : null,
-                            icon: const Icon(Icons.file_download_outlined,
-                                size: AppIconSizes.xs),
-                            label: Text('書き出し',
-                                style: textTheme.labelSmall),
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                  color: Colors.grey.shade700),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      AppRadius.borderSm),
-                            ),
-                          ),
-                        ),
-                    ],
-
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _seekTo(Duration time) => ref.read(playerProvider).seek(time);
