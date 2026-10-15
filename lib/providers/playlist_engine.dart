@@ -152,12 +152,19 @@ class PlaylistEngine {
         timedOut = true;
         return null;
       });
-      if (stale()) return manifest;
+      if (stale()) {
+        HqAudio.log('エンジン: 曲が変わったので付けない');
+        return manifest;
+      }
       if (timedOut) {
+        HqAudio.log('エンジン: ${hqAudioWait.inSeconds} 秒に間に合わず、落ち次第付ける');
         final opened = player.state.playlist.medias.firstOrNull?.uri;
         unawaited(hqAudio.then((late) {
-          if (late == null || stale()) return null;
-          if (player.state.playlist.medias.firstOrNull?.uri != opened) return null;
+          if (late == null) return null;
+          if (stale() || player.state.playlist.medias.firstOrNull?.uri != opened) {
+            HqAudio.log('エンジン: 落ちたが曲が変わっていたので付けない');
+            return null;
+          }
           return attach(late);
         }));
       } else if (path != null) {

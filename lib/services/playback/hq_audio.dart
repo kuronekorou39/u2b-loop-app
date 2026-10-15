@@ -56,6 +56,9 @@ class HqAudio {
   static final ValueNotifier<int> logVersion = ValueNotifier(0);
   static const _maxLogLines = 80;
 
+  /// 呼び出し側（ローダー・エンジン）も判断をここに残す
+  static void log(String message) => _log(message);
+
   static void _log(String message) {
     debugPrint('[HqAudio] $message');
     final t = DateTime.now();
@@ -271,6 +274,12 @@ class HqAudio {
   /// 本当に付いたときだけ true（付かなければ一体型の音声のまま鳴る）
   static Future<bool> attach(Player player, String path) async {
     try {
+      int size = -1;
+      try {
+        size = await File(path).length();
+      } catch (_) {}
+      _log('取り付け開始 ${labelFor(path)} ${size ~/ 1024}KB '
+          '（今のトラック: ${_audioTrackSummary(player)}）');
       await player
           .setAudioTrack(AudioTrack.uri(path, title: trackTitle))
           .timeout(const Duration(seconds: 10));
@@ -281,15 +290,20 @@ class HqAudio {
         }
         await Future.delayed(const Duration(milliseconds: 100));
       }
-      final titles = player.state.tracks.audio
-          .map((t) => '${t.id}:${t.title ?? '-'}')
-          .join(', ');
-      _log('取り付け未確認（トラック一覧: $titles）');
+      _log('取り付け未確認（トラック一覧: ${_audioTrackSummary(player)}）');
       return false;
     } catch (e) {
       _log('取り付け失敗 $e');
       return false;
     }
+  }
+
+  static String _audioTrackSummary(Player player) {
+    final list = player.state.tracks.audio
+        .where((t) => t.id != 'auto' && t.id != 'no')
+        .map((t) => '${t.id}:${t.title ?? '-'}')
+        .join(', ');
+    return list.isEmpty ? 'なし' : list;
   }
 
   /// [player] のトラック一覧に外部音声（[trackTitle]）があるか

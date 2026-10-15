@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/playlist_track.dart';
 import '../../providers/player_provider.dart';
+import '../settings/hq_audio_log_dialog.dart';
 import '../marquee_text.dart';
 import 'track_row_parts.dart';
 
@@ -52,12 +53,16 @@ class NowPlayingHeader extends ConsumerWidget {
                       ),
                     if (quality != null) ...[
                       if (subtitle.isNotEmpty) Text('  ·  ', style: sub),
-                      Text(
-                        quality.label,
-                        style: sub.copyWith(
-                          color: quality.isHq
-                              ? AppTheme.accentGreen
-                              : AppTheme.muted(context),
+                      // タップで高音質のログ（付かなかった理由をその場で読める）
+                      GestureDetector(
+                        onTap: () => HqAudioLogDialog.show(context),
+                        child: Text(
+                          quality.label,
+                          style: sub.copyWith(
+                            color: quality.isHq
+                                ? AppTheme.accentGreen
+                                : AppTheme.muted(context),
+                          ),
                         ),
                       ),
                     ],

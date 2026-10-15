@@ -191,13 +191,22 @@ class PlayerLoader {
       return null;
     });
     if (timedOut) {
+      HqAudio.log('ローダー: ${hqAudioWait.inSeconds} 秒に間に合わず、落ち次第付ける');
       unawaited(hqAudio.then((late) async {
-        if (late == null || !isMounted() || !_stillPlaying(player, media)) return;
+        if (late == null) return;
+        if (!isMounted() || !_stillPlaying(player, media)) {
+          HqAudio.log('ローダー: 落ちたが曲が変わっていたので付けない');
+          return;
+        }
         await _attach(player, late);
       }));
       return;
     }
-    if (path == null || !isMounted()) return;
+    if (path == null) return;
+    if (!isMounted()) {
+      HqAudio.log('ローダー: 画面を離れたので付けない');
+      return;
+    }
     await _attach(player, path);
     await _yieldFrame();
   }
