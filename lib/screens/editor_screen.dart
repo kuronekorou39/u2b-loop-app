@@ -16,8 +16,8 @@ import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
-import '../services/export_service.dart';
 import '../services/export_runner.dart';
+import '../services/export_source.dart';
 import '../services/playback/load_progress.dart';
 import '../services/playback/player_loader.dart';
 import '../services/playback/waveform_loader.dart';
@@ -301,13 +301,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       context,
       title: '${region.name} を書き出し',
       rangeText: '$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)',
-    ).then((format) {
-      if (format == null || !mounted) return;
-      _executeExport(format);
+      askQuality: ExportSource.canPickQuality(_item),
+    ).then((choice) {
+      if (choice == null || !mounted) return;
+      _executeExport(choice);
     });
   }
 
-  Future<void> _executeExport(ExportFormat format) async {
+  Future<void> _executeExport(ExportChoice choice) async {
     final loop = ref.read(loopProvider);
     if (!loop.hasBothPoints) return;
 
@@ -322,12 +323,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
     final region = _currentRegion;
     if (region == null || !mounted) return;
-    await runExportFlow(
+    await runItemExportFlow(
       context,
-      inputUri: inputUri,
+      item: _item,
+      fallbackUri: inputUri,
       startMs: loop.pointA!.inMilliseconds,
       endMs: loop.pointB!.inMilliseconds,
-      format: format,
+      choice: choice,
       title: '${_item.title}_${region.name}',
     );
   }

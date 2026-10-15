@@ -48,6 +48,7 @@ class SettingsKeys {
   static const cacheToDocuments = 'cache_to_documents';
   static const glassBlur = 'glass_blur';
   static const hqAudio = 'hq_audio';
+  static const exportQuality = 'export_quality';
 
   // 隠しステータスの解放フラグ（設定のバージョン行を 5 回タップ）
   static const eeStats = 'ee_stats';

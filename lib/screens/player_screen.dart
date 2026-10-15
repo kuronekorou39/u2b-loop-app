@@ -28,8 +28,8 @@ import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_engine.dart';
 import '../providers/playlist_player_provider.dart';
-import '../services/export_service.dart';
 import '../services/export_runner.dart';
+import '../services/export_source.dart';
 import '../services/playback/load_progress.dart';
 import '../services/playback/mini_player_transport.dart';
 import '../services/playback/pip_bridge.dart';
@@ -1510,13 +1510,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       context,
       title: fullTrack ? '全体を書き出し' : '区間を書き出し',
       rangeText: subtitle,
-    ).then((format) {
-      if (format == null || !mounted) return;
-      _executeExport(format == ExportFormat.audioOnly, fullTrack: fullTrack);
+      askQuality: ExportSource.canPickQuality(_currentItem),
+    ).then((choice) {
+      if (choice == null || !mounted) return;
+      _executeExport(choice, fullTrack: fullTrack);
     });
   }
 
-  Future<void> _executeExport(bool audioOnly,
+  Future<void> _executeExport(ExportChoice choice,
       {bool fullTrack = false}) async {
     final loop = ref.read(loopProvider);
     if (!fullTrack && !loop.hasBothPoints) return;
@@ -1539,12 +1540,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     if (!mounted) return;
-    await runExportFlow(
+    await runItemExportFlow(
       context,
-      inputUri: inputUri,
+      item: _currentItem,
+      fallbackUri: inputUri,
       startMs: startMs,
       endMs: endMs,
-      format: audioOnly ? ExportFormat.audioOnly : ExportFormat.mp4,
+      choice: choice,
       title: _currentItem.title,
     );
   }

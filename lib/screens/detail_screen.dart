@@ -17,6 +17,7 @@ import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/cache_service.dart';
 import '../services/export_runner.dart';
+import '../services/export_source.dart';
 import '../services/youtube_service.dart';
 import '../providers/thumb_tone_provider.dart';
 import '../widgets/glass_controls.dart';
@@ -852,13 +853,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
 
     // 形式選択
-    final format = await showExportFormatDialog(
+    final choice = await showExportFormatDialog(
       context,
       title: '${region.name} を書き出し',
       rangeText: '${TimeUtils.formatShortMs(region.pointAMs)}'
           ' - ${TimeUtils.formatShortMs(region.pointBMs)}',
+      askQuality: ExportSource.canPickQuality(item),
     );
-    if (format == null || !mounted) return;
+    if (choice == null || !mounted) return;
 
     // 入力URI解決（local=元URI、YouTube=stream URL を都度解決）
     String? inputUri;
@@ -895,12 +897,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
 
     if (!mounted) return;
-    await runExportFlow(
+    await runItemExportFlow(
       context,
-      inputUri: inputUri,
+      item: item,
+      fallbackUri: inputUri,
       startMs: region.pointAMs!,
       endMs: region.pointBMs!,
-      format: format,
+      choice: choice,
       title: '${item.title}_${region.name}',
     );
   }
