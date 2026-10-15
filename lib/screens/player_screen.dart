@@ -45,12 +45,14 @@ import '../widgets/lyrics_overlay.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/loop/ab_edit_controls.dart';
+import '../widgets/loop/ab_edit_panel.dart';
 import '../widgets/loop/loop_panel_parts.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/loop/region_panel.dart';
 import '../widgets/player/dj_mix_sheet.dart';
 import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_controls.dart';
+import '../widgets/player/player_glass_bar.dart';
 import '../widgets/player/player_more_sheet.dart';
 import '../widgets/player/player_shell.dart';
 import '../widgets/player/player_status_views.dart';
@@ -121,19 +123,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   int _activeRegionIdx = -1;
   bool _compactSeekbar = false;
 
-  // 横画面
+  // 全画面（ボタンで入る。横画面のレイアウトとは別）
   bool _isFullscreen = false;
   bool _showFullscreenOverlay = true;
   bool _showRightDrawer = false;
   Timer? _overlayHideTimer;
   bool _hideVideo = false;
 
-  /// 縦画面の中段パネル（プレイリスト: トラック一覧、単体: AB 区間）を開いているか。
+  /// 中段パネル（プレイリスト: トラック一覧、単体: AB 区間）を開いているか。
   /// ふだんは閉じている
   bool _panelOpen = false;
   final _trackListController = ScrollController();
+
+  /// AB 編集中。微調整の刻みは loopProvider の adjustStep（AB 設定画面と同じ値）
   bool _editMode = false;
-  double _editStep = 0.1;
   int? _preloadingTargetIndex;
 
   // Preload state
@@ -2258,18 +2261,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? (plState?.currentTrack?.displayName ?? _currentItem.title)
         : _currentItem.title;
 
-    // 縦画面の再生中はガラス風: AppBar を透明にして背景を上まで通し、
-    // 曲名は動画の下に出すので AppBar にはプレイリスト名だけ（単体は空）
-    final glassLook = !_loading && _loadError == null && !isLandscape;
+    // 再生中はガラス風: AppBar を透明にして背景を上まで通し、
+    // 曲名は動画の下に出すので AppBar にはプレイリスト名だけ（単体は空）。
+    // 全画面と横レイアウトは AppBar を置かない（横は PlayerShell の topBar がその代わり）
+    final glassLook = !_loading && _loadError == null && !_isFullscreen;
+    final showAppBar = !_isFullscreen && !(isLandscape && glassLook);
 
     return PopScope(
-      canPop: true,
+      // 全画面中の「戻る」は全画面の解除（画面は閉じない）
+      canPop: !_isFullscreen,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _activateMiniPlayer();
+        if (didPop) {
+          _activateMiniPlayer();
+        } else if (_isFullscreen) {
+          _exitFullscreen();
+        }
       },
       child: Scaffold(
       extendBodyBehindAppBar: glassLook,
-      appBar: isLandscape
+      appBar: !showAppBar
           ? null
           : AppBar(
         backgroundColor: glassLook ? Colors.transparent : null,
@@ -2555,16 +2565,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // 横画面レイアウト
   // =====================================================================
 
+  /// 全画面に入る（動画の全画面ボタンから）。横に固定して没入表示にする。
+  /// 端末を横に回しただけでは入らない（横画面は [PlayerShell] の横レイアウト）
   void _enterFullscreen() {
-    final isPortrait =
-        MediaQuery.orientationOf(context) == Orientation.portrait;
-    if (isPortrait) {
-      // 縦→横回転してフルスクリーン
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    }
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     setState(() {
       _isFullscreen = true;
       _showFullscreenOverlay = true;
@@ -2573,24 +2580,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _resetOverlayTimer();
   }
 
+  /// 全画面を解除する（解除ボタン・ダブルタップ・戻る）。向きの固定を外すだけなので、
+  /// 端末を横に持ったままなら横レイアウト、縦に戻せば縦レイアウトになる
   void _exitFullscreen() {
+    if (!_isFullscreen) return;
     setState(() {
       _isFullscreen = false;
       _showRightDrawer = false;
     });
     _overlayHideTimer?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    // 縦に戻す → 少し待ってから全方向許可に戻す
-    SystemChrome.setPreferredOrientations([
+    SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
     ]);
-    Future.delayed(const Duration(milliseconds: 500), () {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    });
   }
 
   void _toggleFullscreenOverlay() {
@@ -2605,106 +2609,66 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
-  /// 横画面 右ドロワーパネル（モード別）
-  Widget _buildLandscapeRightPanel(double bottomInset) {
+  /// 全画面の右ドロワー（モード別）。一覧と最小限の操作だけ。
+  /// AB 編集はここではせず、全画面を解除して横レイアウト（縦と同じ部品）で行う
+  Widget _buildFullscreenDrawer(double bottomInset) {
     if (_isPlaylist) {
       return Column(
         children: [
-          _buildPlaylistControls(),
+          _buildFullscreenPlaylistControls(),
           Expanded(child: _buildPlaylistPanel(bottomInset, transparent: true)),
         ],
       );
     }
 
-    // 単体再生: 横画面専用レイアウト（縦にフル活用）
+    // 単体再生: ループ ON/OFF・編集・書出しの行 + 区間の一覧
     final regions = _currentItem.effectiveRegions;
     final loop = ref.watch(loopProvider);
     final notifier = ref.read(loopProvider.notifier);
     final hasSource = ref.watch(videoSourceProvider) != null;
     final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
+    final dim = theme.colorScheme.onSurface.withValues(alpha: 0.6);
 
     return Column(
       children: [
-        // ループON/OFF + 編集ボタン
         Padding(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+              horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
           child: Row(
             children: [
-              SizedBox(
-                height: 28,
-                child: FilledButton.icon(
-                  onPressed: hasSource
-                      ? () => notifier.toggleEnabled()
-                      : null,
-                  icon: Icon(
-                    loop.enabled ? Icons.repeat_on : Icons.repeat,
-                    size: AppIconSizes.s,
-                  ),
-                  label: Text(loop.enabled ? 'ON' : 'OFF'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: loop.enabled
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.surfaceContainerHighest,
-                    foregroundColor: loop.enabled
-                        ? Colors.black
-                        : Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    minimumSize: Size.zero,
-                  ),
-                ),
+              ToggleIconButton(
+                icon: Icons.repeat,
+                on: loop.enabled,
+                onPressed: hasSource ? notifier.toggleEnabled : null,
+                tooltip: loop.enabled ? 'ループ ON' : 'ループ OFF',
               ),
               const Spacer(),
               if (_activeRegionIdx >= 0)
-                SizedBox(
-                  height: 26,
-                  child: TextButton.icon(
-                    onPressed: _editMode
-                        ? _finishEdit
-                        : () => setState(() => _editMode = true),
-                    icon: Icon(
-                      _editMode ? Icons.check : Icons.edit,
-                      size: AppIconSizes.xs,
-                      color: _editMode ? AppTheme.accentGreen : Colors.grey,
-                    ),
-                    label: Text(
-                      _editMode ? '保存' : '編集',
-                      style: textTheme.labelSmall!.copyWith(
-                        color: _editMode ? AppTheme.accentGreen : Colors.grey,
-                      ),
-                    ),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
+                TextButton.icon(
+                  // 編集は全画面の外で（横レイアウトに AB 編集の板が出る）
+                  onPressed: () {
+                    _exitFullscreen();
+                    setState(() => _editMode = true);
+                  },
+                  icon: Icon(Icons.edit_outlined,
+                      size: AppIconSizes.sm, color: dim),
+                  label: const Text('編集'),
                 ),
-              SizedBox(
-                height: 26,
-                child: OutlinedButton.icon(
-                  onPressed: () => _showExportDialog(
-                      fullTrack: !loop.hasBothPoints),
-                  icon: const Icon(Icons.file_download_outlined,
-                      size: AppIconSizes.xs),
-                  label: Text('書出し', style: textTheme.labelSmall),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.grey.shade700),
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
+              IconButton(
+                onPressed: () =>
+                    _showExportDialog(fullTrack: !loop.hasBothPoints),
+                icon: const Icon(Icons.file_download_outlined,
+                    size: AppIconSizes.ml),
+                tooltip: '書き出し',
               ),
             ],
           ),
         ),
         const Divider(height: 1),
-        // 区間リスト（Expandedでフル利用）
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            padding: EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md,
+                bottomInset + AppSpacing.xxl),
             children: [
               RegionTile(
                 name: '全体',
@@ -2731,61 +2695,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               if (regions.length < _maxRegions)
                 SizedBox(
                   width: double.infinity,
-                  height: 28,
+                  height: 36,
                   child: OutlinedButton.icon(
-                    onPressed: _addRegion,
+                    // 追加すると編集に入るので、全画面は解除する
+                    onPressed: () {
+                      _exitFullscreen();
+                      _addRegion();
+                    },
                     icon: const Icon(Icons.add, size: AppIconSizes.xs),
-                    label: Text('区間追加', style: textTheme.labelSmall),
+                    label: const Text('区間追加'),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.grey.shade700),
+                      side: BorderSide(color: theme.dividerColor),
                     ),
                   ),
                 ),
             ],
           ),
         ),
-        // ABコントロール（選択中の区間）
-        if (_activeRegionIdx >= 0) ...[
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: _editMode
-                ? AbEditControls(
-                    loop: loop,
-                    step: _editStep,
-                    onStepChanged: (s) => setState(() => _editStep = s),
-                    onSeek: _seekTo,
-                    onPointA: notifier.setPointA,
-                    onPointB: notifier.setPointB,
-                    onSwap: notifier.swapPoints,
-                    compact: true,
-                    onSetA: hasSource
-                        ? () => notifier.setPointA(
-                            ref.read(playerProvider).state.position)
-                        : null,
-                    onSetB: hasSource
-                        ? () => notifier.setPointB(
-                            ref.read(playerProvider).state.position)
-                        : null,
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      LoopPointDisplay(
-                          label: 'A',
-                          color: AppTheme.pointAColor,
-                          time: loop.pointA,
-                          onSeek: _seekTo),
-                      const SizedBox(height: AppSpacing.sm),
-                      LoopPointDisplay(
-                          label: 'B',
-                          color: AppTheme.pointBColor,
-                          time: loop.pointB,
-                          onSeek: _seekTo),
-                    ],
-                  ),
-          ),
-        ],
       ],
     );
   }
@@ -2928,7 +2854,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       elevation: 0,
                     ),
                   ),
-                  child: _buildLandscapeRightPanel(bottomInset),
+                  child: _buildFullscreenDrawer(bottomInset),
                 ),
               ),
             ),
@@ -2996,38 +2922,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
   }
 
-  /// 画面の向きに合わせてフルスクリーン状態を切り替える。
-  /// build から直接呼ぶとフレームの整合が崩れる（フィールド書き換え・SystemChrome呼び出し・
-  /// タイマー起動が副作用として走る）ため、必ずフレーム後に呼ぶこと。
-  void _syncFullscreenTo(bool fullscreen) {
-    if (!mounted || fullscreen == _isFullscreen) return;
-    if (fullscreen) {
-      _isFullscreen = true;
-      _showFullscreenOverlay = true;
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      _resetOverlayTimer();
-    } else {
-      _isFullscreen = false;
-      _showRightDrawer = false;
-      _overlayHideTimer?.cancel();
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    }
-    setState(() {});
+  /// 横レイアウトで AppBar の代わりに動画の上へ出す 1 行:
+  /// 戻る・プレイリスト名・字幕切替・PiP（縦の AppBar と同じもの）
+  Widget _buildWideTopBar() {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: '戻る',
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          Expanded(
+            child: Text(
+              widget.playlistName ?? '',
+              style: textTheme.labelMedium!
+                  .copyWith(color: textTheme.bodySmall!.color),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SubtitleToggleButton(onLongPress: _showSubtitleLanguagePicker),
+          if (Platform.isAndroid || Platform.isIOS)
+            IconButton(
+              icon: const Icon(Icons.picture_in_picture_alt,
+                  size: AppIconSizes.ml),
+              onPressed: _enterPiP,
+              tooltip: 'ピクチャーインピクチャー',
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 横レイアウトの AB 編集の板（動画の上）。縦ではコントローラーの中に出す同じ部品
+  Widget _buildWideEditPanel(Widget controls, {String? subtitle}) {
+    return AbEditPanel(
+      key: const ValueKey('abEditPanel'),
+      title: 'AB 区間を編集',
+      subtitle: subtitle,
+      child: controls,
+    );
   }
 
   Widget _buildPlayerView(double bottomInset) {
-    final isLandscape =
+    // 全画面はボタンで入る別物。端末の向きだけでは入らない
+    if (_isFullscreen) return _buildFullscreenView(bottomInset);
+    final wide =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    // 横画面 = フルスクリーン、縦に戻ったら自動解除。
-    // 状態の反映はフレーム後（buildは表示するものを決めるだけにする）
-    if (isLandscape != _isFullscreen) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _syncFullscreenTo(isLandscape));
-    }
-    if (isLandscape) return _buildFullscreenView(bottomInset);
 
-    // 縦画面はプレイリスト・単体とも同じ骨組み（PlayerShell）。
-    // 違うのは曲名行のチップ・中段のパネル・コントローラーの中身だけ
+    // プレイリスト・単体とも同じ骨組み（PlayerShell。横画面は左右に分かれる）。
+    // 違うのは曲名行のチップ・中段のパネル・コントローラーの中身だけ。
+    // 横画面では AB 編集ブロックをコントローラーに入れず（高さが足りない）、
+    // パネルと同じ場所（動画の上）に板で出す
     final panelOpen = _panelOpen;
     if (_isPlaylist) {
       final plState = ref.watch(playlistPlayerProvider);
@@ -3045,8 +2994,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ? '${currentIdx + 1} / ${plState.trackCount}'
             : '- / ${plState.trackCount}',
       ];
+      final plEditBlock = AbEditControls(
+        loop: plLoop,
+        step: plLoop.adjustStep,
+        onStepChanged: plNotifier.setStep,
+        onSeek: _seekTo,
+        onPointA: plNotifier.setPointA,
+        onPointB: plNotifier.setPointB,
+        onSwap: plNotifier.swapPoints,
+        onSetA: plHasSource
+            ? () => plNotifier.setPointA(ref.read(playerProvider).state.position)
+            : null,
+        onSetB: plHasSource
+            ? () => plNotifier.setPointB(ref.read(playerProvider).state.position)
+            : null,
+      );
       return PlayerShell(
         item: _currentItem,
+        wide: wide,
+        topBar: wide ? _buildWideTopBar() : null,
         video: _hideVideo
             ? null
             : TransitionStage(
@@ -3063,7 +3029,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 )
               : null,
         ),
-        panel: panelOpen ? _buildTrackListPanel() : null,
+        panel: panelOpen
+            ? _buildTrackListPanel()
+            : wide && _editMode
+                ? _buildWideEditPanel(plEditBlock,
+                    subtitle: plState.currentTrack?.displayName)
+                : null,
         controller: PlaylistBottomBar(
           seekbar: PlaylistSeekArea(
             compact: _compactSeekbar,
@@ -3098,21 +3069,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ? () => _saveCurrentAbAsRegion(
                   plLoop.pointA!.inMilliseconds, plLoop.pointB!.inMilliseconds)
               : null,
-          editBlock: AbEditControls(
-            loop: plLoop,
-            step: _editStep,
-            onStepChanged: (s) => setState(() => _editStep = s),
-            onSeek: _seekTo,
-            onPointA: plNotifier.setPointA,
-            onPointB: plNotifier.setPointB,
-            onSwap: plNotifier.swapPoints,
-            onSetA: plHasSource
-                ? () => plNotifier.setPointA(ref.read(playerProvider).state.position)
-                : null,
-            onSetB: plHasSource
-                ? () => plNotifier.setPointB(ref.read(playerProvider).state.position)
-                : null,
-          ),
+          editBlock: wide ? null : plEditBlock,
         ),
       );
     }
@@ -3144,8 +3101,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           '${activeRegion.name}  ${TimeUtils.formatShortNullable(loop.pointA)} - ${TimeUtils.formatShortNullable(loop.pointB)}';
     }
 
+    final editBlock = AbEditControls(
+      loop: loop,
+      step: loop.adjustStep,
+      onStepChanged: notifier.setStep,
+      onSeek: _seekTo,
+      onPointA: notifier.setPointA,
+      onPointB: notifier.setPointB,
+      onSwap: notifier.swapPoints,
+      onSetA: hasSource
+          ? () => notifier.setPointA(ref.read(playerProvider).state.position)
+          : null,
+      onSetB: hasSource
+          ? () => notifier.setPointB(ref.read(playerProvider).state.position)
+          : null,
+    );
+
     return PlayerShell(
       item: item,
+      wide: wide,
+      topBar: wide ? _buildWideTopBar() : null,
       video: _hideVideo
           ? null
           : Stack(
@@ -3172,7 +3147,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           onTap: () => _setPanelOpen(true),
         ),
       ),
-      panel: panelOpen ? _buildRegionPanel(regions) : null,
+      panel: panelOpen
+          ? _buildRegionPanel(regions)
+          : wide && _editMode
+              ? _buildWideEditPanel(editBlock, subtitle: activeRegion?.name)
+              : null,
       controller: SinglePlayerBar(
         seekbar: LoopSeekbar(
           compact: _compactSeekbar,
@@ -3196,21 +3175,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         onSetB: hasSource
             ? () => notifier.setPointB(ref.read(playerProvider).state.position)
             : null,
-        editBlock: AbEditControls(
-          loop: loop,
-          step: _editStep,
-          onStepChanged: (s) => setState(() => _editStep = s),
-          onSeek: _seekTo,
-          onPointA: notifier.setPointA,
-          onPointB: notifier.setPointB,
-          onSwap: notifier.swapPoints,
-          onSetA: hasSource
-              ? () => notifier.setPointA(ref.read(playerProvider).state.position)
-              : null,
-          onSetB: hasSource
-              ? () => notifier.setPointB(ref.read(playerProvider).state.position)
-              : null,
-        ),
+        editBlock: wide ? null : editBlock,
       ),
     );
   }
@@ -3298,7 +3263,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         firstVerseMode: plState.firstVerseMode,
         onToggleFirstVerse: _toggleFirstVerseMode,
         onToggleVolumeNorm: _toggleVolumeNorm,
-        onEditAb: _startPlaylistAbEdit,
+        // AB 編集の UI は全画面には無い（横レイアウトの板）ので、全画面なら解除してから
+        onEditAb: () {
+          _exitFullscreen();
+          _startPlaylistAbEdit();
+        },
         onDjMix: () => DjMixSheet.show(context),
         hideVideo: _hideVideo,
         onHideVideoChanged: (v) => setState(() => _hideVideo = v),
@@ -3370,81 +3339,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
-  /// プレイリストモード（横画面ドロワー）: AB区間の微調整 + 区間登録ダイアログ
-  void _showAbEditDialog() {
-    final loopNotifier = ref.read(loopProvider.notifier);
-    final totalMs = ref.read(playerProvider).state.duration.inMilliseconds;
-    var aMs = ref.read(loopProvider).pointA?.inMilliseconds ?? 0;
-    var bMs = ref.read(loopProvider).pointB?.inMilliseconds ??
-        (totalMs > 0 ? totalMs : 0);
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final textTheme = Theme.of(ctx).textTheme;
-
-          Widget timeRow(String label, int ms, Color color, ValueChanged<int> onChanged) {
-            return Row(
-              children: [
-                Text(label, style: textTheme.titleSmall!.copyWith(color: color)),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.remove),
-                  onPressed: () => onChanged(ms - 1000),
-                ),
-                Text(
-                  TimeUtils.formatShort(Duration(milliseconds: ms)),
-                  style: textTheme.bodyLarge!.copyWith(
-                      color: color, fontWeight: FontWeight.bold),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () => onChanged(ms + 1000),
-                ),
-              ],
-            );
-          }
-
-          return AlertDialog(
-            title: const Text('AB区間を編集'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                timeRow('A', aMs, AppTheme.pointAColor, (v) {
-                  if (v >= 0 && v < bMs) {
-                    loopNotifier.setPointA(Duration(milliseconds: v));
-                    setDialogState(() => aMs = v);
-                  }
-                }),
-                const SizedBox(height: AppSpacing.md),
-                timeRow('B', bMs, AppTheme.pointBColor, (v) {
-                  if (v > aMs && (totalMs <= 0 || v <= totalMs)) {
-                    loopNotifier.setPointB(Duration(milliseconds: v));
-                    setDialogState(() => bMs = v);
-                  }
-                }),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('閉じる'),
-              ),
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _saveCurrentAbAsRegion(aMs, bMs);
-                },
-                icon: const Icon(Icons.save_alt, size: AppIconSizes.sm),
-                label: const Text('区間として登録'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   /// 現在のAB区間をLoopItemのリージョンとして保存
   Future<void> _saveCurrentAbAsRegion(int aMs, int bMs) async {
     final track = ref.read(playlistPlayerProvider).currentTrack;
@@ -3493,124 +3387,66 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  Widget _buildPlaylistControls() {
+  /// 全画面ドロワーの上の 1 行: シャッフル・リピート・前・n / 全・次・その他。
+  /// 1番だけ・AB 編集・音量正規化は「その他」シート（縦と同じ）へ。
+  /// 以前は 8 個並べていてドロワーの幅（画面の 40%）から溢れていた
+  Widget _buildFullscreenPlaylistControls() {
     final textTheme = Theme.of(context).textTheme;
     final plState = ref.watch(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
 
-    // Repeat mode icon
-    IconData repeatIcon;
-    Color? repeatColor;
-    switch (plState.repeatMode) {
-      case pl.RepeatMode.none:
-        repeatIcon = Icons.repeat;
-        repeatColor = Colors.grey;
-      case pl.RepeatMode.all:
-        repeatIcon = Icons.repeat;
-        repeatColor = AppTheme.accentGreen;
-      case pl.RepeatMode.single:
-        repeatIcon = Icons.repeat_one;
-        repeatColor = AppTheme.accentGreen;
-    }
+    final (repeatIcon, repeatOn) = switch (plState.repeatMode) {
+      pl.RepeatMode.none => (Icons.repeat, false),
+      pl.RepeatMode.all => (Icons.repeat, true),
+      pl.RepeatMode.single => (Icons.repeat_one, true),
+    };
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-        child: Column(
-          children: [
-            // Controls row: shuffle, repeat, prev, track info, next, 1番, 調整
-            Row(
-              children: [
-                // Shuffle
-                IconButton(
-                  icon: Icon(
-                    Icons.shuffle,
-                    size: AppIconSizes.ml,
-                    color: plState.shuffle
-                        ? AppTheme.accentGreen
-                        : Colors.grey,
-                  ),
-                  onPressed: _isPreloading ? null : _toggleShuffle,
-                  tooltip: 'シャッフル',
-                  visualDensity: VisualDensity.compact,
-                ),
-                // Repeat mode
-                IconButton(
-                  icon: Icon(repeatIcon, size: AppIconSizes.ml, color: repeatColor),
-                  onPressed: _cycleRepeatMode,
-                  tooltip: switch (plState.repeatMode) {
-                    pl.RepeatMode.none => 'リピートなし',
-                    pl.RepeatMode.all => '全曲リピート',
-                    pl.RepeatMode.single => '1曲リピート',
-                  },
-                  visualDensity: VisualDensity.compact,
-                ),
-                // Prev
-                IconButton(
-                  icon: const Icon(Icons.skip_previous, size: AppIconSizes.xl),
-                  onPressed: plState.hasPrev && !_trackLoading ? _manualPrev : null,
-                  visualDensity: VisualDensity.compact,
-                ),
-                // Track info
-                Expanded(
-                  child: Text(
-                    currentIdx != null
-                        ? '${currentIdx + 1} / ${plState.trackCount}'
-                        : '- / ${plState.trackCount}',
-                    style: textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                // Next
-                IconButton(
-                  icon: const Icon(Icons.skip_next, size: AppIconSizes.xl),
-                  onPressed: plState.hasNext && !_trackLoading ? _manualNext : null,
-                  visualDensity: VisualDensity.compact,
-                ),
-                // 1番だけモード
-                IconButton(
-                  icon: Icon(
-                    Icons.looks_one_outlined,
-                    size: AppIconSizes.ml,
-                    color: plState.firstVerseMode
-                        ? AppTheme.accentGreen
-                        : Colors.grey,
-                  ),
-                  onPressed: _toggleFirstVerseMode,
-                  tooltip: '1番だけ',
-                  visualDensity: VisualDensity.compact,
-                ),
-                // AB編集（常時表示）
-                IconButton(
-                  icon: Icon(
-                    Icons.tune,
-                    size: AppIconSizes.ml,
-                    color: ref.watch(loopProvider).hasBothPoints
-                        ? AppTheme.accentGreen
-                        : Colors.grey,
-                  ),
-                  onPressed: _showAbEditDialog,
-                  tooltip: 'AB区間を編集',
-                  visualDensity: VisualDensity.compact,
-                ),
-                // 音量正規化
-                IconButton(
-                  icon: Icon(
-                    Icons.equalizer,
-                    size: AppIconSizes.ml,
-                    color: ref.watch(volumeNormProvider)
-                        ? AppTheme.accentGreen
-                        : Colors.grey,
-                  ),
-                  onPressed: _toggleVolumeNorm,
-                  tooltip: '音量正規化',
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      child: Row(
+        children: [
+          ToggleIconButton(
+            icon: Icons.shuffle,
+            on: plState.shuffle,
+            onPressed: _isPreloading ? null : _toggleShuffle,
+            tooltip: 'シャッフル',
+          ),
+          ToggleIconButton(
+            icon: repeatIcon,
+            on: repeatOn,
+            onPressed: _cycleRepeatMode,
+            tooltip: switch (plState.repeatMode) {
+              pl.RepeatMode.none => 'リピートなし',
+              pl.RepeatMode.all => '全曲リピート',
+              pl.RepeatMode.single => '1曲リピート',
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.skip_previous, size: AppIconSizes.xl),
+            onPressed: plState.hasPrev && !_trackLoading ? _manualPrev : null,
+            tooltip: '前の曲',
+          ),
+          Expanded(
+            child: Text(
+              currentIdx != null
+                  ? '${currentIdx + 1} / ${plState.trackCount}'
+                  : '- / ${plState.trackCount}',
+              style: textTheme.bodyMedium,
+              textAlign: TextAlign.center,
             ),
-          ],
-        ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.skip_next, size: AppIconSizes.xl),
+            onPressed: plState.hasNext && !_trackLoading ? _manualNext : null,
+            tooltip: '次の曲',
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_horiz, size: AppIconSizes.ml),
+            onPressed: _showMoreSheet,
+            tooltip: 'その他',
+          ),
+        ],
       ),
     );
   }

@@ -19,6 +19,11 @@ import '../karaoke_subtitle.dart';
 /// 画面が短くてコントローラーが収まらないときは、動画を 16:9 の [videoMinScale] まで
 /// 縮めて（レターボックス）コントローラーを優先する。曲名行とコントローラーの高さは
 /// 描画後に測って次のフレームで反映する。
+///
+/// 横画面（[wide]）は同じ部品を左右に分ける: 左に [topBar]（AppBar の代わり）と動画、
+/// 右の脇（幅 [asideMin]〜[asideMax]）に曲名行とコントローラー。[panel] は縦と同じく
+/// 動画の上に重ねる（横画面でもコントローラーの高さは変わらないので、脇に入れると溢れる）。
+/// 脇が画面より高いとき（波形を開いた小さい端末）は脇だけスクロールする。
 class PlayerShell extends ConsumerStatefulWidget {
   const PlayerShell({
     super.key,
@@ -27,6 +32,8 @@ class PlayerShell extends ConsumerStatefulWidget {
     required this.header,
     required this.panel,
     required this.controller,
+    this.wide = false,
+    this.topBar,
   });
 
   /// 背景の色味に使う（サムネ）
@@ -40,11 +47,23 @@ class PlayerShell extends ConsumerStatefulWidget {
   final Widget? panel;
   final Widget controller;
 
+  /// 横画面のレイアウト（左: 動画、右: 曲名行 + コントローラー）
+  final bool wide;
+
+  /// [wide] のとき動画の上に出す 1 行（戻る・プレイリスト名・字幕・PiP など）。
+  /// 横画面は AppBar を置かないので、その代わり
+  final Widget? topBar;
+
   /// 板や動画の横の余白、画面下端との間
   static const margin = 12.0;
 
   /// 動画を縮めるときの下限（16:9 の高さに対する割合）
   static const videoMinScale = 0.6;
+
+  /// 横画面の脇（曲名行 + コントローラー）の幅。画面幅の 42% をこの範囲に収める
+  static const asideMin = 300.0;
+  static const asideMax = 420.0;
+  static const asideRatio = 0.42;
 
   @override
   ConsumerState<PlayerShell> createState() => _PlayerShellState();
@@ -59,7 +78,125 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     return Stack(
       children: [
         Positioned.fill(child: _ToneBackground(item: widget.item)),
-        LayoutBuilder(
+        if (widget.wide) _buildWide() else _buildTall(),
+      ],
+    );
+  }
+
+  /// 動画を角丸で切り、パネルが被さっている間は暗くする
+  Widget? get _clippedVideo => widget.video == null
+      ? null
+      : ClipRRect(
+          borderRadius: AppRadius.borderXl,
+          child: _DimWhenCovered(
+            dim: widget.panel != null,
+            child: widget.video!,
+          ),
+        );
+
+  /// パネルの出し入れ（縦横共通）。縦に伸ばして置きたいので expand の Stack で切り替える
+  Widget _panelSwitcher() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (current, previous) => Stack(
+        fit: StackFit.expand,
+        children: [...previous, ?current],
+      ),
+      child: widget.panel ?? const SizedBox.shrink(key: ValueKey('noPanel')),
+    );
+  }
+
+  /// 横画面: 左に [PlayerShell.topBar] と動画（パネルはその上に重なる）、右の脇に曲名行と
+  /// コントローラー。脇は収まらなければスクロール（コントローラーは下に寄せたまま）
+  Widget _buildWide() {
+    final mq = MediaQuery.of(context);
+    // 横画面は AppBar を置かないので padding.top はステータスバーの分だけ
+    final topInset = mq.padding.top;
+    final bottomInset = mq.viewPadding.bottom;
+    const gap = AppSpacing.lg + 2;
+    final video = _clippedVideo;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final asideWidth = (constraints.maxWidth * PlayerShell.asideRatio)
+            .clamp(PlayerShell.asideMin, PlayerShell.asideMax)
+            .toDouble();
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(left: mq.padding.left),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(height: topInset),
+                    if (widget.topBar != null) widget.topBar!,
+                    Expanded(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (video != null)
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: PlayerShell.margin,
+                                    vertical: AppSpacing.sm),
+                                child: AspectRatio(
+                                    aspectRatio: 16 / 9, child: video),
+                              ),
+                            ),
+                          _panelSwitcher(),
+                        ],
+                      ),
+                    ),
+                    Visibility(
+                      visible: widget.panel == null,
+                      maintainState: true,
+                      maintainAnimation: true,
+                      maintainSize: true,
+                      child: const KaraokeSubtitle(),
+                    ),
+                    SizedBox(height: AppSpacing.xl + bottomInset),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(
+              width: asideWidth + mq.padding.right,
+              child: Padding(
+                padding: EdgeInsets.only(right: mq.padding.right),
+                child: LayoutBuilder(
+                  builder: (context, aside) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: aside.maxHeight),
+                      child: IntrinsicHeight(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(height: topInset + AppSpacing.sm + gap),
+                            widget.header,
+                            const SizedBox(height: gap),
+                            const Spacer(),
+                            widget.controller,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 縦画面: 動画・曲名行・空き・コントローラーを縦に積む
+  Widget _buildTall() {
+    return LayoutBuilder(
           builder: (context, constraints) {
             // extendBodyBehindAppBar なので body 内の padding.top が AppBar の下端
             final topInset = MediaQuery.paddingOf(context).top;
@@ -90,18 +227,7 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                     fit: StackFit.expand,
                     children: [
                       _buildUpper(gap, videoMax, videoH, measured),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 260),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        // パネルは縦に伸ばして置きたいので、既定の中央寄せ Stack ではなく expand
-                        layoutBuilder: (current, previous) => Stack(
-                          fit: StackFit.expand,
-                          children: [...previous, ?current],
-                        ),
-                        child: widget.panel ??
-                            const SizedBox.shrink(key: ValueKey('noPanel')),
-                      ),
+                      _panelSwitcher(),
                     ],
                   ),
                 ),
@@ -112,23 +238,13 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
               ],
             );
           },
-        ),
-      ],
     );
   }
 
   /// 動画・字幕・曲名行。余りは下に寄せる（Spacer）
   Widget _buildUpper(
       double gap, double videoMax, double videoH, bool measured) {
-    final video = widget.video == null
-        ? null
-        : ClipRRect(
-            borderRadius: AppRadius.borderXl,
-            child: _DimWhenCovered(
-              dim: widget.panel != null,
-              child: widget.video!,
-            ),
-          );
+    final video = _clippedVideo;
     return Column(
               children: [
                 if (video != null)

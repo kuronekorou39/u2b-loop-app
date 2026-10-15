@@ -12,6 +12,7 @@ import '../core/tips.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
+import '../models/loop_state.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
@@ -24,10 +25,10 @@ import '../services/audio_analysis_service.dart';
 import '../services/waveform_service.dart';
 import '../widgets/loading_animations/loading_animation_widget.dart';
 import '../widgets/loop/ab_edit_controls.dart';
+import '../widgets/loop/ab_edit_panel.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/loop/region_panel.dart';
 import '../widgets/player/now_playing_header.dart';
-import '../widgets/player/player_controls.dart';
 import '../widgets/player/player_shell.dart';
 import '../widgets/player/single_player_bar.dart';
 import '../widgets/player/video_player_widget.dart';
@@ -508,8 +509,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     ref.watch(rateProvider);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    // 縦画面の編集中はガラス風（再生画面と同じ骨組み）: AppBar を透明にして背景を上まで通す
-    final glassLook = !_loading && _loadError == null && !isLandscape;
+    // 編集中はガラス風（再生画面と同じ骨組み）: AppBar を透明にして背景を上まで通す。
+    // 横画面は AppBar を置かず、PlayerShell の topBar に同じものを出す
+    final glassLook = !_loading && _loadError == null;
+    final showAppBar = !(glassLook && isLandscape);
     final loop = ref.watch(loopProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
 
@@ -528,7 +531,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       },
       child: Scaffold(
         extendBodyBehindAppBar: glassLook,
-        appBar: AppBar(
+        appBar: !showAppBar
+            ? null
+            : AppBar(
           backgroundColor: glassLook ? Colors.transparent : null,
           surfaceTintColor: glassLook ? Colors.transparent : null,
           centerTitle: glassLook,
@@ -542,47 +547,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-          actions: [
-            if (!_loading && _loadError == null) _buildWaveformAction(),
-            if (!_loading && _loadError == null && _hasChanges)
-              _buildSaveButton(),
-            // 書き出し・クリアは使う頻度が低いのでメニューに
-            if (glassLook)
-              PopupMenuButton<String>(
-                tooltip: 'その他',
-                onSelected: (v) async {
-                  if (v == 'export') _showExportDialog();
-                  if (v == 'clear') {
-                    final ok = await AppDialogs.confirm(context,
-                        title: 'A・B をクリア',
-                        message: 'この区間の A・B を未設定に戻しますか？',
-                        confirmLabel: 'クリア',
-                        destructive: true);
-                    if (ok && mounted) ref.read(loopProvider.notifier).reset();
-                  }
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'export',
-                    enabled: loop.hasBothPoints,
-                    child: const ListTile(
-                      leading: Icon(Icons.file_download_outlined),
-                      title: Text('区間を書き出し'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'clear',
-                    enabled: hasSource,
-                    child: const ListTile(
-                      leading: Icon(Icons.clear),
-                      title: Text('A・B をクリア'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
-          ],
+          actions: _buildActions(glassLook, loop, hasSource),
         ),
         body: SafeArea(
           top: false,
@@ -593,6 +558,73 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                   ? _buildErrorView()
                   : _buildEditorView(bottomInset),
         ),
+      ),
+    );
+  }
+
+  /// AppBar（縦）と横レイアウトの topBar で同じ操作: 波形・保存・その他（書き出し・クリア）
+  List<Widget> _buildActions(bool glassLook, LoopState loop, bool hasSource) {
+    return [
+      if (!_loading && _loadError == null) _buildWaveformAction(),
+      if (!_loading && _loadError == null && _hasChanges) _buildSaveButton(),
+      // 書き出し・クリアは使う頻度が低いのでメニューに
+      if (glassLook)
+        PopupMenuButton<String>(
+          tooltip: 'その他',
+          onSelected: (v) async {
+            if (v == 'export') _showExportDialog();
+            if (v == 'clear') {
+              final ok = await AppDialogs.confirm(context,
+                  title: 'A・B をクリア',
+                  message: 'この区間の A・B を未設定に戻しますか？',
+                  confirmLabel: 'クリア',
+                  destructive: true);
+              if (ok && mounted) ref.read(loopProvider.notifier).reset();
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'export',
+              enabled: loop.hasBothPoints,
+              child: const ListTile(
+                leading: Icon(Icons.file_download_outlined),
+                title: Text('区間を書き出し'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            PopupMenuItem(
+              value: 'clear',
+              enabled: hasSource,
+              child: const ListTile(
+                leading: Icon(Icons.clear),
+                title: Text('A・B をクリア'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+        ),
+    ];
+  }
+
+  /// 横レイアウトで AppBar の代わりに動画の上へ出す 1 行: 戻る・「AB 設定」・操作
+  Widget _buildWideTopBar(LoopState loop, bool hasSource) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: '戻る',
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          Expanded(
+            child: Text('AB 設定',
+                style: textTheme.labelMedium!
+                    .copyWith(color: textTheme.bodySmall!.color)),
+          ),
+          ..._buildActions(true, loop, hasSource),
+        ],
       ),
     );
   }
@@ -769,13 +801,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   Widget _buildEditorView(double bottomInset) {
-    final isLandscape =
+    final wide =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    if (isLandscape) {
-      return _buildLandscapeEditorView(bottomInset);
-    }
 
-    // 縦画面: 再生画面と同じ骨組み（PlayerShell）。常に編集ブロックを出す
+    // 再生画面と同じ骨組み（PlayerShell。横画面は左右に分かれる）。常に編集ブロックを出す。
+    // 横画面では編集ブロックをコントローラーに入れず、区間パネルと同じ場所（動画の上）に板で出す
     final loop = ref.watch(loopProvider);
     final loopNotifier = ref.read(loopProvider.notifier);
     final hasSource = ref.watch(videoSourceProvider) != null;
@@ -796,8 +826,22 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         TimeUtils.formatShort(duration),
     ];
 
+    final editBlock = AbEditControls(
+      loop: loop,
+      step: loop.adjustStep,
+      onStepChanged: loopNotifier.setStep,
+      onSeek: (t) => ref.read(playerProvider).seek(t),
+      onPointA: loopNotifier.setPointA,
+      onPointB: loopNotifier.setPointB,
+      onSwap: loopNotifier.swapPoints,
+      onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
+      onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
+    );
+
     return PlayerShell(
       item: _item,
+      wide: wide,
+      topBar: wide ? _buildWideTopBar(loop, hasSource) : null,
       video: const VideoPlayerWidget(useAspectRatio: false),
       header: NowPlayingHeader(
         title: _item.title,
@@ -819,7 +863,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               onMenu: _showRegionMenu,
               onAdd: _regions.length < _maxRegions ? _addRegion : null,
             )
-          : null,
+          : wide
+              ? AbEditPanel(
+                  key: const ValueKey('abEditPanel'),
+                  title: 'AB 区間を編集',
+                  subtitle: region.name,
+                  child: editBlock,
+                )
+              : null,
       controller: SinglePlayerBar(
         seekbar: const LoopSeekbar(),
         regionsOpen: _panelOpen,
@@ -834,253 +885,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         onMore: () {},
         onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
         onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
-        editBlock: AbEditControls(
-          loop: loop,
-          step: loop.adjustStep,
-          onStepChanged: loopNotifier.setStep,
-          onSeek: (t) => ref.read(playerProvider).seek(t),
-          onPointA: loopNotifier.setPointA,
-          onPointB: loopNotifier.setPointB,
-          onSwap: loopNotifier.swapPoints,
-          onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
-          onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
-        ),
-      ),
-    );
-  }
-
-
-  Widget _buildLandscapeEditorView(double bottomInset) {
-
-    return SafeArea(
-      child: Row(
-        children: [
-          // === 左（60%）: 動画 + コントロール + 波形 ===
-          Expanded(
-            flex: 3,
-            child: Column(
-              children: [
-                const Expanded(
-                  child: VideoPlayerWidget(useAspectRatio: false),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs, vertical: 2),
-                  child: const PlayerControls(),
-                ),
-                const LoopSeekbar(compact: true),
-              ],
-            ),
-          ),
-          VerticalDivider(width: 1, color: Colors.grey.shade800),
-          // === 右パネル（40%）: 縦並びレイアウト ===
-          Expanded(
-            flex: 2,
-            child: _buildLandscapeEditorPanel(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 横画面右パネル: 縦並び（上: リージョンリスト、下: ABコントロール）
-  Widget _buildLandscapeEditorPanel() {
-    final loop = ref.watch(loopProvider);
-    final loopNotifier = ref.read(loopProvider.notifier);
-    final hasSource = ref.watch(videoSourceProvider) != null;
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
-    // リアルタイム同期
-    if (_regions.isNotEmpty) {
-      _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
-        pointAMs: () => loop.pointA?.inMilliseconds,
-        pointBMs: () => loop.pointB?.inMilliseconds,
-      );
-    }
-
-    return Column(
-      children: [
-        // ループON/OFF + 書出し
-        Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-          child: Row(
-            children: [
-              SizedBox(
-                height: 28,
-                child: FilledButton.icon(
-                  onPressed: hasSource
-                      ? () => loopNotifier.toggleEnabled()
-                      : null,
-                  icon: Icon(
-                    loop.enabled ? Icons.repeat_on : Icons.repeat,
-                    size: AppIconSizes.s,
-                  ),
-                  label: Text(loop.enabled ? 'ON' : 'OFF'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: loop.enabled
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.surfaceContainerHighest,
-                    foregroundColor: loop.enabled ? Colors.black : Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    minimumSize: Size.zero,
-                  ),
-                ),
-              ),
-              if (loop.hasBothPoints) ...[
-                const SizedBox(width: AppSpacing.md),
-                Text(
-                  '${((loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() / 1000).toStringAsFixed(1)}s',
-                  style: textTheme.bodySmall!.copyWith(color: Colors.grey),
-                ),
-              ],
-              const Spacer(),
-              SizedBox(
-                height: 26,
-                child: TextButton.icon(
-                  onPressed: loop.hasBothPoints ? _showExportDialog : null,
-                  icon: const Icon(Icons.file_download, size: AppIconSizes.xs),
-                  label: Text('書出し', style: textTheme.labelSmall),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    foregroundColor: AppTheme.accentGreen,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        // リージョンリスト
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-            children: [
-              for (var i = 0; i < _regions.length; i++) ...[
-                _buildRegionTile(i),
-                if (i < _regions.length - 1)
-                  Divider(height: 1,
-                      color: theme.dividerColor.withValues(alpha: 0.3)),
-              ],
-              const SizedBox(height: AppSpacing.sm),
-              if (_regions.length < _maxRegions)
-                SizedBox(
-                  width: double.infinity,
-                  height: 28,
-                  child: OutlinedButton.icon(
-                    onPressed: _addRegion,
-                    icon: const Icon(Icons.add, size: AppIconSizes.xs),
-                    label: Text('区間追加', style: textTheme.labelSmall),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.grey.shade700),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        // ABコントロール（縦画面と同じ部品の小さい版）
-        Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: AbEditControls(
-            loop: loop,
-            step: loop.adjustStep,
-            onStepChanged: loopNotifier.setStep,
-            onSeek: (t) => ref.read(playerProvider).seek(t),
-            onPointA: loopNotifier.setPointA,
-            onPointB: loopNotifier.setPointB,
-            onSwap: loopNotifier.swapPoints,
-            onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
-            onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
-            compact: true,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRegionTile(int index) {
-    final region = _regions[index];
-    final isSelected = index == _selectedRegionIdx;
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
-    String timeText;
-    if (region.hasA || region.hasB) {
-      final aStr = TimeUtils.formatShortMs(region.pointAMs);
-      final bStr = TimeUtils.formatShortMs(region.pointBMs);
-      timeText = '$aStr - $bStr';
-      if (region.hasA && region.hasB) {
-        final durationSec =
-            (region.pointBMs! - region.pointAMs!).abs() / 1000;
-        timeText += ' (${durationSec.toStringAsFixed(1)}s)';
-      }
-    } else {
-      timeText = '未設定';
-    }
-
-    return InkWell(
-      onTap: () => _selectRegion(index),
-      onLongPress: () => _showRegionMenu(index),
-      borderRadius: AppRadius.borderSm,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: AppSpacing.xs),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? theme.colorScheme.primary.withValues(alpha: 0.15)
-              : null,
-          borderRadius: AppRadius.borderSm,
-          border: isSelected
-              ? Border.all(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                  width: 1)
-              : null,
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    region.name,
-                    style: textTheme.labelMedium!.copyWith(
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected ? theme.colorScheme.primary : null,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    timeText,
-                    style: textTheme.labelSmall!.copyWith(
-                      color: (region.hasA || region.hasB)
-                          ? null
-                          : theme.colorScheme.onSurface.withValues(alpha: 0.4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // メニューは長押しでも開くが、入口が見えるように ⋮ も置く
-            IconButton(
-              icon: Icon(Icons.more_vert,
-                  size: AppIconSizes.sm,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-              tooltip: 'メニュー',
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              padding: EdgeInsets.zero,
-              onPressed: () => _showRegionMenu(index),
-            ),
-          ],
-        ),
+        editBlock: wide ? null : editBlock,
       ),
     );
   }
