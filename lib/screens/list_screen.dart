@@ -7,6 +7,8 @@ import '../core/ui/app_sheets.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/item_filter.dart';
 import '../models/loop_item.dart';
+import '../models/playlist.dart';
+import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../providers/easter_egg_provider.dart';
 import '../widgets/bulk_tag_sheet.dart';
@@ -25,7 +27,9 @@ import 'home/tag_manager_tab.dart';
 import 'home/youtube_import_flow.dart';
 import 'settings_screen.dart';
 
-/// ホーム。3 つのタブ（タグ / 曲 / プレイリスト）と、曲タブの検索・絞り込み・並び替え・複数選択。
+/// ホーム。3 つのタブ（タグ / 曲 / プレイリスト）と、曲タブの検索・絞り込み・並び替え。
+/// 「表示」（リスト / グリッド）と「複数選択」はどのタブにもある（選べるものはタブごと:
+/// タグは色変更と削除、曲はプレイリスト追加・タグ・削除、プレイリストは複製と削除）。
 ///
 /// 中身はタブごとに分かれている: タグ [TagManagerTab]、プレイリスト [PlaylistTab]、
 /// 曲の一覧 [ItemCollectionView]、取り込み [YouTubeImportFlow]、
@@ -41,11 +45,17 @@ class _ListScreenState extends ConsumerState<ListScreen>
     with SingleTickerProviderStateMixin {
   static const _tabTags = 0;
   static const _tabItems = 1;
+  // 2 = プレイリスト（switch の既定）
 
-  ItemViewMode _viewMode = ItemViewMode.grid2;
   late final TabController _tabController;
+  int get _tab => _tabController.index;
 
-  // 複数選択
+  // 表示モード（タブごと）
+  ItemViewMode _itemViewMode = ItemViewMode.grid2;
+  bool _tagGrid = false;
+  bool _playlistGrid = false;
+
+  // 複数選択（いま開いているタブのもの。タブを移ると解除）
   final Set<String> _selectedIds = {};
 
   /// AppBar の「選択」で入ったとき（まだ何も選んでいなくても選択中として扱う）
@@ -63,7 +73,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
     super.initState();
     _tabController =
         TabController(length: 3, vsync: this, initialIndex: _tabItems);
-    _tabController.addListener(() => setState(() {}));
+    _tabController.addListener(() {
+      // 選択はタブごとなので、移ったら解除（選択中はスワイプできないが、戻るで解除し
+      // 忘れた場合などの保険）
+      if (_tabController.indexIsChanging && _isSelecting) {
+        _selectMode = false;
+        _selectedIds.clear();
+      }
+      setState(() {});
+    });
   }
 
   @override
@@ -92,7 +110,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   void _openDetail(LoopItem item) {
     if (_isSelecting) {
-      _toggleSelect(item);
+      _toggleSelectId(item.id);
       return;
     }
     if (item.isFetching) {
@@ -139,26 +157,26 @@ class _ListScreenState extends ConsumerState<ListScreen>
     }
   }
 
-  // --- 複数選択 ---
+  // --- 複数選択（タブ共通） ---
 
-  void _toggleSelect(LoopItem item) {
+  void _toggleSelectId(String id) {
     setState(() {
-      if (!_selectedIds.remove(item.id)) _selectedIds.add(item.id);
+      if (!_selectedIds.remove(id)) _selectedIds.add(id);
     });
   }
 
-  void _startSelect(LoopItem item) {
+  void _startSelectId(String id) {
     setState(() {
       _selectMode = true;
-      _selectedIds.add(item.id);
+      _selectedIds.add(id);
     });
   }
 
   /// AppBar の「選択」から。長押しを知らなくても入れるように
   void _enterSelectMode() => setState(() => _selectMode = true);
 
-  void _selectAll(List<LoopItem> items) {
-    setState(() => _selectedIds.addAll(items.map((i) => i.id)));
+  void _selectAll(Iterable<String> ids) {
+    setState(() => _selectedIds.addAll(ids));
   }
 
   void _clearSelection() {
@@ -168,7 +186,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     });
   }
 
-  Future<void> _deleteSelected() async {
+  Future<void> _deleteSelectedItems() async {
     final count = _selectedIds.length;
     final confirmed = await AppDialogs.confirmDelete(context,
         message: '選択した $count 件を削除しますか？');
@@ -202,11 +220,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget build(BuildContext context) {
     final allItems = ref.watch(loopItemsProvider);
     final tags = ref.watch(tagsProvider);
+    final playlists = ref.watch(playlistsProvider);
     final filterTagIds = ref.watch(tagFilterProvider);
 
-    final isItemsTab = _tabController.index == _tabItems;
     final items = ItemFilter.apply(allItems,
         tagFilter: filterTagIds, query: _searchQuery, sort: _sortMode);
+
+    // いまのタブで選べるものの ID（「全選択」と AppBar の「選択」の表示に使う）
+    final selectableIds = switch (_tab) {
+      _tabTags => tags.map((t) => t.id),
+      _tabItems => items.map((i) => i.id),
+      _ => playlists.map((p) => p.id),
+    };
 
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     return PopScope(
@@ -218,7 +243,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
         // ガラス風: 背景を AppBar の裏まで通す。本文の上端は Builder の context から取る
         // （State の context は Scaffold の外なので AppBar の高さが入らない）
         extendBodyBehindAppBar: true,
-        appBar: _buildAppBar(isItemsTab, items),
+        appBar: _buildAppBar(canSelect: selectableIds.isNotEmpty),
         body: Stack(
           children: [
             const Positioned.fill(child: AppBackdrop()),
@@ -241,7 +266,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: AppSpacing.lg),
                             child: _isSelecting
-                                ? _buildSelectionBar(items)
+                                ? _buildSelectionBar(selectableIds)
                                 : GlassSegmentedTabs(
                                     controller: _tabController,
                                     labels: const ['タグ', '曲', 'プレイリスト'],
@@ -256,6 +281,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                   : null,
                               children: [
                                 TagManagerTab(
+                                  grid: _tagGrid,
+                                  selecting: _isSelecting,
+                                  selectedIds: _selectedIds,
+                                  onToggleSelect: (t) => _toggleSelectId(t.id),
+                                  onLongPress: (t) => _startSelectId(t.id),
                                   onTagTap: (tag) {
                                     // 曲タブに移動してこのタグでフィルター
                                     ref.read(tagFilterProvider.notifier).state = {
@@ -264,8 +294,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                     _tabController.animateTo(_tabItems);
                                   },
                                 ),
-                                _buildItemsTab(items, tags, filterTagIds),
-                                const PlaylistTab(),
+                                _buildItemsTab(items, filterTagIds),
+                                PlaylistTab(
+                                  grid: _playlistGrid,
+                                  selecting: _isSelecting,
+                                  selectedIds: _selectedIds,
+                                  onToggleSelect: (p) => _toggleSelectId(p.id),
+                                  onLongPress: (p) => _startSelectId(p.id),
+                                ),
                               ],
                             ),
                           ),
@@ -294,7 +330,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   Widget _buildFab() {
-    return switch (_tabController.index) {
+    return switch (_tab) {
       _tabTags => GreenButton(
           icon: Icons.new_label,
           size: 56,
@@ -318,8 +354,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   /// 曲タブ: 検索・絞り込み・並び替えの行 + 一覧
-  Widget _buildItemsTab(
-      List<LoopItem> items, List<dynamic> tags, Map<String, bool> filterTagIds) {
+  Widget _buildItemsTab(List<LoopItem> items, Map<String, bool> filterTagIds) {
     final allTags = ref.watch(tagsProvider);
     return Column(
       children: [
@@ -392,12 +427,12 @@ class _ListScreenState extends ConsumerState<ListScreen>
               : ItemCollectionView(
                   items: items,
                   tags: allTags,
-                  viewMode: _viewMode,
+                  viewMode: _itemViewMode,
                   selectedIds: _selectedIds,
                   selecting: _isSelecting,
                   onOpen: _openDetail,
-                  onLongPress: _startSelect,
-                  onToggleSelect: _toggleSelect,
+                  onLongPress: (item) => _startSelectId(item.id),
+                  onToggleSelect: (item) => _toggleSelectId(item.id),
                   onDelete: _deleteItem,
                   onRetry: (item) =>
                       ref.read(loopItemsProvider.notifier).retryFetch(item),
@@ -407,9 +442,28 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  PreferredSizeWidget _buildAppBar(bool isItemsTab, List<LoopItem> items) {
+  /// AppBar: ロゴ / 表示切替 / 複数選択 / 設定。表示と選択はどのタブにも出す
+  PreferredSizeWidget _buildAppBar({required bool canSelect}) {
     final landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    final (IconData viewIcon, String viewTooltip, VoidCallback onView) =
+        switch (_tab) {
+      _tabTags => (
+          _tagGrid ? Icons.grid_view : Icons.view_list,
+          _tagGrid ? 'リスト表示へ' : 'グリッド表示へ',
+          () => setState(() => _tagGrid = !_tagGrid),
+        ),
+      _tabItems => (
+          _itemViewMode.icon,
+          _itemViewMode.nextTooltip,
+          () => setState(() => _itemViewMode = _itemViewMode.next),
+        ),
+      _ => (
+          _playlistGrid ? Icons.grid_view : Icons.view_list,
+          _playlistGrid ? 'リスト表示へ' : 'グリッド表示へ',
+          () => setState(() => _playlistGrid = !_playlistGrid),
+        ),
+    };
     return AppBar(
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
@@ -423,19 +477,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
       ),
       centerTitle: false,
       actions: [
-        if (isItemsTab) ...[
+        IconButton(icon: Icon(viewIcon), onPressed: onView, tooltip: viewTooltip),
+        if (canSelect)
           IconButton(
-            icon: Icon(_viewMode.icon),
-            onPressed: () => setState(() => _viewMode = _viewMode.next),
-            tooltip: _viewMode.nextTooltip,
+            icon: const Icon(Icons.checklist, size: AppIconSizes.ml),
+            onPressed: _enterSelectMode,
+            tooltip: '複数選択',
           ),
-          if (items.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.checklist, size: AppIconSizes.ml),
-              onPressed: _enterSelectMode,
-              tooltip: '複数選択',
-            ),
-        ],
         IconButton(
           icon: const Icon(Icons.settings, size: AppIconSizes.ml),
           onPressed: () => Navigator.of(context).push(
@@ -447,8 +495,49 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  /// 複数選択中の操作バー（タブと同じ場所にガラスの板で出す）
-  Widget _buildSelectionBar(List<LoopItem> items) {
+  /// 複数選択中の操作バー（タブと同じ場所にガラスの板で出す）。操作はタブごと
+  Widget _buildSelectionBar(Iterable<String> selectableIds) {
+    List<Tag> selectedTags() =>
+        ref.read(tagsProvider).where((t) => _selectedIds.contains(t.id)).toList();
+    List<Playlist> selectedPlaylists() => ref
+        .read(playlistsProvider)
+        .where((p) => _selectedIds.contains(p.id))
+        .toList();
+
+    final actions = switch (_tab) {
+      _tabTags => [
+          _selectionAction(Icons.palette_outlined, '色', () async {
+            await TagManagerTab.recolorTags(context, ref, selectedTags());
+          }),
+          _selectionAction(Icons.select_all, '全選択', () => _selectAll(selectableIds)),
+          _selectionAction(Icons.delete_outline, '削除', () async {
+            if (await TagManagerTab.deleteTags(context, ref, selectedTags())) {
+              _clearSelection();
+            }
+          }, color: Colors.red),
+        ],
+      _tabItems => [
+          _selectionAction(Icons.playlist_add, 'PL追加', _showAddToPlaylistSheet),
+          _selectionAction(Icons.new_label, 'タグ', _showBulkTagSheet),
+          _selectionAction(Icons.select_all, '全選択', () => _selectAll(selectableIds)),
+          _selectionAction(Icons.delete_outline, '削除', _deleteSelectedItems,
+              color: Colors.red),
+        ],
+      _ => [
+          _selectionAction(Icons.copy_outlined, '複製', () async {
+            await PlaylistTab.duplicatePlaylists(context, ref, selectedPlaylists());
+            _clearSelection();
+          }),
+          _selectionAction(Icons.select_all, '全選択', () => _selectAll(selectableIds)),
+          _selectionAction(Icons.delete_outline, '削除', () async {
+            if (await PlaylistTab.deletePlaylists(
+                context, ref, selectedPlaylists())) {
+              _clearSelection();
+            }
+          }, color: Colors.red),
+        ],
+    };
+
     return GlassPanel(
       radius: 999,
       padding:
@@ -466,11 +555,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   .bodyMedium
                   ?.copyWith(fontWeight: FontWeight.bold)),
           const Spacer(),
-          _selectionAction(Icons.playlist_add, 'PL追加', _showAddToPlaylistSheet),
-          _selectionAction(Icons.new_label, 'タグ', _showBulkTagSheet),
-          _selectionAction(Icons.select_all, '全選択', () => _selectAll(items)),
-          _selectionAction(Icons.delete_outline, '削除', _deleteSelected,
-              color: Colors.red),
+          ...actions,
         ],
       ),
     );
