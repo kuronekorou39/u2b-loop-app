@@ -16,7 +16,7 @@ import 'providers/player_provider.dart';
 import 'widgets/perf_overlay.dart';
 import 'widgets/player/player_status_views.dart';
 import 'widgets/share_import_dialog.dart';
-import 'core/native_channels.dart';
+import 'services/playback/pip_bridge.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -113,8 +113,7 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 起動時にautoPiPを無効化（安全策）
-      NativeChannels.pip
-          .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
+      PipBridge.setAutoPiP(enabled: false);
       UpdateService.checkForUpdate(context);
       _initDeepLinks();
     });
@@ -146,8 +145,7 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
       if (playerScreenActive) return; // PlayerScreen表示中は触らない
       final miniState = ref.read(miniPlayerProvider);
       if (!miniState.active || miniState.item == null) {
-        NativeChannels.pip
-            .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
+        PipBridge.setAutoPiP(enabled: false);
       }
     }
   }

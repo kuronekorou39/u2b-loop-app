@@ -4,13 +4,13 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app.dart';
-import '../core/native_channels.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../screens/player_screen.dart';
+import '../services/playback/pip_bridge.dart';
 import 'glass_panel.dart';
 
 /// 画面の下に浮くミニプレイヤー（ガラス板）。
@@ -114,11 +114,8 @@ class MiniPlayerBar extends ConsumerWidget {
                   ref.read(playerProvider).stop();
                   ref.read(miniPlayerProvider.notifier).deactivate();
                   // 自動PiP無効化 + バックグラウンド再生停止
-                  NativeChannels.pip.invokeMethod(
-                      'setAutoPiP', {'enabled': false}).catchError((_) {});
-                  NativeChannels.pip
-                      .invokeMethod('stopPlaybackService')
-                      .catchError((_) {});
+                  PipBridge.setAutoPiP(enabled: false);
+                  PipBridge.stopPlaybackService();
                   WakelockPlus.disable();
                 },
               ),

@@ -32,10 +32,12 @@ import '../providers/playlist_player_provider.dart';
 import '../services/export_service.dart';
 import '../services/export_runner.dart';
 import '../services/playback/load_progress.dart';
+import '../services/playback/mini_player_transport.dart';
+import '../services/playback/pip_bridge.dart';
 import '../services/playback/player_loader.dart';
+import '../services/playback/subtitle_loader.dart';
 import '../services/playback/waveform_loader.dart';
 import '../providers/subtitle_provider.dart';
-import '../services/subtitle_service.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/waveform_cache.dart';
 import '../services/waveform_service.dart';
@@ -57,12 +59,12 @@ import '../widgets/player/playlist_bottom_bar.dart';
 import '../widgets/player/playlist_seek_area.dart';
 import '../widgets/player/single_more_sheet.dart';
 import '../widgets/player/single_player_bar.dart';
+import '../widgets/player/subtitle_language_sheet.dart';
 import '../widgets/player/subtitle_toggle_button.dart';
 import '../widgets/player/transition_stage.dart';
 import '../widgets/player/video_player_widget.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/storage/app_boxes.dart';
-import '../core/native_channels.dart';
 import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
@@ -70,18 +72,6 @@ import '../core/ui/app_sheets.dart';
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
 /// ミニプレイヤー中に通知・PiPから届くメディア操作の受け口。
 /// PlayerScreen の dispose 後に呼ばれるため、ref や mounted に依存しないこと。
-class _MiniMediaCommands {
-  _MiniMediaCommands({
-    required this.playPause,
-    required this.next,
-    required this.prev,
-  });
-
-  final Future<void> Function() playPause;
-  final void Function() next;
-  final Future<void> Function() prev;
-}
-
 class PlayerScreen extends ConsumerStatefulWidget {
   final LoopItem item;
   final List<LoopItem>? playlistItems;
@@ -185,9 +175,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _wasPlayingBeforePause = false;
 
-  /// ミニプレイヤー中に通知・PiPのボタンから呼ばれる操作。
-  /// PlayerScreen の dispose 後も動く必要があるので ref/mounted に依存しない。
-  _MiniMediaCommands? _miniCommands;
+  /// ミニプレイヤー中（この画面の dispose 後）のプレイリスト進行と、通知・PiP のボタン。
+  /// ref/mounted に依存しないので dispose 後も動く
+  MiniPlayerTransport? _miniTransport;
+
+  /// 字幕の用意（オフライン SRT / YouTube 取得 / 言語の選び直し）
+  late final _subtitles = SubtitleLoader(ref, isMounted: () => mounted);
 
   @override
   void initState() {
@@ -195,37 +188,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     WidgetsBinding.instance.addObserver(this);
     playerScreenActive = true;
 
-    NativeChannels.pip.setMethodCallHandler((call) async {
-      if (call.method == 'onPiPChanged') {
-        ref.read(pipModeProvider.notifier).state = call.arguments as bool;
-      } else if (call.method == 'onPiPAction') {
-        switch (call.arguments) {
-          case 'playPause':
+    // 画面表示中のネイティブからの呼び出し（PiP・通知のボタン、出力先、ヘッドホン抜き）
+    PipBridge.listen(PipHandlers(
+      onPiPChanged: (inPiP) =>
+          ref.read(pipModeProvider.notifier).state = inPiP,
+      onAction: (action) async {
+        switch (action) {
+          case PipAction.playPause:
             final player = ref.read(playerProvider);
             await player.playOrPause();
             // ユーザーの明示操作なので、復帰時の自動再開判定も追従させる
             _wasPlayingBeforePause = player.state.playing;
             _updatePiPPlayState();
-          case 'next':
+          case PipAction.next:
             if (_isPlaylist) _manualNext();
-          case 'prev':
+          case PipAction.prev:
             if (_isPlaylist) _manualPrev();
         }
-      } else if (call.method == 'onAudioDeviceChanged') {
-        final device = call.arguments as String? ?? 'speaker';
-        ref.read(audioDeviceProvider.notifier).state = device;
-      } else if (call.method == 'onAudioNoisy') {
+      },
+      onAudioDeviceChanged: (device) =>
+          ref.read(audioDeviceProvider.notifier).state = device,
+      onAudioNoisy: () async {
         // ヘッドホン抜き/Bluetooth切断 → 一時停止
         final player = ref.read(playerProvider);
-        if (player.state.playing) {
-          await player.pause();
-        }
+        if (player.state.playing) await player.pause();
         // 復帰時にスピーカーから鳴り出さないよう自動再開を無効化
         _wasPlayingBeforePause = false;
-      } else if (call.method == 'getPlayState') {
-        return ref.read(playerProvider).state.playing;
-      }
-    });
+      },
+      getPlayState: () => ref.read(playerProvider).state.playing,
+    ));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // ミニプレイヤーからの復帰判定
@@ -240,11 +231,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
-        NativeChannels.pip.invokeMethod('setAutoPiP', {
-          'enabled': true, 'isPlaylist': _isPlaylist,
-          'thumbnailUrl': _currentItem.thumbnailUrl,
-          'thumbnailPath': _currentItem.thumbnailPath,
-        }).catchError((_) {});
+        PipBridge.setAutoPiP(
+            enabled: true, isPlaylist: _isPlaylist, item: _currentItem);
         _updatePiPPlayState();
         _startPreloadMonitor();
         // iOS: トランジション中にmpvが自動pauseするため、遷移前の状態に基づいて復元
@@ -294,11 +282,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       _loadItem();
       // 自動PiPを有効化 + 現在の再生状態を送信
-      NativeChannels.pip.invokeMethod('setAutoPiP', {
-        'enabled': true, 'isPlaylist': _isPlaylist,
-        'thumbnailUrl': _currentItem.thumbnailUrl,
-        'thumbnailPath': _currentItem.thumbnailPath,
-      }).catchError((_) {});
+      PipBridge.setAutoPiP(
+          enabled: true, isPlaylist: _isPlaylist, item: _currentItem);
       _updatePiPPlayState();
     });
   }
@@ -354,10 +339,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     // 自動PiP: ミニプレイヤー有効時は維持（PiP突入後にPlayerScreenに遷移する）
     if (!miniActive) {
-      NativeChannels.pip
-          .invokeMethod('setAutoPiP', {'enabled': false}).catchError((_) {});
-    }
-    if (!miniActive) {
+      PipBridge.setAutoPiP(enabled: false);
       try {
         ref.read(loopProvider.notifier).setCurrentItem(null);
         ref.read(playerAProvider).stop();
@@ -378,51 +360,51 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // ここでは状態を伝えるだけでよい（以前はPiP突入後にPlayerScreenを
       // pushして映像に差し替えようとしていたが、PiPに入った後では手遅れで、
       // 一覧画面がそのままPiPに映っていた）。
-      // 単体再生（プレイリストでない）では _miniCommands が無いので、
+      // 単体再生（プレイリストでない）では _miniTransport が無いので、
       // 再生/一時停止だけは直接プレイヤーを叩く
-      final commands = _miniCommands;
+      final transport = _miniTransport;
       final engine = ref.read(playlistEngineProvider);
       final miniNotifier = ref.read(miniPlayerProvider.notifier);
       final audioDevice = ref.read(audioDeviceProvider.notifier);
-      NativeChannels.pip.setMethodCallHandler((call) async {
-        switch (call.method) {
-          case 'onPiPChanged':
-            pipMode.state = call.arguments as bool;
-          case 'onPiPAction':
-            switch (call.arguments) {
-              case 'playPause':
-                if (commands != null) {
-                  await commands.playPause();
-                } else {
-                  await engine.activePlayer.playOrPause();
-                  _notifyPlayState(engine, miniNotifier);
-                }
-              case 'next':
-                commands?.next();
-              case 'prev':
-                await commands?.prev();
-            }
-          case 'onAudioDeviceChanged':
-            audioDevice.state = call.arguments as String? ?? 'speaker';
-          case 'onAudioNoisy':
-            // ヘッドホン抜き/Bluetooth切断 → 一時停止
-            final player = engine.activePlayer;
-            if (player.state.playing) await player.pause();
-            _notifyPlayState(engine, miniNotifier);
-          case 'getPlayState':
-            return engine.activePlayer.state.playing;
-        }
-        return null;
-      });
+      void notify() => PipBridge.notifyPlayState(
+            playing: engine.activePlayer.state.playing,
+            item: miniNotifier.currentState.item,
+          );
+      PipBridge.listen(PipHandlers(
+        onPiPChanged: (inPiP) => pipMode.state = inPiP,
+        onAction: (action) async {
+          switch (action) {
+            case PipAction.playPause:
+              if (transport != null) {
+                await transport.playPause();
+              } else {
+                await engine.activePlayer.playOrPause();
+                notify();
+              }
+            case PipAction.next:
+              transport?.next();
+            case PipAction.prev:
+              await transport?.prev();
+          }
+        },
+        onAudioDeviceChanged: (device) => audioDevice.state = device,
+        onAudioNoisy: () async {
+          // ヘッドホン抜き/Bluetooth切断 → 一時停止
+          final player = engine.activePlayer;
+          if (player.state.playing) await player.pause();
+          notify();
+        },
+        getPlayState: () => engine.activePlayer.state.playing,
+      ));
     } else {
       pipMode.state = false;
-      NativeChannels.pip.setMethodCallHandler(null);
+      PipBridge.stopListening();
     }
     _waveform.dispose();
     // ミニプレイヤー非アクティブならバックグラウンド再生停止
-    if (!ref.read(miniPlayerProvider).active) {
+    if (!miniActive) {
       WakelockPlus.disable();
-      NativeChannels.pip.invokeMethod('stopPlaybackService').catchError((_) {});
+      PipBridge.stopPlaybackService();
     }
     super.dispose();
   }
@@ -789,15 +771,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     _consecutiveLoadErrors = 0;
     // 字幕（プレイリスト曲切替時）: キャッシュSRT優先、無ければネット取得
-    if (track.item.cachedSubtitlePath != null) {
-      _loadCachedSubtitles(track.item);
-    } else if (track.item.isYouTube &&
-        track.item.videoId != null) {
-      _fetchSubtitles(track.item.videoId!);
-    } else {
-      ref.read(subtitleDataProvider.notifier).state = null;
-      ref.read(subtitleSubDataProvider.notifier).state = null;
-    }
+    _subtitles.loadFor(track.item);
     // 2秒後に次曲プリロード開始（再生を安定させてから）
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
@@ -1307,10 +1281,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Auto-play + バックグラウンド再生サービス開始
     player.play();
     WakelockPlus.enable();
-    NativeChannels.pip.invokeMethod('startPlaybackService', {
-      'title': item.title,
-      'thumbnailPath': item.thumbnailPath,
-    }).catchError((_) {});
+    PipBridge.startPlaybackService(item);
 
     // フルリロードパスでのフェードイン（_advanceToNextから来た場合）
     if (_pendingFadeIn) {
@@ -1334,137 +1305,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     // 字幕: オフラインキャッシュがあればファイルから（通信不要）、無ければ取得
-    if (item.cachedSubtitlePath != null) {
-      _loadCachedSubtitles(item);
-    } else if (source.type == VideoSourceType.youtube &&
-        source.videoId != null) {
-      _fetchSubtitles(source.videoId!);
-    } else {
-      ref.read(subtitleDataProvider.notifier).state = null;
-    }
+    _subtitles.loadFor(item);
   }
 
-  /// 保存済みSRTから字幕を読み込む（オフライン再生用）。
-  Future<void> _loadCachedSubtitles(LoopItem item) async {
-    ref.read(subtitleLoadingProvider.notifier).state = true;
-    ref.read(subtitleDataProvider.notifier).state = null;
-    ref.read(subtitleSubDataProvider.notifier).state = null;
-    try {
-      final file = File(item.cachedSubtitlePath!);
-      if (!await file.exists()) {
-        // ファイルが消えていればネットワーク取得にフォールバック
-        if (mounted && item.videoId != null) {
-          await _fetchSubtitles(item.videoId!);
-        }
-        return;
-      }
-      final subs = SubtitleService.parseSrt(await file.readAsString());
-      if (!mounted) return;
-      ref.read(subtitleDataProvider.notifier).state =
-          subs.isNotEmpty ? subs : null;
-      if (subs.isNotEmpty) {
-        // オフライン用に明示保存した字幕はOFFのままだと見えないので自動表示
-        if (ref.read(subtitleModeProvider) == SubtitleMode.off) {
-          ref.read(subtitleModeProvider.notifier).state =
-              SubtitleMode.subtitle;
-        }
-      }
-    } catch (_) {
-      if (mounted) ref.read(subtitleDataProvider.notifier).state = null;
-    } finally {
-      if (mounted) ref.read(subtitleLoadingProvider.notifier).state = false;
-    }
-  }
-
-  Future<void> _fetchSubtitles(String videoId, {String? language}) async {
-    ref.read(subtitleLoadingProvider.notifier).state = true;
-    ref.read(subtitleDataProvider.notifier).state = null;
-    ref.read(subtitleSubDataProvider.notifier).state = null;
-    ref.read(subtitleSubLanguageProvider.notifier).state = null;
-    try {
-      final result = await SubtitleService.fetchSubtitles(
-        videoId,
-        preferredLanguage: language,
-      );
-      final subs = result.subs;
-      if (mounted) {
-        ref.read(subtitleDataProvider.notifier).state = subs;
-        ref.read(subtitleTracksProvider.notifier).state = result.tracks;
-        final hasSubs = subs != null && subs.isNotEmpty;
-        if (hasSubs) {
-          ref.read(subtitleLanguageProvider.notifier).state =
-              result.selectedLanguage;
-          // モードはユーザー選択を維持（デフォルトOFF）
-        }
-        final item = _currentItem;
-        if (item.hasSubtitles == null || item.hasSubtitles != hasSubs) {
-          item.hasSubtitles = hasSubs;
-          ref.read(loopItemsProvider.notifier).update(item);
-        }
-      }
-    } catch (_) {
-    } finally {
-      if (mounted) {
-        ref.read(subtitleLoadingProvider.notifier).state = false;
-      }
-    }
-  }
-
-  Future<void> _fetchSubSubtitle(SubtitleTrackInfo track) async {
-    try {
-      final subs = await SubtitleService.fetchTrack(track);
-      if (mounted) {
-        ref.read(subtitleSubDataProvider.notifier).state = subs;
-        ref.read(subtitleSubLanguageProvider.notifier).state =
-            track.languageCode;
-      }
-    } catch (_) {}
-  }
-
+  /// 字幕ボタンの長押し: 言語を選ぶ（メイン / サブ）
   void _showSubtitleLanguagePicker() {
-    final tracks = ref.read(subtitleTracksProvider);
-    final mainLang = ref.read(subtitleLanguageProvider);
-    final subLang = ref.read(subtitleSubLanguageProvider);
-    if (tracks.isEmpty) return;
-
-    String label(SubtitleTrackInfo t) =>
-        t.languageName.isNotEmpty ? t.languageName : t.languageCode;
-
-    AppSheets.actions(
+    showSubtitleLanguageSheet(
       context,
-      title: '字幕の言語',
-      actions: [
-        const SheetAction.heading('メイン'),
-        for (final track in tracks)
-          SheetAction(
-            icon: Icons.subtitles,
-            label: label(track),
-            selected: track.languageCode == mainLang,
-            onTap: () {
-              final videoId = _currentItem.videoId;
-              if (videoId != null) {
-                _fetchSubtitles(videoId, language: track.languageCode);
-              }
-            },
-          ),
-        const SheetAction.heading('サブ（小さく表示）'),
-        SheetAction(
-          icon: Icons.subtitles_off,
-          label: 'なし',
-          selected: subLang == null,
-          onTap: () {
-            ref.read(subtitleSubDataProvider.notifier).state = null;
-            ref.read(subtitleSubLanguageProvider.notifier).state = null;
-          },
-        ),
-        for (final track in tracks)
-          SheetAction(
-            icon: Icons.subtitles,
-            label: label(track),
-            selected: track.languageCode == subLang,
-            onTap: () => _fetchSubSubtitle(track),
-          ),
-      ],
+      tracks: ref.read(subtitleTracksProvider),
+      mainLanguage: ref.read(subtitleLanguageProvider),
+      subLanguage: ref.read(subtitleSubLanguageProvider),
+      onMain: (track) =>
+          _subtitles.fetch(_currentItem, language: track.languageCode),
+      onSub: _subtitles.fetchSub,
+      onClearSub: _subtitles.clearSub,
     );
   }
 
@@ -1626,10 +1480,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _enterPiP() async {
     _updatePiPPlayState();
     try {
-      await NativeChannels.pip.invokeMethod('enterPiP', {
-        'thumbnailUrl': _currentItem.thumbnailUrl,
-        'thumbnailPath': _currentItem.thumbnailPath,
-      });
+      await PipBridge.enterPiP(_currentItem);
     } catch (e) {
       debugPrint('enterPiP failed: $e');
       if (mounted) {
@@ -1640,11 +1491,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  void _updatePiPPlayState() {
-    final playing = ref.read(playerProvider).state.playing;
-    NativeChannels.pip
-        .invokeMethod('updatePiPPlayState', {'playing': playing}).catchError((_) {});
-  }
+  void _updatePiPPlayState() =>
+      PipBridge.updatePlayState(ref.read(playerProvider).state.playing);
 
   // --- Export ---
 
@@ -1853,14 +1701,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Widget build(BuildContext context) {
     // 再生状態の同期: PiP + 通知コントローラー
     ref.listen(playingProvider, (_, next) {
-      final playing = next.valueOrNull ?? false;
-      NativeChannels.pip.invokeMethod(
-          'updatePiPPlayState', {'playing': playing}).catchError((_) {});
-      NativeChannels.pip.invokeMethod('updatePlaybackService', {
-        'title': _currentItem.title,
-        'playing': playing,
-        'thumbnailPath': _currentItem.thumbnailPath,
-      }).catchError((_) {});
+      PipBridge.notifyPlayState(
+          playing: next.valueOrNull ?? false, item: _currentItem);
     });
 
     // PiP中は映像をアプリのルートが描くので、ここでは何も描かない。
@@ -1972,203 +1814,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       playlistId: widget.playlistId,
     );
 
-    // プレイリストモード: dispose後も動くコールバックを設定
+    // プレイリストモード: dispose 後も動く進行役を立てる（画面側のコールバックと置き換わる）。
+    // ref.read は dispose 後に使えないので、provider コンテナに生き続けるものをここで渡す
     if (_isPlaylist) {
-      _setupMiniPlayerCallbacks();
+      _miniTransport = MiniPlayerTransport(
+        engine: ref.read(playlistEngineProvider),
+        loop: ref.read(loopProvider.notifier),
+        playlist: ref.read(playlistPlayerProvider.notifier),
+        mini: ref.read(miniPlayerProvider.notifier),
+      )..start();
     }
   }
-
-  /// ミニプレイヤー用のコールバック（PlayerScreen dispose後も動作する）。
-  ///
-  /// 遷移の機構（URL解決・プリロード・スロット入替・区間適用）は PlaylistEngine に
-  /// 集約してあり、PlayerScreen 側のコールバックと同じ実装を通る。
-  /// ここに組み立てるのは「画面が無いときの振る舞い」だけ。
-  void _setupMiniPlayerCallbacks() {
-    // dispose後にref.read()は使えないため、providerコンテナに生き続ける
-    // エンジンとNotifierを事前にキャプチャしておく
-    final engine = ref.read(playlistEngineProvider);
-    final loopNotifier = ref.read(loopProvider.notifier);
-    final plNotifier = ref.read(playlistPlayerProvider.notifier);
-    final miniNotifier = ref.read(miniPlayerProvider.notifier);
-
-    int? preloadedIdx;
-    var isPreloading = false;
-    DateTime? lastReplayAt;
-
-    /// 次トラックをプリロードプレイヤーに読み込む
-    Future<void> preloadNext() async {
-      if (isPreloading || preloadedIdx != null) return;
-      final ps = plNotifier.currentState;
-      final nextIdx = ps.peekNextTrackIndex();
-      if (nextIdx == null) return;
-      final nextTrack = ps.tracks[nextIdx];
-      final current = ps.currentTrack;
-      // 同一アイテムは遷移時のシークだけで済むためプリロード不要
-      if (current != null && nextTrack.isSameItem(current)) return;
-
-      isPreloading = true;
-      try {
-        await engine.prepare(engine.preloadPlayer, nextTrack);
-        preloadedIdx = nextIdx;
-        engine.armCrossfade(nextTrack);
-      } catch (e) {
-        debugPrint('[MiniPlayer] プリロード失敗: $e');
-      } finally {
-        isPreloading = false;
-      }
-    }
-
-    /// プリロード済みプレイヤーにスワップして再生開始
-    void swapToPreloaded(PlaylistTrack track) {
-      preloadedIdx = null;
-      engine.swapSlots();
-      engine.applyRegion(track);
-      loopNotifier.setCurrentItem(track.item.id);
-      miniNotifier.updateCurrentItem(track.item,
-          trackIndex: plNotifier.currentState.currentTrackIndex);
-      // 次のプリロードを開始
-      preloadNext();
-    }
-
-    /// 同一アイテムの別区間にシーク
-    void seekToTrack(PlaylistTrack track) {
-      if (track.startMs != null) {
-        engine.activePlayer.seek(Duration(milliseconds: track.startMs!));
-      }
-      engine.applyRegion(track);
-      miniNotifier.updateCurrentItem(track.item,
-          trackIndex: plNotifier.currentState.currentTrackIndex);
-    }
-
-    /// 未準備のまま曲が終わった場合に、同じ曲を頭からやり直して再生を止めない。
-    /// タイマーとcompletedの二重発火や極短トラックでの連続やり直しで
-    /// フリーズしないよう1秒間は抑制する。
-    void replayCurrent() {
-      final now = DateTime.now();
-      if (lastReplayAt != null &&
-          now.difference(lastReplayAt!) <= const Duration(seconds: 1)) {
-        return;
-      }
-      lastReplayAt = now;
-      try {
-        engine.activePlayer
-          ..seek(Duration.zero)
-          ..play();
-      } catch (_) {}
-    }
-
-    void advance(AdvanceReadiness readiness) {
-      final changed = plNotifier.next();
-      if (!changed) return;
-      final track = plNotifier.currentState.currentTrack;
-      if (track == null) return;
-      if (readiness == AdvanceReadiness.sameItem) {
-        seekToTrack(track);
-      } else {
-        swapToPreloaded(track);
-      }
-    }
-
-    loopNotifier.onBPointReached = () {
-      if (plNotifier.currentState.repeatMode == pl.RepeatMode.single) {
-        return false;
-      }
-      final readiness = engine.readiness(preloadedIndex: preloadedIdx);
-      if (readiness == AdvanceReadiness.sameItem ||
-          readiness == AdvanceReadiness.preloaded) {
-        advance(readiness);
-        return true;
-      }
-      // 未準備 → ABループ継続、裏でプリロードを確保
-      if (readiness == AdvanceReadiness.notReady && !isPreloading) {
-        preloadNext();
-      }
-      return false;
-    };
-
-    loopNotifier.onTrackEnd = () {
-      final readiness = engine.readiness(preloadedIndex: preloadedIdx);
-      if (readiness == AdvanceReadiness.sameItem ||
-          readiness == AdvanceReadiness.preloaded) {
-        advance(readiness);
-      } else if (readiness == AdvanceReadiness.notReady) {
-        replayCurrent();
-        if (!isPreloading) preloadNext();
-      }
-    };
-
-    /// 同一アイテムでない前トラックをアクティブプレイヤーに直接読み込む
-    Future<void> loadPrev() async {
-      final ps = plNotifier.currentState;
-      final prevIdx = ps.peekPrevTrackIndex();
-      if (prevIdx == null) return;
-      final prevTrack = ps.tracks[prevIdx];
-      final current = ps.currentTrack;
-      if (current != null && prevTrack.isSameItem(current)) {
-        if (!plNotifier.prev()) return;
-        final track = plNotifier.currentState.currentTrack;
-        if (track != null) seekToTrack(track);
-        return;
-      }
-      try {
-        await engine.prepare(engine.activePlayer, prevTrack);
-        plNotifier.jumpTo(prevIdx);
-        final track = plNotifier.currentState.currentTrack;
-        if (track == null) return;
-        engine.activePlayer.play();
-        engine.applyRegion(track);
-        loopNotifier.setCurrentItem(track.item.id);
-        miniNotifier.updateCurrentItem(track.item,
-            trackIndex: plNotifier.currentState.currentTrackIndex);
-        preloadedIdx = null;
-        preloadNext();
-      } catch (e) {
-        debugPrint('[MiniPlayer] 前トラックの読み込みに失敗: $e');
-      }
-    }
-
-    // 通知・PiPのボタンから使う操作（PlayerScreen dispose後も動く）
-    _miniCommands = _MiniMediaCommands(
-      playPause: () async {
-        await engine.activePlayer.playOrPause();
-        _notifyPlayState(engine, miniNotifier);
-      },
-      next: () {
-        final readiness = engine.readiness(preloadedIndex: preloadedIdx);
-        if (readiness == AdvanceReadiness.none) return;
-        if (readiness == AdvanceReadiness.notReady) {
-          if (!isPreloading) preloadNext();
-          return;
-        }
-        advance(readiness);
-      },
-      prev: loadPrev,
-    );
-
-    // 初回プリロード開始
-    preloadNext();
-  }
-
-  /// 再生状態をPiPと通知に伝える。
-  ///
-  /// ミニプレイヤー中は ref が使えないので engine と notifier を受け取る。
-  /// ネイティブ側の updatePlaybackService はタイトル未指定だと「再生中」に
-  /// 上書きしてしまうため、曲名は毎回渡すこと。
-  static void _notifyPlayState(
-      PlaylistEngine engine, MiniPlayerNotifier miniNotifier) {
-    final playing = engine.activePlayer.state.playing;
-    final item = miniNotifier.currentState.item;
-    NativeChannels.pip
-        .invokeMethod('updatePiPPlayState', {'playing': playing})
-        .catchError((_) {});
-    NativeChannels.pip.invokeMethod('updatePlaybackService', {
-      'title': item?.title ?? '再生中',
-      'playing': playing,
-      'thumbnailPath': item?.thumbnailPath,
-    }).catchError((_) {});
-  }
-
-  // （旧 _smoothNext / _smoothPrev は _manualNext / _manualPrev に統合済み）
 
   // =====================================================================
   // 横画面レイアウト
