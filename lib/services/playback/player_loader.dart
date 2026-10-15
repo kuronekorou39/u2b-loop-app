@@ -9,6 +9,7 @@ import '../../models/video_source.dart';
 import '../../providers/player_provider.dart';
 import '../cache_service.dart';
 import '../youtube_service.dart';
+import 'hq_audio.dart';
 import 'load_progress.dart';
 
 /// 開いたメディア。[manifest] は YouTube をネットから開いたときだけ
@@ -50,6 +51,10 @@ class PlayerLoader {
 
   static const openTimeout = Duration(seconds: 60);
 
+  /// 高音質の音声（数 MB）を待つ上限。開く+メタデータ待ちと並行して落ちているので、
+  /// 普通の回線ならここで待つのは残りだけ
+  static const hqAudioWait = Duration(seconds: 8);
+
   /// この曲をどのソースとして開くか（純粋な計算。テストしやすいように分けてある）。
   /// [offlinePath] があれば種別は youtube のまま URI だけローカルファイル
   /// （字幕や UI の分岐を YouTube として扱うため）
@@ -90,6 +95,7 @@ class PlayerLoader {
       final player = _ref.read(playerProvider);
       final offline = CacheService.offlineVideoPath(item);
       final LoadedMedia media;
+      Future<String?>? hqAudio;
       if (offline != null) {
         // オフライン保存済み: 通信なしでローカルファイルを再生
         await progress.step(0.40, 'オフラインキャッシュを読み込み中...');
@@ -108,6 +114,11 @@ class PlayerLoader {
               streamUrl: YouTubeService.pickStreamUrl(manifest)),
           manifest: manifest,
         );
+        if (HqAudio.enabled) {
+          // 開くのと並行して落とす。波形の先読みも同じファイルを使う（HqAudio が 1 回にまとめる）
+          hqAudio = HqAudio.fetch(item.videoId!,
+              manifest: manifest, isCancelled: () => !isMounted());
+        }
         await progress.step(0.50, 'プレーヤーを準備中...');
         await player
             .open(Media(media.source.uri), play: false)
@@ -124,6 +135,8 @@ class PlayerLoader {
       _ref.read(videoSourceProvider.notifier).state = media.source;
 
       await _waitForMetadata(player);
+      _checkMounted();
+      await _attachHqAudio(player, hqAudio);
       _checkMounted();
       await player.setRate(item.speed);
       return media;
@@ -157,6 +170,17 @@ class PlayerLoader {
     await player.pause();
     await player.seek(Duration.zero);
     await player.setVolume(prevVolume);
+    await _yieldFrame();
+  }
+
+  /// 高音質の音声が [hqAudioWait] までに落ちていれば付ける。
+  /// 間に合わなければ一体型の音声で始める（落とし終えた分は波形と次回の再生に使われる）
+  Future<void> _attachHqAudio(Player player, Future<String?>? hqAudio) async {
+    if (hqAudio == null) return;
+    await progress.step(0.95, '高音質の音声を取得中...');
+    final path = await hqAudio.timeout(hqAudioWait, onTimeout: () => null);
+    if (path == null || !isMounted()) return;
+    await HqAudio.attach(player, path);
     await _yieldFrame();
   }
 

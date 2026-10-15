@@ -48,6 +48,7 @@ class SettingsKeys {
   static const cacheToDocuments = 'cache_to_documents';
   static const loadingAnimation = 'loading_animation';
   static const glassBlur = 'glass_blur';
+  static const hqAudio = 'hq_audio';
 
   // イースターエッグの解放フラグ
   static const eeStats = 'ee_stats';

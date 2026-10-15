@@ -11,6 +11,7 @@ import '../../providers/data_provider.dart';
 import '../../providers/player_provider.dart';
 import '../audio_analysis_service.dart';
 import '../waveform_service.dart';
+import 'hq_audio.dart';
 
 /// 再生画面と AB 設定画面で同じ手順で波形を用意する。
 ///
@@ -37,8 +38,11 @@ class WaveformLoader {
     WaveformService.canSkipAudioFetch(item).then((skip) async {
       if (!isMounted()) return;
       if (!skip) {
-        final path = await WaveformService()
-            .prefetchAudio(manifest, _ref.read(youtubeServiceProvider));
+        final videoId = item.videoId;
+        if (videoId == null) return;
+        final path = await WaveformService().prefetchAudio(
+            manifest, _ref.read(youtubeServiceProvider),
+            videoId: videoId);
         if (path == null || !isMounted()) return;
         _prefetchedAudioPath = path;
       }
@@ -95,10 +99,11 @@ class WaveformLoader {
   }
 
   /// 画面を離れるとき: 先読みしたまま使わなかった一時ファイルを消す
+  /// （高音質の音声は再生にも使うので HqAudio に任せる）
   void dispose() {
     final path = _prefetchedAudioPath;
     _prefetchedAudioPath = null;
-    if (path != null) {
+    if (path != null && !HqAudio.isManagedPath(path)) {
       try {
         File(path).deleteSync();
       } catch (_) {}

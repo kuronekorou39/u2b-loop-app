@@ -10,6 +10,7 @@ import '../core/native_channels.dart';
 import '../models/loop_item.dart';
 import '../models/video_source.dart';
 import 'audio_analysis_service.dart';
+import 'playback/hq_audio.dart';
 import 'waveform_cache.dart';
 import 'youtube_service.dart';
 
@@ -261,8 +262,19 @@ class WaveformService {
   /// キャッシュ済み音声ファイルから波形を生成し、ファイルを削除して返す。
   /// 波形用の音声を先読みしてローカルに落とす。パスを返す（失敗時null）。
   /// 取得済みのマニフェストを使い回すので、再生開始直後に呼ぶと安上がり。
+  ///
+  /// 高音質再生が有効なら再生用に落とす音声専用ストリーム（HqAudio）をそのまま使う
+  /// （映像込みの一体型より小さく、再生側と 1 回の DL で済む）。
+  /// その音声は HqAudio が管理するので使い終わっても消さない（[generateFromCachedAudio]）
   Future<String?> prefetchAudio(
-      StreamManifest manifest, YouTubeService ytService) async {
+    StreamManifest manifest,
+    YouTubeService ytService, {
+    required String videoId,
+  }) async {
+    if (HqAudio.enabled) {
+      final hq = await HqAudio.fetch(videoId, manifest: manifest);
+      if (hq != null) return hq;
+    }
     final muxed = manifest.muxed.sortByVideoQuality();
     if (muxed.isEmpty) return null;
     return downloadAudioToTemp(
@@ -318,7 +330,7 @@ class WaveformService {
       final manifest = await ytService
           .getManifestWithFallback(videoId)
           .timeout(const Duration(seconds: 30));
-      path = await prefetchAudio(manifest, ytService);
+      path = await prefetchAudio(manifest, ytService, videoId: videoId);
       if (path == null) return null;
     }
     return generateFromCachedAudio(path, targetSamples: targetSamples, onPcm: onPcm);
@@ -337,7 +349,10 @@ class WaveformService {
     try {
       return await generateForLocalFile(audioPath, targetSamples, onPcm: onPcm);
     } finally {
-      try { await File(audioPath).delete(); } catch (_) {}
+      // 再生にも使う高音質の音声は HqAudio が寿命を持つので消さない
+      if (!HqAudio.isManagedPath(audioPath)) {
+        try { await File(audioPath).delete(); } catch (_) {}
+      }
     }
   }
 

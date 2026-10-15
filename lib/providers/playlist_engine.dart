@@ -14,6 +14,7 @@ import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
 import '../services/audio_filters.dart';
 import '../services/cache_service.dart';
+import '../services/playback/hq_audio.dart';
 import '../services/youtube_service.dart';
 import 'loop_provider.dart';
 import 'player_provider.dart';
@@ -66,25 +67,6 @@ class PlaylistEngine {
   /// 現在のプリロード用プレイヤー（非アクティブ側）。
   Player get preloadPlayer => _ref.read(preloadPlayerProvider);
 
-  // --- URL解決 ---
-
-  /// 再生対象のURIを解決する。
-  /// オフライン保存済みならローカルファイルを優先し、通信を一切行わない。
-  /// YouTubeで解決できない場合は null（呼び出し側が次の手段を選ぶ）。
-  Future<String?> resolvePlayableUri(LoopItem item) async {
-    final cached = CacheService.offlineVideoPath(item);
-    if (cached != null) return cached;
-    if (!item.isYouTube || item.videoId == null) {
-      return item.uri.isEmpty ? null : item.uri;
-    }
-    try {
-      return await _ref.read(youtubeServiceProvider).resolveStreamUrl(item.videoId!);
-    } catch (e) {
-      debugPrint('[PlaylistEngine] URL解決に失敗: $e');
-      return null;
-    }
-  }
-
   // --- プリロード / ロードの共通機構 ---
 
   /// [player] に [track] を読み込んで再生準備を整える。
@@ -95,6 +77,9 @@ class PlaylistEngine {
   /// - 開始位置へシークし、**毎回**速度を設定する
   ///   （プレイヤーを2枚使い回す設計のため、設定しないと前曲の速度が残る）
   ///
+  /// 高音質の音声（HqAudio）を待つ上限。プリロードは次の曲までに間に合えばよい
+  static const hqAudioWait = Duration(seconds: 30);
+
   /// [isStale] が true を返した時点で処理を打ち切る（曲を素早く切り替えた際のレース対策）。
   /// 戻り値は YouTube のマニフェスト（波形の先行生成に再利用するため）。
   /// キャッシュ再生・ローカルファイルの場合は null。
@@ -115,6 +100,8 @@ class PlaylistEngine {
     await AudioFilters.clear(player);
 
     StreamManifest? manifest;
+    // 高音質の音声（音声専用ストリーム）。開くのと並行して落とし、メタデータ確定後に付ける
+    Future<String?>? hqAudio;
     final cached = CacheService.offlineVideoPath(item);
     if (cached != null) {
       await player.open(Media(cached), play: false);
@@ -122,6 +109,10 @@ class PlaylistEngine {
       final ytService = _ref.read(youtubeServiceProvider);
       manifest = await ytService.getManifestWithFallback(item.videoId!);
       if (stale()) return null;
+      if (HqAudio.enabled) {
+        hqAudio = HqAudio.fetch(item.videoId!,
+            manifest: manifest, isCancelled: stale);
+      }
       await player.open(Media(YouTubeService.pickStreamUrl(manifest)), play: false);
     } else {
       await player.open(Media(item.uri), play: false);
@@ -140,6 +131,13 @@ class PlaylistEngine {
       await player.pause();
       await player.setVolume(restoreVolume);
       if (stale()) return manifest;
+    }
+
+    if (hqAudio != null) {
+      // プリロードは次の曲までに間に合えばよいので、落ち切るまで待つ（打ち切りは stale）
+      final path = await hqAudio.timeout(hqAudioWait, onTimeout: () => null);
+      if (stale()) return manifest;
+      if (path != null) await HqAudio.attach(player, path);
     }
 
     await player.seek(effectiveStart(track));

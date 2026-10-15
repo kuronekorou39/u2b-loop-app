@@ -149,6 +149,24 @@ class CrossfadeNotifier extends StateNotifier<int> {
   }
 }
 
+/// YouTube を音声専用ストリーム（高音質）で鳴らすか（既定オン）。
+/// 一体型ストリームの音声は 96kbps しかない。仕組みは HqAudio を参照
+final hqAudioProvider =
+    StateNotifierProvider<HqAudioNotifier, bool>((ref) => HqAudioNotifier());
+
+class HqAudioNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.hqAudio;
+
+  HqAudioNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 /// クロスフェード中に次曲の速度を前曲のテンポへ寄せるか（既定オン）。
 /// クロスフェードがオフのときは効かない
 final tempoMatchProvider =

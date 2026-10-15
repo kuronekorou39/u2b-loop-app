@@ -9,6 +9,7 @@ import '../../providers/data_provider.dart';
 import '../../providers/easter_egg_provider.dart';
 import '../../providers/glass_provider.dart';
 import '../../providers/loading_animation_provider.dart';
+import '../../providers/player_provider.dart';
 import '../../widgets/loading_animations/loading_animation.dart';
 import '../../widgets/loading_animations/loading_animation_widget.dart';
 import '../../widgets/settings/settings_parts.dart';
@@ -164,6 +165,21 @@ class _AdvancedSettingsScreenState
                   subtitle: 'ガラス板の背景をぼかす。重い端末ではオフに',
                   value: ref.watch(glassBlurProvider),
                   onChanged: (v) => ref.read(glassBlurProvider.notifier).value = v,
+                ),
+              ],
+            ),
+            SettingsGroup(
+              title: '再生',
+              children: [
+                // 一体型ストリームの音声は 96kbps。音声専用を別に落として重ねる（HqAudio）。
+                // 端末によっては落とせない（403）ことがあるので切れるようにしてある
+                SettingsSwitchRow(
+                  icon: Icons.high_quality,
+                  title: 'YouTube を高音質で再生',
+                  subtitle: '音声専用ストリーム（128kbps 前後）を別に取得して重ねる。'
+                      'オフだと一体型の 96kbps',
+                  value: ref.watch(hqAudioProvider),
+                  onChanged: (v) => ref.read(hqAudioProvider.notifier).value = v,
                 ),
               ],
             ),

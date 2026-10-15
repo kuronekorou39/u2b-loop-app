@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../models/loop_item.dart';
 import 'export_service.dart';
+import 'ranged_downloader.dart';
 import 'subtitle_service.dart';
 import 'youtube_service.dart';
 import '../core/storage/app_boxes.dart';
@@ -61,8 +61,6 @@ class CacheQuality {
   String get sizeLabel =>
       approxBytes > 0 ? '約 ${(approxBytes / 1024 / 1024).toStringAsFixed(0)} MB' : '';
 }
-
-enum _DlState { ok, cancelled, failed }
 
 /// YouTube動画と字幕をアプリ内にダウンロード保存し、オフライン再生を可能にするサービス。
 ///
@@ -206,9 +204,9 @@ class CacheService {
           vInfo.url.toString(), vBytes, tmpV, isCancelled,
           (r) => onProgress?.call((r / total).clamp(0.0, 0.98)),
         );
-        if (okV != _DlState.ok) {
+        if (okV != DownloadState.ok) {
           await _safeDelete(tmpV);
-          return okV == _DlState.cancelled
+          return okV == DownloadState.cancelled
               ? const OfflineCacheResult(cancelled: true)
               : const OfflineCacheResult(error: '映像のダウンロードに失敗しました');
         }
@@ -217,10 +215,10 @@ class CacheService {
           aInfo.url.toString(), aBytes, tmpA, isCancelled,
           (r) => onProgress?.call(((vBytes + r) / total).clamp(0.0, 0.99)),
         );
-        if (okA != _DlState.ok) {
+        if (okA != DownloadState.ok) {
           await _safeDelete(tmpV);
           await _safeDelete(tmpA);
-          return okA == _DlState.cancelled
+          return okA == DownloadState.cancelled
               ? const OfflineCacheResult(cancelled: true)
               : const OfflineCacheResult(error: '音声のダウンロードに失敗しました');
         }
@@ -258,9 +256,9 @@ class CacheService {
             if (total > 0) onProgress?.call((r / total).clamp(0.0, 1.0));
           },
         );
-        if (ok != _DlState.ok) {
+        if (ok != DownloadState.ok) {
           await _safeDelete(videoFile);
-          return ok == _DlState.cancelled
+          return ok == DownloadState.cancelled
               ? const OfflineCacheResult(cancelled: true)
               : const OfflineCacheResult(error: 'ダウンロードに失敗しました');
         }
@@ -298,7 +296,7 @@ class CacheService {
   }
 
   /// 1ストリームをファイルへダウンロードする。
-  Future<_DlState> _downloadStream(
+  Future<DownloadState> _downloadStream(
     YouTubeService service,
     StreamInfo info,
     File file,
@@ -313,7 +311,7 @@ class CacheService {
       await for (final chunk in stream) {
         if (isCancelled?.call() ?? false) {
           await sink.close();
-          return _DlState.cancelled;
+          return DownloadState.cancelled;
         }
         sink.add(chunk);
         received += chunk.length;
@@ -322,68 +320,26 @@ class CacheService {
       await sink.flush();
       await sink.close();
       sink = null;
-      return received > 0 ? _DlState.ok : _DlState.failed;
+      return received > 0 ? DownloadState.ok : DownloadState.failed;
     } catch (_) {
       try {
         await sink?.close();
       } catch (_) {}
-      return _DlState.failed;
+      return DownloadState.failed;
     }
   }
 
-  /// adaptiveストリームURLを Range ヘッダで分割ダウンロードする。
-  /// youtube_explode の get() はadaptiveで途中失敗するため自前で実装。
+  /// adaptiveストリームURLを Range ヘッダで分割ダウンロードする（[RangedDownloader]）。
   /// androidVrクライアントのURLと併用することで n パラメータthrottlingを回避する。
-  Future<_DlState> _downloadRanged(
+  Future<DownloadState> _downloadRanged(
     String url,
     int total,
     File file,
     bool Function()? isCancelled,
     void Function(int received) onReceived,
-  ) async {
-    const chunk = 9 * 1024 * 1024; // googlevideoが1リクエストで返す単位に合わせる
-    final client = http.Client();
-    IOSink? sink;
-    try {
-      sink = file.openWrite();
-      var start = 0;
-      var guard = 0;
-      while (total <= 0 || start < total) {
-        if (isCancelled?.call() ?? false) {
-          await sink.close();
-          return _DlState.cancelled;
-        }
-        if (++guard > 2000) break; // 暴走防止
-        final end = (total > 0 && start + chunk - 1 >= total)
-            ? total - 1
-            : start + chunk - 1;
-        final res = await client
-            .get(Uri.parse(url), headers: {'Range': 'bytes=$start-$end'})
-            .timeout(const Duration(seconds: 60));
-        if (res.statusCode != 200 && res.statusCode != 206) {
-          await sink.close();
-          return _DlState.failed;
-        }
-        if (res.bodyBytes.isEmpty) break;
-        sink.add(res.bodyBytes);
-        start += res.bodyBytes.length;
-        onReceived(start);
-        // total不明時は、要求量より少なければ終端とみなす
-        if (total <= 0 && res.bodyBytes.length < chunk) break;
-      }
-      await sink.flush();
-      await sink.close();
-      sink = null;
-      return start > 0 ? _DlState.ok : _DlState.failed;
-    } catch (_) {
-      try {
-        await sink?.close();
-      } catch (_) {}
-      return _DlState.failed;
-    } finally {
-      client.close();
-    }
-  }
+  ) =>
+      RangedDownloader.download(url, total, file,
+          isCancelled: isCancelled, onReceived: onReceived);
 
   /// 指定パスのキャッシュファイル（動画・字幕）を削除する。
   Future<void> deletePaths(String? videoPath, String? subtitlePath) async {

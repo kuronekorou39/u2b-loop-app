@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -708,30 +707,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final item = track.item;
       final player = ref.read(playerProvider);
 
-      // 再生URIの解決（オフライン保存済みならローカル優先）はエンジンに集約
-      final uri = await ref
+      // 開く手順（オフライン優先・メタデータ待ち・高音質の音声・速度）は
+      // プリロードやミニプレイヤーの前曲と同じ PlaylistEngine.prepare を通す
+      await ref
           .read(playlistEngineProvider)
-          .resolvePlayableUri(item)
-          .timeout(const Duration(seconds: 30));
-      if (uri == null) throw Exception('再生可能なストリームがありません');
-      if (!mounted) return;
-
-      await player
-          .open(Media(uri), play: false)
-          .timeout(const Duration(seconds: 30));
+          .prepare(player, track, isStale: () => !mounted)
+          .timeout(const Duration(seconds: 60));
       if (!mounted) return;
       ref.read(videoSourceProvider.notifier).state = VideoSource(
         type: item.isYouTube
             ? VideoSourceType.youtube
             : VideoSourceType.local,
-        uri: uri,
+        uri: item.uri,
         title: item.title,
         videoId: item.videoId,
         thumbnailUrl: item.thumbnailUrl,
       );
-
-      // プレイヤー使い回しのため、前トラックの速度が残らないよう毎回設定
-      await player.setRate(item.speed);
 
       if (jumpToIndex != null) {
         ref.read(playlistPlayerProvider.notifier).jumpTo(jumpToIndex);

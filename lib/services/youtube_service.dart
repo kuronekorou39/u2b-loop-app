@@ -35,6 +35,9 @@ class YouTubeService {
 
   /// 取得済みマニフェストから再生用ストリームURLを選ぶ。
   /// muxed(音声+映像一体)を優先し、無ければvideoOnlyの最高画質にフォールバックする。
+  ///
+  /// muxed は 360p しか配られず音声も 96kbps なので、音声は別途 HqAudio が
+  /// 音声専用ストリームを落として重ねる（ここで選ぶのは映像の土台）
   static String pickStreamUrl(StreamManifest manifest) {
     final muxed = manifest.muxed.sortByVideoQuality();
     if (muxed.isNotEmpty) return muxed.last.url.toString();
@@ -42,12 +45,6 @@ class YouTubeService {
     if (videoOnly.isNotEmpty) return videoOnly.last.url.toString();
     throw Exception('再生可能なストリームがありません');
   }
-
-  /// 再生用ストリームURLを解決する。
-  /// [getVideoSource] と違い動画メタデータ(title/サムネ)を取りに行かないので
-  /// リクエストが1回少ない。呼び出し側が LoopItem を持っている再生経路向け。
-  Future<String> resolveStreamUrl(String videoId) async =>
-      pickStreamUrl(await getManifestWithFallback(videoId));
 
   /// 動画の長さだけを問い合わせる（解析の前に長すぎる曲を省くため）。取れなければ null
   Future<Duration?> getDuration(String videoId) async {
