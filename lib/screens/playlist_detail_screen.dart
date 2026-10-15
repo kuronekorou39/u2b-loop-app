@@ -17,6 +17,7 @@ import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/share_service.dart';
 import '../providers/thumb_tone_provider.dart';
+import '../widgets/empty_hint.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/glass_scaffold.dart';
@@ -702,24 +703,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           // トラック一覧（1 枚のガラス面）
           Expanded(
             child: items.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 空のときの案内。以前は 0.3 で読めないほど薄かった
-                        Icon(Icons.playlist_play,
-                            size: AppIconSizes.xxl,
-                            color: AppTheme.muted(context, alpha: 0.4)),
-                        const SizedBox(height: AppSpacing.md),
-                        Text('曲がありません',
-                            style: TextStyle(
-                                color: AppTheme.muted(context, alpha: 0.75))),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text('＋ ボタンで追加',
-                            style: textTheme.labelMedium?.copyWith(
-                                color: AppTheme.muted(context, alpha: 0.6))),
-                      ],
-                    ),
+                ? const EmptyHint(
+                    icon: Icons.playlist_play,
+                    iconSize: AppIconSizes.xxl,
+                    title: '曲がありません',
+                    subtitle: '＋ ボタンで追加',
                   )
                 : GlassSurface(
               margin: EdgeInsets.fromLTRB(
