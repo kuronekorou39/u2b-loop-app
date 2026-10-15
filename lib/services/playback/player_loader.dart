@@ -36,10 +36,11 @@ class LoadAborted implements Exception {
 /// 進捗を進めながら
 /// 1. オフライン保存があればそのファイル / YouTube はマニフェストを解決 / ローカルはそのまま
 /// 2. `player.open`（YouTube は [openTimeout] で打ち切り）
-/// 3. videoSourceProvider に流す
-/// 4. duration が取れるまで無音で短く再生してメタデータを確定させる
+/// 3. duration が取れるまで無音で短く再生してメタデータを確定させる
 ///    （0 のままだとループ監視も終端検知も働かない）
+/// 4. 高音質の音声を付ける
 /// 5. **毎回**速度を設定する（プレイヤーを使い回すので、前の曲の速度が残る）
+/// 6. 最後に videoSourceProvider に流す（これを見てコントローラーが押せるようになる）
 ///
 /// プレイリストの遷移（プリロード側）は PlaylistEngine.prepare が同じことをする。
 /// 直す時は両方を見ること
@@ -101,12 +102,12 @@ class PlayerLoader {
       if (offline != null) {
         // オフライン保存済み: 通信なしでローカルファイルを再生
         quality.set(player, AudioQuality.offline);
-        await progress.step(0.40, 'オフラインキャッシュを読み込み中...');
+        progress.step(0.40, 'オフラインキャッシュを読み込み中...');
         media = LoadedMedia(source: sourceFor(item, offlinePath: offline));
-        await progress.step(0.70, 'プレーヤーを準備中...');
+        progress.step(0.70, 'プレーヤーを準備中...');
         await player.open(Media(offline), play: false);
       } else if (item.isYouTube) {
-        await progress.step(0.15, 'ストリーム情報を解析中...');
+        progress.step(0.15, 'ストリーム情報を解析中...');
         final manifest = await _ref
             .read(youtubeServiceProvider)
             .getManifestWithFallback(item.videoId!);
@@ -124,27 +125,29 @@ class PlayerLoader {
               manifest: manifest, isCancelled: () => !isMounted());
         }
         quality.set(player, AudioQuality.standard);
-        await progress.step(0.50, 'プレーヤーを準備中...');
+        progress.step(0.50, 'プレーヤーを準備中...');
         await player
             .open(Media(media.source.uri), play: false)
             .timeout(openTimeout);
       } else {
         quality.set(player, AudioQuality.local);
-        await progress.step(0.30, 'ファイルを読み込み中...');
+        progress.step(0.30, 'ファイルを読み込み中...');
         media = LoadedMedia(source: sourceFor(item));
-        await progress.step(0.65, 'プレーヤーを準備中...');
+        progress.step(0.65, 'プレーヤーを準備中...');
         await player.open(Media(item.uri), play: false);
       }
       onOpened?.call(media);
       await _yieldFrame();
       _checkMounted();
-      _ref.read(videoSourceProvider.notifier).state = media.source;
 
       await _waitForMetadata(player);
       _checkMounted();
       await _attachHqAudio(player, hqAudio, media);
       _checkMounted();
       await player.setRate(item.speed);
+      // ここで初めてソースを公開する。画面のコントローラーはこれを見て押せるようになるので、
+      // メタデータ待ちや音声の取り付けの最中に操作されない
+      _ref.read(videoSourceProvider.notifier).state = media.source;
       return media;
     } catch (_) {
       progress.end();
@@ -152,19 +155,16 @@ class PlayerLoader {
     }
   }
 
-  /// 最後の段階「読み込み完了！」を少し見せてから Tip を止める。
-  /// 呼び出し側はこの後で画面を切り替える
-  Future<void> finish() async {
+  /// 進捗を満たして終える。呼び出し側はこの後で動画枠を再生に切り替える
+  void finish() {
     _checkMounted();
-    await progress.step(1.0, '読み込み完了！');
-    await Future.delayed(const Duration(milliseconds: 300));
-    _checkMounted();
+    progress.step(1.0, '読み込み完了');
     progress.end();
   }
 
   Future<void> _waitForMetadata(Player player) async {
     if (player.state.duration != Duration.zero) return;
-    await progress.step(0.90, 'メタデータを取得中...');
+    progress.step(0.90, 'メタデータを取得中...');
     final prevVolume = player.state.volume;
     await player.setVolume(0);
     await player.play();
@@ -188,7 +188,7 @@ class PlayerLoader {
       HqAudio.log('ローダー: 高音質はオフ（設定）');
       return;
     }
-    await progress.step(0.95, '高音質の音声を取得中...');
+    progress.step(0.95, '高音質の音声を取得中...');
     var timedOut = false;
     final path = await hqAudio.timeout(hqAudioWait, onTimeout: () {
       timedOut = true;

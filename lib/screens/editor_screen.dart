@@ -217,7 +217,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         }
       });
       _restoreValues();
-      await _loader.finish();
+      _loader.finish();
       setState(() => _loading = false);
       if (_waveform.shouldGenerateNow(media.source)) {
         _generateWaveform(media.source);
@@ -359,8 +359,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         MediaQuery.orientationOf(context) == Orientation.landscape;
     // 編集中はガラス風（再生画面と同じ骨組み）: AppBar を透明にして背景を上まで通す。
     // 横画面は AppBar を置かず、PlayerShell の topBar に同じものを出す
-    final glassLook = !_loading && _loadError == null;
-    final showAppBar = !(glassLook && isLandscape);
+    final showAppBar = !isLandscape;
     final loop = ref.watch(loopProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
 
@@ -378,38 +377,23 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         }
       },
       child: Scaffold(
-        extendBodyBehindAppBar: glassLook,
+        extendBodyBehindAppBar: true,
         appBar: !showAppBar
             ? null
             : AppBar(
-          backgroundColor: glassLook ? Colors.transparent : null,
-          surfaceTintColor: glassLook ? Colors.transparent : null,
-          centerTitle: glassLook,
-          title: glassLook
-              ? Text('AB 設定',
-                  style: textTheme.labelMedium!
-                      .copyWith(color: textTheme.bodySmall!.color))
-              : Text(
-                  'AB設定 - ${_item.title}',
-                  style: textTheme.bodyLarge,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-          actions: _buildActions(glassLook, loop, hasSource),
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          centerTitle: true,
+          title: Text('AB 設定',
+              style: textTheme.labelMedium!
+                  .copyWith(color: textTheme.bodySmall!.color)),
+          actions: _buildActions(true, loop, hasSource),
         ),
         body: SafeArea(
           top: false,
           bottom: false,
-          child: _loading
-              ? PlayerLoadingView(
-                  title: _item.title,
-                  progress: _progress.progress,
-                  status: _progress.status,
-                  tip: _progress.tip,
-                )
-              : _loadError != null
-                  ? PlayerErrorView(message: _loadError!, onRetry: _loadPlayer)
-                  : _buildEditorView(bottomInset),
+          // 読み込み中も失敗時も画面は編集画面のまま。動画枠だけが状態を映す
+          child: _buildEditorView(bottomInset),
         ),
       ),
     );
@@ -576,7 +560,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       item: _item,
       wide: wide,
       topBar: wide ? _buildWideTopBar(loop, hasSource) : null,
-      video: const VideoPlayerWidget(useAspectRatio: false),
+      video: _loading
+          ? PlayerLoadingStage(
+              item: _item,
+              progress: _progress.progress,
+              status: _progress.status,
+            )
+          : _loadError != null
+              ? PlayerErrorView(message: _loadError!, onRetry: _loadPlayer)
+              : const VideoPlayerWidget(useAspectRatio: false),
       header: NowPlayingHeader(
         title: _item.title,
         subtitle: subParts.join('  ·  '),

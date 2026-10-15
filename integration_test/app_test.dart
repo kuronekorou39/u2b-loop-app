@@ -19,9 +19,8 @@ import 'package:u2b_loop_app/models/playlist_track.dart';
 import 'package:u2b_loop_app/models/video_source.dart';
 import 'package:u2b_loop_app/core/constants.dart';
 import 'package:u2b_loop_app/providers/data_provider.dart';
-import 'package:u2b_loop_app/providers/loading_animation_provider.dart';
+import 'package:u2b_loop_app/providers/perf_overlay_provider.dart';
 import 'package:u2b_loop_app/providers/mini_player_provider.dart';
-import 'package:u2b_loop_app/widgets/loading_animations/loading_animation.dart';
 import 'package:u2b_loop_app/providers/loop_provider.dart';
 import 'package:u2b_loop_app/providers/playlist_player_provider.dart';
 import 'package:u2b_loop_app/services/share_service.dart';
@@ -2243,26 +2242,9 @@ void main() {
   });
 
   // ================================================================
-  // AF. themeProvider / loadingAnimationProvider
+  // AF. 設定プロバイダー
   // ================================================================
   group('AF. 設定プロバイダー永続化', () {
-    testWidgets('AF1. loadingAnimationProvider Hive永続化', (tester) async {
-      final container = ProviderContainer();
-      await tester.pumpWidget(
-          UncontrolledProviderScope(container: container, child: const App()));
-      await settle(tester);
-
-      final notifier = container.read(loadingAnimationProvider.notifier);
-      notifier.set(LoadingAnimationType.starfield);
-      final box = Hive.box('settings');
-      expect(box.get('loading_animation'), 'starfield');
-
-      notifier.set(null); // ランダムに戻す
-      expect(box.get('loading_animation'), isNull);
-
-      container.dispose();
-    });
-
     testWidgets('AF2. perfOverlayProvider Hive永続化', (tester) async {
       final container = ProviderContainer();
       await tester.pumpWidget(

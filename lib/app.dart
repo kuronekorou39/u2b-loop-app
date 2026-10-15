@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
-import 'providers/loading_animation_provider.dart';
+import 'providers/perf_overlay_provider.dart';
 import 'providers/mini_player_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/list_screen.dart';

@@ -148,13 +148,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               future: PackageInfo.fromPlatform(),
               builder: (_, snap) {
                 final version = snap.data?.version ?? '…';
-                final ee = ref.watch(easterEggProvider);
                 return SettingsRow(
                   icon: Icons.system_update,
                   title: 'アップデートを確認',
-                  subtitle: ee.statsUnlocked
-                      ? 'v$version (${ee.unlockedCount}/3)'
-                      : 'v$version',
+                  subtitle: 'v$version',
                   onTap: () {
                     _onVersionTap();
                     UpdateService.checkForUpdate(context);

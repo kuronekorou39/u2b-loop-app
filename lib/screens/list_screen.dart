@@ -10,14 +10,11 @@ import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
-import '../providers/easter_egg_provider.dart';
 import '../widgets/bulk_tag_sheet.dart';
 import '../widgets/empty_hint.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/glass_scaffold.dart';
-import '../widgets/loading_animations/loading_animation.dart';
-import '../widgets/loading_animations/loading_animation_widget.dart';
 import 'detail_screen.dart';
 import 'home/add_to_playlist_sheet.dart';
 import 'home/item_views.dart';
@@ -66,7 +63,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
   ItemSortMode _sortMode = ItemSortMode.updatedDesc;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode(skipTraversal: true);
-  bool _matrixActive = false;
 
   @override
   void initState() {
@@ -90,20 +86,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
     _searchController.dispose();
     _tabController.dispose();
     super.dispose();
-  }
-
-  void _triggerMatrixEasterEgg() {
-    if (_matrixActive) return;
-    final unlocked = ref.read(easterEggProvider.notifier).unlockMatrix();
-    setState(() => _matrixActive = true);
-    if (unlocked) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.success('💊 マトリックスモードがアンロックされました！'),
-      );
-    }
-    Future.delayed(const Duration(seconds: 10), () {
-      if (mounted) setState(() => _matrixActive = false);
-    });
   }
 
   // --- アイテム操作 ---
@@ -310,13 +292,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
                         ],
                       ),
                   ),
-                  if (_matrixActive)
-                    const Positioned.fill(
-                      child: IgnorePointer(
-                        child: LoadingAnimationView(
-                            type: LoadingAnimationType.matrix),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -368,7 +343,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   focusNode: _searchFocusNode,
                   onChanged: (v) {
                     setState(() => _searchQuery = v);
-                    if (v.toLowerCase() == 'matrix') _triggerMatrixEasterEgg();
                   },
                   onClear: () {
                     _searchController.clear();

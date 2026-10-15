@@ -1,112 +1,70 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../providers/loading_animation_provider.dart';
-import '../loading_animations/loading_animation_widget.dart';
+import '../../models/loop_item.dart';
+import '../item_thumbnail.dart';
 import 'video_player_widget.dart';
 
-/// 動画読み込み中の画面。
-/// 進捗・ステータス・Tip は ValueListenable で個別に更新するため、
-/// 画面全体を再ビルドせずに済む。
-class PlayerLoadingView extends ConsumerWidget {
-  const PlayerLoadingView({
+/// 曲を開いている間に動画枠へ出すもの: サムネイルを暗くして、下に進捗バーと一行の文言。
+/// 画面そのものは再生画面のまま（曲名・タグ・一覧は触れる）で、ここだけが待ち状態になる。
+/// 進捗・文言は ValueListenable で局所的に更新する
+class PlayerLoadingStage extends StatelessWidget {
+  const PlayerLoadingStage({
     super.key,
-    required this.title,
+    required this.item,
     required this.progress,
     required this.status,
-    required this.tip,
   });
 
-  final String title;
+  final LoopItem item;
   final ValueListenable<double> progress;
   final ValueListenable<String> status;
-  final ValueListenable<String> tip;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
     return Stack(
+      fit: StackFit.expand,
       children: [
-        // 背景アニメーション
-        Positioned.fill(
-          child: LoadingAnimationView(type: ref.read(loadingAnimationProvider)),
-        ),
-        // 前景: タイトル＋プログレス（ValueListenableBuilderで局所更新）
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: textTheme.titleSmall!.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface.withValues(alpha: 0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
+        ItemThumbnail(item: item),
+        const ColoredBox(color: Colors.black45),
+        Positioned(
+          left: AppSpacing.xl,
+          right: AppSpacing.xl,
+          bottom: AppSpacing.xl,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ValueListenableBuilder<String>(
+                valueListenable: status,
+                builder: (context, text, _) => Text(
+                  text,
+                  style: textTheme.labelMedium!.copyWith(color: Colors.white),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: AppSpacing.xxl),
-                ValueListenableBuilder<double>(
-                  valueListenable: progress,
-                  builder: (context, value, _) {
-                    return TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: value),
-                      duration: const Duration(milliseconds: 400),
-                      curve: Curves.easeInOut,
-                      builder: (context, animated, _) {
-                        return ClipRRect(
-                          borderRadius: AppRadius.borderXs,
-                          child: LinearProgressIndicator(
-                            value: animated,
-                            minHeight: 6,
-                            backgroundColor: colorScheme.surfaceContainerHighest,
-                          ),
-                        );
-                      },
-                    );
-                  },
+              ),
+              const SizedBox(height: AppSpacing.md),
+              ValueListenableBuilder<double>(
+                valueListenable: progress,
+                builder: (context, value, _) => TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: value),
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  builder: (context, animated, _) => ClipRRect(
+                    borderRadius: AppRadius.borderXs,
+                    child: LinearProgressIndicator(
+                      value: animated,
+                      minHeight: 4,
+                      backgroundColor: Colors.white24,
+                      color: AppTheme.accentGreen,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
-                ValueListenableBuilder<String>(
-                  valueListenable: status,
-                  builder: (context, text, _) {
-                    return Text(
-                      text,
-                      style: textTheme.bodyMedium!.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-                // Tip（8秒ごとにフェード切替）
-                ValueListenableBuilder<String>(
-                  valueListenable: tip,
-                  builder: (context, text, _) {
-                    return AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 600),
-                      child: Text(
-                        'Tip: $text',
-                        key: ValueKey(text),
-                        style: textTheme.bodySmall!.copyWith(
-                          color: colorScheme.onSurface.withValues(alpha: 0.35),
-                          fontStyle: FontStyle.italic,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],
@@ -114,8 +72,8 @@ class PlayerLoadingView extends ConsumerWidget {
   }
 }
 
-/// 読み込み失敗時の画面。
-/// [onSkip] を渡すとプレイリスト用の「次の曲へスキップ」ボタンが出る。
+/// 読み込み失敗時に動画枠へ出すもの。
+/// [onSkip] を渡すとプレイリスト用の「次の曲へスキップ」ボタンが出る
 class PlayerErrorView extends StatelessWidget {
   const PlayerErrorView({
     super.key,
@@ -135,42 +93,57 @@ class PlayerErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline,
-                size: AppIconSizes.xxl, color: Colors.orange),
-            const SizedBox(height: AppSpacing.xl),
-            Text('読み込み失敗', style: textTheme.displaySmall),
-            const SizedBox(height: AppSpacing.md),
-            Text(message, style: textTheme.bodySmall, textAlign: TextAlign.center),
-            if (stoppedByRepeatedErrors)
-              Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.md),
-                child: Text(
-                  '連続でエラーが発生したため停止しました',
-                  style: textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            const SizedBox(height: AppSpacing.xxl),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: AppIconSizes.sm),
-              label: const Text('再試行'),
-            ),
-            if (onSkip != null) ...[
+    return ColoredBox(
+      color: Colors.black54,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline,
+                  size: AppIconSizes.xl, color: Colors.orange),
               const SizedBox(height: AppSpacing.md),
-              OutlinedButton.icon(
-                onPressed: onSkip,
-                icon: const Icon(Icons.skip_next, size: AppIconSizes.sm),
-                label: const Text('次の曲へスキップ'),
+              Text('読み込み失敗',
+                  style: textTheme.titleMedium!.copyWith(color: Colors.white)),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                message,
+                style: textTheme.bodySmall!.copyWith(color: Colors.white70),
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (stoppedByRepeatedErrors)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: Text(
+                    '連続でエラーが発生したため停止しました',
+                    style: textTheme.bodySmall!.copyWith(color: Colors.white70),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              const SizedBox(height: AppSpacing.lg),
+              Wrap(
+                spacing: AppSpacing.md,
+                runSpacing: AppSpacing.sm,
+                alignment: WrapAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh, size: AppIconSizes.sm),
+                    label: const Text('再試行'),
+                  ),
+                  if (onSkip != null)
+                    OutlinedButton.icon(
+                      onPressed: onSkip,
+                      icon: const Icon(Icons.skip_next, size: AppIconSizes.sm),
+                      label: const Text('次の曲へスキップ'),
+                    ),
+                ],
               ),
             ],
-          ],
+          ),
         ),
       ),
     );

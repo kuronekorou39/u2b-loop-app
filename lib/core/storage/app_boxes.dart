@@ -46,12 +46,9 @@ class SettingsKeys {
   static const beatMatch = 'beat_match';
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
-  static const loadingAnimation = 'loading_animation';
   static const glassBlur = 'glass_blur';
   static const hqAudio = 'hq_audio';
 
-  // イースターエッグの解放フラグ
+  // 隠しステータスの解放フラグ（設定のバージョン行を 5 回タップ）
   static const eeStats = 'ee_stats';
-  static const eeCassette = 'ee_cassette';
-  static const eeMatrix = 'ee_matrix';
 }

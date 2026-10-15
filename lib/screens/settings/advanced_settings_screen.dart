@@ -2,16 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/app_boxes.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../providers/data_provider.dart';
-import '../../providers/easter_egg_provider.dart';
 import '../../providers/glass_provider.dart';
-import '../../providers/loading_animation_provider.dart';
+import '../../providers/perf_overlay_provider.dart';
 import '../../providers/player_provider.dart';
-import '../../widgets/loading_animations/loading_animation.dart';
-import '../../widgets/loading_animations/loading_animation_widget.dart';
 import '../../widgets/settings/hq_audio_log_dialog.dart';
 import '../../widgets/settings/settings_parts.dart';
 
@@ -30,51 +26,6 @@ class _AdvancedSettingsScreenState
 
   void _toast(SnackBar bar) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
-  }
-
-  // ─── 読み込み中のアニメーション ───
-
-  Map<LoadingAnimationType?, String> _getAnimationLabels() {
-    final ee = ref.read(easterEggProvider);
-    return {
-      null: 'ランダム',
-      LoadingAnimationType.wave: '波形 (Wave)',
-      LoadingAnimationType.mystify: 'ライン (Mystify)',
-      LoadingAnimationType.starfield: '星空 (Starfield)',
-      LoadingAnimationType.particles: 'パーティクル (Particles)',
-      if (ee.cassetteUnlocked)
-        LoadingAnimationType.cassette: 'カセット (Cassette)',
-      if (ee.matrixUnlocked)
-        LoadingAnimationType.matrix: 'マトリックス (Matrix)',
-      LoadingAnimationType.off: 'オフ',
-    };
-  }
-
-  String _animationLabel(LoadingAnimationType? type) =>
-      _getAnimationLabels()[type] ?? 'ランダム';
-
-  void _showAnimationPicker() {
-    final labels = _getAnimationLabels();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _AnimPickerSheet(
-        labels: labels,
-        initial: ref.read(loadingAnimationProvider),
-        onSelect: (type) {
-          ref.read(loadingAnimationProvider.notifier).set(type);
-        },
-        onCassetteUnlock: () {
-          final unlocked = ref.read(easterEggProvider.notifier).unlockCassette();
-          if (unlocked && mounted) {
-            // シートを閉じてからSnackBar
-            Navigator.pop(ctx);
-            _toast(AppSnackBar.success(
-                '🎵 隠しアニメーション「カセット」がアンロックされました！'));
-          }
-        },
-      ),
-    );
   }
 
   // ─── 危険な操作 ───
@@ -125,16 +76,12 @@ class _AdvancedSettingsScreenState
       await AppBoxes.loopItems.clear();
       await AppBoxes.playlists.clear();
       await AppBoxes.tags.clear();
-      // イースターエッグもリセット
-      final settingsBox = AppBoxes.settings;
-      await settingsBox.delete(SettingsKeys.eeStats);
-      await settingsBox.delete(SettingsKeys.eeCassette);
-      await settingsBox.delete(SettingsKeys.eeMatrix);
+      // 隠しステータスの解放もリセット
+      await AppBoxes.settings.delete(SettingsKeys.eeStats);
 
       ref.invalidate(loopItemsProvider);
       ref.invalidate(playlistsProvider);
       ref.invalidate(tagsProvider);
-      ref.invalidate(easterEggProvider);
 
       _toast(AppSnackBar.success('すべてのデータを削除しました'));
     } finally {
@@ -152,13 +99,6 @@ class _AdvancedSettingsScreenState
             SettingsGroup(
               title: '表示',
               children: [
-                // 値が長い（「パーティクル (Particles)」等）ので説明文に出す
-                SettingsRow(
-                  icon: Icons.animation,
-                  title: '読み込み中の演出',
-                  subtitle: _animationLabel(ref.watch(loadingAnimationProvider)),
-                  onTap: _showAnimationPicker,
-                ),
                 // ガラス板のぼかしは GPU 負荷があるので、重い端末では切れるようにしてある
                 SettingsSwitchRow(
                   icon: Icons.blur_on,
@@ -238,129 +178,3 @@ class _AdvancedSettingsScreenState
   }
 }
 
-/// アニメーションピッカー: プレビュー付きボトムシート
-class _AnimPickerSheet extends StatefulWidget {
-  final Map<LoadingAnimationType?, String> labels;
-  final LoadingAnimationType? initial;
-  final ValueChanged<LoadingAnimationType?> onSelect;
-  final VoidCallback onCassetteUnlock;
-
-  const _AnimPickerSheet({
-    required this.labels,
-    required this.initial,
-    required this.onSelect,
-    required this.onCassetteUnlock,
-  });
-
-  @override
-  State<_AnimPickerSheet> createState() => _AnimPickerSheetState();
-}
-
-class _AnimPickerSheetState extends State<_AnimPickerSheet> {
-  late LoadingAnimationType? _selected;
-  bool _holdingOff = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.initial;
-  }
-
-  void _onOffPressStart() {
-    setState(() => _holdingOff = true);
-    Future.delayed(const Duration(seconds: 5), () {
-      if (_holdingOff && mounted) {
-        setState(() => _holdingOff = false);
-        widget.onCassetteUnlock();
-      }
-    });
-  }
-
-  void _onOffPressEnd() {
-    setState(() => _holdingOff = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Text('ローディングアニメーション',
-                style: textTheme.titleSmall),
-          ),
-          // プレビュー
-          Container(
-            height: 160,
-            margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: AppTheme.darkBackground,
-              borderRadius: AppRadius.borderMd,
-            ),
-            child: _selected == LoadingAnimationType.off
-                ? Center(
-                    child: Text('プレビューなし',
-                        style: textTheme.bodySmall!
-                            .copyWith(color: AppTheme.muted(context))),
-                  )
-                : LoadingAnimationView(
-                    key: ValueKey(_selected),
-                    type: _selected,
-                  ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          // 選択肢
-          Flexible(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final entry in widget.labels.entries)
-                    _buildTile(entry.key, entry.value),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTile(LoadingAnimationType? type, String label) {
-    final isSelected = type == _selected;
-    final isOff = type == LoadingAnimationType.off;
-
-    Widget tile = ListTile(
-      leading: Icon(
-        isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-        color: isSelected ? Theme.of(context).colorScheme.primary : null,
-      ),
-      title: Text(label),
-      trailing: isOff && _holdingOff
-          ? const SizedBox(
-              width: 16, height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2))
-          : null,
-      onTap: () {
-        setState(() => _selected = type);
-        widget.onSelect(type);
-      },
-    );
-
-    if (isOff) {
-      tile = GestureDetector(
-        onLongPressStart: (_) => _onOffPressStart(),
-        onLongPressEnd: (_) => _onOffPressEnd(),
-        onLongPressCancel: _onOffPressEnd,
-        child: tile,
-      );
-    }
-
-    return tile;
-  }
-}

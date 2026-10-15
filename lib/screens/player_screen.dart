@@ -660,6 +660,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 手動: トラック選択（パネルからタップ）
   Future<void> _selectTrack(int trackIndex) async {
+    // 最初の曲を開いている最中は一覧は見られるが選べない（同じプレイヤーを取り合うため）
+    if (_loading) return;
     if (_guardManualOp()) return;
     final ps = ref.read(playlistPlayerProvider);
     if (trackIndex == ps.currentTrackIndex) return;
@@ -1259,7 +1261,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Setup playlist callbacks
     _setupPlaylistCallbacks();
 
-    await _loader.finish();
+    _loader.finish();
     setState(() {
       _loading = false;
       _trackLoading = false;
@@ -1715,7 +1717,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 再生中はガラス風: AppBar を透明にして背景を上まで通し、
     // 曲名は動画の下に出すので AppBar にはプレイリスト名だけ（単体は空）。
     // 全画面と横レイアウトは AppBar を置かない（横は PlayerShell の topBar がその代わり）
-    final glassLook = !_loading && _loadError == null && !_isFullscreen;
+    final glassLook = !_isFullscreen;
     final showAppBar = !_isFullscreen && !(isLandscape && glassLook);
 
     return PopScope(
@@ -1764,32 +1766,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ),
         actions: _buildAppBarActions(),
       ),
-      body: _loading
-          ? PlayerLoadingView(
-              title: _currentItem.title,
-              progress: _progress.progress,
-              status: _progress.status,
-              tip: _progress.tip,
-            )
-          : _loadError != null
-              ? PlayerErrorView(
-                  message: _loadError!,
-                  stoppedByRepeatedErrors: _isPlaylist &&
-                      _consecutiveLoadErrors >= _maxConsecutiveErrors,
-                  onRetry: () {
-                    _consecutiveLoadErrors = 0;
-                    _loadItem();
-                  },
-                  onSkip: _isPlaylist
-                      ? () {
-                          _consecutiveLoadErrors = 0;
-                          _autoAdvance();
-                        }
-                      : null,
-                )
-              : _buildPlayerView(bottomInset),
+      // 読み込み中も失敗時も画面は再生画面のまま。動画枠だけが状態を映す（[_stageStatus]）
+      body: _buildPlayerView(bottomInset),
     ),
     );
+  }
+
+  /// 動画枠に出す待ち状態。読み込み中は進捗、失敗なら再試行。どちらでもなければ null
+  Widget? get _stageStatus {
+    if (_loading) {
+      return PlayerLoadingStage(
+        item: _currentItem,
+        progress: _progress.progress,
+        status: _progress.status,
+      );
+    }
+    if (_loadError != null) {
+      return PlayerErrorView(
+        message: _loadError!,
+        stoppedByRepeatedErrors:
+            _isPlaylist && _consecutiveLoadErrors >= _maxConsecutiveErrors,
+        onRetry: () {
+          _consecutiveLoadErrors = 0;
+          _loadItem();
+        },
+        onSkip: _isPlaylist
+            ? () {
+                _consecutiveLoadErrors = 0;
+                _autoAdvance();
+              }
+            : null,
+      );
+    }
+    return null;
   }
 
   void _activateMiniPlayer() {
@@ -2007,12 +2016,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         item: _currentItem,
         wide: wide,
         topBar: wide ? _buildWideTopBar() : null,
-        video: _hideVideo
-            ? null
-            : TransitionStage(
-                currentItem: _currentItem,
-                onFullscreen: _enterFullscreen,
-              ),
+        video: _stageStatus ??
+            (_hideVideo
+                ? null
+                : TransitionStage(
+                    currentItem: _currentItem,
+                    onFullscreen: _enterFullscreen,
+                  )),
         header: NowPlayingHeader(
           title: plState.currentTrack?.displayName ?? '',
           subtitle: subParts.join('  ·  '),
@@ -2114,18 +2124,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       item: item,
       wide: wide,
       topBar: wide ? _buildWideTopBar() : null,
-      video: _hideVideo
-          ? null
-          : Stack(
-              fit: StackFit.expand,
-              children: [
-                VideoPlayerWidget(
-                  useAspectRatio: false,
-                  onFullscreen: _enterFullscreen,
-                ),
-                const LyricsOverlay(),
-              ],
-            ),
+      video: _stageStatus ??
+          (_hideVideo
+              ? null
+              : Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    VideoPlayerWidget(
+                      useAspectRatio: false,
+                      onFullscreen: _enterFullscreen,
+                    ),
+                    const LyricsOverlay(),
+                  ],
+                )),
       header: NowPlayingHeader(
         title: item.title,
         subtitle: subParts.join('  ·  '),
