@@ -5,30 +5,43 @@ import '../providers/thumb_tone_provider.dart';
 /// ガラス風の画面の土台: 透明な AppBar + グラデーションの背景 + 本文。
 ///
 /// 背景は AppBar の裏まで通す（`extendBodyBehindAppBar`）ので、本文の上端は
-/// `MediaQuery.paddingOf(context).top`（AppBar の下端）から始めること。
+/// AppBar の下端から始めること。その高さは **Scaffold の中の context** の
+/// `MediaQuery.paddingOf(context).top` に入っている（State の context は Scaffold の
+/// 外なので状態バーの分しか入らず、本文が AppBar の裏に隠れる）。
+/// 上端の余白が要る画面は [bodyBuilder] を使い、渡された context から取ること。
 /// [tone] を渡すと（詳細・プレイリスト詳細）サムネの色味、無ければ固定の青紫。
 class GlassScaffold extends StatelessWidget {
   const GlassScaffold({
     super.key,
-    required this.body,
+    this.body,
+    this.bodyBuilder,
     this.title,
     this.actions,
     this.leading,
     this.centerTitle = false,
     this.automaticallyImplyLeading = true,
     this.appBarBottom,
+    this.toolbarHeight,
     this.tone,
     this.floatingActionButton,
     this.resizeToAvoidBottomInset,
-  });
+  }) : assert((body == null) != (bodyBuilder == null),
+            'body か bodyBuilder のどちらか一方');
 
-  final Widget body;
+  /// 本文。上端の余白が要らない（自分で SafeArea する等）ときはこちら
+  final Widget? body;
+
+  /// 本文を Scaffold の中の context で組む。
+  /// `MediaQuery.paddingOf(context).top` が AppBar の下端になる
+  final WidgetBuilder? bodyBuilder;
+
   final Widget? title;
   final List<Widget>? actions;
   final Widget? leading;
   final bool centerTitle;
   final bool automaticallyImplyLeading;
   final PreferredSizeWidget? appBarBottom;
+  final double? toolbarHeight;
   final ThumbTone? tone;
   final Widget? floatingActionButton;
   final bool? resizeToAvoidBottomInset;
@@ -49,11 +62,12 @@ class GlassScaffold extends StatelessWidget {
         centerTitle: centerTitle,
         automaticallyImplyLeading: automaticallyImplyLeading,
         bottom: appBarBottom,
+        toolbarHeight: toolbarHeight,
       ),
       body: Stack(
         children: [
           Positioned.fill(child: AppBackdrop(tone: tone)),
-          body,
+          body ?? Builder(builder: bodyBuilder!),
         ],
       ),
       floatingActionButton: floatingActionButton,

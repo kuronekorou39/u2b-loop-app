@@ -468,9 +468,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     final tags = ref.watch(tagsProvider);
 
     if (pl == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('プレイリスト')),
-        body: const Center(child: Text('プレイリストが見つかりません')),
+      return const GlassScaffold(
+        title: Text('プレイリスト'),
+        body: Center(child: Text('プレイリストが見つかりません')),
       );
     }
 
@@ -492,16 +492,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ? null
         : ref.watch(thumbToneProvider(thumbPath)).valueOrNull;
 
-    return Scaffold(
+    return GlassScaffold(
       // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: Text('プレイリスト', style: textTheme.titleMedium),
-        actions: [
+      tone: tone,
+      title: Text('プレイリスト', style: textTheme.titleMedium),
+      actions: [
           if (items.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.share_outlined),
@@ -549,14 +544,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               },
             ),
         ],
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: AppBackdrop(tone: tone)),
-          SafeArea(
+      // 本文の上端は bodyBuilder の context から（AppBar の高さが入る）
+      bodyBuilder: (bodyContext) => SafeArea(
         top: false,
         bottom: false,
-        child: Builder(builder: (bodyContext) => Column(
+        child: Column(
         children: [
           SizedBox(height: MediaQuery.paddingOf(bodyContext).top + AppSpacing.xs),
           // ヘッダー
@@ -827,9 +819,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           ),
         ],
       )),
-      ),
-        ],
-      ),
       // キーボードが出ている間は出さない（list_screen と同じ理由）
       floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
           ? null

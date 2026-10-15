@@ -24,8 +24,7 @@ class SettingsPage extends StatelessWidget {
     return GlassScaffold(
       title: Text(title, style: textTheme.titleMedium),
       actions: actions,
-      body: Builder(
-        builder: (context) {
+      bodyBuilder: (context) {
           final padding = MediaQuery.paddingOf(context);
           final viewPadding = MediaQuery.viewPaddingOf(context);
           return ListView(
@@ -37,8 +36,7 @@ class SettingsPage extends StatelessWidget {
             ),
             children: children,
           );
-        },
-      ),
+      },
     );
   }
 }

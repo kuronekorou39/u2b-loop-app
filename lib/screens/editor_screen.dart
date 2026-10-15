@@ -1,15 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/constants.dart';
 import '../core/loop/region_edit_controller.dart';
 import '../core/theme/app_theme.dart';
-import '../core/tips.dart';
 import '../core/utils/app_errors.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
@@ -20,18 +16,18 @@ import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
-import '../providers/loading_animation_provider.dart';
 import '../services/export_service.dart';
 import '../services/export_runner.dart';
-import '../services/audio_analysis_service.dart';
-import '../services/waveform_service.dart';
-import '../widgets/loading_animations/loading_animation_widget.dart';
+import '../services/playback/load_progress.dart';
+import '../services/playback/player_loader.dart';
+import '../services/playback/waveform_loader.dart';
 import '../widgets/loop/ab_edit_controls.dart';
 import '../widgets/loop/ab_edit_panel.dart';
 import '../widgets/loop/loop_seekbar.dart';
 import '../widgets/loop/region_panel.dart';
 import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_shell.dart';
+import '../widgets/player/player_status_views.dart';
 import '../widgets/player/single_player_bar.dart';
 import '../widgets/player/video_player_widget.dart';
 import '../core/ui/app_snack_bar.dart';
@@ -57,12 +53,13 @@ class EditorScreen extends ConsumerStatefulWidget {
 class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _loading = true;
   bool _saving = false;
-
-  String _loadingStatus = '準備中...';
-  double _loadingProgress = 0;
-  DateTime _lastStepTime = DateTime.now();
-  String? _cachedAudioPath;
   String? _loadError;
+
+  /// 読み込みの進捗・曲を開く手順・波形は再生画面と同じ部品
+  final _progress = LoadProgress();
+  late final _loader =
+      PlayerLoader(ref, progress: _progress, isMounted: () => mounted);
+  late final _waveform = WaveformLoader(ref, isMounted: () => mounted);
 
   // Region management（作業用のコピー。保存ボタンで item に書く）
   late List<LoopRegion> _regions;
@@ -127,9 +124,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     try {
       ref.read(playerProvider).stop();
     } catch (_) {}
-    if (_cachedAudioPath != null) {
-      try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
-    }
+    _waveform.dispose();
+    _progress.dispose();
     super.dispose();
   }
 
@@ -200,39 +196,33 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           hintText: '区間名を入力',
           maxLength: AppLimits.regionNameMaxLength);
 
-  // --- Loading progress ---
-
-  Future<void> _setProgress(double progress, String status) async {
-    final elapsed = DateTime.now().difference(_lastStepTime).inMilliseconds;
-    const minMs = 400;
-    if (elapsed < minMs) {
-      await Future.delayed(Duration(milliseconds: minMs - elapsed));
-    }
-    if (!mounted) return;
-    _lastStepTime = DateTime.now();
-    setState(() {
-      _loadingProgress = progress;
-      _loadingStatus = status;
-    });
-  }
-
   // --- Load player ---
 
+  /// 曲を開く（手順は PlayerLoader、再生画面と同じ）。オフライン保存があればそれを使う
   Future<void> _loadPlayer() async {
+    _progress.begin();
     setState(() {
       _loading = true;
       _loadError = null;
-      _loadingProgress = 0;
-      _loadingStatus = '準備中...';
-      _lastStepTime = DateTime.now();
     });
 
     try {
-      if (_item.isYouTube) {
-        await _loadYouTube();
-      } else {
-        await _loadLocal();
+      final media = await _loader.load(_item, onOpened: (m) {
+        // YouTube: 波形用の音声は裏で先読みし、済んだら生成（ロードを待たせない）
+        final manifest = m.manifest;
+        if (manifest != null) {
+          _waveform.prefetchThenGenerate(
+              _item, manifest, () => _generateWaveform(m.source));
+        }
+      });
+      _restoreValues();
+      await _loader.finish();
+      setState(() => _loading = false);
+      if (_waveform.shouldGenerateNow(media.source)) {
+        _generateWaveform(media.source);
       }
+    } on LoadAborted {
+      // 画面を離れた
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -241,73 +231,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         });
       }
     }
-  }
-
-  Future<void> _loadYouTube() async {
-    await _setProgress(0.15, 'ストリーム情報を解析中...');
-    final ytService = ref.read(youtubeServiceProvider);
-    final manifest =
-        await ytService.getManifestWithFallback(_item.videoId!);
-
-    final muxed = manifest.muxed.sortByVideoQuality();
-    String streamUrl;
-    if (muxed.isNotEmpty) {
-      streamUrl = muxed.last.url.toString();
-    } else {
-      final videoOnly = manifest.videoOnly.sortByVideoQuality();
-      if (videoOnly.isEmpty) throw Exception('再生可能なストリームがありません');
-      streamUrl = videoOnly.last.url.toString();
-    }
-
-    if (!mounted) return;
-    await _setProgress(0.50, 'プレーヤーを準備中...');
-
-    final source = VideoSource(
-      type: VideoSourceType.youtube,
-      uri: streamUrl,
-      title: _item.title,
-      videoId: _item.videoId,
-      thumbnailUrl: _item.thumbnailUrl,
-    );
-
-    // 波形用音声DLをバックグラウンド開始→完了後に波形生成。
-    // 波形が保存済み（かつ解析不要）なら DL せずにそのまま使う
-    WaveformService.canSkipAudioFetch(_item).then((skip) async {
-      if (!mounted) return;
-      if (skip) {
-        _generateWaveform(source);
-        return;
-      }
-      final path = await WaveformService().prefetchAudio(manifest, ytService);
-      if (path == null || !mounted) return;
-      _cachedAudioPath = path;
-      _generateWaveform(source);
-    });
-
-    final player = ref.read(playerProvider);
-    await player.open(Media(source.uri), play: false);
-    ref.read(videoSourceProvider.notifier).state = source;
-
-    _restoreValues();
-    await _finishLoading(source);
-  }
-
-  Future<void> _loadLocal() async {
-    await _setProgress(0.30, 'ファイルを読み込み中...');
-    final source = VideoSource(
-      type: VideoSourceType.local,
-      uri: _item.uri,
-      title: _item.title,
-    );
-
-    if (!mounted) return;
-    await _setProgress(0.65, 'プレーヤーを準備中...');
-    final player = ref.read(playerProvider);
-    await player.open(Media(_item.uri), play: false);
-    ref.read(videoSourceProvider.notifier).state = source;
-
-    _restoreValues();
-    await _finishLoading(source);
   }
 
   void _restoreValues() {
@@ -326,83 +249,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           .setPointB(Duration(milliseconds: _item.pointBMs));
       ref.read(loopProvider.notifier).toggleEnabled();
     }
-    // プレイヤー使い回しのため、前に再生していた曲の速度が残らないよう毎回設定
-    ref.read(playerProvider).setRate(_item.speed);
-  }
-
-  Future<void> _finishLoading(VideoSource source) async {
-    if (!mounted) return;
-    final player = ref.read(playerProvider);
-    if (player.state.duration == Duration.zero) {
-      await _setProgress(0.90, 'メタデータを取得中...');
-      final prevVolume = player.state.volume;
-      await player.setVolume(0);
-      await player.play();
-      for (var i = 0;
-          i < 50 && player.state.duration == Duration.zero && mounted;
-          i++) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-      await player.pause();
-      await player.seek(Duration.zero);
-      await player.setVolume(prevVolume);
-    }
-
-    if (!mounted) return;
-    await _setProgress(1.0, '読み込み完了！');
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    if (source.type == VideoSourceType.local || _cachedAudioPath != null) {
-      _generateWaveform(source);
-    }
   }
 
   // --- Waveform ---
 
-  Future<void> _generateWaveform(VideoSource source) async {
-    ref.read(waveformDataProvider.notifier).state = null;
-    ref.read(waveformErrorProvider.notifier).state = null;
-    ref.read(waveformLoadingProvider.notifier).state = true;
-    try {
-      final service = WaveformService();
-      await service.cancel();
-
-      if (source.type != VideoSourceType.local && source.videoId == null) {
-        return;
-      }
-      // 先読み済みの音声があればDLを省略する
-      final prefetched = _cachedAudioPath;
-      _cachedAudioPath = null;
-      final waveform = await service.generateForVideoSource(
-        source,
-        ref.read(youtubeServiceProvider),
-        cachedAudioPath: prefetched,
-        onPcm: AudioAnalysisService.sinkFor(
-            ref.read(loopItemsProvider.notifier), _item),
-        cacheKey: _item.id,
-      );
-
-      if (mounted) {
-        if (waveform == null || waveform.isEmpty) {
-          ref.read(waveformErrorProvider.notifier).state = '波形取得失敗';
-        } else {
-          ref.read(waveformDataProvider.notifier).state = waveform;
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ref.read(waveformErrorProvider.notifier).state = AppErrors.describe(e);
-      }
-    } finally {
-      if (mounted) {
-        ref.read(waveformLoadingProvider.notifier).state = false;
-      }
-    }
-  }
-
-
+  /// 波形を作って provider に流す（手順は WaveformLoader、再生画面と同じ）
+  Future<void> _generateWaveform(VideoSource source) =>
+      _waveform.generate(source, _item);
 
   // --- Save ---
 
@@ -547,9 +400,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           top: false,
           bottom: false,
           child: _loading
-              ? _buildLoadingView()
+              ? PlayerLoadingView(
+                  title: _item.title,
+                  progress: _progress.progress,
+                  status: _progress.status,
+                  tip: _progress.tip,
+                )
               : _loadError != null
-                  ? _buildErrorView()
+                  ? PlayerErrorView(message: _loadError!, onRetry: _loadPlayer)
                   : _buildEditorView(bottomInset),
         ),
       ),
@@ -680,119 +538,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     }
 
     return const SizedBox.shrink();
-  }
-
-  Widget _buildLoadingView() {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: LoadingAnimationView(
-            type: ref.read(loadingAnimationProvider),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _item.title,
-                  style: textTheme.titleSmall!.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface.withValues(alpha: 0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: _loadingProgress),
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeInOut,
-                  builder: (context, value, _) {
-                    return Column(
-                      children: [
-                        ClipRRect(
-                          borderRadius: AppRadius.borderXs,
-                          child: LinearProgressIndicator(
-                            value: value,
-                            minHeight: 6,
-                            backgroundColor: colorScheme.surfaceContainerHighest,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
-                          child: Text(
-                            _loadingStatus,
-                            key: ValueKey(_loadingStatus),
-                            style: textTheme.bodyMedium!.copyWith(
-                              color: colorScheme.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-              },
-            ),
-            const SizedBox(height: AppSpacing.xxl),
-            Text(
-              'Tip: ${getRandomTip()}',
-              style: textTheme.bodySmall!.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.35),
-                fontStyle: FontStyle.italic,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildErrorView() {
-    final textTheme = Theme.of(context).textTheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: AppIconSizes.xxl, color: Colors.orange),
-            const SizedBox(height: AppSpacing.xl),
-            Text(
-              '読み込み失敗',
-              style: textTheme.displaySmall!.copyWith(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              _loadError!,
-              style: textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.xxl),
-            FilledButton.icon(
-              onPressed: _loadPlayer,
-              icon: const Icon(Icons.refresh, size: AppIconSizes.sm),
-              label: const Text('再試行'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildEditorView(double bottomInset) {

@@ -527,9 +527,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final item = items.where((e) => e.id == widget.itemId).firstOrNull;
 
     if (item == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('詳細')),
-        body: const Center(child: Text('データが見つかりません')),
+      return const GlassScaffold(
+        title: Text('詳細'),
+        body: Center(child: Text('データが見つかりません')),
       );
     }
 
@@ -557,16 +557,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           Navigator.of(context).pop();
         }
       },
-      child: Scaffold(
+      child: GlassScaffold(
         // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
-        extendBodyBehindAppBar: true,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          title: Text('詳細', style: textTheme.titleMedium),
-          actions: [
+        tone: tone,
+        title: Text('詳細', style: textTheme.titleMedium),
+        actions: [
             if (_hasChanges(item))
               TextButton.icon(
                 onPressed: () => _save(item),
@@ -600,11 +595,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               ],
             ),
           ],
-        ),
-        body: Stack(
-          children: [
-            Positioned.fill(child: AppBackdrop(tone: tone)),
-            Builder(builder: (bodyContext) {
+        // 本文の上端は bodyBuilder の context から（AppBar の高さが入る）
+        bodyBuilder: (bodyContext) {
               final padding = MediaQuery.paddingOf(bodyContext);
               final viewPadding = MediaQuery.viewPaddingOf(bodyContext);
               final dim = Theme.of(context).colorScheme.onSurface;
@@ -775,9 +767,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                 ],
               );
-            }),
-          ],
-        ),
+        },
       ),
     );
   }

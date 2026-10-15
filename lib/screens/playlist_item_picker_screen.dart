@@ -140,7 +140,9 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
           ),
         ),
       ],
-      body: Column(
+      // 上端の余白は Scaffold の中の context から（State の context だと
+      // 状態バーの分しか入らず、検索欄が AppBar の裏に隠れていた）
+      bodyBuilder: (context) => Column(
         children: [
           SizedBox(height: MediaQuery.paddingOf(context).top + AppSpacing.xs),
           Padding(

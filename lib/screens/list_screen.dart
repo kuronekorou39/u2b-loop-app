@@ -234,20 +234,23 @@ class _ListScreenState extends ConsumerState<ListScreen>
     };
 
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     return PopScope(
       canPop: !_isSelecting,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _isSelecting) _clearSelection();
       },
-      child: Scaffold(
-        // ガラス風: 背景を AppBar の裏まで通す。本文の上端は Builder の context から取る
-        // （State の context は Scaffold の外なので AppBar の高さが入らない）
-        extendBodyBehindAppBar: true,
-        appBar: _buildAppBar(canSelect: selectableIds.isNotEmpty),
-        body: Stack(
-          children: [
-            const Positioned.fill(child: AppBackdrop()),
-            SafeArea(
+      child: GlassScaffold(
+        toolbarHeight: landscape ? 44 : null,
+        title: Image.asset(
+          'assets/images/logo.png',
+          height: landscape ? 22 : 30,
+          fit: BoxFit.contain,
+        ),
+        actions: _buildAppBarActions(canSelect: selectableIds.isNotEmpty),
+        // 本文の上端は bodyBuilder の context から（AppBar の高さが入る）
+        bodyBuilder: (bodyContext) => SafeArea(
               top: false,
               bottom: false,
               child: Stack(
@@ -255,8 +258,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   GestureDetector(
                     onTap: () => FocusScope.of(context).unfocus(),
                     behavior: HitTestBehavior.translucent,
-                    child: Builder(
-                      builder: (bodyContext) => Column(
+                    child: Column(
                         children: [
                           SizedBox(
                               height: MediaQuery.paddingOf(bodyContext).top +
@@ -307,7 +309,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           ),
                         ],
                       ),
-                    ),
                   ),
                   if (_matrixActive)
                     const Positioned.fill(
@@ -319,8 +320,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 ],
               ),
             ),
-          ],
-        ),
         // キーボードが出ている間は FAB を出さない。出したままだとキーボードの上に
         // 逃げ、閉じるときは先に定位置へ飛んでキーボードの裏に隠れ、キーボードが
         // 下がりきってから下から現れる、という動きに見える
@@ -443,9 +442,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   /// AppBar: ロゴ / 表示切替 / 複数選択 / 設定。表示と選択はどのタブにも出す
-  PreferredSizeWidget _buildAppBar({required bool canSelect}) {
-    final landscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+  /// AppBar の右側: 表示の切り替え（タブごと）・複数選択・設定
+  List<Widget> _buildAppBarActions({required bool canSelect}) {
     final (IconData viewIcon, String viewTooltip, VoidCallback onView) =
         switch (_tab) {
       _tabTags => (
@@ -464,35 +462,22 @@ class _ListScreenState extends ConsumerState<ListScreen>
           () => setState(() => _playlistGrid = !_playlistGrid),
         ),
     };
-    return AppBar(
-      backgroundColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      toolbarHeight: landscape ? 44 : null,
-      title: Image.asset(
-        'assets/images/logo.png',
-        height: landscape ? 22 : 30,
-        fit: BoxFit.contain,
-      ),
-      centerTitle: false,
-      actions: [
-        IconButton(icon: Icon(viewIcon), onPressed: onView, tooltip: viewTooltip),
-        if (canSelect)
-          IconButton(
-            icon: const Icon(Icons.checklist, size: AppIconSizes.ml),
-            onPressed: _enterSelectMode,
-            tooltip: '複数選択',
-          ),
+    return [
+      IconButton(icon: Icon(viewIcon), onPressed: onView, tooltip: viewTooltip),
+      if (canSelect)
         IconButton(
-          icon: const Icon(Icons.settings, size: AppIconSizes.ml),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SettingsScreen()),
-          ),
-          tooltip: '設定',
+          icon: const Icon(Icons.checklist, size: AppIconSizes.ml),
+          onPressed: _enterSelectMode,
+          tooltip: '複数選択',
         ),
-      ],
-    );
+      IconButton(
+        icon: const Icon(Icons.settings, size: AppIconSizes.ml),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        ),
+        tooltip: '設定',
+      ),
+    ];
   }
 
   /// 複数選択中の操作バー（タブと同じ場所にガラスの板で出す）。操作はタブごと

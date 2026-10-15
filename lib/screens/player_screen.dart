@@ -14,7 +14,6 @@ import '../app.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/constants.dart';
 import '../core/loop/region_edit_controller.dart';
-import '../core/tips.dart';
 import '../core/utils/app_errors.dart';
 import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
@@ -31,15 +30,16 @@ import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_engine.dart';
 import '../providers/playlist_player_provider.dart';
-import '../services/cache_service.dart';
 import '../services/export_service.dart';
 import '../services/export_runner.dart';
+import '../services/playback/load_progress.dart';
+import '../services/playback/player_loader.dart';
+import '../services/playback/waveform_loader.dart';
 import '../providers/subtitle_provider.dart';
 import '../services/subtitle_service.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/waveform_cache.dart';
 import '../services/waveform_service.dart';
-import '../services/youtube_service.dart';
 import '../widgets/equalizer_icon.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/karaoke_subtitle.dart';
@@ -116,11 +116,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver {
 
   bool _loading = true;
-  final _loadingStatus = ValueNotifier<String>('準備中...');
-  final _loadingProgress = ValueNotifier<double>(0);
-  DateTime _lastStepTime = DateTime.now();
   String? _loadError;
-  String? _cachedAudioPath;
+
+  /// 読み込みの進捗・曲を開く手順・波形は AB 設定画面と同じ部品。
+  /// プレイリストの遷移（プリロード側）だけは PlaylistEngine.prepare
+  final _progress = LoadProgress();
+  late final _loader =
+      PlayerLoader(ref, progress: _progress, isMounted: () => mounted);
+  late final _waveform = WaveformLoader(ref, isMounted: () => mounted);
 
   int _activeRegionIdx = -1;
   bool _compactSeekbar = false;
@@ -172,8 +175,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _trackLoading = false;
   bool _loadingSnackShowing = false;
-  final _tipNotifier = ValueNotifier<String>(getRandomTip());
-  Timer? _tipTimer;
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -338,10 +339,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     playerScreenActive = false;
-    _loadingProgress.dispose();
-    _loadingStatus.dispose();
-    _tipNotifier.dispose();
-    _tipTimer?.cancel();
+    _progress.dispose();
     _overlayHideTimer?.cancel();
     _loadingTimeoutTimer?.cancel();
     _trackListController.dispose();
@@ -426,9 +424,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       pipMode.state = false;
       NativeChannels.pip.setMethodCallHandler(null);
     }
-    if (_cachedAudioPath != null) {
-      try { File(_cachedAudioPath!).deleteSync(); } catch (_) {}
-    }
+    _waveform.dispose();
     // ミニプレイヤー非アクティブならバックグラウンド再生停止
     if (!ref.read(miniPlayerProvider).active) {
       WakelockPlus.disable();
@@ -1226,7 +1222,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       ref.read(waveformErrorProvider.notifier).state = null;
       final source = ref.read(videoSourceProvider);
       if (source != null) {
-        _generateWaveform(source);
+        _generateWaveform(source, item);
       }
     }
 
@@ -1235,26 +1231,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // --- Loading ---
 
-  Future<void> _setProgress(double progress, String status) async {
-    final elapsed = DateTime.now().difference(_lastStepTime).inMilliseconds;
-    const minMs = 300;
-    if (elapsed < minMs) {
-      await Future.delayed(Duration(milliseconds: minMs - elapsed));
-    }
-    if (!mounted) return;
-    _lastStepTime = DateTime.now();
-    _loadingProgress.value = progress;
-    _loadingStatus.value = status;
-  }
-
+  /// 曲を開く（手順は PlayerLoader、AB 設定画面と同じ）。
+  /// オフライン保存があればそれを優先し、YouTube の波形用音声は裏で先読みする
   Future<void> _loadItem() async {
     _cancelFade();
-    _loadingProgress.value = 0;
-    _loadingStatus.value = '準備中...';
+    _progress.begin();
     setState(() {
       _loading = true;
       _loadError = null;
-      _lastStepTime = DateTime.now();
       _activeRegionIdx = -1;
     });
 
@@ -1263,13 +1247,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       ref.read(preloadPlayerProvider).stop();
     } catch (_) {}
 
-    // Tip: 8秒ごとに自動切替
-    _tipNotifier.value = getRandomTip();
-    _tipTimer?.cancel();
-    _tipTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      _tipNotifier.value = getRandomTip();
-    });
-
     // Reset player state
     ref.read(videoSourceProvider.notifier).state = null;
     ref.read(loopProvider.notifier).reset();
@@ -1277,15 +1254,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     try {
       final item = _currentItem;
-      // オフラインキャッシュがあればローカルファイルを優先再生（通信不要）
-      if (item.isYouTube &&
-          CacheService.offlineVideoPath(item) != null) {
-        await _loadCachedYouTube(item);
-      } else if (item.isYouTube) {
-        await _loadYouTube(item);
-      } else {
-        await _loadLocal(item);
-      }
+      final media = await _loader.load(item, onOpened: (m) {
+        final manifest = m.manifest;
+        if (manifest != null) {
+          _waveform.prefetchThenGenerate(
+              item, manifest, () => _generateWaveform(m.source, item));
+        }
+      });
+      await _finishLoading(item, media.source);
+    } on LoadAborted {
+      // 画面を離れた
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -1305,115 +1283,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  /// 重い await の後に1フレーム描画の隙間を作る
-  Future<void> _yieldFrame() =>
-      Future.delayed(const Duration(milliseconds: 2));
-
-  Future<void> _loadYouTube(LoopItem item) async {
-    await _setProgress(0.15, 'ストリーム情報を解析中...');
-    final ytService = ref.read(youtubeServiceProvider);
-    final manifest =
-        await ytService.getManifestWithFallback(item.videoId!);
-    await _yieldFrame();
-
-    if (!mounted) return;
-    final streamUrl = YouTubeService.pickStreamUrl(manifest);
-
-    final source = VideoSource(
-      type: VideoSourceType.youtube,
-      uri: streamUrl,
-      title: item.title,
-      videoId: item.videoId,
-      thumbnailUrl: item.thumbnailUrl,
-    );
-
-    if (!mounted) return;
-    await _setProgress(0.50, 'プレーヤーを準備中...');
-    final player = ref.read(playerProvider);
-    await player
-        .open(Media(source.uri), play: false)
-        .timeout(const Duration(seconds: 60));
-
-    // 波形用音声DLは再生開始後にバックグラウンドで実行→完了後に波形生成。
-    // 波形が保存済み（かつ解析不要）なら DL せずにそのまま使う
-    WaveformService.canSkipAudioFetch(item).then((skip) async {
-      if (!mounted) return;
-      if (skip) {
-        _generateWaveform(source);
-        return;
-      }
-      final path = await WaveformService().prefetchAudio(manifest, ytService);
-      if (path == null || !mounted) return;
-      _cachedAudioPath = path;
-      _generateWaveform(source);
-    });
-    await _yieldFrame();
-    ref.read(videoSourceProvider.notifier).state = source;
-
-    await _finishLoading(item, source);
-  }
-
-  Future<void> _loadLocal(LoopItem item) async {
-    await _setProgress(0.30, 'ファイルを読み込み中...');
-    final source = VideoSource(
-      type: VideoSourceType.local,
-      uri: item.uri,
-      title: item.title,
-    );
-
-    if (!mounted) return;
-    await _setProgress(0.65, 'プレーヤーを準備中...');
-    final player = ref.read(playerProvider);
-    await player.open(Media(item.uri), play: false);
-    await _yieldFrame();
-    ref.read(videoSourceProvider.notifier).state = source;
-
-    await _finishLoading(item, source);
-  }
-
-  /// オフラインキャッシュ済みのYouTube動画をローカルファイルから再生する。
-  /// ソース種別はyoutubeのまま（字幕・UIロジックを流用）、Mediaだけローカルファイル。
-  Future<void> _loadCachedYouTube(LoopItem item) async {
-    await _setProgress(0.40, 'オフラインキャッシュを読み込み中...');
-    final source = VideoSource(
-      type: VideoSourceType.youtube,
-      uri: item.cachedVideoPath!,
-      title: item.title,
-      videoId: item.videoId,
-      thumbnailUrl: item.thumbnailUrl,
-    );
-
-    if (!mounted) return;
-    await _setProgress(0.70, 'プレーヤーを準備中...');
-    final player = ref.read(playerProvider);
-    await player.open(Media(item.cachedVideoPath!), play: false);
-    await _yieldFrame();
-    ref.read(videoSourceProvider.notifier).state = source;
-
-    await _finishLoading(item, source);
-  }
-
+  /// 開けた後の画面側の仕上げ: 区間・コールバック・再生開始・字幕・波形
   Future<void> _finishLoading(LoopItem item, VideoSource source) async {
-    if (!mounted) return;
     final player = ref.read(playerProvider);
-    if (player.state.duration == Duration.zero) {
-      await _setProgress(0.90, 'メタデータを取得中...');
-      final prevVolume = player.state.volume;
-      await player.setVolume(0);
-      await player.play();
-      for (var i = 0;
-          i < 50 && player.state.duration == Duration.zero && mounted;
-          i++) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-      await player.pause();
-      await player.seek(Duration.zero);
-      await player.setVolume(prevVolume);
-      await _yieldFrame();
-    }
-
-    // Setup speed（プレイヤー使い回しのため毎回設定して前トラックの速度をリセット）
-    player.setRate(item.speed);
 
     // Setup regions / AB
     if (_isPlaylist) {
@@ -1428,11 +1300,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // Setup playlist callbacks
     _setupPlaylistCallbacks();
 
-    if (!mounted) return;
-    await _setProgress(1.0, '読み込み完了！');
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-    _tipTimer?.cancel();
+    await _loader.finish();
     setState(() {
       _loading = false;
       _trackLoading = false;
@@ -1466,9 +1334,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
     }
 
-    // Waveform
-    if (source.type == VideoSourceType.local || _cachedAudioPath != null) {
-      _generateWaveform(source);
+    // Waveform（ローカルは即。YouTube は音声の先読みが済んでいれば）
+    if (_waveform.shouldGenerateNow(source)) {
+      _generateWaveform(source, item);
     }
 
     // 字幕: オフラインキャッシュがあればファイルから（通信不要）、無ければ取得
@@ -1850,64 +1718,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _retryWaveform() {
     final source = ref.read(videoSourceProvider);
-    if (source != null) _generateWaveform(source);
+    if (source != null) _generateWaveform(source, _currentItem);
   }
 
-  Future<void> _generateWaveform(VideoSource source) async {
-    ref.read(waveformDataProvider.notifier).state = null;
-    ref.read(waveformErrorProvider.notifier).state = null;
-    ref.read(waveformLoadingProvider.notifier).state = true;
-    try {
-      final service = WaveformService();
-      await service.cancel();
-
-      if (source.type != VideoSourceType.local && source.videoId == null) {
-        return;
+  /// 波形を作って provider に流し（手順は WaveformLoader、AB 設定画面と同じ）、
+  /// できたら 1 番だけモードの切断点・ミックス点・音量正規化を更新する。
+  /// [item] は開いたときの曲（先読みが終わる頃には次の曲に進んでいることがある）
+  Future<void> _generateWaveform(VideoSource source, LoopItem item) async {
+    final waveform = await _waveform.generate(source, item);
+    if (waveform == null || !mounted) return;
+    _waveformCache[item.id] = waveform;
+    if (_isPlaylist) {
+      final track = ref.read(playlistPlayerProvider).currentTrack;
+      if (track != null && !track.hasRegion) {
+        _applyFirstVerseCut(track);
       }
-      // 先読み済みの音声があればDLを省略する
-      final prefetched = _cachedAudioPath;
-      _cachedAudioPath = null;
-      final waveform = await service.generateForVideoSource(
-        source,
-        ref.read(youtubeServiceProvider),
-        cachedAudioPath: prefetched,
-        // 未解析ならテンポ/キー解析をデコードに相乗りさせる（長すぎる曲は除く）
-        onPcm: AudioAnalysisService.sinkFor(
-            ref.read(loopItemsProvider.notifier), _currentItem,
-            duration: ref.read(playerProvider).state.duration),
-        cacheKey: _currentItem.id,
-      );
-
-      if (mounted) {
-        if (waveform == null || waveform.isEmpty) {
-          ref.read(waveformErrorProvider.notifier).state = '波形取得失敗';
-        } else {
-          ref.read(waveformDataProvider.notifier).state = waveform;
-          // 波形キャッシュに保存し、1番だけモードの切断点を再計算
-          _waveformCache[_currentItem.id] = waveform;
-          if (_isPlaylist) {
-            final track =
-                ref.read(playlistPlayerProvider).currentTrack;
-            if (track != null && !track.hasRegion) {
-              _applyFirstVerseCut(track);
-            }
-            if (track != null) {
-              unawaited(_updateMixPoints(track, waveform, preload: false));
-            }
-          }
-          // 音量正規化
-          _applyVolumeNormalization(waveform);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ref.read(waveformErrorProvider.notifier).state = AppErrors.describe(e);
-      }
-    } finally {
-      if (mounted) {
-        ref.read(waveformLoadingProvider.notifier).state = false;
+      if (track != null) {
+        unawaited(_updateMixPoints(track, waveform, preload: false));
       }
     }
+    _applyVolumeNormalization(waveform);
   }
 
   /// 波形データから音量を正規化（デフォルト50を基準に調整）
@@ -2308,9 +2138,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       body: _loading
           ? PlayerLoadingView(
               title: _currentItem.title,
-              progress: _loadingProgress,
-              status: _loadingStatus,
-              tip: _tipNotifier,
+              progress: _progress.progress,
+              status: _progress.status,
+              tip: _progress.tip,
             )
           : _loadError != null
               ? PlayerErrorView(
