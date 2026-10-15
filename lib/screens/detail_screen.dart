@@ -491,34 +491,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   // --- タグ管理 ---
 
-  void _showTagPicker(LoopItem item) {
-    final tags = ref.read(tagsProvider);
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => ItemTagSheet(
-        tags: tags,
-        item: item,
-        onToggle: (tagId, add) async {
-          if (add) {
-            await ref
-                .read(loopItemsProvider.notifier)
-                .addTagToItems([item.id], tagId);
-          } else {
-            await ref
-                .read(loopItemsProvider.notifier)
-                .removeTagFromItems([item.id], tagId);
-          }
-        },
-        onCreateAndAdd: (name) async {
-          final tag = await ref.read(tagsProvider.notifier).create(name);
-          await ref
-              .read(loopItemsProvider.notifier)
-              .addTagToItems([item.id], tag.id);
-          return tag;
-        },
-      ),
-    );
-  }
+  void _showTagPicker(LoopItem item) => ItemTagSheet.show(context, ref, item);
 
   @override
   Widget build(BuildContext context) {

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
+import '../providers/data_provider.dart';
 import '../core/ui/app_dialogs.dart';
 
-/// 個別アイテムのタグ編集シート（共有ウィジェット）
+/// 個別アイテムのタグ編集シート（共有ウィジェット）。
+/// 詳細・再生画面からは [show] で開く（タグの付け外しと新規作成の配線を 1 か所に）
 class ItemTagSheet extends StatefulWidget {
   final List<Tag> tags;
   final LoopItem item;
@@ -20,6 +23,26 @@ class ItemTagSheet extends StatefulWidget {
     required this.onToggle,
     required this.onCreateAndAdd,
   });
+
+  /// [item] のタグを編集するシートを開く。変更はその場で保存される
+  static Future<void> show(BuildContext context, WidgetRef ref, LoopItem item) {
+    final items = ref.read(loopItemsProvider.notifier);
+    return showModalBottomSheet(
+      context: context,
+      builder: (_) => ItemTagSheet(
+        tags: ref.read(tagsProvider),
+        item: item,
+        onToggle: (tagId, add) => add
+            ? items.addTagToItems([item.id], tagId)
+            : items.removeTagFromItems([item.id], tagId),
+        onCreateAndAdd: (name) async {
+          final tag = await ref.read(tagsProvider.notifier).create(name);
+          await items.addTagToItems([item.id], tag.id);
+          return tag;
+        },
+      ),
+    );
+  }
 
   @override
   State<ItemTagSheet> createState() => _ItemTagSheetState();

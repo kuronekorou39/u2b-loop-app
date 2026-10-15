@@ -28,6 +28,7 @@ import '../widgets/loop/region_panel.dart';
 import '../widgets/player/now_playing_header.dart';
 import '../widgets/player/player_shell.dart';
 import '../widgets/player/player_status_views.dart';
+import '../widgets/player/player_wide_top_bar.dart';
 import '../widgets/player/single_player_bar.dart';
 import '../widgets/player/video_player_widget.dart';
 import '../core/ui/app_snack_bar.dart';
@@ -459,27 +460,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   /// 横レイアウトで AppBar の代わりに動画の上へ出す 1 行: 戻る・「AB 設定」・操作
-  Widget _buildWideTopBar(LoopState loop, bool hasSource) {
-    final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            tooltip: '戻る',
-            onPressed: () => Navigator.maybePop(context),
-          ),
-          Expanded(
-            child: Text('AB 設定',
-                style: textTheme.labelMedium!
-                    .copyWith(color: textTheme.bodySmall!.color)),
-          ),
-          ..._buildActions(true, loop, hasSource),
-        ],
-      ),
-    );
-  }
+  Widget _buildWideTopBar(LoopState loop, bool hasSource) => PlayerWideTopBar(
+        title: 'AB 設定',
+        actions: _buildActions(true, loop, hasSource),
+      );
 
   Widget _buildSaveButton() {
     if (_saving) {
