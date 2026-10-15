@@ -11,6 +11,7 @@ import '../../providers/player_provider.dart';
 import '../cache_service.dart';
 import '../youtube_service.dart';
 import 'hq_audio.dart';
+import 'media_cache.dart';
 import 'load_progress.dart';
 
 /// 開いたメディア。[manifest] は YouTube をネットから開いたときだけ
@@ -107,21 +108,32 @@ class PlayerLoader {
         progress.step(0.70, 'プレーヤーを準備中...');
         await player.open(Media(offline), play: false);
       } else if (item.isYouTube) {
-        progress.step(0.15, 'ストリーム情報を解析中...');
-        final manifest = await _ref
-            .read(youtubeServiceProvider)
-            .getManifestWithFallback(item.videoId!);
-        await _yieldFrame();
-        _checkMounted();
+        final videoId = item.videoId!;
+        // 自動キャッシュに映像が残っていれば通信なしで開く（マニフェストも取らない）
+        final local = await MediaCache.existingVideo(videoId);
+        StreamManifest? manifest;
+        if (local != null) {
+          progress.step(0.40, 'キャッシュから読み込み中...');
+        } else {
+          progress.step(0.15, 'ストリーム情報を解析中...');
+          manifest = await _ref
+              .read(youtubeServiceProvider)
+              .getManifestWithFallback(videoId);
+          await _yieldFrame();
+          _checkMounted();
+          // 再生が落ち着いてから裏で映像を残す（次回から通信なし）
+          MediaCache.cacheVideoLater(videoId, manifest,
+              isCancelled: () => !isMounted());
+        }
         media = LoadedMedia(
           source: sourceFor(item,
-              streamUrl: YouTubeService.pickStreamUrl(manifest)),
+              streamUrl: local ?? YouTubeService.pickStreamUrl(manifest!)),
           manifest: manifest,
         );
         if (HqAudio.enabled) {
           // 開くのと並行して落とす。波形の先読みも同じファイルを使う（HqAudio が 1 回にまとめる）
           HqAudio.log('ローダー: 取得を依頼');
-          hqAudio = HqAudio.fetch(item.videoId!,
+          hqAudio = HqAudio.fetch(videoId,
               manifest: manifest, isCancelled: () => !isMounted());
         }
         quality.set(player, AudioQuality.standard);

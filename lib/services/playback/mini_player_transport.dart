@@ -133,7 +133,7 @@ class MiniPlayerTransport {
 
     _isPreloading = true;
     try {
-      await engine.prepare(engine.preloadPlayer, nextTrack);
+      await engine.prepare(engine.preloadPlayer, nextTrack, downloadFirst: true);
       _preloadedIdx = nextIdx;
       engine.armCrossfade(nextTrack);
     } catch (e) {

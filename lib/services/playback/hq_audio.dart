@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' show AudioTrack, Player;
-import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../core/storage/app_boxes.dart';
 import '../ranged_downloader.dart';
 import '../youtube_client_info.dart';
+import 'media_cache.dart';
 
 /// YouTube の音声を高音質（音声専用ストリーム）で鳴らすための取得と取り付け。
 ///
@@ -23,19 +23,13 @@ import '../youtube_client_info.dart';
 /// 今まで通り一体型の音声で鳴る（途中で無音になる失敗はしない）。
 /// 落とした音声は波形生成にも使い回す（従来は波形のために一体型を別途落としていた）。
 ///
+/// 置き場は自動キャッシュ（[MediaCache]）と共通で、上限を超えたら古い順に消える。
+/// 長い曲（[MediaCache.maxDuration] 超）の音声は `.long` 印を付け、最新の数件だけ残す。
+///
 /// 設定「YouTube を高音質で再生」（[SettingsKeys.hqAudio]）でまとめて切れる。
 class HqAudio {
   HqAudio._();
 
-  /// 一時領域の中の置き場。ここにあるファイルは HqAudio が寿命を管理する
-  /// （波形生成が使い終わっても消さない。[isManagedPath]）
-  static const dirName = 'hq_audio';
-
-  /// 残しておくファイル数。2 枚のプレイヤー + 前後の曲に戻る分
-  static const keepFiles = 8;
-
-  /// これより小さいファイルは落とし損ねとみなす
-  static const minBytes = 100 * 1024;
 
   /// 一体型（itag 18）の音声は AAC 約 96kbps。これを超えない音声専用ストリームしか無い動画
   /// （古い投稿の 49kbps など）は付けても改悪なので、落とさず「標準」のまま鳴らす
@@ -78,9 +72,8 @@ class HqAudio {
     }
   }
 
-  /// [path] が HqAudio の管理下か（使い終わっても消してはいけない）
-  static bool isManagedPath(String path) =>
-      path.replaceAll('\\', '/').contains('/$dirName/');
+  /// [path] が自動キャッシュの管理下か（使い終わっても消してはいけない）
+  static bool isManagedPath(String path) => MediaCache.isManagedPath(path);
 
   /// 音声専用ストリームから使うものを選ぶ。
   /// 波形生成（MediaExtractor / MP4 パーサ）と同じ mp4 コンテナを優先し、
@@ -113,33 +106,42 @@ class HqAudio {
     return best;
   }
 
-  /// ファイル名は `<videoId>.<itag>.<kbps>k.<mp4|webm>`。
-  /// 素性を画面に出すため（[labelFor]）、名前に埋めておく
-  static final _fileName = RegExp(r'^([^.]+)\.(\d+)\.(\d+)k\.(mp4|webm)$');
+  /// ファイル名は `<videoId>.<itag>.<kbps>k[.long].<mp4|webm>`。
+  /// 素性を画面に出すため（[labelFor]）、名前に埋めておく。`.long` は長い曲の印（[MediaCache]）
+  static final _fileName =
+      RegExp(r'^([^.]+)\.(\d+)\.(\d+)k(\.long)?\.(mp4|webm)$');
 
-  static String fileNameFor(String videoId, AudioOnlyStreamInfo info) =>
-      '$videoId.${info.tag}.${info.bitrate.kiloBitsPerSecond.round()}k.'
-      '${info.container.name}';
+  static String fileNameFor(String videoId, AudioOnlyStreamInfo info) {
+    final long = MediaCache.isTooLong(MediaCache.estimateDuration(
+        info.size.totalBytes, info.bitrate.bitsPerSecond));
+    return fileNameForParts(videoId, info.tag,
+        info.bitrate.kiloBitsPerSecond.round(), info.container.name,
+        long: long);
+  }
+
+  static String fileNameForParts(String videoId, int itag, int kbps, String ext,
+          {bool long = false}) =>
+      '$videoId.$itag.${kbps}k${long ? '.long' : ''}.$ext';
 
   /// 落とした音声の素性（「AAC 128kbps」「Opus 145kbps」）。名前が読めなければ「音声専用」
   static String labelFor(String path) {
     final name = path.replaceAll('\\', '/').split('/').last;
     final m = _fileName.firstMatch(name);
     if (m == null) return '音声専用';
-    final codec = m.group(4) == 'mp4' ? 'AAC' : 'Opus';
+    final codec = m.group(5) == 'mp4' ? 'AAC' : 'Opus';
     return '$codec ${m.group(3)}kbps';
   }
 
   /// 落としてあればそのパス（通信なし）。無ければ null
   static Future<String?> existing(String videoId) async {
-    final dir = await _dir();
+    final dir = await MediaCache.dir();
     try {
       await for (final e in dir.list()) {
         if (e is! File) continue;
         final name = e.path.replaceAll('\\', '/').split('/').last;
         final m = _fileName.firstMatch(name);
         if (m == null || m.group(1) != videoId) continue;
-        if (await _isComplete(e)) return e.path;
+        if (await MediaCache.isComplete(e)) return e.path;
       }
     } catch (_) {}
     return null;
@@ -175,15 +177,11 @@ class HqAudio {
       final ready = await existing(videoId);
       if (ready != null) {
         _log('$videoId: 落とし済み ${labelFor(ready)}');
-        // 使った順を保つ（掃除は古い順）
-        try {
-          await File(ready).setLastModified(DateTime.now());
-        } catch (_) {}
+        await MediaCache.touch(ready);
         return ready;
       }
       _log('$videoId: 取得開始');
-      final dir = await _dir();
-      await _sweep(dir);
+      final dir = await MediaCache.dir();
 
       // VISIONOS が本命（ANDROID 系の音声専用 URL は先頭 1MB で 403 になる。
       // [YouTubeClientInfo.visionOs] 参照）。念のため再生用マニフェストと androidVr も残す
@@ -253,7 +251,7 @@ class HqAudio {
       isCancelled: isCancelled,
       onFailed: (reason) => _log('$videoId: DL 失敗 $reason'),
     );
-    if (state != DownloadState.ok || !await _isComplete(part)) {
+    if (state != DownloadState.ok || !await MediaCache.isComplete(part)) {
       if (state == DownloadState.ok) _log('$videoId: DL したが小さすぎる');
       await _delete(part);
       return null;
@@ -267,6 +265,7 @@ class HqAudio {
     }
     _log('$videoId: itag ${info.tag} ${info.bitrate.kiloBitsPerSecond.round()}kbps '
         'を取得（${sw.elapsed.inMilliseconds}ms）');
+    unawaited(MediaCache.enforceLimit());
     return file.path;
   }
 
@@ -313,46 +312,6 @@ class HqAudio {
   /// [player] のトラック一覧に外部音声（[trackTitle]）があるか
   static bool isAttached(Player player) =>
       player.state.tracks.audio.any((t) => t.title == trackTitle);
-
-  static Future<Directory> _dir() async {
-    final dir = Directory('${(await getTemporaryDirectory()).path}/$dirName');
-    if (!await dir.exists()) await dir.create(recursive: true);
-    return dir;
-  }
-
-  static Future<bool> _isComplete(File f) async {
-    try {
-      return await f.exists() && await f.length() >= minBytes;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// 古いものから消して [keepFiles] 件以下に保つ。落とし損ねの .part も消す
-  static Future<void> _sweep(Directory dir) async {
-    try {
-      final files = <File>[];
-      await for (final e in dir.list()) {
-        if (e is! File) continue;
-        if (e.path.endsWith('.part')) {
-          final age = DateTime.now().difference((await e.stat()).modified);
-          if (age > const Duration(hours: 1)) await _delete(e);
-          continue;
-        }
-        files.add(e);
-      }
-      if (files.length < keepFiles) return;
-      final stats = <File, DateTime>{};
-      for (final f in files) {
-        stats[f] = (await f.stat()).modified;
-      }
-      files.sort((a, b) => stats[a]!.compareTo(stats[b]!));
-      // これから 1 件増えるので keepFiles - 1 件だけ残す
-      for (final f in files.take(files.length - (keepFiles - 1))) {
-        await _delete(f);
-      }
-    } catch (_) {}
-  }
 
   static Future<void> _delete(File f) async {
     try {

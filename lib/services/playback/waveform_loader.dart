@@ -52,8 +52,11 @@ class WaveformLoader {
 
   /// 読み込み完了時に波形を作るか: ローカルは即、YouTube は先読みが済んでいれば
   /// （済んでいなければ [prefetchThenGenerate] が後で呼ぶ）
+  /// 自動キャッシュ・オフライン保存から開いた YouTube（URI が端末内のファイル）も即
   bool shouldGenerateNow(VideoSource source) =>
-      source.type == VideoSourceType.local || _prefetchedAudioPath != null;
+      source.type == VideoSourceType.local ||
+      source.uri.startsWith('/') ||
+      _prefetchedAudioPath != null;
 
   /// 波形を作って provider に流す。戻り値は成功した波形（失敗・空は null）
   Future<List<double>?> generate(VideoSource source, LoopItem item) async {

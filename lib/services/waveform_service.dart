@@ -11,6 +11,7 @@ import '../models/loop_item.dart';
 import '../models/video_source.dart';
 import 'audio_analysis_service.dart';
 import 'playback/hq_audio.dart';
+import 'playback/media_cache.dart';
 import 'waveform_cache.dart';
 import 'youtube_service.dart';
 
@@ -328,6 +329,11 @@ class WaveformService {
 
     var path = cachedAudioPath;
     if (path == null) {
+      // 通信せずに使える音声があれば落とさない（自動キャッシュ・オフライン保存も含む）
+      final local = await localAudioFor(videoId, playingUri: source.uri);
+      if (local != null) {
+        return generateForLocalFile(local, targetSamples, onPcm: onPcm);
+      }
       final manifest = await ytService
           .getManifestWithFallback(videoId)
           .timeout(const Duration(seconds: 30));
@@ -335,6 +341,22 @@ class WaveformService {
       if (path == null) return null;
     }
     return generateFromCachedAudio(path, targetSamples: targetSamples, onPcm: onPcm);
+  }
+
+  /// 通信せずに使える [videoId] の音声のパス。高音質の音声 → 自動キャッシュの映像 →
+  /// [playingUri] が端末内のファイル（オフライン保存）ならそれ。無ければ null。
+  /// どれも寿命は持ち主が管理するので、使い終わっても消さないこと
+  static Future<String?> localAudioFor(String videoId, {String? playingUri}) async {
+    final hq = await HqAudio.existing(videoId);
+    if (hq != null) return hq;
+    final video = await MediaCache.existingVideo(videoId);
+    if (video != null) return video;
+    if (playingUri != null &&
+        playingUri.startsWith('/') &&
+        await File(playingUri).exists()) {
+      return playingUri;
+    }
+    return null;
   }
 
   /// 波形がキャッシュ済みで、解析も不要なら true（音声 DL を省ける）

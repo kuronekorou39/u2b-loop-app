@@ -49,6 +49,7 @@ class SettingsKeys {
   static const glassBlur = 'glass_blur';
   static const hqAudio = 'hq_audio';
   static const exportQuality = 'export_quality';
+  static const mediaCacheLimitMb = 'media_cache_limit_mb';
 
   // 隠しステータスの解放フラグ（設定のバージョン行を 5 回タップ）
   static const eeStats = 'ee_stats';

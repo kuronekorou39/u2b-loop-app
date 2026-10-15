@@ -16,6 +16,7 @@ import '../models/playlist_track.dart';
 import '../services/audio_filters.dart';
 import '../services/cache_service.dart';
 import '../services/playback/hq_audio.dart';
+import '../services/playback/media_cache.dart';
 import '../services/youtube_service.dart';
 import 'loop_provider.dart';
 import 'player_provider.dart';
@@ -81,14 +82,22 @@ class PlaylistEngine {
   /// 高音質の音声（HqAudio）を待つ上限。プリロードは次の曲までに間に合えばよい
   static const hqAudioWait = Duration(seconds: 30);
 
+  /// [prepare] の downloadFirst で映像を落とし切るのを待つ上限。超えたらストリーミングで開く
+  static const videoDownloadWait = Duration(seconds: 30);
+
   /// [isStale] が true を返した時点で処理を打ち切る（曲を素早く切り替えた際のレース対策）。
   /// 戻り値は YouTube のマニフェスト（波形の先行生成に再利用するため）。
   /// キャッシュ再生・ローカルファイルの場合は null。
+  ///
+  /// YouTube は自動キャッシュ（[MediaCache]）に映像が残っていれば通信なしで開く。
+  /// 無ければ、[downloadFirst]（プリロード。時間に余裕がある）なら落としてから開き、
+  /// そうでなければストリーミングで開いて、少し後に裏で落とす
   Future<StreamManifest?> prepare(
     Player player,
     PlaylistTrack track, {
     bool Function()? isStale,
     bool waitForMetadata = true,
+    bool downloadFirst = false,
   }) async {
     bool stale() => isStale?.call() ?? false;
     final item = track.item;
@@ -109,16 +118,30 @@ class PlaylistEngine {
       quality.set(player, AudioQuality.offline);
       await player.open(Media(cached), play: false);
     } else if (item.isYouTube && item.videoId != null) {
-      final ytService = _ref.read(youtubeServiceProvider);
-      manifest = await ytService.getManifestWithFallback(item.videoId!);
-      if (stale()) return null;
+      final videoId = item.videoId!;
+      var local = await MediaCache.existingVideo(videoId);
+      if (local == null) {
+        final ytService = _ref.read(youtubeServiceProvider);
+        manifest = await ytService.getManifestWithFallback(videoId);
+        if (stale()) return null;
+      }
       if (HqAudio.enabled) {
         HqAudio.log('エンジン: 取得を依頼');
-        hqAudio = HqAudio.fetch(item.videoId!,
-            manifest: manifest, isCancelled: stale);
+        hqAudio = HqAudio.fetch(videoId, manifest: manifest, isCancelled: stale);
+      }
+      if (local == null) {
+        if (downloadFirst) {
+          local = await MediaCache.fetchVideo(videoId, manifest!, isCancelled: stale)
+              .timeout(videoDownloadWait, onTimeout: () => null);
+          if (stale()) return manifest;
+        } else {
+          MediaCache.cacheVideoLater(videoId, manifest!, isCancelled: stale);
+        }
       }
       quality.set(player, AudioQuality.standard);
-      await player.open(Media(YouTubeService.pickStreamUrl(manifest)), play: false);
+      await player.open(
+          Media(local ?? YouTubeService.pickStreamUrl(manifest!)),
+          play: false);
     } else {
       quality.set(player, AudioQuality.local);
       await player.open(Media(item.uri), play: false);

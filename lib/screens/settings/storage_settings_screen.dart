@@ -5,6 +5,7 @@ import '../../core/storage/app_boxes.dart';
 import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../services/cache_service.dart';
+import '../../services/playback/media_cache.dart';
 import '../../services/waveform_cache.dart';
 import '../../widgets/settings/settings_parts.dart';
 
@@ -14,7 +15,7 @@ class StorageSettingsScreen extends ConsumerStatefulWidget {
 
   /// オフライン動画の保存先（true=端末に残す[documents] / false=一時領域[cache]）
   static bool get keepOfflineVideos =>
-      AppBoxes.settings.get(SettingsKeys.cacheToDocuments, defaultValue: false)
+      AppBoxes.settings.get(SettingsKeys.cacheToDocuments, defaultValue: true)
           as bool;
 
   @override
@@ -26,6 +27,46 @@ class _StorageSettingsScreenState extends ConsumerState<StorageSettingsScreen> {
   void _toast(SnackBar bar) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
   }
+
+  Future<void> _pickCacheLimit() async {
+    final current = MediaCache.limitMb;
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('自動キャッシュの上限'),
+        children: [
+          for (final mb in MediaCache.limitOptionsMb)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, mb),
+              child: Text(
+                '${_mbLabel(mb)}${mb == current ? '（いま）' : ''}',
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    MediaCache.limitMb = picked;
+    await MediaCache.enforceLimit();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _clearMediaCache() async {
+    final ok = await AppDialogs.confirm(
+      context,
+      title: '自動キャッシュを空にする',
+      message: '次に再生したときにまた取得します。オフライン保存した曲は消えません。',
+      confirmLabel: '空にする',
+      destructive: true,
+    );
+    if (!ok) return;
+    await MediaCache.clear();
+    if (mounted) setState(() {});
+    _toast(AppSnackBar.success('自動キャッシュを空にしました'));
+  }
+
+  static String _mbLabel(int mb) =>
+      mb >= 1024 ? '${(mb / 1024).toStringAsFixed(mb % 1024 == 0 ? 0 : 1)} GB' : '$mb MB';
 
   Future<void> _clearWaveformCache() async {
     final ok = await AppDialogs.confirm(
@@ -72,6 +113,33 @@ class _StorageSettingsScreenState extends ConsumerState<StorageSettingsScreen> {
                   subtitle: waiting ? '計算中…' : '$mb MB',
                 );
               },
+            ),
+          ],
+        ),
+        // 一度聴いた曲の映像・高音質の音声（MediaCache）。消えてよい使い捨て
+        SettingsGroup(
+          title: '自動キャッシュ',
+          children: [
+            FutureBuilder<int>(
+              future: MediaCache.totalBytes(),
+              builder: (_, snap) {
+                final mb = ((snap.data ?? 0) / 1024 / 1024).toStringAsFixed(0);
+                return SettingsRow(
+                  icon: Icons.cached,
+                  title: '使用量',
+                  subtitle: snap.hasData
+                      ? '$mb MB / ${_mbLabel(MediaCache.limitMb)}。'
+                          '${MediaCache.maxDuration.inMinutes} 分を超える曲は残しません'
+                      : '計算中…',
+                  onTap: (snap.data ?? 0) == 0 ? null : _clearMediaCache,
+                );
+              },
+            ),
+            SettingsRow(
+              icon: Icons.data_usage,
+              title: '上限',
+              subtitle: '${_mbLabel(MediaCache.limitMb)}。超えたら古い順に消します',
+              onTap: _pickCacheLimit,
             ),
           ],
         ),

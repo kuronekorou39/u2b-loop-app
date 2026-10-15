@@ -57,12 +57,12 @@ void main() {
   });
 
   group('HqAudio.isManagedPath', () {
-    test('hq_audio ディレクトリ配下だけ管理下（区切りは / でも \\ でも）', () {
-      expect(HqAudio.isManagedPath('/data/cache/hq_audio/abc.mp4'), isTrue);
-      expect(HqAudio.isManagedPath(r'C:\tmp\hq_audio\abc.mp4'), isTrue);
+    test('自動キャッシュ（media_cache）配下だけ管理下（区切りは / でも \\ でも）', () {
+      expect(HqAudio.isManagedPath('/data/cache/media_cache/abc.mp4'), isTrue);
+      expect(HqAudio.isManagedPath(r'C:\tmp\media_cache\abc.mp4'), isTrue);
       expect(
           HqAudio.isManagedPath('/data/cache/u2b_waveform_1.tmp'), isFalse);
-      expect(HqAudio.isManagedPath('/data/hq_audio_old/abc.mp4'), isFalse);
+      expect(HqAudio.isManagedPath('/data/media_cache_old/abc.mp4'), isFalse);
     });
   });
 }

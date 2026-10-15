@@ -5,6 +5,8 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../models/loop_item.dart';
 import 'export_service.dart';
+import 'playback/hq_audio.dart';
+import 'youtube_client_info.dart';
 import 'ranged_downloader.dart';
 import 'subtitle_service.dart';
 import 'youtube_service.dart';
@@ -68,7 +70,10 @@ class CacheQuality {
 /// - 高解像度（mp4 videoOnly = H.264）を選んだ場合は mp4 audioOnly（AAC）を併せてDLし、
 ///   ネイティブの MediaMuxer で1つのMP4へ結合する（再エンコードなし、最大1080p想定。
 ///   VP9/AV1のみの1440p/4Kは MediaMuxer 非対応のため選択肢に出さない）。
-/// 保存先は設定 `cache_to_documents` で切替（false=キャッシュ領域[既定], true=documents）。
+/// 保存先は設定 `cache_to_documents` で切替（true=documents[既定、v1.94.0〜], false=キャッシュ領域）。
+/// キャッシュ領域は容量不足で OS に消されることがあり、「保存した」の意味に合わないので既定を変えた。
+/// 音声は高音質の音声（HqAudio、AAC 128kbps）を結合する。一体型の 96kbps のまま残さない。
+/// 保存した曲は再生でも書き出しでも、通信せずにこのファイルを直接開く
 class CacheService {
   static const _subDirName = 'offline';
 
@@ -93,7 +98,7 @@ class CacheService {
   bool get _persistent {
     try {
       return AppBoxes.settings
-          .get(SettingsKeys.cacheToDocuments, defaultValue: false)
+          .get(SettingsKeys.cacheToDocuments, defaultValue: true)
           as bool;
     } catch (_) {
       return false;
@@ -170,8 +175,15 @@ class CacheService {
         // 高解像度: 映像専用+音声専用を別DL → ネイティブ結合。
         // adaptiveストリームはdefaultクライアントだと n パラメータthrottlingで
         // 1チャンク後に403になるため、androidVrクライアント＋Range分割DLで取得する。
-        final vrManifest = await service.yt.videos.streamsClient
-            .getManifest(videoId, ytClients: [YoutubeApiClient.androidVr]);
+        // VISIONOS が本命（androidVr は bot 判定・403 になりやすくなった。HqAudio 参照）
+        StreamManifest vrManifest;
+        try {
+          vrManifest = await service.yt.videos.streamsClient
+              .getManifest(videoId, ytClients: [YouTubeClientInfo.visionOs]);
+        } catch (_) {
+          vrManifest = await service.yt.videos.streamsClient
+              .getManifest(videoId, ytClients: [YoutubeApiClient.androidVr]);
+        }
 
         final vCands = vrManifest.videoOnly
             .where((v) =>
@@ -211,10 +223,15 @@ class CacheService {
               : const OfflineCacheResult(error: '映像のダウンロードに失敗しました');
         }
 
-        final okA = await _downloadRanged(
-          aInfo.url.toString(), aBytes, tmpA, isCancelled,
-          (r) => onProgress?.call(((vBytes + r) / total).clamp(0.0, 0.99)),
-        );
+        // 音声は再生用に落とした高音質（mp4/AAC）があればそれを使う（同じもの・取り直さない）
+        final hq = await HqAudio.fetch(videoId, manifest: vrManifest);
+        final audioPath = hq != null && hq.endsWith('.mp4') ? hq : tmpA.path;
+        final okA = audioPath != tmpA.path
+            ? DownloadState.ok
+            : await _downloadRanged(
+                aInfo.url.toString(), aBytes, tmpA, isCancelled,
+                (r) => onProgress?.call(((vBytes + r) / total).clamp(0.0, 0.99)),
+              );
         if (okA != DownloadState.ok) {
           await _safeDelete(tmpV);
           await _safeDelete(tmpA);
@@ -225,7 +242,7 @@ class CacheService {
 
         final muxOk = await ExportService().muxVideoAudio(
           videoPath: tmpV.path,
-          audioPath: tmpA.path,
+          audioPath: audioPath,
           outputPath: videoFile.path,
         );
         await _safeDelete(tmpV);
@@ -262,6 +279,8 @@ class CacheService {
               ? const OfflineCacheResult(cancelled: true)
               : const OfflineCacheResult(error: 'ダウンロードに失敗しました');
         }
+        await _upgradeAudio(videoFile, videoId);
+        onProgress?.call(1.0);
       }
 
       final sizeBytes = await videoFile.length();
@@ -293,6 +312,26 @@ class CacheService {
     } finally {
       service.dispose();
     }
+  }
+
+  /// 一体型（音声 96kbps）で保存したファイルの音声を、高音質の音声（mp4/AAC）に差し替える。
+  /// 取れない・結合に失敗した時は一体型のまま残す（保存自体は成功）
+  Future<void> _upgradeAudio(File videoFile, String videoId) async {
+    try {
+      final hq = await HqAudio.fetch(videoId);
+      if (hq == null || !hq.endsWith('.mp4')) return;
+      final tmp = File('${videoFile.path}.hq.tmp');
+      final ok = await ExportService().muxVideoAudio(
+        videoPath: videoFile.path,
+        audioPath: hq,
+        outputPath: tmp.path,
+      );
+      if (ok && await tmp.exists() && await tmp.length() > 0) {
+        await tmp.rename(videoFile.path);
+      } else {
+        await _safeDelete(tmp);
+      }
+    } catch (_) {}
   }
 
   /// 1ストリームをファイルへダウンロードする。

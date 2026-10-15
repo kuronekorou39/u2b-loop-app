@@ -39,6 +39,7 @@ import '../services/playback/waveform_loader.dart';
 import '../providers/subtitle_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/waveform_cache.dart';
+import '../services/cache_service.dart';
 import '../services/waveform_service.dart';
 import '../widgets/lyrics_overlay.dart';
 import '../widgets/item_tag_sheet.dart';
@@ -1012,7 +1013,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // manifest は波形の先行生成に再利用する（キャッシュ再生時はnull）。
       final manifest = await ref
           .read(playlistEngineProvider)
-          .prepare(ref.read(preloadPlayerProvider), nextTrack, isStale: isStale);
+          .prepare(ref.read(preloadPlayerProvider), nextTrack,
+              isStale: isStale, downloadFirst: true);
 
       if (isStale()) return;
       _preloadedTrackIndex = nextIdx;
@@ -1091,9 +1093,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       }
 
+      // 通信せずに使える音声（高音質の音声・自動キャッシュ・オフライン保存）があればそれで
+      final localAudio = item.isYouTube && item.videoId != null
+          ? await WaveformService.localAudioFor(item.videoId!,
+              playingUri: CacheService.offlineVideoPath(item))
+          : null;
       if (!item.isYouTube) {
         waveform =
             await service.generateForLocalFile(item.uri, 4000, onPcm: onPcm);
+      } else if (localAudio != null) {
+        waveform =
+            await service.generateForLocalFile(localAudio, 4000, onPcm: onPcm);
       } else if (manifest != null) {
         // YouTube: 音声をダウンロードして波形生成
         final muxed = manifest.muxed.sortByVideoQuality();
@@ -1153,13 +1163,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _preloadingTargetIndex = null;
     _isPreloading = false;
 
-    // 動画ソースを先に更新しておく（スワップ前にUIが参照できるように）
+    // 動画ソースを先に更新しておく（スワップ前にUIが参照できるように）。
+    // URI はプリロード側が実際に開いたもの（キャッシュのファイルかストリーム URL）。
+    // 曲の登録 URL（YouTube のページ）を入れると書き出し・波形が使えない
     final item = newTrack.item;
+    final openedUri =
+        ref.read(preloadPlayerProvider).state.playlist.medias.firstOrNull?.uri;
     ref.read(videoSourceProvider.notifier).state = VideoSource(
       type: item.isYouTube
           ? VideoSourceType.youtube
           : VideoSourceType.local,
-      uri: item.uri,
+      uri: openedUri ?? item.uri,
       title: item.title,
       videoId: item.videoId,
       thumbnailUrl: item.thumbnailUrl,
