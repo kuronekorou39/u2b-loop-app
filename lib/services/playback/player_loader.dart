@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../../core/audio/audio_quality.dart';
 import '../../models/loop_item.dart';
 import '../../models/video_source.dart';
 import '../../providers/player_provider.dart';
@@ -96,8 +97,10 @@ class PlayerLoader {
       final offline = CacheService.offlineVideoPath(item);
       final LoadedMedia media;
       Future<String?>? hqAudio;
+      final quality = _ref.read(audioQualityProvider.notifier);
       if (offline != null) {
         // オフライン保存済み: 通信なしでローカルファイルを再生
+        quality.set(player, AudioQuality.offline);
         await progress.step(0.40, 'オフラインキャッシュを読み込み中...');
         media = LoadedMedia(source: sourceFor(item, offlinePath: offline));
         await progress.step(0.70, 'プレーヤーを準備中...');
@@ -119,11 +122,13 @@ class PlayerLoader {
           hqAudio = HqAudio.fetch(item.videoId!,
               manifest: manifest, isCancelled: () => !isMounted());
         }
+        quality.set(player, AudioQuality.standard);
         await progress.step(0.50, 'プレーヤーを準備中...');
         await player
             .open(Media(media.source.uri), play: false)
             .timeout(openTimeout);
       } else {
+        quality.set(player, AudioQuality.local);
         await progress.step(0.30, 'ファイルを読み込み中...');
         media = LoadedMedia(source: sourceFor(item));
         await progress.step(0.65, 'プレーヤーを準備中...');
@@ -180,7 +185,11 @@ class PlayerLoader {
     await progress.step(0.95, '高音質の音声を取得中...');
     final path = await hqAudio.timeout(hqAudioWait, onTimeout: () => null);
     if (path == null || !isMounted()) return;
-    await HqAudio.attach(player, path);
+    if (await HqAudio.attach(player, path)) {
+      _ref
+          .read(audioQualityProvider.notifier)
+          .set(player, AudioQuality.hq(HqAudio.labelFor(path)));
+    }
     await _yieldFrame();
   }
 

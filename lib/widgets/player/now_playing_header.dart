@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../models/playlist_track.dart';
+import '../../providers/player_provider.dart';
 import '../marquee_text.dart';
 import 'track_row_parts.dart';
 
 /// 動画の下に出す「いま何を聴いているか」: 曲名、補足（BPM・キーなど）、右にチップ。
 /// チップはモードごと（プレイリスト: 次の曲 [NextTrackChip]、単体: いまの区間 [HeaderChip]）。
-class NowPlayingHeader extends StatelessWidget {
+/// 補足の行末に、いま鳴っている音声の素性（高音質 / 標準 / オフライン / ローカル）も出す。
+/// 高音質は落とせないと黙って標準に戻るので、ここで気づけるようにしてある
+class NowPlayingHeader extends ConsumerWidget {
   const NowPlayingHeader({
     super.key,
     required this.title,
@@ -20,11 +24,12 @@ class NowPlayingHeader extends StatelessWidget {
   final Widget? chip;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
     final sub = textTheme.labelSmall!.copyWith(
         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7));
     final titleStyle = textTheme.titleLarge!.copyWith(fontSize: 17);
+    final quality = ref.watch(activeAudioQualityProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl + 4),
@@ -36,7 +41,28 @@ class NowPlayingHeader extends StatelessWidget {
               children: [
                 MarqueeText(text: title, style: titleStyle),
                 const SizedBox(height: 3),
-                Text(subtitle, style: sub),
+                Row(
+                  children: [
+                    if (subtitle.isNotEmpty)
+                      Flexible(
+                        child: Text(subtitle,
+                            style: sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                    if (quality != null) ...[
+                      if (subtitle.isNotEmpty) Text('  ·  ', style: sub),
+                      Text(
+                        quality.label,
+                        style: sub.copyWith(
+                          color: quality.isHq
+                              ? AppTheme.accentGreen
+                              : AppTheme.muted(context),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),

@@ -26,6 +26,17 @@ void main() {
     });
   });
 
+  group('HqAudio.labelFor', () {
+    test('ファイル名からコーデックとビットレートを読む', () {
+      expect(HqAudio.labelFor('/c/hq_audio/abc123.140.128k.mp4'), 'AAC 128kbps');
+      expect(HqAudio.labelFor(r'C:\t\hq_audio\abc.251.145k.webm'), 'Opus 145kbps');
+    });
+
+    test('読めない名前は「音声専用」', () {
+      expect(HqAudio.labelFor('/c/hq_audio/abc.mp4'), '音声専用');
+    });
+  });
+
   group('HqAudio.isManagedPath', () {
     test('hq_audio ディレクトリ配下だけ管理下（区切りは / でも \\ でも）', () {
       expect(HqAudio.isManagedPath('/data/cache/hq_audio/abc.mp4'), isTrue);

@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/audio/beat_grid.dart';
+import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/audio/transition_effect.dart';
@@ -102,8 +103,10 @@ class PlaylistEngine {
     StreamManifest? manifest;
     // 高音質の音声（音声専用ストリーム）。開くのと並行して落とし、メタデータ確定後に付ける
     Future<String?>? hqAudio;
+    final quality = _ref.read(audioQualityProvider.notifier);
     final cached = CacheService.offlineVideoPath(item);
     if (cached != null) {
+      quality.set(player, AudioQuality.offline);
       await player.open(Media(cached), play: false);
     } else if (item.isYouTube && item.videoId != null) {
       final ytService = _ref.read(youtubeServiceProvider);
@@ -113,8 +116,10 @@ class PlaylistEngine {
         hqAudio = HqAudio.fetch(item.videoId!,
             manifest: manifest, isCancelled: stale);
       }
+      quality.set(player, AudioQuality.standard);
       await player.open(Media(YouTubeService.pickStreamUrl(manifest)), play: false);
     } else {
+      quality.set(player, AudioQuality.local);
       await player.open(Media(item.uri), play: false);
     }
     if (stale()) return manifest;
@@ -137,7 +142,9 @@ class PlaylistEngine {
       // プリロードは次の曲までに間に合えばよいので、落ち切るまで待つ（打ち切りは stale）
       final path = await hqAudio.timeout(hqAudioWait, onTimeout: () => null);
       if (stale()) return manifest;
-      if (path != null) await HqAudio.attach(player, path);
+      if (path != null && await HqAudio.attach(player, path)) {
+        quality.set(player, AudioQuality.hq(HqAudio.labelFor(path)));
+      }
     }
 
     await player.seek(effectiveStart(track));

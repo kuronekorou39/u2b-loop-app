@@ -84,13 +84,35 @@ class HqAudio {
     return best;
   }
 
+  /// ファイル名は `<videoId>.<itag>.<kbps>k.<mp4|webm>`。
+  /// 素性を画面に出すため（[labelFor]）、名前に埋めておく
+  static final _fileName = RegExp(r'^([^.]+)\.(\d+)\.(\d+)k\.(mp4|webm)$');
+
+  static String fileNameFor(String videoId, AudioOnlyStreamInfo info) =>
+      '$videoId.${info.tag}.${info.bitrate.kiloBitsPerSecond.round()}k.'
+      '${info.container.name}';
+
+  /// 落とした音声の素性（「AAC 128kbps」「Opus 145kbps」）。名前が読めなければ「音声専用」
+  static String labelFor(String path) {
+    final name = path.replaceAll('\\', '/').split('/').last;
+    final m = _fileName.firstMatch(name);
+    if (m == null) return '音声専用';
+    final codec = m.group(4) == 'mp4' ? 'AAC' : 'Opus';
+    return '$codec ${m.group(3)}kbps';
+  }
+
   /// 落としてあればそのパス（通信なし）。無ければ null
   static Future<String?> existing(String videoId) async {
     final dir = await _dir();
-    for (final ext in const ['mp4', 'webm']) {
-      final f = File('${dir.path}/$videoId.$ext');
-      if (await _isComplete(f)) return f.path;
-    }
+    try {
+      await for (final e in dir.list()) {
+        if (e is! File) continue;
+        final name = e.path.replaceAll('\\', '/').split('/').last;
+        final m = _fileName.firstMatch(name);
+        if (m == null || m.group(1) != videoId) continue;
+        if (await _isComplete(e)) return e.path;
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -169,7 +191,7 @@ class HqAudio {
     AudioOnlyStreamInfo info,
     bool Function()? isCancelled,
   ) async {
-    final file = File('${dir.path}/$videoId.${info.container.name}');
+    final file = File('${dir.path}/${fileNameFor(videoId, info)}');
     final part = File('${file.path}.part');
     final state = await RangedDownloader.download(
       info.url.toString(),
@@ -192,19 +214,32 @@ class HqAudio {
     return file.path;
   }
 
+  /// mpv に登録する外部トラックの名前（付いたかどうかの確認にも使う）
+  static const trackTitle = 'HQ';
+
   /// 落とした音声を [player] の音声トラックとして付ける（ファイルを開いた後に呼ぶ）。
-  /// 失敗しても例外にせず false（一体型の音声のまま鳴る）
+  /// media_kit は mpv のエラーを返さないので、トラック一覧に現れるまで待って
+  /// 本当に付いたときだけ true（付かなければ一体型の音声のまま鳴る）
   static Future<bool> attach(Player player, String path) async {
     try {
       await player
-          .setAudioTrack(AudioTrack.uri(path, title: 'HQ'))
+          .setAudioTrack(AudioTrack.uri(path, title: trackTitle))
           .timeout(const Duration(seconds: 10));
-      return true;
+      for (var i = 0; i < 30; i++) {
+        if (isAttached(player)) return true;
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      debugPrint('[HqAudio] 取り付け未確認（トラック一覧に現れない）: $path');
+      return false;
     } catch (e) {
       debugPrint('[HqAudio] 取り付け失敗: $e');
       return false;
     }
   }
+
+  /// [player] のトラック一覧に外部音声（[trackTitle]）があるか
+  static bool isAttached(Player player) =>
+      player.state.tracks.audio.any((t) => t.title == trackTitle);
 
   static Future<Directory> _dir() async {
     final dir = Directory('${(await getTemporaryDirectory()).path}/$dirName');

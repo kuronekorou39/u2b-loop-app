@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/transition_effect.dart';
 import '../models/video_source.dart';
@@ -52,6 +53,26 @@ final controllerAProvider = Provider<VideoController>((ref) {
 
 final controllerBProvider = Provider<VideoController>((ref) {
   return VideoController(ref.watch(playerBProvider));
+});
+
+/// プレイヤーごとの「いま鳴っている音声の素性」。
+/// 曲を開く側（PlaylistEngine.prepare / PlayerLoader）が開くたびに書き、
+/// 高音質の音声が本当に付いたら上書きする。画面は [activeAudioQualityProvider] を見る
+final audioQualityProvider =
+    StateNotifierProvider<AudioQualityNotifier, Map<Player, AudioQuality>>(
+        (ref) => AudioQualityNotifier());
+
+class AudioQualityNotifier extends StateNotifier<Map<Player, AudioQuality>> {
+  AudioQualityNotifier() : super(const {});
+
+  void set(Player player, AudioQuality quality) {
+    state = {...state, player: quality};
+  }
+}
+
+/// アクティブなプレイヤーの音声の素性（まだ開いていなければ null）
+final activeAudioQualityProvider = Provider<AudioQuality?>((ref) {
+  return ref.watch(audioQualityProvider)[ref.watch(playerProvider)];
 });
 
 // --- Compatibility Layer (active player) ---
