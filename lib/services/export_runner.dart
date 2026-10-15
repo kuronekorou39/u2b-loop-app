@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'export_service.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_snack_bar.dart';
+import '../core/utils/app_errors.dart';
 
 /// 書き出し形式（音声のみ / MP4）を選ぶダイアログ。キャンセルは null。
 /// [rangeText] は「0:12 - 1:30 (78.0s)」のような区間の説明。
@@ -115,7 +116,7 @@ Future<void> runExportFlow(
     );
   } catch (e) {
     messenger.showSnackBar(
-      AppSnackBar.error('共有に失敗しました: $e'),
+      AppSnackBar.error('共有に失敗しました: ${AppErrors.describe(e)}'),
     );
   }
 }

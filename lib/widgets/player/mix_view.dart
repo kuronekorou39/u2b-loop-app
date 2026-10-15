@@ -89,7 +89,7 @@ class MixView extends StatelessWidget {
     final labelStyle = textTheme.labelSmall?.copyWith(
       fontFeatures: const [FontFeature('tnum')],
     );
-    final laneLabel = textTheme.labelSmall!.copyWith(fontSize: 10);
+    final laneLabel = textTheme.labelSmall!;
     final untilCut = cut - now;
 
     return Padding(
@@ -165,7 +165,7 @@ class MixView extends StatelessWidget {
                 Icon(
                   Icons.swap_horiz,
                   size: AppIconSizes.xs,
-                  color: Colors.grey.shade400,
+                  color: AppTheme.muted(context),
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Text('ミックス ${(cut - start).inSeconds}s', style: labelStyle),

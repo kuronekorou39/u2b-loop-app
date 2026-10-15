@@ -29,6 +29,7 @@ import 'player_screen.dart';
 import 'playlist_detail_screen.dart';
 import 'settings_screen.dart';
 import '../core/ui/app_snack_bar.dart';
+import '../core/utils/app_errors.dart';
 import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
@@ -460,7 +461,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       closeProgressDialog();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          AppSnackBar.error('取得失敗: $e'),
+          AppSnackBar.error('取得に失敗しました: ${AppErrors.describe(e)}'),
         );
       }
     }
@@ -511,7 +512,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('追加する曲に共通のタグを付けますか？',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted(context))),
             const SizedBox(height: AppSpacing.lg),
             // 既存タグ
             if (tags.isNotEmpty)
@@ -543,7 +544,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               label: Text('「$playlistTitle」タグを作成',
                   style: Theme.of(context).textTheme.labelMedium),
               style: OutlinedButton.styleFrom(
-                side: BorderSide(color: Colors.grey.shade700),
+                side: BorderSide(color: Theme.of(context).dividerColor),
               ),
             ),
           ],
@@ -794,7 +795,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               Padding(
                 padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Text('プレイリストがありません',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted(context))),
               ),
             Flexible(
               child: ListView.builder(
@@ -824,15 +825,16 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                 color: Theme.of(context)
                                     .colorScheme
                                     .surfaceContainerHighest,
-                                child: const Icon(Icons.playlist_play,
-                                    color: Colors.grey, size: AppIconSizes.md),
+                                child: Icon(Icons.playlist_play,
+                                    color: AppTheme.muted(context),
+                                    size: AppIconSizes.md),
                               ),
                       ),
                     ),
                     title: Text(pl.name,
                         style: Theme.of(context).textTheme.bodyLarge),
                     subtitle: Text('$count 曲',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey)),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted(context))),
                     onTap: () {
                       Navigator.pop(ctx);
                       final ids = _selectedIds.toList();
@@ -1346,7 +1348,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       icon = Icon(Icons.remove_circle, color: AppTheme.accentRed, size: AppIconSizes.md);
       titleColor = AppTheme.accentRed;
     } else {
-      icon = Icon(Icons.radio_button_unchecked, color: Colors.grey.shade600, size: AppIconSizes.md);
+      icon = Icon(Icons.radio_button_unchecked, color: AppTheme.muted(context), size: AppIconSizes.md);
       titleColor = null;
     }
 
@@ -1415,7 +1417,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             Icon(Icons.remove_circle, color: AppTheme.accentRed, size: AppIconSizes.xs),
                             Text(' 除外', style: Theme.of(context).textTheme.labelSmall),
                             const SizedBox(width: AppSpacing.lg),
-                            Icon(Icons.radio_button_unchecked, color: Colors.grey.shade600, size: AppIconSizes.xs),
+                            Icon(Icons.radio_button_unchecked, color: AppTheme.muted(context), size: AppIconSizes.xs),
                             Text(' なし', style: Theme.of(context).textTheme.labelSmall),
                           ],
                         ),
@@ -1463,7 +1465,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               ),
               child: Text(
                 '${filterTagIds.length}',
-                style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9, color: Colors.black),
+                style: Theme.of(context).textTheme.labelSmall!.copyWith(color: Colors.black),
               ),
             ),
           ),
@@ -1591,9 +1593,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.subtitles, size: 10, color: Colors.white70),
+                      Icon(Icons.subtitles, size: 12, color: Colors.white70),
                       SizedBox(width: 2),
-                      Text('CC', style: TextStyle(fontSize: 9, color: Colors.white70)),
+                      Text('CC', style: TextStyle(fontSize: 11, color: Colors.white70)),
                     ],
                   ),
                 ),
@@ -1674,7 +1676,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       info,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 10),
+                      style: Theme.of(context).textTheme.labelSmall,
                     ),
                 ],
                 if (item.tagIds.isNotEmpty) ...[
@@ -1689,8 +1691,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   /// カードの 2 行目: BPM・キー・区間数（無ければメモ）
   String? _buildCardInfoText(LoopItem item) {
     final parts = <String>[
-      if (item.bpm != null) 'BPM ${item.bpm!.round()}',
-      if (item.musicalKey != null) item.musicalKey!,
+      ...item.musicInfoParts,
       if (item.effectiveRegions.any((r) => r.hasPoints))
         '区間 ${item.effectiveRegions.where((r) => r.hasPoints).length}',
     ];
@@ -1796,7 +1797,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: item.isFetching
-            ? Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey)
+            ? Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppTheme.muted(context))
             : Theme.of(context).textTheme.bodyLarge,
       ),
       subtitle: _buildSubtitle(item, tags),
@@ -1857,7 +1858,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   Widget? _buildSubtitle(LoopItem item, List<Tag> tags) {
     if (item.isFetching) {
       return Text('情報を取得中...',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey));
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted(context)));
     }
     if (item.hasError) {
       return Text('取得失敗（タップで操作）',
@@ -1870,14 +1871,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
     if (regionInfo != null) info.add(regionInfo);
     if (item.speed != 1.0) info.add('${item.speed}x');
     if (item.playCount > 0) info.add('${item.playCount}回');
-    if (item.bpm != null) info.add('${item.bpm!.round()} BPM');
-    if (item.musicalKey != null) info.add(item.musicalKey!);
+    info.addAll(item.musicInfoParts);
     if (item.memo != null && item.memo!.isNotEmpty) info.add(item.memo!);
     if (info.isNotEmpty) {
       parts.add(Text(info.join('  |  '),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey)));
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted(context))));
     }
     if (item.tagIds.isNotEmpty) {
       parts.add(Padding(
@@ -2124,8 +2124,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           .colorScheme
                           .onSurface
                           .withValues(alpha: 0.08),
-                      child: const Icon(Icons.playlist_play,
-                          color: Colors.grey),
+                      child: Icon(Icons.playlist_play,
+                          color: AppTheme.muted(context)),
                     ),
             ),
           ),
@@ -2178,26 +2178,19 @@ class _ListScreenState extends ConsumerState<ListScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 空のときの案内。以前は 0.3 で読めないほど薄かった
           Icon(icon,
               size: AppIconSizes.huge,
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
-                  .withValues(alpha: 0.3)),
+              color: AppTheme.muted(context, alpha: 0.4)),
           const SizedBox(height: AppSpacing.lg),
           Text(title,
-              style: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.5))),
+              style: TextStyle(color: AppTheme.muted(context, alpha: 0.75))),
           const SizedBox(height: AppSpacing.xs),
           Text(sub,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.3))),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(color: AppTheme.muted(context, alpha: 0.6))),
         ],
       ),
     );
@@ -2316,7 +2309,7 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
             Padding(
               padding: const EdgeInsets.all(AppSpacing.xl),
               child: Text('タグがありません',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.muted(context))),
             ),
           Flexible(
             child: ListView(
@@ -2328,7 +2321,7 @@ class _BulkTagSheetState extends State<_BulkTagSheet> {
                         style: Theme.of(context).textTheme.bodyLarge),
                     subtitle: Text(
                       '${widget.allItems.where((i) => i.tagIds.contains(tag.id)).length} 曲',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppTheme.muted(context)),
                     ),
                     secondary: Icon(Icons.label,
                         size: AppIconSizes.md,
@@ -2470,8 +2463,9 @@ class _PlaylistVideoSelectPageState extends State<_PlaylistVideoSelectPage> {
                           color: Theme.of(context)
                               .colorScheme
                               .surfaceContainerHighest,
-                          child: const Icon(Icons.play_circle_outline,
-                              color: Colors.grey, size: AppIconSizes.sm),
+                          child: Icon(Icons.play_circle_outline,
+                              color: AppTheme.muted(context),
+                              size: AppIconSizes.sm),
                         ),
                       ),
                     ),

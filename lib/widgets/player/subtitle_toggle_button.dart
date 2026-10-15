@@ -36,7 +36,7 @@ class SubtitleToggleButton extends ConsumerWidget {
     switch (mode) {
       case SubtitleMode.off:
         icon = Icons.subtitles_off;
-        color = Colors.grey;
+        color = AppTheme.muted(context);
         name = 'オフ';
       case SubtitleMode.subtitle:
         icon = Icons.subtitles;

@@ -51,6 +51,11 @@ class AppTheme {
   /// ダークテーマのカード・AppBar など一段手前の面
   static const darkSurface = Color(0xFF16213E);
 
+  /// 補助的な文字・アイコンの色（テーマに追従）。`Colors.grey` の直書きの代わりに使う
+  /// （直書きはライトテーマで薄すぎたり、ダークで浮いたりする）
+  static Color muted(BuildContext context, {double alpha = 0.55}) =>
+      Theme.of(context).colorScheme.onSurface.withValues(alpha: alpha);
+
   static const _fontFamily = 'Roboto';
 
   static TextTheme _buildTextTheme(Brightness brightness) {

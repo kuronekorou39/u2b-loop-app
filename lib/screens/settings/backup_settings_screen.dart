@@ -9,6 +9,7 @@ import '../../core/storage/app_boxes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_snack_bar.dart';
+import '../../core/utils/app_errors.dart';
 import '../../providers/data_provider.dart';
 import '../../services/backup_service.dart';
 import '../../widgets/settings/settings_parts.dart';
@@ -44,7 +45,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       );
       if (saved != null) _toast(AppSnackBar.success('書き出しました'));
     } catch (e) {
-      _toast(AppSnackBar.error('書き出しに失敗しました: $e'));
+      _toast(AppSnackBar.error('書き出しに失敗しました: ${AppErrors.describe(e)}'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -67,7 +68,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       _toast(AppSnackBar.error(e.message));
       return;
     } catch (e) {
-      _toast(AppSnackBar.error('読み込みに失敗しました: $e'));
+      _toast(AppSnackBar.error('読み込みに失敗しました: ${AppErrors.describe(e)}'));
       return;
     }
 
@@ -93,7 +94,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       // サムネイル画像は端末固有なのでバックアップに含めていない。取り直す
       _repairThumbnailsWithProgress();
     } catch (e) {
-      _toast(AppSnackBar.error('復元に失敗しました: $e'));
+      _toast(AppSnackBar.error('復元に失敗しました: ${AppErrors.describe(e)}'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

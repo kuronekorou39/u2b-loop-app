@@ -1066,7 +1066,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
         text: label,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: FontWeight.bold,
         ),
       ),

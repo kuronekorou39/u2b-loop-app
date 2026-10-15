@@ -45,7 +45,7 @@ class TrackThumb extends StatelessWidget {
             ? Icons.play_circle_outline
             : Icons.video_file_outlined,
         size: AppIconSizes.s,
-        color: Colors.grey,
+        color: AppTheme.muted(context),
       ),
     );
   }
@@ -72,7 +72,7 @@ class TrackTitleText extends StatelessWidget {
                 ? AppTheme.accentGreen
                 : track.enabled
                     ? null
-                    : Colors.grey,
+                    : AppTheme.muted(context),
           ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -106,8 +106,7 @@ List<Widget> trackTagChips(
           ),
           child: Text(
             tag.name,
-            style:
-                Theme.of(context).textTheme.labelSmall!.copyWith(fontSize: 9),
+            style: Theme.of(context).textTheme.labelSmall,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

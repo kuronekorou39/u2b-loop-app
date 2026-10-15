@@ -1,93 +1,9 @@
-import 'package:flutter/material.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/utils/time_utils.dart';
-
-/// AB設定の共通ウィジェット（静的メソッドで提供）
+/// AB 設定で共通の定数。
+/// （以前ここにあった A/B 行のウィジェット buildPointRow は AbEditControls に置き換わり、
+/// どこからも使われていなかったので削除）
 class LoopControls {
   LoopControls._();
 
+  /// 微調整のステップ候補（秒）
   static const steps = [0.001, 0.01, 0.1, 1.0];
-
-  /// A/B ポイント行
-  static Widget buildPointRow({
-    required String label,
-    required Color color,
-    required Duration? time,
-    required String stepLabel,
-    VoidCallback? onSet,
-    VoidCallback? onTimeTap,
-    required VoidCallback onMinus,
-    required VoidCallback onPlus,
-  }) {
-    return Row(
-      children: [
-        // A/B set button
-        SizedBox(
-          width: 36,
-          height: 36,
-          child: OutlinedButton(
-            onPressed: onSet,
-            style: OutlinedButton.styleFrom(
-              padding: EdgeInsets.zero,
-              side: BorderSide(color: color),
-              foregroundColor: color,
-              shape: RoundedRectangleBorder(
-                  borderRadius: AppRadius.borderSm),
-            ),
-            child: Text(label,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 13)),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        // Time display (tappable to seek)
-        GestureDetector(
-          onTap: onTimeTap,
-          child: Text(
-            TimeUtils.formatNullable(time),
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 13,
-              decoration: time != null ? TextDecoration.underline : null,
-              decorationColor: color.withValues(alpha: 0.5),
-            ),
-          ),
-        ),
-        const Spacer(),
-        // - step
-        SizedBox(
-          height: 28,
-          child: OutlinedButton(
-            onPressed: onMinus,
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              side: BorderSide(color: Colors.grey.shade700),
-              shape: RoundedRectangleBorder(
-                  borderRadius: AppRadius.borderXs),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text('-$stepLabel', style: const TextStyle(fontSize: 11)),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        // + step
-        SizedBox(
-          height: 28,
-          child: OutlinedButton(
-            onPressed: onPlus,
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              side: BorderSide(color: Colors.grey.shade700),
-              shape: RoundedRectangleBorder(
-                  borderRadius: AppRadius.borderXs),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text('+$stepLabel', style: const TextStyle(fontSize: 11)),
-          ),
-        ),
-      ],
-    );
-  }
 }

@@ -68,7 +68,7 @@ class _SingleMoreSheetState extends ConsumerState<SingleMoreSheet> {
                 children: [
                   Icon(Icons.hourglass_bottom,
                       size: AppIconSizes.lg,
-                      color: loop.enabled ? null : Colors.grey),
+                      color: loop.enabled ? null : AppTheme.muted(context)),
                   const SizedBox(width: AppSpacing.xl),
                   Text('ループの間', style: textTheme.bodyLarge),
                   const SizedBox(width: AppSpacing.md),

@@ -95,7 +95,7 @@ class PlayerControls extends ConsumerWidget {
             };
             return Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: Icon(icon, size: 16, color: Colors.grey),
+              child: Icon(icon, size: 16, color: AppTheme.muted(context)),
             );
           }),
           // 最初から: A地点 or 先頭にシーク
@@ -176,10 +176,10 @@ class PlayerControls extends ConsumerWidget {
                       child: Text(
                         '${volume.round()}',
                         style: TextStyle(
-                          fontSize: 8,
+                          fontSize: 10,
                           fontWeight: FontWeight.bold,
                           color: volume > 0
-                              ? Colors.grey.shade400
+                              ? AppTheme.muted(context, alpha: 0.7)
                               : Colors.red.shade300,
                         ),
                       ),
@@ -227,14 +227,14 @@ class PlayerControls extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: hasSource ? Colors.grey : Colors.grey.shade800,
+                  color: AppTheme.muted(context, alpha: hasSource ? 0.55 : 0.2),
                 ),
                 borderRadius: AppRadius.borderSm,
               ),
               child: Text(
                 '${rate}x',
                 style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-                  color: hasSource ? null : Colors.grey.shade600,
+                  color: hasSource ? null : AppTheme.muted(context),
                 ),
               ),
             ),

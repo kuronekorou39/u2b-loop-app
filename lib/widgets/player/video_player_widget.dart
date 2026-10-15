@@ -57,7 +57,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
             style: Theme.of(context)
                 .textTheme
                 .bodyLarge!
-                .copyWith(color: Colors.grey),
+                .copyWith(color: AppTheme.muted(context)),
           ),
         ),
       );

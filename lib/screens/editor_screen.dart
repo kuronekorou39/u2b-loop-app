@@ -10,6 +10,7 @@ import '../core/constants.dart';
 import '../core/loop/region_edit_controller.dart';
 import '../core/theme/app_theme.dart';
 import '../core/tips.dart';
+import '../core/utils/app_errors.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
@@ -236,7 +237,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _loadError = '$e';
+          _loadError = AppErrors.describe(e);
         });
       }
     }
@@ -392,7 +393,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ref.read(waveformErrorProvider.notifier).state = '$e';
+        ref.read(waveformErrorProvider.notifier).state = AppErrors.describe(e);
       }
     } finally {
       if (mounted) {
@@ -421,7 +422,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          AppSnackBar.error('保存失敗: $e'),
+          AppSnackBar.error('保存に失敗しました: ${AppErrors.describe(e)}'),
         );
       }
     } finally {
@@ -669,7 +670,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final source = ref.read(videoSourceProvider);
       return IconButton(
         icon: Icon(Icons.graphic_eq,
-            size: AppIconSizes.md, color: error != null ? Colors.orange : Colors.grey),
+            size: AppIconSizes.md,
+            color: error != null ? Colors.orange : AppTheme.muted(context)),
         tooltip: error != null ? '$error（タップで再取得）' : '波形を取得',
         onPressed: () {
           if (source != null) _generateWaveform(source);
@@ -808,8 +810,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _regionEditor.syncFromLoop(loop.pointA, loop.pointB);
     final region = _currentRegion;
     final subParts = <String>[
-      if (_item.bpm != null) 'BPM ${_item.bpm!.round()}',
-      if (_item.musicalKey != null) _item.musicalKey!,
+      ..._item.musicInfoParts,
       if (duration != null && duration > Duration.zero)
         TimeUtils.formatShort(duration),
     ];

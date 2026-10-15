@@ -9,6 +9,7 @@ import 'export_service.dart';
 import 'subtitle_service.dart';
 import 'youtube_service.dart';
 import '../core/storage/app_boxes.dart';
+import '../core/utils/app_errors.dart';
 
 /// オフラインキャッシュの保存結果。
 class OfflineCacheResult {
@@ -290,7 +291,7 @@ class CacheService {
         sizeBytes: sizeBytes,
       );
     } catch (e) {
-      return OfflineCacheResult(error: '$e');
+      return OfflineCacheResult(error: AppErrors.describe(e));
     } finally {
       service.dispose();
     }

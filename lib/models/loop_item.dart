@@ -199,6 +199,13 @@ class LoopItem {
     return regions;
   }
 
+  /// 表示用の BPM（「120 BPM」）。未解析なら null
+  String? get bpmLabel => bpm == null ? null : '${bpm!.round()} BPM';
+
+  /// 曲名の下などに並べる BPM とキー。表記はどの画面でも同じ
+  /// （以前は「BPM 120」と「120 BPM」が画面ごとに混在していた）
+  List<String> get musicInfoParts => [?bpmLabel, ?musicalKey];
+
   /// 区間の一覧を差し替える。旧バージョン互換の [pointAMs]/[pointBMs] は先頭の区間に
   /// 合わせる（区間なしなら 0）。保存前に必ずこれを通す（以前は画面ごとに同じ 4 行が
   /// あり、AB 設定画面は区間なしのとき旧値を残していたので、消した区間が

@@ -55,7 +55,7 @@ class ItemThumbnail extends StatelessWidget {
           item.isYouTube
               ? Icons.play_circle_outline
               : Icons.video_file_outlined,
-          color: Colors.grey,
+          color: AppTheme.muted(context),
           size: iconSize,
         ),
       ),
@@ -81,13 +81,16 @@ class ItemThumbnailPlaceholderLarge extends StatelessWidget {
                 ? Icons.play_circle_outline
                 : Icons.video_file_outlined,
             size: AppIconSizes.xxl,
-            color: Colors.grey,
+            color: AppTheme.muted(context),
           ),
           if (item.isLocal)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: Text('ローカルファイル',
-                  style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: AppTheme.muted(context))),
             ),
         ],
       ),

@@ -90,8 +90,9 @@ class HeaderChip extends StatelessWidget {
                     children: [
                       Text(
                         label,
-                        style: textTheme.labelSmall!.copyWith(
-                            fontSize: 9, color: AppTheme.accentGreen),
+                        // 以前は 9px で読めなかった。labelSmall（11px）のまま
+                        style: textTheme.labelSmall!
+                            .copyWith(color: AppTheme.accentGreen),
                       ),
                       Text(
                         text,

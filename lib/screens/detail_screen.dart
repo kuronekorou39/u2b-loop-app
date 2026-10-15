@@ -32,6 +32,7 @@ import '../widgets/tempo_key_sheet.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
+import '../core/utils/app_errors.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
 
@@ -328,7 +329,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       options = await CacheService().qualityOptions(item.videoId!);
     } catch (e) {
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(AppSnackBar.error('画質の取得に失敗しました: $e'));
+      messenger.showSnackBar(AppSnackBar.error(
+          '画質の取得に失敗しました: ${AppErrors.describe(e)}'));
       return;
     }
     messenger.hideCurrentSnackBar();
@@ -783,8 +785,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 曲名の下の補足: BPM・キー・再生回数・速度・出どころ
   String _subtitleText(LoopItem item) {
     final parts = <String>[
-      if (item.bpm != null) 'BPM ${item.bpm!.round()}',
-      if (item.musicalKey != null) item.musicalKey!,
+      ...item.musicInfoParts,
       '${item.playCount} 回再生',
       if (item.speed != 1.0) '${item.speed}x',
       if (item.isYouTube) 'YouTube' else 'ローカル',
@@ -912,7 +913,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       } catch (e) {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
-          AppSnackBar.error('動画の取得に失敗しました: $e'),
+          AppSnackBar.error('動画の取得に失敗しました: ${AppErrors.describe(e)}'),
         );
         return;
       } finally {

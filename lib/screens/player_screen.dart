@@ -15,6 +15,7 @@ import '../core/audio/mix_point_detector.dart';
 import '../core/constants.dart';
 import '../core/loop/region_edit_controller.dart';
 import '../core/tips.dart';
+import '../core/utils/app_errors.dart';
 import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
@@ -1289,7 +1290,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (mounted) {
         setState(() {
           _loading = false;
-          _loadError = '$e';
+          _loadError = AppErrors.describe(e);
         });
         // プレイリストモード: 自動で次のトラックにスキップ（上限あり）
         if (_isPlaylist) {
@@ -1900,7 +1901,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     } catch (e) {
       if (mounted) {
-        ref.read(waveformErrorProvider.notifier).state = '$e';
+        ref.read(waveformErrorProvider.notifier).state = AppErrors.describe(e);
       }
     } finally {
       if (mounted) {
@@ -2109,13 +2110,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? AppTheme.accentGreen
           : track.enabled
               ? null
-              : Colors.grey,
+              : AppTheme.muted(ctx),
     );
 
     final item = track.item;
     final subParts = <String>[
-      if (item.bpm != null) '${item.bpm!.round()} BPM',
-      if (item.musicalKey != null) item.musicalKey!,
+      ...item.musicInfoParts,
       if (track.hasRegion)
         '${TimeUtils.formatShortMs(track.startMs)} - ${TimeUtils.formatShortMs(track.endMs)}',
     ];
@@ -2182,8 +2182,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             ),
                             child: Text(
                               '次',
-                              style: textTheme.labelSmall!.copyWith(
-                                  fontSize: 9, color: AppTheme.accentGreen),
+                              style: textTheme.labelSmall!
+                                  .copyWith(color: AppTheme.accentGreen),
                             ),
                           ),
                         ],
@@ -2971,8 +2971,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final item = plState.currentTrack?.item;
       final currentIdx = plState.currentTrackIndex;
       final subParts = <String>[
-        if (item?.bpm != null) 'BPM ${item!.bpm!.round()}',
-        if (item?.musicalKey != null) item!.musicalKey!,
+        ...?item?.musicInfoParts,
         currentIdx != null
             ? '${currentIdx + 1} / ${plState.trackCount}'
             : '- / ${plState.trackCount}',
@@ -3069,8 +3068,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final item = _currentItem;
     final duration = ref.watch(durationProvider).valueOrNull;
     final subParts = <String>[
-      if (item.bpm != null) 'BPM ${item.bpm!.round()}',
-      if (item.musicalKey != null) item.musicalKey!,
+      ...item.musicInfoParts,
       if (duration != null && duration > Duration.zero)
         TimeUtils.formatShort(duration),
     ];

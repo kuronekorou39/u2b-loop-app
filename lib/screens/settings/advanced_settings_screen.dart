@@ -281,7 +281,7 @@ class _AnimPickerSheetState extends State<_AnimPickerSheet> {
                 ? Center(
                     child: Text('プレビューなし',
                         style: textTheme.bodySmall!
-                            .copyWith(color: Colors.grey)),
+                            .copyWith(color: AppTheme.muted(context))),
                   )
                 : LoadingAnimationView(
                     key: ValueKey(_selected),

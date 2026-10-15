@@ -579,8 +579,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                     .colorScheme
                                     .onSurface
                                     .withValues(alpha: 0.08),
-                                child: const Icon(Icons.playlist_play,
-                                    color: Colors.grey, size: 40),
+                                child: Icon(Icons.playlist_play,
+                                    color: AppTheme.muted(context), size: 40),
                               ),
                       ),
                     ),
@@ -624,14 +624,16 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                             onPressed: () => _renamePlaylist(pl),
                             tooltip: '名前を変更',
                             visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.edit,
-                                size: AppIconSizes.sm, color: Colors.grey),
+                            icon: Icon(Icons.edit,
+                                size: AppIconSizes.sm,
+                                color: AppTheme.muted(context)),
                           ),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text('${items.length} 曲',
-                          style: textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+                          style: textTheme.bodyMedium
+                              ?.copyWith(color: AppTheme.muted(context))),
                       const SizedBox(height: AppSpacing.lg),
                       Row(
                         children: [
@@ -704,26 +706,18 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // 空のときの案内。以前は 0.3 で読めないほど薄かった
                         Icon(Icons.playlist_play,
                             size: AppIconSizes.xxl,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.3)),
+                            color: AppTheme.muted(context, alpha: 0.4)),
                         const SizedBox(height: AppSpacing.md),
                         Text('曲がありません',
                             style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.5))),
+                                color: AppTheme.muted(context, alpha: 0.75))),
                         const SizedBox(height: AppSpacing.xs),
                         Text('＋ ボタンで追加',
                             style: textTheme.labelMedium?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.3))),
+                                color: AppTheme.muted(context, alpha: 0.6))),
                       ],
                     ),
                   )
@@ -819,10 +813,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           ),
                           ReorderableDragStartListener(
                             index: i,
-                            child: const Padding(
-                              padding: EdgeInsets.all(AppSpacing.md),
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.md),
                               child: Icon(Icons.drag_handle,
-                                  color: Colors.grey),
+                                  color: AppTheme.muted(context)),
                             ),
                           ),
                         ],
@@ -889,8 +883,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     }
 
     if (item.speed != 1.0) parts.add('${item.speed}x');
-    if (item.bpm != null) parts.add('${item.bpm!.round()} BPM');
-    if (item.musicalKey != null) parts.add(item.musicalKey!);
+    parts.addAll(item.musicInfoParts);
 
     final widgets = <Widget>[];
     if (parts.isNotEmpty) {
@@ -922,7 +915,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 const SizedBox(width: 3),
                 Text('区間を選択',
                     style: Theme.of(context).textTheme.labelSmall!.copyWith(
-                        fontSize: 10,
                         color: Theme.of(context).colorScheme.primary
                             .withValues(alpha: 0.6))),
               ],

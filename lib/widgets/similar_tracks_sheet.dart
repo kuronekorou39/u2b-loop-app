@@ -62,7 +62,7 @@ class SimilarTracksSheet extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     '基準: ${[
-                      if (target.bpm != null) '${target.bpm!.round()} BPM',
+                      ?target.bpmLabel,
                       if (target.musicalKey != null)
                         MusicalKey.display(target.musicalKey)!,
                     ].join(' · ')}',
