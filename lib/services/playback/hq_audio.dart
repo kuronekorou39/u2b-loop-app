@@ -8,6 +8,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../core/storage/app_boxes.dart';
 import '../ranged_downloader.dart';
+import '../youtube_client_info.dart';
 
 /// YouTube の音声を高音質（音声専用ストリーム）で鳴らすための取得と取り付け。
 ///
@@ -160,7 +161,10 @@ class HqAudio {
       final dir = await _dir();
       await _sweep(dir);
 
+      // VISIONOS が本命（ANDROID 系の音声専用 URL は先頭 1MB で 403 になる。
+      // [YouTubeClientInfo.visionOs] 参照）。念のため再生用マニフェストと androidVr も残す
       final candidates = <Future<AudioOnlyStreamInfo?> Function()>[
+        () => _pickFromClient(videoId, YouTubeClientInfo.visionOs),
         if (manifest != null) () async => pickAudio(manifest.audioOnly),
         () => _pickFromClient(videoId, YoutubeApiClient.androidVr),
       ];
