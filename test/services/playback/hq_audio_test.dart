@@ -26,6 +26,13 @@ void main() {
     });
   });
 
+  test('一体型の音声（96kbps）を超えないストリームは付けない', () {
+    expect(HqAudio.muxedAudioKbps, 96);
+    expect(HqAudio.isWorthItKbps(128), isTrue);
+    expect(HqAudio.isWorthItKbps(96), isFalse);
+    expect(HqAudio.isWorthItKbps(49), isFalse);
+  });
+
   group('HqAudio.labelFor', () {
     test('ファイル名からコーデックとビットレートを読む', () {
       expect(HqAudio.labelFor('/c/hq_audio/abc123.140.128k.mp4'), 'AAC 128kbps');

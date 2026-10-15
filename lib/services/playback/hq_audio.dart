@@ -36,6 +36,16 @@ class HqAudio {
   /// これより小さいファイルは落とし損ねとみなす
   static const minBytes = 100 * 1024;
 
+  /// 一体型（itag 18）の音声は AAC 約 96kbps。これを超えない音声専用ストリームしか無い動画
+  /// （古い投稿の 49kbps など）は付けても改悪なので、落とさず「標準」のまま鳴らす
+  static const muxedAudioKbps = 96;
+
+  /// [info] を付ける価値があるか（一体型の音声より高ビットレート）
+  static bool isWorthIt(AudioOnlyStreamInfo info) =>
+      isWorthItKbps(info.bitrate.kiloBitsPerSecond);
+
+  static bool isWorthItKbps(num kbps) => kbps > muxedAudioKbps;
+
   /// 進行中の取得（同じ曲を再生側と波形側が同時に頼んでも 1 回で済ませる）
   static final _inFlight = <String, Future<String?>>{};
 
@@ -158,6 +168,11 @@ class HqAudio {
         if (isCancelled?.call() ?? false) return null;
         final info = await candidate();
         if (info == null) continue;
+        if (!isWorthIt(info)) {
+          debugPrint('[HqAudio] $videoId: 音声専用が '
+              '${info.bitrate.kiloBitsPerSecond.round()}kbps しか無く一体型と同等以下');
+          continue;
+        }
         final path = await _download(dir, videoId, info, isCancelled);
         if (path != null) return path;
       }
