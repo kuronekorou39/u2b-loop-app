@@ -33,6 +33,18 @@ void main() {
     expect(HqAudio.isWorthItKbps(49), isFalse);
   });
 
+  test('fetch の Future は必ず完了する（取れないときは null）', () async {
+    // テスト環境では一時領域が取れないので取得は失敗するが、Future 自体は完了すること。
+    // 以前は whenComplete が remove の戻り値（自分自身）を待って永遠に完了しなかった
+    final result =
+        await HqAudio.fetch('no-such-video').timeout(const Duration(seconds: 5));
+    expect(result, isNull);
+    // 2 回目も同じ（進行中の記録が残っていない）
+    final again =
+        await HqAudio.fetch('no-such-video').timeout(const Duration(seconds: 5));
+    expect(again, isNull);
+  });
+
   group('HqAudio.labelFor', () {
     test('ファイル名からコーデックとビットレートを読む', () {
       expect(HqAudio.labelFor('/c/hq_audio/abc123.140.128k.mp4'), 'AAC 128kbps');

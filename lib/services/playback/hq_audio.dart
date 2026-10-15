@@ -156,8 +156,12 @@ class HqAudio {
   }) {
     final running = _inFlight[videoId];
     if (running != null) return running;
-    final future = _fetch(videoId, manifest, isCancelled)
-        .whenComplete(() => _inFlight.remove(videoId));
+    // whenComplete のコールバックが Future を返すとそれを待つ仕様なので、
+    // `() => _inFlight.remove(videoId)` と書くと remove が返す「自分自身」を待って
+    // 永遠に完了しない（v1.91.0〜v1.91.6 で取り付けに進めなかった原因）。式ではなく文にする
+    final future = _fetch(videoId, manifest, isCancelled).whenComplete(() {
+      _inFlight.remove(videoId);
+    });
     _inFlight[videoId] = future;
     return future;
   }
