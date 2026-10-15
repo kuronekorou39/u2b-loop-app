@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/constants.dart';
+import '../core/loop/region_edit_controller.dart';
 import '../core/theme/app_theme.dart';
 import '../core/tips.dart';
 import '../core/utils/time_utils.dart';
@@ -62,9 +63,25 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   String? _cachedAudioPath;
   String? _loadError;
 
-  // Region management
+  // Region management（作業用のコピー。保存ボタンで item に書く）
   late List<LoopRegion> _regions;
+
+  /// 開いた時点のコピー。保存の要否はこれと比べる（以前は item の effectiveRegions と
+  /// 比べていたので、区間が無い曲を開くと作った「区間 1」のせいで開いた直後から
+  /// 「変更あり」になっていた）
+  late List<LoopRegion> _initialRegions;
+
+  /// 選択中の区間。-1 は区間なし（最後の 1 つを消したあと）
   int _selectedRegionIdx = 0;
+
+  LoopRegion? get _currentRegion =>
+      _selectedRegionIdx >= 0 && _selectedRegionIdx < _regions.length
+          ? _regions[_selectedRegionIdx]
+          : null;
+
+  /// 区間一覧の編集ルール（再生画面と同じ）。状態は _regions / _selectedRegionIdx
+  RegionEditController get _regionEditor =>
+      RegionEditController(regions: _regions, selected: _selectedRegionIdx);
 
   /// 縦画面の中段に区間パネルを開いているか
   bool _panelOpen = false;
@@ -85,6 +102,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     }
     _selectedRegionIdx =
         widget.initialRegionIndex.clamp(0, _regions.length - 1);
+    _initialRegions = _regions.map((r) => r.copyWith()).toList();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // ミニプレイヤーが再生中なら停止
@@ -117,12 +135,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   // --- Region sync ---
 
   void _syncCurrentRegion() {
-    if (_regions.isEmpty) return;
     final loop = ref.read(loopProvider);
-    _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
-      pointAMs: () => loop.pointA?.inMilliseconds,
-      pointBMs: () => loop.pointB?.inMilliseconds,
-    );
+    _regionEditor.syncFromLoop(loop.pointA, loop.pointB);
   }
 
   void _selectRegion(int index) {
@@ -132,10 +146,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _loadRegionIntoLoop(index);
   }
 
+  /// 区間の A/B をループ状態へ。区間なし（-1）ならループを空にする
   void _loadRegionIntoLoop(int index) {
-    if (index < 0 || index >= _regions.length) return;
-    final r = _regions[index];
     final notifier = ref.read(loopProvider.notifier);
+    if (index < 0 || index >= _regions.length) {
+      notifier.reset();
+      return;
+    }
+    final r = _regions[index];
     notifier.setPointA(r.pointAMs != null
         ? Duration(milliseconds: r.pointAMs!)
         : null);
@@ -147,40 +165,30 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   static const _maxRegions = AppLimits.maxRegions;
 
   void _addRegion() {
-    if (_regions.length >= _maxRegions) return;
     _syncCurrentRegion();
-    final player = ref.read(playerProvider);
-    final position = player.state.position;
-
-    final region = LoopRegion(
-      id: IdGenerator.next(),
-      name: '区間 ${_regions.length + 1}',
-      pointAMs: position.inMilliseconds,
-      pointBMs: null,
-    );
-    setState(() {
-      _regions.add(region);
-      _selectedRegionIdx = _regions.length - 1;
-    });
+    final editor = _regionEditor;
+    final position = ref.read(playerProvider).state.position;
+    if (editor.add(positionMs: position.inMilliseconds) == null) return;
+    setState(() => _selectedRegionIdx = editor.selected);
     _loadRegionIntoLoop(_selectedRegionIdx);
   }
 
   void _renameRegion(int index) async {
+    if (index < 0 || index >= _regions.length) return;
     final name = await _showRegionNameDialog(_regions[index].name);
     if (name == null) return;
-    setState(() {
-      _regions[index] = _regions[index].copyWith(name: name);
-    });
+    setState(() => _regionEditor.rename(index, name));
   }
 
-  void _deleteRegion(int index) {
-    if (_regions.length <= 1) return;
-    setState(() {
-      _regions.removeAt(index);
-      if (_selectedRegionIdx >= _regions.length) {
-        _selectedRegionIdx = _regions.length - 1;
-      }
-    });
+  /// 削除（最後の 1 つも消せる。区間なし = 全体を再生）。再生画面と同じく確認してから
+  void _deleteRegion(int index) async {
+    if (index < 0 || index >= _regions.length) return;
+    final ok = await AppDialogs.confirmDelete(context,
+        message: '区間「${_regions[index].name}」を削除しますか？');
+    if (!ok || !mounted) return;
+    final editor = _regionEditor;
+    if (!editor.delete(index)) return;
+    setState(() => _selectedRegionIdx = editor.selected);
     _loadRegionIntoLoop(_selectedRegionIdx);
   }
 
@@ -303,10 +311,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   void _restoreValues() {
     // Load selected region's AB into loop provider
-    if (_regions.isNotEmpty) {
+    final r = _currentRegion;
+    if (r != null) {
       _loadRegionIntoLoop(_selectedRegionIdx);
       // Enable loop if region has both points
-      final r = _regions[_selectedRegionIdx];
       if (r.hasA && r.hasB) {
         ref.read(loopProvider.notifier).toggleEnabled();
       }
@@ -403,14 +411,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       _syncCurrentRegion();
 
       final rate = ref.read(playerProvider).state.rate;
-      _item.regions = List.from(_regions);
+      // 旧互換の pointA/B も合わせる（区間なしなら 0 に戻す）
+      _item.setRegions(_regions);
       _item.speed = rate;
-
-      // Update pointA/B from first region for backward compat
-      if (_regions.isNotEmpty) {
-        _item.pointAMs = _regions.first.pointAMs ?? 0;
-        _item.pointBMs = _regions.first.pointBMs ?? 0;
-      }
 
       await ref.read(loopItemsProvider.notifier).update(_item);
 
@@ -430,9 +433,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   void _showExportDialog() {
     final loop = ref.read(loopProvider);
-    if (!loop.hasBothPoints) return;
+    final region = _currentRegion;
+    if (!loop.hasBothPoints || region == null) return;
 
-    final region = _regions[_selectedRegionIdx];
     final aStr = TimeUtils.formatShort(loop.pointA!);
     final bStr = TimeUtils.formatShort(loop.pointB!);
     final durationSec =
@@ -462,9 +465,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ? _item.uri
         : source.uri;
 
-    final region = _regions[_selectedRegionIdx];
-
-    if (!mounted) return;
+    final region = _currentRegion;
+    if (region == null || !mounted) return;
     await runExportFlow(
       context,
       inputUri: inputUri,
@@ -479,16 +481,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _syncCurrentRegion();
     final rate = ref.read(playerProvider).state.rate;
     if (rate != _item.speed) return true;
-
-    // Compare regions
-    final orig = _item.effectiveRegions;
-    if (_regions.length != orig.length) return true;
-    for (var i = 0; i < _regions.length; i++) {
-      if (_regions[i].pointAMs != orig[i].pointAMs) return true;
-      if (_regions[i].pointBMs != orig[i].pointBMs) return true;
-      if (_regions[i].name != orig[i].name) return true;
-    }
-    return false;
+    return RegionEditController.differs(_regions, _initialRegions);
   }
 
   Future<bool> _confirmDiscard() => AppDialogs.confirm(context,
@@ -812,13 +805,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final duration = ref.watch(durationProvider).valueOrNull;
 
     // 選択中の区間の値をループ状態からリアルタイムに同期
-    if (_regions.isNotEmpty) {
-      _regions[_selectedRegionIdx] = _regions[_selectedRegionIdx].copyWith(
-        pointAMs: () => loop.pointA?.inMilliseconds,
-        pointBMs: () => loop.pointB?.inMilliseconds,
-      );
-    }
-    final region = _regions[_selectedRegionIdx];
+    _regionEditor.syncFromLoop(loop.pointA, loop.pointB);
+    final region = _currentRegion;
     final subParts = <String>[
       if (_item.bpm != null) 'BPM ${_item.bpm!.round()}',
       if (_item.musicalKey != null) _item.musicalKey!,
@@ -826,17 +814,33 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         TimeUtils.formatShort(duration),
     ];
 
-    final editBlock = AbEditControls(
-      loop: loop,
-      step: loop.adjustStep,
-      onStepChanged: loopNotifier.setStep,
-      onSeek: (t) => ref.read(playerProvider).seek(t),
-      onPointA: loopNotifier.setPointA,
-      onPointB: loopNotifier.setPointB,
-      onSwap: loopNotifier.swapPoints,
-      onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
-      onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
-    );
+    // 区間なし（最後の 1 つを消したあと）は A/B を置く先が無いので、編集ブロックの
+    // 代わりに案内を出し、「今を A/B」も無効にする
+    final canSetPoints = hasSource && region != null;
+    final Widget editBlock = region == null
+        ? Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+            child: Text(
+              '区間がありません。「区間」の一覧から追加してください',
+              style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6)),
+              textAlign: TextAlign.center,
+            ),
+          )
+        : AbEditControls(
+            loop: loop,
+            step: loop.adjustStep,
+            onStepChanged: loopNotifier.setStep,
+            onSeek: (t) => ref.read(playerProvider).seek(t),
+            onPointA: loopNotifier.setPointA,
+            onPointB: loopNotifier.setPointB,
+            onSwap: loopNotifier.swapPoints,
+            onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
+            onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
+          );
 
     return PlayerShell(
       item: _item,
@@ -847,10 +851,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         title: _item.title,
         subtitle: subParts.join('  ·  '),
         chip: HeaderChip(
-          leading: const Icon(Icons.repeat,
+          leading: Icon(region == null ? Icons.all_inclusive : Icons.repeat,
               size: AppIconSizes.s, color: AppTheme.accentGreen),
           label: '区間',
-          text: '${region.name}  ${RegionPanel.timeText(region)}',
+          text: region == null
+              ? '区間なし'
+              : '${region.name}  ${RegionPanel.timeText(region)}',
           onTap: () => setState(() => _panelOpen = true),
         ),
       ),
@@ -867,7 +873,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               ? AbEditPanel(
                   key: const ValueKey('abEditPanel'),
                   title: 'AB 区間を編集',
-                  subtitle: region.name,
+                  subtitle: region?.name,
                   child: editBlock,
                 )
               : null,
@@ -883,8 +889,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         onEdit: () {},
         onFinishEdit: () {},
         onMore: () {},
-        onSetA: hasSource ? loopNotifier.setPointAToCurrentPosition : null,
-        onSetB: hasSource ? loopNotifier.setPointBToCurrentPosition : null,
+        onSetA: canSetPoints ? loopNotifier.setPointAToCurrentPosition : null,
+        onSetB: canSetPoints ? loopNotifier.setPointBToCurrentPosition : null,
         editBlock: wide ? null : editBlock,
       ),
     );
@@ -904,9 +910,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         SheetAction(
           icon: Icons.delete_outline,
           label: '削除',
-          subtitle: _regions.length > 1 ? null : '最後の 1 つは削除できません',
+          // 最後の 1 つも消せる（区間なし = 全体を再生。再生画面と同じ）
+          subtitle: _regions.length > 1 ? null : '消すと区間なし（全体を再生）になります',
           destructive: true,
-          enabled: _regions.length > 1,
           onTap: () => _deleteRegion(index),
         ),
       ],

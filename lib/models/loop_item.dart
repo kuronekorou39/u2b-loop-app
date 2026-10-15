@@ -199,6 +199,16 @@ class LoopItem {
     return regions;
   }
 
+  /// 区間の一覧を差し替える。旧バージョン互換の [pointAMs]/[pointBMs] は先頭の区間に
+  /// 合わせる（区間なしなら 0）。保存前に必ずこれを通す（以前は画面ごとに同じ 4 行が
+  /// あり、AB 設定画面は区間なしのとき旧値を残していたので、消した区間が
+  /// [effectiveRegions] で蘇っていた）
+  void setRegions(List<LoopRegion> list) {
+    regions = List.from(list);
+    pointAMs = regions.isEmpty ? 0 : regions.first.pointAMs ?? 0;
+    pointBMs = regions.isEmpty ? 0 : regions.first.pointBMs ?? 0;
+  }
+
   LoopRegion _legacyRegion() => LoopRegion(
         id: 'default',
         name: '区間 1',

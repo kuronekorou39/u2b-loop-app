@@ -951,11 +951,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (name == null) return;
 
     regions[index] = regions[index].copyWith(name: name);
-    item.regions = List.from(regions);
-    if (regions.isNotEmpty) {
-      item.pointAMs = regions.first.pointAMs ?? 0;
-      item.pointBMs = regions.first.pointBMs ?? 0;
-    }
+    item.setRegions(regions);
     await ref.read(loopItemsProvider.notifier).update(item);
     if (mounted) setState(() {});
   }
@@ -974,11 +970,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       pointAMs: () => result.aMs,
       pointBMs: () => result.bMs,
     );
-    item.regions = List.from(regions);
-    if (regions.isNotEmpty) {
-      item.pointAMs = regions.first.pointAMs ?? 0;
-      item.pointBMs = regions.first.pointBMs ?? 0;
-    }
+    item.setRegions(regions);
     await ref.read(loopItemsProvider.notifier).update(item);
     if (mounted) setState(() {});
   }
@@ -989,15 +981,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final ok = await AppDialogs.confirmDelete(context,
         message: '区間「${regions[index].name}」を削除しますか？');
     if (!ok || !mounted) return;
+    // 最後の 1 つも消せる（区間なし = 全体を再生。再生画面・AB 設定画面と同じ）
     regions.removeAt(index);
-    item.regions = List.from(regions);
-    if (regions.isNotEmpty) {
-      item.pointAMs = regions.first.pointAMs ?? 0;
-      item.pointBMs = regions.first.pointBMs ?? 0;
-    } else {
-      item.pointAMs = 0;
-      item.pointBMs = 0;
-    }
+    item.setRegions(regions);
     await ref.read(loopItemsProvider.notifier).update(item);
     if (mounted) setState(() {});
   }

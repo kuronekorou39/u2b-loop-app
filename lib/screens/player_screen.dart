@@ -13,6 +13,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../app.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/constants.dart';
+import '../core/loop/region_edit_controller.dart';
 import '../core/tips.dart';
 import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
@@ -1653,52 +1654,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   static const _maxRegions = AppLimits.maxRegions;
 
+  /// 区間一覧の編集ルール（AB 設定画面と同じ）。状態は item の regions 本体と
+  /// _activeRegionIdx で、操作のたびにこれを作って使う。
+  /// その場で書き換えるので、表示用のコピー（effectiveRegions）ではなく本体リストを取る
+  RegionEditController get _regionEditor => RegionEditController(
+      regions: _currentItem.ensureRegions(), selected: _activeRegionIdx);
+
   /// 現在のループ状態を選択中の区間に同期
   void _syncRegionFromLoop() {
-    if (_isPlaylist || _activeRegionIdx < 0) return;
-    // その場で書き換えるので、表示用のコピーではなく本体リストを取る
-    final regions = _currentItem.ensureRegions();
-    if (_activeRegionIdx >= regions.length) return;
+    if (_isPlaylist) return;
     final loop = ref.read(loopProvider);
-    regions[_activeRegionIdx] = regions[_activeRegionIdx].copyWith(
-      pointAMs: () => loop.pointA?.inMilliseconds,
-      pointBMs: () => loop.pointB?.inMilliseconds,
-    );
+    _regionEditor.syncFromLoop(loop.pointA, loop.pointB);
   }
 
-  /// 区間の変更をLoopItemに保存
+  /// 区間の変更をLoopItemに保存（旧互換の pointA/B も合わせる）
   Future<void> _saveRegions() async {
     if (_isPlaylist) return;
     final item = _currentItem;
-    // effectiveRegionsではなくregionsを直接参照（レガシーAB値の誤復元を防止）
-    if (item.regions.isNotEmpty) {
-      item.pointAMs = item.regions.first.pointAMs ?? 0;
-      item.pointBMs = item.regions.first.pointBMs ?? 0;
-    } else {
-      item.pointAMs = 0;
-      item.pointBMs = 0;
-    }
+    item.setRegions(item.regions);
     await ref.read(loopItemsProvider.notifier).update(item);
   }
 
   void _addRegion() {
     if (_isPlaylist) return;
-    final regions = _currentItem.ensureRegions();
-    if (regions.length >= _maxRegions) return;
-
     _syncRegionFromLoop();
+    final editor = _regionEditor;
     final position = ref.read(playerProvider).state.position;
-    final region = LoopRegion(
-      id: IdGenerator.next(),
-      name: '区間 ${regions.length + 1}',
-      pointAMs: position.inMilliseconds,
-      pointBMs: null,
-    );
-    regions.add(region);
-    _currentItem.regions = List.from(regions);
+    final region = editor.add(positionMs: position.inMilliseconds);
+    if (region == null) return;
 
     setState(() {
-      _activeRegionIdx = regions.length - 1;
+      _activeRegionIdx = editor.selected;
       _editMode = true;
     });
     _loadRegion(region);
@@ -1710,29 +1696,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (index < 0 || index >= regions.length) return;
     final name = await _showRegionNameDialog(regions[index].name);
     if (name == null) return;
-    setState(() {
-      regions[index] = regions[index].copyWith(name: name);
-      _currentItem.regions = List.from(regions);
-    });
+    setState(() => _regionEditor.rename(index, name));
     _saveRegions();
   }
 
+  /// 削除（最後の 1 つも消せる。区間なし = 全体を再生）
   void _deleteRegion(int index) async {
     final regions = _currentItem.effectiveRegions;
     if (index < 0 || index >= regions.length) return;
     final ok = await AppDialogs.confirmDelete(context,
         message: '区間「${regions[index].name}」を削除しますか？');
     if (!ok || !mounted) return;
+    final editor = _regionEditor;
+    if (!editor.delete(index)) return;
     setState(() {
-      regions.removeAt(index);
-      _currentItem.regions = List.from(regions);
-      if (_activeRegionIdx >= regions.length) {
-        _activeRegionIdx = regions.isEmpty ? -1 : regions.length - 1;
-      }
-      if (regions.isEmpty) _editMode = false;
+      _activeRegionIdx = editor.selected;
+      if (editor.current == null) _editMode = false;
     });
-    if (_activeRegionIdx >= 0) {
-      _loadRegion(regions[_activeRegionIdx]);
+    final current = editor.current;
+    if (current != null) {
+      _loadRegion(current);
     } else {
       ref.read(loopProvider.notifier).reset();
     }
@@ -3354,7 +3337,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       pointAMs: aMs,
       pointBMs: bMs,
     );
-    item.regions.add(region);
+    // 旧 AB 値しか無い曲なら先にそれを区間へ昇格させてから足す（他の画面と同じ経路）
+    item.setRegions([...item.ensureRegions(), region]);
     await ref.read(loopItemsProvider.notifier).update(item);
     if (!mounted) return;
 
