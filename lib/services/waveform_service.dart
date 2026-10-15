@@ -272,6 +272,7 @@ class WaveformService {
     required String videoId,
   }) async {
     if (HqAudio.enabled) {
+      HqAudio.log('波形: 取得を依頼');
       final hq = await HqAudio.fetch(videoId, manifest: manifest);
       if (hq != null) return hq;
     }

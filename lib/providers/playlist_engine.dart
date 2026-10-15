@@ -113,6 +113,7 @@ class PlaylistEngine {
       manifest = await ytService.getManifestWithFallback(item.videoId!);
       if (stale()) return null;
       if (HqAudio.enabled) {
+        HqAudio.log('エンジン: 取得を依頼');
         hqAudio = HqAudio.fetch(item.videoId!,
             manifest: manifest, isCancelled: stale);
       }
@@ -168,7 +169,10 @@ class PlaylistEngine {
           return attach(late);
         }));
       } else if (path != null) {
+        HqAudio.log('エンジン: 取り付けへ');
         await attach(path);
+      } else {
+        HqAudio.log('エンジン: 落とせなかったので一体型のまま');
       }
     }
 

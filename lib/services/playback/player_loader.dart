@@ -119,6 +119,7 @@ class PlayerLoader {
         );
         if (HqAudio.enabled) {
           // 開くのと並行して落とす。波形の先読みも同じファイルを使う（HqAudio が 1 回にまとめる）
+          HqAudio.log('ローダー: 取得を依頼');
           hqAudio = HqAudio.fetch(item.videoId!,
               manifest: manifest, isCancelled: () => !isMounted());
         }
@@ -183,7 +184,10 @@ class PlayerLoader {
   /// （一瞬途切れるが、その回ずっと 96kbps で聴くよりよい）
   Future<void> _attachHqAudio(
       Player player, Future<String?>? hqAudio, LoadedMedia media) async {
-    if (hqAudio == null) return;
+    if (hqAudio == null) {
+      HqAudio.log('ローダー: 高音質はオフ（設定）');
+      return;
+    }
     await progress.step(0.95, '高音質の音声を取得中...');
     var timedOut = false;
     final path = await hqAudio.timeout(hqAudioWait, onTimeout: () {
@@ -202,11 +206,15 @@ class PlayerLoader {
       }));
       return;
     }
-    if (path == null) return;
+    if (path == null) {
+      HqAudio.log('ローダー: 落とせなかったので一体型のまま');
+      return;
+    }
     if (!isMounted()) {
       HqAudio.log('ローダー: 画面を離れたので付けない');
       return;
     }
+    HqAudio.log('ローダー: 取り付けへ');
     await _attach(player, path);
     await _yieldFrame();
   }
