@@ -12,6 +12,7 @@ import '../../providers/loading_animation_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/loading_animations/loading_animation.dart';
 import '../../widgets/loading_animations/loading_animation_widget.dart';
+import '../../widgets/settings/hq_audio_log_dialog.dart';
 import '../../widgets/settings/settings_parts.dart';
 
 /// 設定「詳細設定」: 表示 / 危険な操作 / 開発者向け（ふだん触らないもの）
@@ -180,6 +181,13 @@ class _AdvancedSettingsScreenState
                       'オフだと一体型の 96kbps',
                   value: ref.watch(hqAudioProvider),
                   onChanged: (v) => ref.read(hqAudioProvider.notifier).value = v,
+                ),
+                // 高音質が付かない時に、端末だけで原因を追えるように
+                SettingsRow(
+                  icon: Icons.receipt_long,
+                  title: '高音質のログ',
+                  subtitle: '取得と取り付けの記録（直近 80 行）',
+                  onTap: () => HqAudioLogDialog.show(context),
                 ),
               ],
             ),

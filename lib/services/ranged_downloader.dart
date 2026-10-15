@@ -22,6 +22,7 @@ class RangedDownloader {
     File file, {
     bool Function()? isCancelled,
     void Function(int received)? onReceived,
+    void Function(String reason)? onFailed,
     Duration requestTimeout = const Duration(seconds: 60),
   }) async {
     final client = http.Client();
@@ -43,6 +44,7 @@ class RangedDownloader {
             .get(Uri.parse(url), headers: {'Range': 'bytes=$start-$end'})
             .timeout(requestTimeout);
         if (res.statusCode != 200 && res.statusCode != 206) {
+          onFailed?.call('HTTP ${res.statusCode}（${start ~/ 1024}KB 取得済み）');
           await sink.close();
           return DownloadState.failed;
         }
@@ -56,8 +58,10 @@ class RangedDownloader {
       await sink.flush();
       await sink.close();
       sink = null;
+      if (start == 0) onFailed?.call('応答が空');
       return start > 0 ? DownloadState.ok : DownloadState.failed;
-    } catch (_) {
+    } catch (e) {
+      onFailed?.call(e.toString().split('\n').first);
       try {
         await sink?.close();
       } catch (_) {}

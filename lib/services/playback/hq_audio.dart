@@ -50,6 +50,21 @@ class HqAudio {
   /// 進行中の取得（同じ曲を再生側と波形側が同時に頼んでも 1 回で済ませる）
   static final _inFlight = <String, Future<String?>>{};
 
+  /// 直近のログ（新しいものが後ろ）。端末では logcat を読めないので、
+  /// 設定「高音質のログ」で見せる。[logVersion] が増えたら画面を更新する
+  static final List<String> recentLog = [];
+  static final ValueNotifier<int> logVersion = ValueNotifier(0);
+  static const _maxLogLines = 80;
+
+  static void _log(String message) {
+    debugPrint('[HqAudio] $message');
+    final t = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    recentLog.add('${two(t.hour)}:${two(t.minute)}:${two(t.second)} $message');
+    if (recentLog.length > _maxLogLines) recentLog.removeAt(0);
+    logVersion.value++;
+  }
+
   /// 設定で有効か。box が開いていない（テスト・起動直後）なら無効扱い
   static bool get enabled {
     try {
@@ -152,38 +167,49 @@ class HqAudio {
     try {
       final ready = await existing(videoId);
       if (ready != null) {
+        _log('$videoId: 落とし済み ${labelFor(ready)}');
         // 使った順を保つ（掃除は古い順）
         try {
           await File(ready).setLastModified(DateTime.now());
         } catch (_) {}
         return ready;
       }
+      _log('$videoId: 取得開始');
       final dir = await _dir();
       await _sweep(dir);
 
       // VISIONOS が本命（ANDROID 系の音声専用 URL は先頭 1MB で 403 になる。
       // [YouTubeClientInfo.visionOs] 参照）。念のため再生用マニフェストと androidVr も残す
-      final candidates = <Future<AudioOnlyStreamInfo?> Function()>[
-        () => _pickFromClient(videoId, YouTubeClientInfo.visionOs),
-        if (manifest != null) () async => pickAudio(manifest.audioOnly),
-        () => _pickFromClient(videoId, YoutubeApiClient.androidVr),
+      final candidates = <(String, Future<AudioOnlyStreamInfo?> Function())>[
+        ('VISIONOS', () => _pickFromClient(videoId, YouTubeClientInfo.visionOs)),
+        if (manifest != null)
+          ('再生用マニフェスト', () async => pickAudio(manifest.audioOnly)),
+        ('ANDROID_VR', () => _pickFromClient(videoId, YoutubeApiClient.androidVr)),
       ];
-      for (final candidate in candidates) {
-        if (isCancelled?.call() ?? false) return null;
+      for (final (name, candidate) in candidates) {
+        if (isCancelled?.call() ?? false) {
+          _log('$videoId: 曲が変わったので中止');
+          return null;
+        }
         final info = await candidate();
-        if (info == null) continue;
+        if (info == null) {
+          _log('$videoId: $name から音声専用を取れず');
+          continue;
+        }
+        _log('$videoId: $name → itag ${info.tag} '
+            '${info.bitrate.kiloBitsPerSecond.round()}kbps '
+            '${info.size.totalMegaBytes.toStringAsFixed(1)}MB');
         if (!isWorthIt(info)) {
-          debugPrint('[HqAudio] $videoId: 音声専用が '
-              '${info.bitrate.kiloBitsPerSecond.round()}kbps しか無く一体型と同等以下');
+          _log('$videoId: 一体型（${muxedAudioKbps}kbps）と同等以下なので付けない');
           continue;
         }
         final path = await _download(dir, videoId, info, isCancelled);
         if (path != null) return path;
       }
-      debugPrint('[HqAudio] $videoId: 音声専用ストリームを落とせず一体型の音声で再生');
+      _log('$videoId: 落とせず一体型の音声で再生');
       return null;
     } catch (e) {
-      debugPrint('[HqAudio] $videoId: 取得失敗 $e');
+      _log('$videoId: 取得失敗 $e');
       return null;
     }
   }
@@ -197,7 +223,7 @@ class HqAudio {
           .timeout(const Duration(seconds: 30));
       return pickAudio(m.audioOnly);
     } catch (e) {
-      debugPrint('[HqAudio] $videoId: 取り直し失敗 $e');
+      _log('$videoId: マニフェスト取得失敗 ${e.toString().split('\n').first}');
       return null;
     } finally {
       yt.close();
@@ -212,24 +238,28 @@ class HqAudio {
   ) async {
     final file = File('${dir.path}/${fileNameFor(videoId, info)}');
     final part = File('${file.path}.part');
+    final sw = Stopwatch()..start();
     final state = await RangedDownloader.download(
       info.url.toString(),
       info.size.totalBytes,
       part,
       isCancelled: isCancelled,
+      onFailed: (reason) => _log('$videoId: DL 失敗 $reason'),
     );
     if (state != DownloadState.ok || !await _isComplete(part)) {
+      if (state == DownloadState.ok) _log('$videoId: DL したが小さすぎる');
       await _delete(part);
       return null;
     }
     try {
       await part.rename(file.path);
-    } catch (_) {
+    } catch (e) {
+      _log('$videoId: ファイル名の確定に失敗 $e');
       await _delete(part);
       return null;
     }
-    debugPrint('[HqAudio] $videoId: itag ${info.tag} '
-        '${info.bitrate.kiloBitsPerSecond.round()}kbps を取得');
+    _log('$videoId: itag ${info.tag} ${info.bitrate.kiloBitsPerSecond.round()}kbps '
+        'を取得（${sw.elapsed.inMilliseconds}ms）');
     return file.path;
   }
 
@@ -245,13 +275,19 @@ class HqAudio {
           .setAudioTrack(AudioTrack.uri(path, title: trackTitle))
           .timeout(const Duration(seconds: 10));
       for (var i = 0; i < 30; i++) {
-        if (isAttached(player)) return true;
+        if (isAttached(player)) {
+          _log('取り付け完了 ${labelFor(path)}');
+          return true;
+        }
         await Future.delayed(const Duration(milliseconds: 100));
       }
-      debugPrint('[HqAudio] 取り付け未確認（トラック一覧に現れない）: $path');
+      final titles = player.state.tracks.audio
+          .map((t) => '${t.id}:${t.title ?? '-'}')
+          .join(', ');
+      _log('取り付け未確認（トラック一覧: $titles）');
       return false;
     } catch (e) {
-      debugPrint('[HqAudio] 取り付け失敗: $e');
+      _log('取り付け失敗 $e');
       return false;
     }
   }

@@ -139,11 +139,29 @@ class PlaylistEngine {
     }
 
     if (hqAudio != null) {
-      // プリロードは次の曲までに間に合えばよいので、落ち切るまで待つ（打ち切りは stale）
-      final path = await hqAudio.timeout(hqAudioWait, onTimeout: () => null);
+      // プリロードは次の曲までに間に合えばよいので、落ち切るまで待つ（打ち切りは stale）。
+      // それでも間に合わなければ、落ち次第まだ同じ曲ならその場で付け替える
+      Future<void> attach(String path) async {
+        if (await HqAudio.attach(player, path)) {
+          quality.set(player, AudioQuality.hq(HqAudio.labelFor(path)));
+        }
+      }
+
+      var timedOut = false;
+      final path = await hqAudio.timeout(hqAudioWait, onTimeout: () {
+        timedOut = true;
+        return null;
+      });
       if (stale()) return manifest;
-      if (path != null && await HqAudio.attach(player, path)) {
-        quality.set(player, AudioQuality.hq(HqAudio.labelFor(path)));
+      if (timedOut) {
+        final opened = player.state.playlist.medias.firstOrNull?.uri;
+        unawaited(hqAudio.then((late) {
+          if (late == null || stale()) return null;
+          if (player.state.playlist.medias.firstOrNull?.uri != opened) return null;
+          return attach(late);
+        }));
+      } else if (path != null) {
+        await attach(path);
       }
     }
 

@@ -141,7 +141,7 @@ class PlayerLoader {
 
       await _waitForMetadata(player);
       _checkMounted();
-      await _attachHqAudio(player, hqAudio);
+      await _attachHqAudio(player, hqAudio, media);
       _checkMounted();
       await player.setRate(item.speed);
       return media;
@@ -179,18 +179,41 @@ class PlayerLoader {
   }
 
   /// 高音質の音声が [hqAudioWait] までに落ちていれば付ける。
-  /// 間に合わなければ一体型の音声で始める（落とし終えた分は波形と次回の再生に使われる）
-  Future<void> _attachHqAudio(Player player, Future<String?>? hqAudio) async {
+  /// 間に合わなければ一体型の音声で始め、落ち次第まだ同じ曲を鳴らしていれば途中で付け替える
+  /// （一瞬途切れるが、その回ずっと 96kbps で聴くよりよい）
+  Future<void> _attachHqAudio(
+      Player player, Future<String?>? hqAudio, LoadedMedia media) async {
     if (hqAudio == null) return;
     await progress.step(0.95, '高音質の音声を取得中...');
-    final path = await hqAudio.timeout(hqAudioWait, onTimeout: () => null);
+    var timedOut = false;
+    final path = await hqAudio.timeout(hqAudioWait, onTimeout: () {
+      timedOut = true;
+      return null;
+    });
+    if (timedOut) {
+      unawaited(hqAudio.then((late) async {
+        if (late == null || !isMounted() || !_stillPlaying(player, media)) return;
+        await _attach(player, late);
+      }));
+      return;
+    }
     if (path == null || !isMounted()) return;
+    await _attach(player, path);
+    await _yieldFrame();
+  }
+
+  Future<void> _attach(Player player, String path) async {
     if (await HqAudio.attach(player, path)) {
       _ref
           .read(audioQualityProvider.notifier)
           .set(player, AudioQuality.hq(HqAudio.labelFor(path)));
     }
-    await _yieldFrame();
+  }
+
+  /// [player] がまだ [media] を開いたままか（後から付けるときに曲が変わっていないか）
+  static bool _stillPlaying(Player player, LoadedMedia media) {
+    final medias = player.state.playlist.medias;
+    return medias.isNotEmpty && medias.first.uri == media.source.uri;
   }
 
   /// 重い await の後に 1 フレーム描画の隙間を作る
