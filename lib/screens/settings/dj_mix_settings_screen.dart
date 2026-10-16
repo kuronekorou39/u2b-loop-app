@@ -111,6 +111,34 @@ class DjMixSettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _pickSfxLevel(BuildContext context, WidgetRef ref) async {
+    final current = ref.read(sfxLevelProvider);
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('効果音の音量'),
+        children: [
+          RadioGroup<int>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(ctx, v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final db in SfxLevelNotifier.options)
+                  RadioListTile<int>(
+                    value: db,
+                    title: Text(SfxLevelNotifier.label(db)),
+                    subtitle: Text(SfxLevelNotifier.describe(db)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) ref.read(sfxLevelProvider.notifier).value = picked;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final crossfade = ref.watch(crossfadeProvider);
@@ -118,6 +146,8 @@ class DjMixSettingsScreen extends ConsumerWidget {
     const needsFade = 'クロスフェードをオンにすると使えます';
     final curve = ref.watch(crossfadeCurveProvider);
     final effect = ref.watch(transitionEffectProvider);
+    final sfxLevel = ref.watch(sfxLevelProvider);
+    final sfxOn = on && effect.usesSfx;
 
     return SettingsPage(
       title: 'DJ ミックス',
@@ -205,6 +235,20 @@ class DjMixSettingsScreen extends ConsumerWidget {
               subtitle: on ? '${effect.label}: ${effect.description}' : needsFade,
               enabled: on,
               onTap: () => _pickEffect(context, ref),
+            ),
+            // 効果音（ライザー / インパクト / スピンバック）の曲に対する大きさ
+            SettingsRow(
+              icon: Icons.campaign,
+              title: '効果音の音量',
+              subtitle: sfxOn
+                  ? SfxLevelNotifier.describe(sfxLevel)
+                  : on
+                      ? '効果音を使う演出（ライザー / インパクト / スピンバック）で使えます'
+                      : needsFade,
+              enabled: sfxOn,
+              trailing: Text(SfxLevelNotifier.label(sfxLevel),
+                  style: Theme.of(context).textTheme.bodyMedium),
+              onTap: () => _pickSfxLevel(context, ref),
             ),
           ],
         ),

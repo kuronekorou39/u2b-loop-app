@@ -164,7 +164,7 @@ void main() {
     expect(switchOf('ドロップに合わせる').onChanged, isNull);
     expect(switchOf('ベーススワップ').onChanged, isNull);
     expect(switchOf('拍合わせ').onChanged, isNull);
-    expect(find.text('クロスフェードをオンにすると使えます'), findsNWidgets(6));
+    expect(find.text('クロスフェードをオンにすると使えます'), findsNWidgets(7));
   });
 
   testWidgets('トップの DJ ミックスの行に今の設定が要約される', (tester) async {

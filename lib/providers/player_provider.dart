@@ -5,6 +5,7 @@ import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/transition_effect.dart';
 import '../models/video_source.dart';
+import '../services/transition_sfx.dart';
 import '../services/youtube_service.dart';
 import '../core/storage/app_boxes.dart';
 
@@ -46,6 +47,17 @@ final playerBProvider = Provider<Player>((ref) {
   ref.onDispose(player.dispose);
   return player;
 });
+
+/// 効果音用の 3 枚目のプレイヤー（映像なし）。
+/// 切り替えの演出で効果音を使うときに初めて作られる（使わない人にはコストが無い）
+final sfxPlayerProvider = Provider<Player>((ref) {
+  final player = Player();
+  ref.onDispose(player.dispose);
+  return player;
+});
+
+final transitionSfxProvider =
+    Provider<TransitionSfx>((ref) => TransitionSfx(ref.watch(sfxPlayerProvider)));
 
 final controllerAProvider = Provider<VideoController>((ref) {
   return VideoController(ref.watch(playerAProvider));
@@ -318,6 +330,35 @@ class TransitionEffectNotifier extends StateNotifier<TransitionEffect> {
   set value(TransitionEffect v) {
     state = v;
     AppBoxes.settings.put(_key, v.name);
+  }
+}
+
+/// 切り替えの効果音の音量（曲との差 dB）。既定は曲より 6dB 小さい
+final sfxLevelProvider =
+    StateNotifierProvider<SfxLevelNotifier, int>((ref) => SfxLevelNotifier());
+
+class SfxLevelNotifier extends StateNotifier<int> {
+  static const _key = SettingsKeys.sfxLevelDb;
+
+  static const options = [-12, -6, 0];
+  static const defaultDb = -6;
+
+  static String label(int db) => switch (db) {
+        <= -12 => '控えめ',
+        < 0 => 'ふつう',
+        _ => '大きめ',
+      };
+
+  /// 「曲より 6dB 小さい」のような説明
+  static String describe(int db) => db >= 0 ? '曲と同じ大きさ' : '曲より ${-db}dB 小さい';
+
+  SfxLevelNotifier() : super(defaultDb) {
+    state = AppBoxes.settings.get(_key, defaultValue: defaultDb) as int;
+  }
+
+  set value(int v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
   }
 }
 

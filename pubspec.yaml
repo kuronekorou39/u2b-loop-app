@@ -1,7 +1,7 @@
 name: u2b_loop_app
 description: "YouTube & Local Video AB Loop Player"
 publish_to: 'none'
-version: 1.95.0
+version: 1.96.0
 
 environment:
   sdk: ^3.11.0
@@ -50,3 +50,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/sfx/

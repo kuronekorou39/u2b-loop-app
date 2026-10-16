@@ -9,6 +9,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../core/audio/beat_grid.dart';
 import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
+import '../core/audio/sfx_library.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/audio/transition_effect.dart';
 import '../models/loop_item.dart';
@@ -16,8 +17,10 @@ import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
 import '../services/audio_filters.dart';
 import '../services/cache_service.dart';
+import '../services/deck_tricks.dart';
 import '../services/playback/hq_audio.dart';
 import '../services/playback/media_cache.dart';
+import '../services/transition_sfx.dart';
 import '../services/youtube_service.dart';
 import 'loop_provider.dart';
 import 'player_provider.dart';
@@ -110,6 +113,8 @@ class PlaylistEngine {
     // 低音シェルフとスイープ用ローパスを 0dB・全開で付けておく（交差中は値だけ動かす）。
     // 前回の交差の残り（2 枚のプレイヤーを使い回すため）もここで消える
     await AudioFilters.install(player);
+    // ブレーキ（音程補正オフ）やループロール（mpv の AB ループ）の残りも戻す
+    await DeckTricks.reset(player);
 
     StreamManifest? manifest;
     // 高音質の音声（音声専用ストリーム）。開くのと並行して落とし、メタデータ確定後に付ける
@@ -307,12 +312,14 @@ class PlaylistEngine {
     _crossfadeMonitor = null;
     _ref.read(crossfadeProgressProvider.notifier).state = null;
 
+    // 切替点の瞬間の効果音（インパクト）はここで鳴らす
+    session?.onCut();
     if (session != null && session.outVolume > 1) {
       // 曲線が 0 に着く前にスワップが来た（YouTube の音声がメタデータの長さより
       // 早く終わった等）。即 stop すると旧曲がぶつぎりになるので短く落としてから止める
       session.finishIn();
       unawaited(_fadeOutAndStop(oldPlayer, session.outVolume, session.volume)
-          .then((_) => session.clearOutFilter()));
+          .then((_) => session.clearOut()));
     } else {
       oldPlayer.stop();
       session?.finish();
@@ -425,7 +432,57 @@ class PlaylistEngine {
     _armedTrack = next;
     _crossfadeMonitor ??= Timer.periodic(
         const Duration(milliseconds: 100), (_) => _crossfadeTick());
-    if (crossfadeDuration != Duration.zero) unawaited(realignPreload(next));
+    if (crossfadeDuration != Duration.zero) {
+      unawaited(realignPreload(next));
+      unawaited(_preloadSfx());
+    }
+  }
+
+  // --- 効果音 ---
+
+  /// 切り替えごとに回す（同じ長さのライザーが何種類かある）
+  int _sfxVariant = 0;
+
+  /// 今の演出で鳴らす効果音（鳴らす順）。[windowMs] はクロスフェードの実時間
+  List<SfxClip> _sfxClips(TransitionEffect effect, int windowMs) {
+    final lead = effect.leadInSfx;
+    return [
+      if (lead != null)
+        SfxLibrary.pick(lead, windowMs: windowMs, variant: _sfxVariant),
+      if (effect.impactAtCut)
+        SfxLibrary.pick(SfxRole.impact, windowMs: windowMs, variant: _sfxVariant),
+    ];
+  }
+
+  /// 出る曲の [from] 〜 [to]（媒体）が実時間で何ミリ秒か
+  int _realMs(Duration from, Duration to) {
+    final rate = activePlayer.state.rate;
+    final ms = (to - from).inMilliseconds / (rate > 0 ? rate : 1);
+    return ms <= 0 ? 0 : ms.round();
+  }
+
+  /// 効果音を使う演出なら、プレイヤーを起こして音源を開いておく（交差の開始で待たないため）。
+  /// 演出は交差を始めるときにもう一度読むので、ここで開いたものと違えばそのとき開き直す
+  Future<void> _preloadSfx() async {
+    final effect = _ref.read(transitionEffectProvider);
+    if (!effect.usesSfx) return;
+    final planned = plannedCrossfade();
+    final windowMs = planned == null
+        ? crossfadeDuration.inMilliseconds
+        : _realMs(planned.start, planned.cut);
+    try {
+      await _ref.read(transitionSfxProvider).load(_sfxClips(effect, windowMs));
+    } catch (e) {
+      debugPrint('[PlaylistEngine] 効果音の先読みに失敗: $e');
+    }
+  }
+
+  /// トリック（ブレーキ・ループロール）の終わりで、切替点を待たずに遷移を起こす。
+  /// 出る曲の位置が切替点に届かない（遅くなる・戻る）ので、実時間で合図する
+  void _forceCut(_CrossfadeSession session) {
+    if (_crossfade != session || session.advanced) return;
+    session.advanced = true;
+    _ref.read(loopProvider.notifier).onTrackEnd?.call();
   }
 
   /// プリロードが無効になったら呼ぶ（キャンセル・取り直し・読み直し）。進行中なら取り消す
@@ -561,24 +618,34 @@ class PlaylistEngine {
         ? min(swapStartMs + beatMs * _CrossfadeSession.bassSwapBeats, cutMs)
         : cutMs;
     final outRate = activePlayer.state.rate;
+    final beatRealMs = beatMs / (outRate > 0 ? outRate : 1);
+    final effect = _ref.read(transitionEffectProvider);
+    final volume = activePlayer.state.volume;
     final session = _CrossfadeSession(
       outPlayer: activePlayer,
       inPlayer: inPlayer,
       start: start,
       cut: cut,
       advancesAtCut: advancesAtCut,
-      volume: activePlayer.state.volume,
+      volume: volume,
       inStart: inStart,
       inBaseRate: baseRate,
       inRate: inRate,
       curve: curve,
-      bassSwap: _ref.read(bassSwapProvider),
-      effect: _ref.read(transitionEffectProvider),
+      // トリック系は切替点まで前の曲だけなので、低音の入れ替えはしない
+      bassSwap: !effect.cutsHard && _ref.read(bassSwapProvider),
+      effect: effect,
       beat: beat,
       swapStartMs: swapStartMs,
       swapEndMs: swapEndMs,
       // エコーの遅延は半拍（実時間）
-      echoDelayMs: (beatMs / (outRate > 0 ? outRate : 1) / 2).round(),
+      echoDelayMs: (beatRealMs / 2).round(),
+      outRate: outRate,
+      beatRealMs: beatRealMs,
+      beatMediaMs: beatMs,
+      sfx: effect.usesSfx ? _ref.read(transitionSfxProvider) : null,
+      sfxVolume: TransitionSfx.volumeFor(volume, _ref.read(sfxLevelProvider)),
+      onForceCut: _forceCut,
     );
     _crossfade = session;
     try {
@@ -598,7 +665,20 @@ class PlaylistEngine {
         await AudioFilters.setBassDb(inPlayer, AudioFilters.bassCutDb);
       }
       await inPlayer.play();
+      // 効果音を開く（armCrossfade で同じものを開いてあれば一瞬で返る）
+      if (session.sfx != null) {
+        await session.sfx!.load(_sfxClips(effect, _realMs(start, cut)));
+        _sfxVariant++;
+      }
       if (_crossfade == session) {
+        // 効果音・トリックは実時間で予定する（切替点までの残り時間から）
+        final toCutMs = _realMs(activePlayer.state.position, cut);
+        session.startTricks(wallToCutMs: toCutMs);
+        if (effect != TransitionEffect.none) {
+          debugPrint('[DjFx] 演出 ${effect.name} 切替点まで ${toCutMs}ms '
+              '1拍 ${beatRealMs.round()}ms 効果音 ${session.sfx?.loaded ?? const []} '
+              '開始遅延見込み ${TransitionSfx.startLatencyMs.round()}ms');
+        }
         _ref.read(crossfadeProgressProvider.notifier).state =
             (progress: 0, next: next.item);
       }
@@ -786,11 +866,153 @@ class _CrossfadeSession {
     required this.swapStartMs,
     required this.swapEndMs,
     required this.echoDelayMs,
+    required this.outRate,
+    required this.beatRealMs,
+    required this.beatMediaMs,
+    required this.sfx,
+    required this.sfxVolume,
+    required this.onForceCut,
   })  : outVolume = volume,
         appliedInRate = inRate;
 
   /// ベーススワップにかける拍数（DJ の「一動作」。ゆっくり交差させない）
   static const bassSwapBeats = 2;
+
+  /// 交差開始時の出る曲の速度。ブレーキで落とした後はこれに戻す
+  final double outRate;
+
+  /// 出る曲の 1 拍（実時間 / 媒体のミリ秒）
+  final double beatRealMs;
+  final double beatMediaMs;
+
+  /// 効果音（使わない演出なら null）と、その音量（0〜100 の尺度）
+  final TransitionSfx? sfx;
+  final double sfxVolume;
+
+  /// トリックの終わりに切替点を待たずに遷移を起こす
+  final void Function(_CrossfadeSession) onForceCut;
+
+  // --- トリック（実時間のタイマーで進める） ---
+
+  /// ブレーキの長さ（拍）と、実時間での下限・上限
+  static const brakeBeats = 2;
+  static const brakeMinMs = 700;
+  static const brakeMaxMs = 2500;
+
+  /// ブレーキの終わりの速度（mpv の下限 0.01 より上。ほぼ止まった低い唸り）
+  static const brakeMinRate = 0.05;
+
+  /// ループロールは最後の 1 小節。(始まる拍, ループの長さ(拍))
+  static const loopRollBeats = 4;
+  static const loopRollStages = [(0.0, 1.0), (2.0, 0.5), (3.0, 0.25), (3.5, 0.125)];
+
+  final _timers = <Timer>[];
+  Timer? _brakeTimer;
+  bool _tricksStarted = false;
+
+  /// トリック中の出る曲の音量比（null = 曲線のまま）
+  double? _outOverride;
+
+  /// 効果音とトリックを予定する。[wallToCutMs] は切替点までの実時間
+  void startTricks({required int wallToCutMs}) {
+    if (_tricksStarted) return;
+    _tricksStarted = true;
+    final toCut = max(0, wallToCutMs);
+    final lead = effect.leadInSfx;
+    final s = sfx;
+    if (lead != null && s != null) {
+      final clip = s.loaded.firstOrNull;
+      if (clip != null) {
+        // 終わりが切替点に来るように。開始の遅れの分だけ前倒す
+        _after(toCut - clip.durationMs - TransitionSfx.startLatencyMs.round(), () {
+          unawaited(s.start(volume: sfxVolume));
+          // スピンバックはレコードを巻き取る音なので、曲はすぐ消す
+          if (effect == TransitionEffect.spinback) _killOut();
+        });
+      }
+    }
+    switch (effect) {
+      case TransitionEffect.brake:
+        final durMs =
+            (beatRealMs * brakeBeats).round().clamp(brakeMinMs, brakeMaxMs);
+        _after(toCut - durMs, () => _startBrake(durMs));
+      case TransitionEffect.loopRoll:
+        _after(toCut - (beatRealMs * loopRollBeats).round(), _startLoopRoll);
+      default:
+        break;
+    }
+  }
+
+  void _after(int ms, void Function() fn) {
+    _timers.add(Timer(Duration(milliseconds: max(0, ms)), fn));
+  }
+
+  void _setOut(double level) {
+    _outOverride = level.clamp(0.0, 1.0);
+    outVolume = volume * _outOverride!;
+    outPlayer.setVolume(outVolume);
+  }
+
+  /// 出る曲を 200ms で消す
+  void _killOut() {
+    for (var i = 1; i <= 4; i++) {
+      _after(i * 50, () => _setOut(1 - i / 4));
+    }
+  }
+
+  /// ブレーキ: 速度をほぼ一定の減速で落とす（レコードが止まる動き）。音程も一緒に落ちる。
+  /// 音量は最後の 3 割で落とし、止まったら切替点を待たずに次の曲へ
+  void _startBrake(int durMs) {
+    unawaited(DeckTricks.setPitchCorrection(outPlayer, false));
+    final t0 = DateTime.now();
+    _brakeTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      final x = DateTime.now().difference(t0).inMilliseconds / durMs;
+      if (x >= 1) {
+        timer.cancel();
+        _setOut(0);
+        onForceCut(this);
+        return;
+      }
+      unawaited(outPlayer.setRate(outRate * max(brakeMinRate, 1 - x)));
+      if (x > 0.7) _setOut((1 - x) / 0.3);
+    });
+  }
+
+  /// ループロール: 切替点の 1 小節前から、同じ始点で 1 → 1/2 → 1/4 → 1/8 拍のループを
+  /// 刻む（mpv の AB ループ）。小節が終わったら切替点を待たずに次の曲へ
+  void _startLoopRoll() {
+    final cutMs = cut.inMicroseconds / 1000;
+    final aMs = max(start.inMicroseconds / 1000, cutMs - beatMediaMs * loopRollBeats);
+    for (final (atBeat, lenBeats) in loopRollStages) {
+      _after((atBeat * beatRealMs).round(), () {
+        unawaited(DeckTricks.setAbLoop(outPlayer, aMs, aMs + lenBeats * beatMediaMs));
+      });
+    }
+    _after((loopRollBeats * beatRealMs).round(), () {
+      _setOut(0);
+      unawaited(DeckTricks.clearAbLoop(outPlayer));
+      onForceCut(this);
+    });
+  }
+
+  void _cancelTricks() {
+    for (final t in _timers) {
+      t.cancel();
+    }
+    _timers.clear();
+    _brakeTimer?.cancel();
+    _brakeTimer = null;
+  }
+
+  /// 切替点（スワップ）で呼ぶ。まだ待っていた効果音・トリックは捨て、
+  /// 切替点の瞬間の効果音（インパクト単独）を鳴らす。ライザーの後のインパクトは
+  /// プレイリストで続けて鳴る
+  void onCut() {
+    _cancelTricks();
+    if (effect.impactAtCut && effect.leadInSfx == null) {
+      unawaited(sfx?.start(volume: sfxVolume));
+    }
+  }
 
   /// ベーススワップの開始・終了位置（出る曲の媒体ミリ秒）。開始は拍の頭に寄せてある。
   /// 演出（スイープ・エコー）も開始位置から切替点にかけて
@@ -814,7 +1036,8 @@ class _CrossfadeSession {
   /// play() 直後は位置が動き出すまで待つ（開始遅延はこの測定で吸収される）
   void nudgeBeats(Duration outPos) {
     final plan = beat;
-    if (plan == null || !plan.lock) return;
+    // トリック中は出る曲の位置が遅くなる・戻るので、位相を測っても意味がない
+    if (plan == null || !plan.lock || effect.cutsHard) return;
     final inPos = inPlayer.state.position;
     if (!_measuring) {
       if (inPos <= inStart) return;
@@ -882,8 +1105,9 @@ class _CrossfadeSession {
     final t = total <= 0
         ? 1.0
         : ((pos - start).inMilliseconds / total).clamp(0.0, 1.0);
-    final levels = curve.levels(t);
-    outVolume = volume * levels.out;
+    // トリック系は切替点まで前の曲だけ（カットと同じ）。トリックが音量を握っていればそれに従う
+    final levels = effect.cutsHard ? CrossfadeCurve.cut.levels(t) : curve.levels(t);
+    outVolume = volume * (_outOverride ?? levels.out);
     outPlayer.setVolume(outVolume);
     inPlayer.setVolume(volume * levels.in_);
 
@@ -900,12 +1124,12 @@ class _CrossfadeSession {
       // エコーアウト: 出る曲に半拍のエコーを付ける（グラフの作り直しはこの 1 回だけ）
       if (!_swapped) {
         _swapped = true;
-        if (effect == TransitionEffect.echoOut) {
+        if (effect.echoesOut) {
           unawaited(AudioFilters.setEcho(outPlayer, echoDelayMs));
         }
       }
       // スイープ: スワップの位置から切替点にかけてローパスを閉じていく
-      if (effect == TransitionEffect.filterSweep && cutMs > swapStartMs) {
+      if (effect.sweepsOut && cutMs > swapStartMs) {
         unawaited(AudioFilters.setSweep(outPlayer,
             AudioFilters.sweepHz((posMs - swapStartMs) / (cutMs - swapStartMs))));
       }
@@ -918,7 +1142,7 @@ class _CrossfadeSession {
   void finish() {
     finishIn();
     outPlayer.setVolume(volume);
-    clearOutFilter();
+    clearOut();
   }
 
   /// 新プレイヤーだけ本来の音量に戻す（旧プレイヤーは別途落としてから戻す）。
@@ -928,19 +1152,24 @@ class _CrossfadeSession {
     if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
   }
 
-  /// 出る曲のフィルタを初期値に戻す（停止した後に呼ぶ。次にプリロード側として使うため）
-  void clearOutFilter() {
+  /// 出る曲のフィルタとトリックを初期状態に戻す（停止した後に呼ぶ。次にプリロード側として使うため）
+  void clearOut() {
+    _cancelTricks();
     unawaited(AudioFilters.reset(outPlayer));
+    unawaited(DeckTricks.reset(outPlayer));
+    if (effect == TransitionEffect.brake) unawaited(outPlayer.setRate(outRate));
   }
 
-  /// 取り消し。新プレイヤーを頭に戻して待機状態へ
+  /// 取り消し。新プレイヤーを頭に戻して待機状態へ。効果音も止める
   void rollback() {
+    _cancelTricks();
+    unawaited(sfx?.stop());
     inPlayer.pause();
     inPlayer.seek(inStart);
     inPlayer.setVolume(volume);
     if (appliedInRate != inBaseRate) inPlayer.setRate(inBaseRate);
     outPlayer.setVolume(volume);
     if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
-    clearOutFilter();
+    clearOut();
   }
 }

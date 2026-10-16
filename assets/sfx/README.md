@@ -4,6 +4,11 @@
 ファイル名は役割で付け直してある（`riser_*` 上げ / `down_*` 下げ / `impact_*` 一撃 / `brake_*` 回転停止）。
 末尾の `_2s` などは長さ。ライザーは終わりを切り替え点に合わせて鳴らすので、長さは拍数に近いものを選ぶ。
 
+アプリが実際に使うもの（長さ込みの一覧）は `lib/core/audio/sfx_library.dart`（SfxLibrary.clips）。
+v1.96 時点: ライザー = `riser_*`（2s / 4s / 8s を切り替えの長さで選ぶ）、インパクト = `down_impact_tail_2s`
+（ライザーと同じ形式なので直後にギャップレスで続く）、スピンバック = `spinback.mp3`（2.736 秒）。
+残りは差し替え用の予備。
+
 ## 出どころとライセンス
 
 - `riser_*.wav`, `down_*.wav`, `brake_vinyl_*.wav` — Free Riser Producer Kit（GareBear99 / TizWildin Entertainment）

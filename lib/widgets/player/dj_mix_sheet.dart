@@ -31,6 +31,8 @@ class DjMixSheet extends ConsumerWidget {
     final on = crossfade != 0;
     final curve = ref.watch(crossfadeCurveProvider);
     final effect = ref.watch(transitionEffectProvider);
+    final sfxLevel = ref.watch(sfxLevelProvider);
+    final sfxOn = on && effect.usesSfx;
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return SafeArea(
@@ -117,6 +119,22 @@ class DjMixSheet extends ConsumerWidget {
               onSelected: on
                   ? (v) =>
                       ref.read(transitionEffectProvider.notifier).value = v
+                  : null,
+            ),
+            _SectionLabel(
+              icon: Icons.campaign,
+              label: '効果音の音量',
+              hint: sfxOn
+                  ? SfxLevelNotifier.describe(sfxLevel)
+                  : '効果音を使う演出（ライザー / インパクト / スピンバック）で使えます',
+              enabled: sfxOn,
+            ),
+            _Chips<int>(
+              values: SfxLevelNotifier.options,
+              selected: sfxLevel,
+              label: SfxLevelNotifier.label,
+              onSelected: sfxOn
+                  ? (v) => ref.read(sfxLevelProvider.notifier).value = v
                   : null,
             ),
           ],

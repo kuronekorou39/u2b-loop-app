@@ -83,4 +83,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'echoOut');
   });
+
+  testWidgets('効果音の音量は、効果音を使う演出を選んだときだけ触れる', (tester) async {
+    await pumpSheet(tester);
+    // 前のテストでクロスフェードはオン、演出はエコーアウト
+    expect(chipOf(tester, 'ふつう').selected, isTrue);
+    expect(chipOf(tester, '大きめ').onSelected, isNull);
+
+    await tester.tap(find.text('ライザー＋インパクト'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'riserImpact');
+    expect(chipOf(tester, '大きめ').onSelected, isNotNull);
+
+    await tester.tap(find.text('大きめ'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.sfxLevelDb), 0);
+    expect(find.text('曲と同じ大きさ'), findsOneWidget);
+  });
 }

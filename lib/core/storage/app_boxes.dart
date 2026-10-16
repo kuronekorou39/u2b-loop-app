@@ -44,6 +44,7 @@ class SettingsKeys {
   static const crossfadeCurve = 'crossfade_curve';
   static const bassSwap = 'bass_swap';
   static const transitionEffect = 'transition_effect';
+  static const sfxLevelDb = 'sfx_level_db';
   static const beatMatch = 'beat_match';
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
