@@ -333,6 +333,25 @@ class TransitionEffectNotifier extends StateNotifier<TransitionEffect> {
   }
 }
 
+/// おまかせ: 2 曲の解析結果からつなぎ方（長さ・曲線・低音・演出・合わせるか）を自動で選ぶ（既定オン）。
+/// オフのときは手動の設定（つなぎ方 / テンポ合わせ / 拍合わせ / ベーススワップ / 演出）が効く。
+/// クロスフェードのオン/オフと「ドロップに合わせる」「効果音の音量」はどちらでも手動
+final autoMixProvider =
+    StateNotifierProvider<AutoMixNotifier, bool>((ref) => AutoMixNotifier());
+
+class AutoMixNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.autoMix;
+
+  AutoMixNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 /// 切り替えの効果音の音量（曲との差 dB）。既定は曲より 6dB 小さい
 final sfxLevelProvider =
     StateNotifierProvider<SfxLevelNotifier, int>((ref) => SfxLevelNotifier());

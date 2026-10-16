@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/audio/transition_planner.dart';
 import '../../models/loop_item.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
@@ -54,6 +55,7 @@ class _MixSnapshot {
     required this.inStart,
     required this.start,
     required this.cut,
+    required this.recipe,
   });
 
   final List<double>? outWaveform;
@@ -65,6 +67,9 @@ class _MixSnapshot {
   final Duration inStart;
   final Duration start;
   final Duration cut;
+
+  /// つなぎ方（曲線・低音の印・おまかせの説明）。スワップ後も同じものを描く
+  final TransitionRecipe recipe;
 }
 
 class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
@@ -113,6 +118,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         inStart: engine.effectiveStart(plan.next),
         start: plan.start,
         cut: plan.cut,
+        recipe: plan.recipe,
       );
       _snapshot = snap;
       return _mix(snap, position, swapped: false);
@@ -143,8 +149,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       now: now,
       swapped: swapped,
       height: widget.mixHeight,
-      curve: ref.watch(crossfadeCurveProvider),
-      bassSwap: ref.watch(bassSwapProvider),
+      curve: snap.recipe.curve,
+      bassSwap: snap.recipe.bassSwap,
+      note: snap.recipe.auto ? 'おまかせ: ${snap.recipe.summary}' : null,
       onSeek: (t) => _seekInMix(snap, t, swapped: swapped),
     );
   }

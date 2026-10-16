@@ -32,7 +32,10 @@ class DjMixSheet extends ConsumerWidget {
     final curve = ref.watch(crossfadeCurveProvider);
     final effect = ref.watch(transitionEffectProvider);
     final sfxLevel = ref.watch(sfxLevelProvider);
-    final sfxOn = on && effect.usesSfx;
+    final auto = ref.watch(autoMixProvider);
+    final manual = on && !auto;
+    const autoNote = 'おまかせ中は曲に合わせて自動で決まる';
+    final sfxOn = on && (auto || effect.usesSfx);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return SafeArea(
@@ -54,18 +57,31 @@ class DjMixSheet extends ConsumerWidget {
               label: DjMixSettingsScreen.crossfadeLabel,
               onSelected: (v) => ref.read(crossfadeProvider.notifier).value = v,
             ),
+            SwitchListTile(
+              secondary: const Icon(Icons.auto_mode),
+              title: const Text('おまかせ'),
+              subtitle: const Text('2 曲のテンポ・ビート・ドロップ・音量の流れから、つなぎ方を曲ごとに選ぶ'),
+              value: auto,
+              onChanged: on
+                  ? (v) => ref.read(autoMixProvider.notifier).value = v
+                  : null,
+            ),
             const Divider(),
             _SectionLabel(
               icon: Icons.show_chart,
               label: 'つなぎ方',
-              hint: on ? curve.description : 'クロスフェードをオンにすると使えます',
-              enabled: on,
+              hint: manual
+                  ? curve.description
+                  : on
+                      ? autoNote
+                      : 'クロスフェードをオンにすると使えます',
+              enabled: manual,
             ),
             _Chips<CrossfadeCurve>(
               values: CrossfadeCurve.values,
               selected: curve,
               label: (c) => c.label,
-              onSelected: on
+              onSelected: manual
                   ? (v) => ref.read(crossfadeCurveProvider.notifier).value = v
                   : null,
             ),
@@ -83,7 +99,7 @@ class DjMixSheet extends ConsumerWidget {
               title: const Text('テンポ合わせ'),
               subtitle: const Text('次曲の速度を前曲のテンポに寄せる'),
               value: ref.watch(tempoMatchProvider),
-              onChanged: on
+              onChanged: manual
                   ? (v) => ref.read(tempoMatchProvider.notifier).value = v
                   : null,
             ),
@@ -92,7 +108,7 @@ class DjMixSheet extends ConsumerWidget {
               title: const Text('拍合わせ'),
               subtitle: const Text('拍の頭を揃えて重ね、速度を微調整して合わせ続ける'),
               value: ref.watch(beatMatchProvider),
-              onChanged: on
+              onChanged: manual
                   ? (v) => ref.read(beatMatchProvider.notifier).value = v
                   : null,
             ),
@@ -102,21 +118,25 @@ class DjMixSheet extends ConsumerWidget {
               title: const Text('ベーススワップ'),
               subtitle: const Text('次の曲の低音を切って重ね、途中で低音を入れ替える'),
               value: ref.watch(bassSwapProvider),
-              onChanged: on
+              onChanged: manual
                   ? (v) => ref.read(bassSwapProvider.notifier).value = v
                   : null,
             ),
             _SectionLabel(
               icon: Icons.auto_awesome,
               label: '切り替えの演出',
-              hint: on ? effect.description : 'クロスフェードをオンにすると使えます',
-              enabled: on,
+              hint: manual
+                  ? effect.description
+                  : on
+                      ? autoNote
+                      : 'クロスフェードをオンにすると使えます',
+              enabled: manual,
             ),
             _Chips<TransitionEffect>(
               values: TransitionEffect.values,
               selected: effect,
               label: (e) => e.label,
-              onSelected: on
+              onSelected: manual
                   ? (v) =>
                       ref.read(transitionEffectProvider.notifier).value = v
                   : null,

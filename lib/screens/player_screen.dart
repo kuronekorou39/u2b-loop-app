@@ -10,6 +10,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../app.dart';
+import '../core/audio/energy_profile.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/constants.dart';
 import '../core/loop/region_edit_controller.dart';
@@ -1055,23 +1056,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _updateMixPoints(PlaylistTrack track, List<double> waveform,
       {required bool preload}) async {
     final item = track.item;
-    if (item.mixInMs != null || item.mixOutMs != null) return;
+    final needPoints = item.mixInMs == null && item.mixOutMs == null;
+    // 音量の流れ（おまかせ用）はミックス点より後から入ったので、点があっても無ければ求める
+    final needEnergy = item.headDb == null;
+    if (!needPoints && !needEnergy) return;
     final engine = ref.read(playlistEngineProvider);
     final duration = (preload ? engine.preloadPlayer : engine.activePlayer)
         .state
         .duration;
     if (duration <= Duration.zero) return;
-    final points = MixPointDetector.fromWaveform(
-      waveform,
-      duration.inMilliseconds,
-      leadingSilenceMs: item.leadingSilenceMs ?? 0,
-      trailingSilenceMs: item.trailingSilenceMs,
-    );
-    if (points == MixPoints.none) return;
-    await ref.read(loopItemsProvider.notifier).saveMixPoints(item.id, points);
+    final points = needPoints
+        ? MixPointDetector.fromWaveform(
+            waveform,
+            duration.inMilliseconds,
+            leadingSilenceMs: item.leadingSilenceMs ?? 0,
+            trailingSilenceMs: item.trailingSilenceMs,
+          )
+        : MixPoints(mixInMs: item.mixInMs, mixOutMs: item.mixOutMs);
+    final energy = needEnergy
+        ? EnergyProfile.fromWaveform(
+            waveform,
+            duration.inMilliseconds,
+            leadingSilenceMs: item.leadingSilenceMs ?? 0,
+            trailingSilenceMs: item.trailingSilenceMs,
+            mixInMs: points.mixInMs,
+          )
+        : null;
+    if (points == MixPoints.none && (energy == null || energy.isEmpty)) return;
+    await ref
+        .read(loopItemsProvider.notifier)
+        .saveMixPoints(item.id, points, energy: energy);
     // Hive の box にあるのと同じインスタンスなので item 自体も更新されている
-    debugPrint('[MixPoint] ${item.title}: $points');
-    if (preload) await engine.realignPreload(track);
+    debugPrint('[MixPoint] ${item.title}: $points ${energy ?? ''}');
+    if (preload && needPoints) await engine.realignPreload(track);
   }
 
   /// 波形を先行生成してキャッシュに保存（fire-and-forget）

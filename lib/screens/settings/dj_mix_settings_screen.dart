@@ -16,6 +16,13 @@ class DjMixSettingsScreen extends ConsumerWidget {
   static String summary(WidgetRef ref) {
     final fade = ref.watch(crossfadeProvider);
     if (fade == 0) return 'クロスフェード オフ';
+    if (ref.watch(autoMixProvider)) {
+      return [
+        'クロスフェード ${crossfadeLabel(fade)}',
+        'おまかせ（曲に合わせて選ぶ）',
+        if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
+      ].join(' · ');
+    }
     final parts = <String>[
       'クロスフェード ${crossfadeLabel(fade)}',
       ref.watch(crossfadeCurveProvider).label,
@@ -147,7 +154,12 @@ class DjMixSettingsScreen extends ConsumerWidget {
     final curve = ref.watch(crossfadeCurveProvider);
     final effect = ref.watch(transitionEffectProvider);
     final sfxLevel = ref.watch(sfxLevelProvider);
-    final sfxOn = on && effect.usesSfx;
+    final auto = ref.watch(autoMixProvider);
+    // 手動の項目はおまかせを切ったときだけ
+    final manual = on && !auto;
+    const autoNote = 'おまかせ中は曲に合わせて自動で決まる';
+    // おまかせはライザーなどを選ぶことがあるので、効果音の音量は常に触れる
+    final sfxOn = on && (auto || effect.usesSfx);
 
     return SettingsPage(
       title: 'DJ ミックス',
@@ -158,10 +170,12 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsRow(
               icon: Icons.multitrack_audio,
               title: 'クロスフェード',
-              subtitle: on
-                  ? '${crossfadeLabel(crossfade)}（${crossfade ~/ 4} 小節）かけて次の曲に重ねる。'
-                      '長さは曲のテンポから'
-                  : 'オフ。曲が終わってから次の曲へ',
+              subtitle: !on
+                  ? 'オフ。曲が終わってから次の曲へ'
+                  : auto
+                      ? 'オン。長さはおまかせが曲ごとに 4〜16 拍で決める'
+                      : '${crossfadeLabel(crossfade)}（${crossfade ~/ 4} 小節）かけて次の曲に重ねる。'
+                          '長さは曲のテンポから',
               trailing: Text(crossfadeLabel(crossfade),
                   style: Theme.of(context).textTheme.bodyMedium),
               onTap: () => _pickCrossfade(context, ref),
@@ -171,12 +185,29 @@ class DjMixSettingsScreen extends ConsumerWidget {
         SettingsGroup(
           title: 'クロスフェード中の振る舞い',
           children: [
+            // 2 曲の解析結果（テンポ・ビートの安定・ドロップ・音量の流れ）からレシピを選ぶ
+            SettingsSwitchRow(
+              icon: Icons.auto_mode,
+              title: 'おまかせ',
+              subtitle: on
+                  ? '2 曲のテンポ・ビート・ドロップ・音量の流れから、つなぎ方を曲ごとに選ぶ。'
+                      '選んだ理由はミックスビューに出る'
+                  : needsFade,
+              value: auto,
+              onChanged: on
+                  ? (v) => ref.read(autoMixProvider.notifier).value = v
+                  : null,
+            ),
             // 対称な等パワーだけだと中間がぼやけるので、DJ らしい非対称やカットも選べる
             SettingsRow(
               icon: Icons.show_chart,
               title: 'つなぎ方',
-              subtitle: on ? '${curve.label}: ${curve.description}' : needsFade,
-              enabled: on,
+              subtitle: manual
+                  ? '${curve.label}: ${curve.description}'
+                  : on
+                      ? autoNote
+                      : needsFade,
+              enabled: manual,
               onTap: () => _pickCurve(context, ref),
             ),
             // 波形から求めたドロップが切り替わりに来るよう次曲の開始位置をずらし、出る曲はアウトロで切る
@@ -195,9 +226,13 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsSwitchRow(
               icon: Icons.speed,
               title: 'テンポ合わせ',
-              subtitle: on ? '次曲の速度を前曲のテンポに寄せる' : needsFade,
+              subtitle: manual
+                  ? '次曲の速度を前曲のテンポに寄せる'
+                  : on
+                      ? autoNote
+                      : needsFade,
               value: ref.watch(tempoMatchProvider),
-              onChanged: on
+              onChanged: manual
                   ? (v) => ref.read(tempoMatchProvider.notifier).value = v
                   : null,
             ),
@@ -205,11 +240,13 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsSwitchRow(
               icon: Icons.align_horizontal_center,
               title: '拍合わせ',
-              subtitle: on
+              subtitle: manual
                   ? '拍の頭を揃えて重ね、交差中は次曲の速度を微調整して合わせ続ける'
-                  : needsFade,
+                  : on
+                      ? autoNote
+                      : needsFade,
               value: ref.watch(beatMatchProvider),
-              onChanged: on
+              onChanged: manual
                   ? (v) => ref.read(beatMatchProvider.notifier).value = v
                   : null,
             ),
@@ -222,9 +259,13 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsSwitchRow(
               icon: Icons.graphic_eq,
               title: 'ベーススワップ',
-              subtitle: on ? '次の曲の低音を切って重ね、途中で前の曲と低音を入れ替える' : needsFade,
+              subtitle: manual
+                  ? '次の曲の低音を切って重ね、途中で前の曲と低音を入れ替える'
+                  : on
+                      ? autoNote
+                      : needsFade,
               value: ref.watch(bassSwapProvider),
-              onChanged: on
+              onChanged: manual
                   ? (v) => ref.read(bassSwapProvider.notifier).value = v
                   : null,
             ),
@@ -232,8 +273,12 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsRow(
               icon: Icons.auto_awesome,
               title: '切り替えの演出',
-              subtitle: on ? '${effect.label}: ${effect.description}' : needsFade,
-              enabled: on,
+              subtitle: manual
+                  ? '${effect.label}: ${effect.description}'
+                  : on
+                      ? autoNote
+                      : needsFade,
+              enabled: manual,
               onTap: () => _pickEffect(context, ref),
             ),
             // 効果音（ライザー / インパクト / スピンバック）の曲に対する大きさ

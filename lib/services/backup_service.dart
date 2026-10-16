@@ -142,6 +142,11 @@ class BackupService {
         'mixOutMs': item.mixOutMs,
         'beatOffsetMs': item.beatOffsetMs,
         'beatBpm': item.beatBpm,
+        'beatConfidence': item.beatConfidence,
+        'headDb': item.headDb,
+        'tailDb': item.tailDb,
+        'endFadeDb': item.endFadeDb,
+        'dropDb': item.dropDb,
         'durationMs': item.durationMs,
       };
 
@@ -181,6 +186,11 @@ class BackupService {
         mixOutMs: j['mixOutMs'] as int?,
         beatOffsetMs: (j['beatOffsetMs'] as num?)?.toDouble(),
         beatBpm: (j['beatBpm'] as num?)?.toDouble(),
+        beatConfidence: (j['beatConfidence'] as num?)?.toDouble(),
+        headDb: (j['headDb'] as num?)?.toDouble(),
+        tailDb: (j['tailDb'] as num?)?.toDouble(),
+        endFadeDb: (j['endFadeDb'] as num?)?.toDouble(),
+        dropDb: (j['dropDb'] as num?)?.toDouble(),
         durationMs: j['durationMs'] as int?,
       );
 

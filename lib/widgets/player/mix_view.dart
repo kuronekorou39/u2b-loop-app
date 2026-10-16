@@ -28,8 +28,12 @@ class MixView extends StatelessWidget {
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
     this.bassSwap = false,
+    this.note,
     this.onSeek,
   });
+
+  /// 長さの横に出す短い説明（おまかせが選んだレシピと理由）。null なら出さない
+  final String? note;
 
   /// タップ・横ドラッグで時間軸上の位置（旧曲の時計）を返す。null なら操作できない。
   /// 以前はジェスチャーが無く、交差の前後 8 秒ずつ + 交差中はシークの入口が無かった
@@ -168,8 +172,17 @@ class MixView extends StatelessWidget {
                   color: AppTheme.muted(context),
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                Text('ミックス ${(cut - start).inSeconds}s', style: labelStyle),
-                const Spacer(),
+                Expanded(
+                  child: Text(
+                    note == null
+                        ? 'ミックス ${(cut - start).inSeconds}s'
+                        : 'ミックス ${(cut - start).inSeconds}s · $note',
+                    style: labelStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
                 Text(
                   swapped
                       ? '切替から ${TimeUtils.formatShort(now - cut)}'

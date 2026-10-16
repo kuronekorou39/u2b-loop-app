@@ -123,6 +123,13 @@ void main() {
         of: find.widgetWithText(SettingsSwitchRow, title),
         matching: find.byType(Switch)));
 
+    // 既定はおまかせ。手動の項目はおまかせを切ったときだけ
+    expect(switchOf('おまかせ').value, isTrue);
+    expect(switchOf('テンポ合わせ').onChanged, isNull);
+    await tester.tap(find.text('おまかせ'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
+
     expect(switchOf('テンポ合わせ').onChanged, isNotNull);
     await tester.tap(find.text('テンポ合わせ'));
     await tester.pumpAndSettle();
@@ -164,7 +171,7 @@ void main() {
     expect(switchOf('ドロップに合わせる').onChanged, isNull);
     expect(switchOf('ベーススワップ').onChanged, isNull);
     expect(switchOf('拍合わせ').onChanged, isNull);
-    expect(find.text('クロスフェードをオンにすると使えます'), findsNWidgets(7));
+    expect(find.text('クロスフェードをオンにすると使えます'), findsNWidgets(8));
   });
 
   testWidgets('トップの DJ ミックスの行に今の設定が要約される', (tester) async {

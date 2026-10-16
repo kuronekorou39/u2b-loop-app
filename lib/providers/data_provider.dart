@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/energy_profile.dart';
 import '../core/audio/beat_grid.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/audio/silence_detector.dart';
@@ -116,12 +117,19 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
 
   /// ミックス点（波形から求めたドロップ / アウトロ）の保存。
   /// 再生中にバックグラウンドで決まるので updatedAt は触らない。変化が無ければ書かない
-  Future<void> saveMixPoints(String id, MixPoints points) async {
+  Future<void> saveMixPoints(String id, MixPoints points, {EnergyProfile? energy}) async {
     final item = _box.get(id);
     if (item == null) return;
-    if (item.mixInMs == points.mixInMs && item.mixOutMs == points.mixOutMs) return;
+    final samePoints = item.mixInMs == points.mixInMs && item.mixOutMs == points.mixOutMs;
+    if (samePoints && (energy == null || energy.isEmpty)) return;
     item.mixInMs = points.mixInMs;
     item.mixOutMs = points.mixOutMs;
+    if (energy != null && !energy.isEmpty) {
+      item.headDb = energy.headDb;
+      item.tailDb = energy.tailDb;
+      item.endFadeDb = energy.endFadeDb;
+      item.dropDb = energy.dropDb;
+    }
     await _box.put(id, item);
     _refresh();
   }

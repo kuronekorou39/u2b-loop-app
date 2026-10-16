@@ -61,6 +61,37 @@ class MixPointDetector {
   /// 見つけた点の前後に最低限ほしい長さ（ミリ秒）。短すぎる場合は「無し」にする
   static const minMarginMs = 2000;
 
+  /// 波形を dB（ピーク比）に直して [smoothMs] で平滑したもの（EnergyProfile と共用）
+  static List<double> smoothedDb(List<double> waveform, int durationMs) {
+    final n = waveform.length;
+    final msPer = durationMs / n;
+    final db = List<double>.generate(
+        n, (i) => 20 * log(max(waveform[i], 1e-3)) / ln10);
+    final k = max(1, (smoothMs / msPer).round());
+    return _movingAverage(db, k);
+  }
+
+  /// 音が鳴っている範囲（点の添字 start〜end）。解析済みの無音と、波形から見た無音の厳しい方
+  static (int, int) soundRange(
+    List<double> smooth,
+    int durationMs, {
+    int leadingSilenceMs = 0,
+    int? trailingSilenceMs,
+  }) {
+    final n = smooth.length;
+    final msPer = durationMs / n;
+    int idx(int ms) => (ms / msPer).round().clamp(0, n);
+    var soundStart = idx(leadingSilenceMs);
+    while (soundStart < n && smooth[soundStart] <= silenceDb) {
+      soundStart++;
+    }
+    var soundEnd = n - (trailingSilenceMs == null ? 0 : idx(trailingSilenceMs));
+    while (soundEnd > soundStart && smooth[soundEnd - 1] <= silenceDb) {
+      soundEnd--;
+    }
+    return (soundStart, soundEnd);
+  }
+
   static MixPoints fromWaveform(
     List<double> waveform,
     int durationMs, {
@@ -72,21 +103,9 @@ class MixPointDetector {
     final msPer = durationMs / n;
     int idx(int ms) => (ms / msPer).round().clamp(0, n);
 
-    // dB に直して平滑
-    final db = List<double>.generate(
-        n, (i) => 20 * log(max(waveform[i], 1e-3)) / ln10);
-    final k = max(1, (smoothMs / msPer).round());
-    final smooth = _movingAverage(db, k);
-
-    // 音が鳴っている範囲（解析済みの無音と、波形から見た無音の厳しい方）
-    var soundStart = idx(leadingSilenceMs);
-    while (soundStart < n && smooth[soundStart] <= silenceDb) {
-      soundStart++;
-    }
-    var soundEnd = n - (trailingSilenceMs == null ? 0 : idx(trailingSilenceMs));
-    while (soundEnd > soundStart && smooth[soundEnd - 1] <= silenceDb) {
-      soundEnd--;
-    }
+    final smooth = smoothedDb(waveform, durationMs);
+    final (soundStart, soundEnd) = soundRange(smooth, durationMs,
+        leadingSilenceMs: leadingSilenceMs, trailingSilenceMs: trailingSilenceMs);
     if (soundEnd - soundStart < idx(minMarginMs * 2)) return MixPoints.none;
 
     final before = max(1, idx(beforeWindowMs));
@@ -100,8 +119,8 @@ class MixPointDetector {
     int? mixIn;
     final inEnd = min(soundStart + idx(inSearchMs), soundEnd - after);
     for (var t = soundStart + margin; t < inEnd; t++) {
-      final b = _mean(smooth, max(soundStart, t - before), t);
-      final a = _mean(smooth, t, t + after);
+      final b = mean(smooth, max(soundStart, t - before), t);
+      final a = mean(smooth, t, t + after);
       if (a - b >= jumpDb) {
         final onset = _steepest(smooth, max(soundStart, t - after),
             min(t + after, soundEnd - 1), rising: true);
@@ -116,9 +135,9 @@ class MixPointDetector {
     int? mixOut;
     final outStart = max(soundStart + margin + before, soundEnd - idx(outSearchMs));
     for (var t = outStart; t < soundEnd - margin; t++) {
-      final b = _mean(smooth, t - before, t);
-      final a = _mean(smooth, t, min(t + afterOut, soundEnd));
-      final rest = _mean(smooth, t, soundEnd);
+      final b = mean(smooth, t - before, t);
+      final a = mean(smooth, t, min(t + afterOut, soundEnd));
+      final rest = mean(smooth, t, soundEnd);
       if (b - a >= jumpDb && b - rest >= jumpDb / 2) {
         mixOut = _steepest(smooth, max(soundStart, t - afterOut),
             min(t + afterOut, soundEnd - 1), rising: false);
@@ -159,7 +178,8 @@ class MixPointDetector {
     return out;
   }
 
-  static double _mean(List<double> v, int from, int to) {
+  /// [from]〜[to] の平均（空なら from の値）
+  static double mean(List<double> v, int from, int to) {
     if (to <= from) return v[min(from, v.length - 1)];
     var s = 0.0;
     for (var i = from; i < to; i++) {

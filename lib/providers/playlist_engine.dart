@@ -12,6 +12,7 @@ import '../core/audio/crossfade_curve.dart';
 import '../core/audio/sfx_library.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/audio/transition_effect.dart';
+import '../core/audio/transition_planner.dart';
 import '../models/loop_item.dart';
 import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
@@ -388,25 +389,53 @@ class PlaylistEngine {
   /// 交差中か。画面側はこの間、旧プレイヤーの音量を触らないこと
   bool get isCrossfading => _crossfade != null;
 
-  /// 予定または進行中のクロスフェード区間（旧曲の時計で start〜cut）と次曲。
+  /// 予定または進行中のクロスフェード区間（旧曲の時計で start〜cut）と次曲、つなぎ方。
   /// 次曲がプリロード済みでクロスフェードが有効なときだけ返す（ミックスビュー用）
-  ({Duration start, Duration cut, PlaylistTrack next})? plannedCrossfade() {
+  ({Duration start, Duration cut, PlaylistTrack next, TransitionRecipe recipe})?
+      plannedCrossfade() {
     final next = _armedTrack;
     final fade = crossfadeDuration;
     if (next == null || fade == Duration.zero) return null;
     final session = _crossfade;
     if (session != null) {
-      return (start: session.start, cut: session.cut, next: next);
+      return (start: session.start, cut: session.cut, next: next, recipe: session.recipe);
     }
     final cutPoint = _cutPoint();
     if (cutPoint == null) return null;
-    return (start: cutPoint.cut - fade, cut: cutPoint.cut, next: next);
+    return (
+      start: cutPoint.cut - fade,
+      cut: cutPoint.cut,
+      next: next,
+      recipe: recipeFor(next),
+    );
+  }
+
+  /// 次曲 [next] へのつなぎ方。おまかせがオンなら 2 曲の解析結果から選ぶ（TransitionPlanner）、
+  /// オフなら手動の設定をまとめたもの。クロスフェードの設定が 0（オフ）ならどちらも長さ 0
+  TransitionRecipe recipeFor(PlaylistTrack next) {
+    final manualBeats = _ref.read(crossfadeProvider);
+    final current = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    if (manualBeats > 0 && current != null && _ref.read(autoMixProvider)) {
+      return TransitionPlanner.plan(current, next.item);
+    }
+    return TransitionRecipe(
+      beats: manualBeats,
+      curve: _ref.read(crossfadeCurveProvider),
+      bassSwap: _ref.read(bassSwapProvider),
+      effect: _ref.read(transitionEffectProvider),
+      beatMatch: _ref.read(beatMatchProvider),
+      tempoMatch: _ref.read(tempoMatchProvider),
+    );
   }
 
   /// クロスフェードの長さ。設定は拍数（DJ は小節で数える）なので、出る曲の
-  /// 実効テンポ（BPM × 速度）で秒にする。BPM が無い曲は 120 BPM とみなす（8 拍 = 4 秒）
+  /// 実効テンポ（BPM × 速度）で秒にする。BPM が無い曲は 120 BPM とみなす（8 拍 = 4 秒）。
+  /// おまかせのときの拍数は次曲が予約されてから決まる（それまでは手動の値）
   Duration get crossfadeDuration {
-    final beats = _ref.read(crossfadeProvider);
+    final manual = _ref.read(crossfadeProvider);
+    if (manual <= 0) return Duration.zero;
+    final armed = _armedTrack;
+    final beats = armed == null ? manual : recipeFor(armed).beats;
     if (beats <= 0) return Duration.zero;
     return Duration(milliseconds: (beats * 60000 / _referenceBpm()).round());
   }
@@ -464,7 +493,9 @@ class PlaylistEngine {
   /// 効果音を使う演出なら、プレイヤーを起こして音源を開いておく（交差の開始で待たないため）。
   /// 演出は交差を始めるときにもう一度読むので、ここで開いたものと違えばそのとき開き直す
   Future<void> _preloadSfx() async {
-    final effect = _ref.read(transitionEffectProvider);
+    final next = _armedTrack;
+    if (next == null) return;
+    final effect = recipeFor(next).effect;
     if (!effect.usesSfx) return;
     final planned = plannedCrossfade();
     final windowMs = planned == null
@@ -599,10 +630,11 @@ class PlaylistEngine {
       {required bool advancesAtCut}) async {
     final inPlayer = preloadPlayer;
     final baseRate = inPlayer.state.rate;
+    final recipe = recipeFor(next);
     final inRate = _tempoMatchedRate(next, baseRate) ?? baseRate;
     final beat = _beatPlan(next, inRate);
     final inStart = plannedInStart(next, outStart: start, inRate: inRate);
-    final curve = _ref.read(crossfadeCurveProvider);
+    final curve = recipe.curve;
     // ベーススワップの位置: 曲線の決める進捗を、出る曲の次の拍の頭へ寄せる（区切りで一動作）
     final beatMs = _outBeatMs();
     final outGrid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
@@ -619,9 +651,10 @@ class PlaylistEngine {
         : cutMs;
     final outRate = activePlayer.state.rate;
     final beatRealMs = beatMs / (outRate > 0 ? outRate : 1);
-    final effect = _ref.read(transitionEffectProvider);
+    final effect = recipe.effect;
     final volume = activePlayer.state.volume;
     final session = _CrossfadeSession(
+      recipe: recipe,
       outPlayer: activePlayer,
       inPlayer: inPlayer,
       start: start,
@@ -633,7 +666,7 @@ class PlaylistEngine {
       inRate: inRate,
       curve: curve,
       // トリック系は切替点まで前の曲だけなので、低音の入れ替えはしない
-      bassSwap: !effect.cutsHard && _ref.read(bassSwapProvider),
+      bassSwap: !effect.cutsHard && recipe.bassSwap,
       effect: effect,
       beat: beat,
       swapStartMs: swapStartMs,
@@ -674,6 +707,7 @@ class PlaylistEngine {
         // 効果音・トリックは実時間で予定する（切替点までの残り時間から）
         final toCutMs = _realMs(activePlayer.state.position, cut);
         session.startTricks(wallToCutMs: toCutMs);
+        if (recipe.auto) debugPrint('[DjFx] おまかせ: $recipe');
         if (effect != TransitionEffect.none) {
           debugPrint('[DjFx] 演出 ${effect.name} 切替点まで ${toCutMs}ms '
               '1拍 ${beatRealMs.round()}ms 効果音 ${session.sfx?.loaded ?? const []} '
@@ -702,7 +736,7 @@ class PlaylistEngine {
   /// 実効テンポ（倍/半を同一視）が 0.5% 以内で揃っていれば交差中も合わせ続ける（lock）。
   /// 揃っていなければ重ね始めの拍だけ揃える（ずれていくのは仕方ない）
   _BeatPlan? _beatPlan(PlaylistTrack next, double inRate) {
-    if (!_ref.read(beatMatchProvider)) return null;
+    if (!recipeFor(next).beatMatch) return null;
     final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
     final outGrid = outItem?.beatGrid;
     final inGrid = next.item.beatGrid;
@@ -741,7 +775,7 @@ class PlaylistEngine {
 
   /// 次曲に設定すべき速度。合わせない（設定オフ・不明・差が大きい）なら null
   double? _tempoMatchedRate(PlaylistTrack next, double inBaseRate) {
-    if (!_ref.read(tempoMatchProvider)) return null;
+    if (!recipeFor(next).tempoMatch) return null;
     final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
     final outBpm = outItem?.bpm;
     final inBpm = next.item.bpm;
@@ -850,6 +884,7 @@ class _BeatPlan {
 /// クロスフェード1回分。開始時の旧プレイヤーの音量を交差後の目標にする
 class _CrossfadeSession {
   _CrossfadeSession({
+    required this.recipe,
     required this.outPlayer,
     required this.inPlayer,
     required this.start,
@@ -877,6 +912,9 @@ class _CrossfadeSession {
 
   /// ベーススワップにかける拍数（DJ の「一動作」。ゆっくり交差させない）
   static const bassSwapBeats = 2;
+
+  /// この交差のつなぎ方（開始時に決めたもの。途中で設定が変わっても使い続ける）
+  final TransitionRecipe recipe;
 
   /// 交差開始時の出る曲の速度。ブレーキで落とした後はこれに戻す
   final double outRate;

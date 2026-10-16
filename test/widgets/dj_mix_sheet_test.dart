@@ -69,6 +69,12 @@ void main() {
     await tester.tap(find.text('8拍'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8);
+    // 既定はおまかせ。手動の項目はおまかせを切ると触れる
+    expect(switchOf(tester, 'おまかせ').value, isTrue);
+    expect(chipOf(tester, '次曲先行').onSelected, isNull);
+    await tester.tap(find.text('おまかせ'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
     expect(chipOf(tester, '次曲先行').onSelected, isNotNull);
 
     await tester.tap(find.text('次曲先行'));
@@ -95,6 +101,7 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'riserImpact');
     expect(chipOf(tester, '大きめ').onSelected, isNotNull);
 
+    await tester.ensureVisible(find.text('大きめ'));
     await tester.tap(find.text('大きめ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.sfxLevelDb), 0);

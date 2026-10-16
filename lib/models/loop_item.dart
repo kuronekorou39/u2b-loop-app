@@ -105,6 +105,13 @@ class LoopItem {
   /// 拍の格子の当てはまり（0〜1）。null = 未計測（v1.94 以前の解析）→ 信用する扱い
   double? beatConfidence;
 
+  /// 音量の流れ（波形から。ピーク比 dB。EnergyProfile）。おまかせがつなぎ方を選ぶのに使う。
+  /// ミックス点と同じく再生中に波形から求めて残す。null = 未計測
+  double? headDb;
+  double? tailDb;
+  double? endFadeDb;
+  double? dropDb;
+
   /// 曲の長さ（ミリ秒）。再生したとき、または解析の前に YouTube へ問い合わせて埋まる。
   /// 長すぎる曲（ミックス音源・配信など）を解析から外す判定に使う。null = 不明
   int? durationMs;
@@ -146,6 +153,10 @@ class LoopItem {
     this.beatOffsetMs,
     this.beatBpm,
     this.beatConfidence,
+    this.headDb,
+    this.tailDb,
+    this.endFadeDb,
+    this.dropDb,
     this.durationMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
@@ -277,6 +288,10 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       durationMs: fields[34] as int?,
       analysisVersion: fields[35] as int?,
       beatConfidence: (fields[36] as num?)?.toDouble(),
+      headDb: (fields[37] as num?)?.toDouble(),
+      tailDb: (fields[38] as num?)?.toDouble(),
+      endFadeDb: (fields[39] as num?)?.toDouble(),
+      dropDb: (fields[40] as num?)?.toDouble(),
     );
   }
 
@@ -320,6 +335,10 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       34: obj.durationMs,
       35: obj.analysisVersion,
       36: obj.beatConfidence,
+      37: obj.headDb,
+      38: obj.tailDb,
+      39: obj.endFadeDb,
+      40: obj.dropDb,
     });
   }
 }
