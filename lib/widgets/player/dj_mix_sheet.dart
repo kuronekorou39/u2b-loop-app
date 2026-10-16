@@ -44,7 +44,7 @@ class DjMixSheet extends ConsumerWidget {
             const _SectionLabel(
               icon: Icons.multitrack_audio,
               label: 'クロスフェード',
-              hint: '次の曲に重ねる長さ',
+              hint: '次の曲に重ねる長さ（拍。4 拍 = 1 小節）',
             ),
             _Chips<int>(
               values: CrossfadeNotifier.options,

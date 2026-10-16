@@ -10,8 +10,7 @@ import '../../widgets/settings/settings_parts.dart';
 class DjMixSettingsScreen extends ConsumerWidget {
   const DjMixSettingsScreen({super.key});
 
-  static String crossfadeLabel(int seconds) =>
-      seconds == 0 ? 'オフ' : '$seconds秒';
+  static String crossfadeLabel(int beats) => beats == 0 ? 'オフ' : '$beats拍';
 
   /// 設定トップの説明文に出す要約
   static String summary(WidgetRef ref) {
@@ -130,7 +129,8 @@ class DjMixSettingsScreen extends ConsumerWidget {
               icon: Icons.multitrack_audio,
               title: 'クロスフェード',
               subtitle: on
-                  ? '${crossfadeLabel(crossfade)}かけて次の曲に重ねる'
+                  ? '${crossfadeLabel(crossfade)}（${crossfade ~/ 4} 小節）かけて次の曲に重ねる。'
+                      '長さは曲のテンポから'
                   : 'オフ。曲が終わってから次の曲へ',
               trailing: Text(crossfadeLabel(crossfade),
                   style: Theme.of(context).textTheme.bodyMedium),

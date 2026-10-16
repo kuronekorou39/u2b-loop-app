@@ -4,13 +4,41 @@
 /// 拍合わせには別に精密な値を持つ。テンポが一定（打ち込み・DJ 向きの曲）を前提にした
 /// 等間隔の格子で、生演奏の揺れには追従しない。
 class BeatGrid {
-  const BeatGrid({required this.bpm, required this.offsetMs});
+  const BeatGrid({required this.bpm, required this.offsetMs, this.confidence = 1});
 
   /// 精密な BPM（0.01% 程度）
   final double bpm;
 
   /// 最初の拍の位置（ミリ秒、0 ≤ offset < 1 拍）
   final double offsetMs;
+
+  /// 格子の当てはまり（0〜1）。等間隔の格子に立ち上がりがどれだけ乗っているか
+  /// （櫛形フィルタの最良スコアに対する、位相をずらしたときの平均スコアの比から）。
+  /// 打ち込みの曲は高く、生演奏・揺れる曲は低い。[minConfidence] 未満なら拍合わせをしない
+  final double confidence;
+
+  /// これ未満の格子は信用しない（拍合わせ・テンポ合わせを自動で切る）
+  static const minConfidence = 0.25;
+
+  bool get reliable => confidence >= minConfidence;
+
+  /// 1 小節の拍数。小節頭（ダウンビート）は検出していないので、[barGrid] で基準点から数える
+  static const beatsPerBar = 4;
+
+  /// 小節の格子: [anchorMs]（ドロップなど、小節頭とみなす位置）に最も近い拍の頭を
+  /// 小節頭として 4 拍ごとに並べた格子。anchor が無ければ最初の拍を小節頭とみなす
+  BeatGrid barGrid([double? anchorMs]) {
+    final barMs = periodMs * beatsPerBar;
+    final anchorBeat = anchorMs == null ? 0 : ((anchorMs - offsetMs) / periodMs).round();
+    final barOffset = (offsetMs + anchorBeat * periodMs) % barMs;
+    return BeatGrid(
+        bpm: bpm / beatsPerBar,
+        offsetMs: barOffset < 0 ? barOffset + barMs : barOffset,
+        confidence: confidence);
+  }
+
+  /// 位置 [ms] 以前で最も近い拍の頭（媒体のミリ秒）
+  double floorBeatMs(double ms) => ms - phaseAt(ms) * periodMs;
 
   /// 1 拍の長さ（媒体のミリ秒）
   double get periodMs => 60000 / bpm;
@@ -29,7 +57,8 @@ class BeatGrid {
 
   @override
   String toString() => 'BeatGrid(${bpm.toStringAsFixed(2)} BPM, '
-      'offset ${offsetMs.toStringAsFixed(0)}ms)';
+      'offset ${offsetMs.toStringAsFixed(0)}ms, '
+      'confidence ${confidence.toStringAsFixed(2)})';
 }
 
 /// 2 曲の拍を合わせる計算（純粋関数。PlaylistEngine から使う）。

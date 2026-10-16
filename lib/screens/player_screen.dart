@@ -969,7 +969,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             : 10;
     // クロスフェードは曲末の無音を除いた位置の fade 秒前から始まる。
     // それまでにプリロードが済むよう、その分だけ早める
-    final fadeSec = ref.read(crossfadeProvider);
+    final fadeSec = ref.read(playlistEngineProvider).crossfadeDuration.inSeconds;
     if (fadeSec > 0 && !isFirstVerse) {
       final trailingSec =
           ((_currentItem.trailingSilenceMs ?? 0) / 1000).ceil();

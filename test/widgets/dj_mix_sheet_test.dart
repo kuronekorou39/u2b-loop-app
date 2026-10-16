@@ -63,12 +63,12 @@ void main() {
     expect(chipOf(tester, 'フィルタースイープ').selected, isTrue);
   });
 
-  testWidgets('秒数のチップで PlaylistEngine が読む設定値が変わる', (tester) async {
+  testWidgets('拍数のチップで PlaylistEngine が読む設定値が変わる', (tester) async {
     await pumpSheet(tester);
 
-    await tester.tap(find.text('4秒'));
+    await tester.tap(find.text('8拍'));
     await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.crossfadeSeconds), 4);
+    expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8);
     expect(chipOf(tester, '次曲先行').onSelected, isNotNull);
 
     await tester.tap(find.text('次曲先行'));

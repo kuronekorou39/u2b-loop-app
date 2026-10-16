@@ -96,6 +96,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       item.analysisVersion = LoopItem.currentAnalysisVersion;
       item.beatBpm = beatGrid?.bpm;
       item.beatOffsetMs = beatGrid?.offsetMs;
+      item.beatConfidence = beatGrid?.confidence;
     } else if (bpm == null ||
         item.beatBpm == null ||
         !_isOctaveRatio(bpm / item.beatBpm!)) {

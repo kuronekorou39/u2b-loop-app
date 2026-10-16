@@ -106,17 +106,17 @@ void main() {
     expect(find.text('オフ'), findsOneWidget); // 既定値
     await tester.tap(find.text('クロスフェード'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('4秒'));
+    await tester.tap(find.text('8拍'));
     await tester.pumpAndSettle();
 
-    expect(find.text('4秒'), findsOneWidget);
-    expect(AppBoxes.settings.get(SettingsKeys.crossfadeSeconds), 4,
+    expect(find.text('8拍'), findsOneWidget);
+    expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8,
         reason: 'PlaylistEngine が読む設定値に保存されること');
   });
 
   testWidgets('クロスフェード中の設定は、クロスフェードがオンのときだけ触れる', (tester) async {
     await pumpPage(tester, const DjMixSettingsScreen());
-    expect(AppBoxes.settings.get(SettingsKeys.crossfadeSeconds), 4,
+    expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8,
         reason: '前のテストでオンにした値を引き継ぐ（メモリ box は setUpAll で1回だけ開く）');
 
     Switch switchOf(String title) => tester.widget<Switch>(find.descendant(
@@ -168,11 +168,11 @@ void main() {
   });
 
   testWidgets('トップの DJ ミックスの行に今の設定が要約される', (tester) async {
-    AppBoxes.settings.put(SettingsKeys.crossfadeSeconds, 6);
+    AppBoxes.settings.put(SettingsKeys.crossfadeBeats, 16);
     // 前のテストでオフにしたベーススワップを戻す（オンのときだけ要約に出る）
     AppBoxes.settings.put(SettingsKeys.bassSwap, true);
     await pumpPage(tester, const SettingsScreen());
-    expect(find.textContaining('クロスフェード 6秒'), findsOneWidget);
+    expect(find.textContaining('クロスフェード 16拍'), findsOneWidget);
     expect(find.textContaining('次曲先行'), findsOneWidget);
     expect(find.textContaining('ベーススワップ'), findsOneWidget);
     expect(find.textContaining('エコーアウト'), findsOneWidget);

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -106,8 +107,9 @@ class PlaylistEngine {
     disarmCrossfade();
     // 読み直す側がテンポを戻している途中なら、その速度を上書きされないよう止める
     if (identical(player, _tempoRampPlayer)) _cancelTempoRamp();
-    // 前回の交差のフィルタ（低音カット・演出）が残っていたら外す（2 枚のプレイヤーを使い回すため）
-    await AudioFilters.clear(player);
+    // 低音シェルフとスイープ用ローパスを 0dB・全開で付けておく（交差中は値だけ動かす）。
+    // 前回の交差の残り（2 枚のプレイヤーを使い回すため）もここで消える
+    await AudioFilters.install(player);
 
     StreamManifest? manifest;
     // 高音質の音声（音声専用ストリーム）。開くのと並行して落とし、メタデータ確定後に付ける
@@ -233,8 +235,8 @@ class PlaylistEngine {
     final start = outStart ?? _plannedStart();
     if (start == null) return base;
     final aligned = BeatMatcher.alignedStartMs(
-      out: plan.outGrid,
-      in_: plan.inGrid,
+      out: plan.outBars,
+      in_: plan.inBars,
       outPosMs: start.inMicroseconds / 1000,
       outRate: plan.outRate,
       inStartMs: base.inMicroseconds / 1000,
@@ -394,8 +396,28 @@ class PlaylistEngine {
     return (start: cutPoint.cut - fade, cut: cutPoint.cut, next: next);
   }
 
-  Duration get crossfadeDuration =>
-      Duration(seconds: _ref.read(crossfadeProvider));
+  /// クロスフェードの長さ。設定は拍数（DJ は小節で数える）なので、出る曲の
+  /// 実効テンポ（BPM × 速度）で秒にする。BPM が無い曲は 120 BPM とみなす（8 拍 = 4 秒）
+  Duration get crossfadeDuration {
+    final beats = _ref.read(crossfadeProvider);
+    if (beats <= 0) return Duration.zero;
+    return Duration(milliseconds: (beats * 60000 / _referenceBpm()).round());
+  }
+
+  /// 拍を秒に直すときのテンポ。今鳴っている曲 → 予約済みの次曲 → 120
+  double _referenceBpm() {
+    final current = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    final bpm = current?.bpm ?? _armedTrack?.item.bpm;
+    if (bpm == null || bpm <= 0) return 120;
+    final rate = current == null ? 1.0 : activePlayer.state.rate;
+    return bpm * (rate > 0 ? rate : 1);
+  }
+
+  /// 出る曲の 1 拍（媒体のミリ秒）。格子が無ければ [_referenceBpm] から
+  double _outBeatMs() {
+    final grid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    return grid != null && grid.reliable ? grid.periodMs : 60000 / _referenceBpm();
+  }
 
   /// 次曲のプリロードが完了したら呼ぶ。切断点の手前で自動的に交差を始める。
   /// 拍合わせの分だけ開始位置をずらすシークはここで済ませておく（交差開始時の遅れを減らす）
@@ -438,14 +460,32 @@ class PlaylistEngine {
       final cut = Duration(milliseconds: mixOut);
       // すでに通り過ぎていたら曲末で切る
       if (cut < d - _minSilenceCut && activePlayer.state.position < cut) {
-        return (cut: cut, advancesAtCut: true);
+        return _snapToBar(item, (cut: cut, advancesAtCut: true));
       }
     }
     final trailing = Duration(milliseconds: item?.trailingSilenceMs ?? 0);
     if (trailing < _minSilenceCut || trailing >= d) {
-      return (cut: d - LoopNotifier.trackEndLead, advancesAtCut: false);
+      return _snapToBar(
+          item, (cut: d - LoopNotifier.trackEndLead, advancesAtCut: false));
     }
-    return (cut: d - trailing, advancesAtCut: true);
+    return _snapToBar(item, (cut: d - trailing, advancesAtCut: true));
+  }
+
+  /// 切断点を直前の小節頭（ドロップを基準に 4 拍ごと）へ寄せる。DJ は区切りで切り替える。
+  /// 格子が無い・信用できない曲はそのまま。手前に動かしたら遷移はこちらから起こす
+  ({Duration cut, bool advancesAtCut}) _snapToBar(
+      LoopItem? item, ({Duration cut, bool advancesAtCut}) raw) {
+    final grid = item?.beatGrid;
+    if (grid == null || !grid.reliable) return raw;
+    final bars = grid.barGrid(item!.mixInMs?.toDouble());
+    final snappedMs = bars.floorBeatMs(raw.cut.inMicroseconds / 1000);
+    final snapped = Duration(microseconds: (snappedMs * 1000).round());
+    if (snapped <= Duration.zero ||
+        snapped >= raw.cut - const Duration(milliseconds: 1) ||
+        activePlayer.state.position >= snapped) {
+      return raw;
+    }
+    return (cut: snapped, advancesAtCut: true);
   }
 
   void _crossfadeTick() {
@@ -505,6 +545,22 @@ class PlaylistEngine {
     final inRate = _tempoMatchedRate(next, baseRate) ?? baseRate;
     final beat = _beatPlan(next, inRate);
     final inStart = plannedInStart(next, outStart: start, inRate: inRate);
+    final curve = _ref.read(crossfadeCurveProvider);
+    // ベーススワップの位置: 曲線の決める進捗を、出る曲の次の拍の頭へ寄せる（区切りで一動作）
+    final beatMs = _outBeatMs();
+    final outGrid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    final atMs = (start + (cut - start) * curve.bassSwapAt).inMicroseconds / 1000;
+    final cutMs = cut.inMicroseconds / 1000;
+    var swapStartMs = atMs;
+    if (curve.bassSwapAt < 1 && outGrid != null && outGrid.reliable) {
+      final floor = outGrid.floorBeatMs(atMs);
+      final ceil = floor < atMs - 1 ? floor + outGrid.periodMs : floor;
+      if (ceil < cutMs) swapStartMs = ceil;
+    }
+    final swapEndMs = curve.bassSwapAt < 1
+        ? min(swapStartMs + beatMs * _CrossfadeSession.bassSwapBeats, cutMs)
+        : cutMs;
+    final outRate = activePlayer.state.rate;
     final session = _CrossfadeSession(
       outPlayer: activePlayer,
       inPlayer: inPlayer,
@@ -515,10 +571,14 @@ class PlaylistEngine {
       inStart: inStart,
       inBaseRate: baseRate,
       inRate: inRate,
-      curve: _ref.read(crossfadeCurveProvider),
+      curve: curve,
       bassSwap: _ref.read(bassSwapProvider),
       effect: _ref.read(transitionEffectProvider),
       beat: beat,
+      swapStartMs: swapStartMs,
+      swapEndMs: swapEndMs,
+      // エコーの遅延は半拍（実時間）
+      echoDelayMs: (beatMs / (outRate > 0 ? outRate : 1) / 2).round(),
     );
     _crossfade = session;
     try {
@@ -533,11 +593,9 @@ class PlaylistEngine {
       }
       if (session.inRate != baseRate) await inPlayer.setRate(session.inRate);
       await inPlayer.setVolume(0);
-      // 入る曲は低音を切った状態で重ね始める（鳴らす前に付けるので音切れしない）
-      if (session.bassSwap) await AudioFilters.apply(inPlayer, bassCut: true);
-      // スイープは開いた状態のローパスを先に付けておき、後はカットオフだけ動かす
-      if (session.effect == TransitionEffect.filterSweep) {
-        await AudioFilters.apply(activePlayer, sweep: true);
+      // 入る曲は低音を切った状態で重ね始める（鳴らす前に値を変えるので音切れしない）
+      if (session.bassSwap) {
+        await AudioFilters.setBassDb(inPlayer, AudioFilters.bassCutDb);
       }
       await inPlayer.play();
       if (_crossfade == session) {
@@ -565,9 +623,13 @@ class PlaylistEngine {
   /// 揃っていなければ重ね始めの拍だけ揃える（ずれていくのは仕方ない）
   _BeatPlan? _beatPlan(PlaylistTrack next, double inRate) {
     if (!_ref.read(beatMatchProvider)) return null;
-    final outGrid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    final outGrid = outItem?.beatGrid;
     final inGrid = next.item.beatGrid;
-    if (outGrid == null || inGrid == null) return null;
+    // 格子が当てはまっていない曲（生演奏・揺れる曲）は合わせようとしない方が自然
+    if (outGrid == null || inGrid == null || !outGrid.reliable || !inGrid.reliable) {
+      return null;
+    }
     final outRate = activePlayer.state.rate;
     if (outRate <= 0 || inRate <= 0) return null;
     final ratio = TrackCompatibility.tempoRatio(
@@ -575,6 +637,10 @@ class PlaylistEngine {
     return _BeatPlan(
       outGrid: outGrid,
       inGrid: inGrid,
+      // 重ね始めは小節（ドロップを小節頭とみなして 4 拍ごと）で揃える。
+      // 切断点も小節頭なので、入る曲のドロップが切り替わりの瞬間に来る
+      outBars: outGrid.barGrid(outItem!.mixInMs?.toDouble()),
+      inBars: inGrid.barGrid(next.item.mixInMs?.toDouble()),
       outRate: outRate,
       inRate: inRate,
       lock: ratio != null && (ratio - 1).abs() < 0.005,
@@ -596,9 +662,14 @@ class PlaylistEngine {
   /// 次曲に設定すべき速度。合わせない（設定オフ・不明・差が大きい）なら null
   double? _tempoMatchedRate(PlaylistTrack next, double inBaseRate) {
     if (!_ref.read(tempoMatchProvider)) return null;
-    final outBpm = _ref.read(playlistPlayerProvider).currentTrack?.item.bpm;
+    final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    final outBpm = outItem?.bpm;
     final inBpm = next.item.bpm;
     if (outBpm == null || inBpm == null) return null;
+    // 格子が当てはまっていない曲はテンポも揺れている。寄せても合わないので触らない
+    if (outItem?.beatGrid?.reliable == false || next.item.beatGrid?.reliable == false) {
+      return null;
+    }
     final ratio = TrackCompatibility.tempoRatio(
         outBpm * activePlayer.state.rate, inBpm * inBaseRate);
     if (ratio == null) return null;
@@ -676,6 +747,8 @@ class _BeatPlan {
   const _BeatPlan({
     required this.outGrid,
     required this.inGrid,
+    required this.outBars,
+    required this.inBars,
     required this.outRate,
     required this.inRate,
     required this.lock,
@@ -683,6 +756,10 @@ class _BeatPlan {
 
   final BeatGrid outGrid;
   final BeatGrid inGrid;
+
+  /// 小節の格子（重ね始めの位置合わせ用。交差中のナッジは拍の格子で）
+  final BeatGrid outBars;
+  final BeatGrid inBars;
   final double outRate;
   final double inRate;
 
@@ -706,8 +783,22 @@ class _CrossfadeSession {
     required this.bassSwap,
     required this.effect,
     required this.beat,
+    required this.swapStartMs,
+    required this.swapEndMs,
+    required this.echoDelayMs,
   })  : outVolume = volume,
         appliedInRate = inRate;
+
+  /// ベーススワップにかける拍数（DJ の「一動作」。ゆっくり交差させない）
+  static const bassSwapBeats = 2;
+
+  /// ベーススワップの開始・終了位置（出る曲の媒体ミリ秒）。開始は拍の頭に寄せてある。
+  /// 演出（スイープ・エコー）も開始位置から切替点にかけて
+  final double swapStartMs;
+  final double swapEndMs;
+
+  /// エコーアウトの遅延（実時間ミリ秒、半拍）
+  final int echoDelayMs;
 
   /// 拍合わせの計画（しないときは null）
   final _BeatPlan? beat;
@@ -761,12 +852,8 @@ class _CrossfadeSession {
   /// 出る曲にかける演出。ベーススワップと同じ位置から切替点までかける
   final TransitionEffect effect;
 
-  /// [CrossfadeCurve.bassSwapAt] を通過したか（低音の入れ替えとエコーの開始は一度だけ）
+  /// スワップの開始位置を通過したか（エコーを付けるのは一度だけ）
   bool _swapped = false;
-
-  /// 出る曲に何かフィルタが付いているか（停止後に外す必要がある）
-  bool get _outFiltered =>
-      (bassSwap && _swapped) || effect != TransitionEffect.none;
 
   final Player outPlayer;
   final Player inPlayer;
@@ -799,25 +886,28 @@ class _CrossfadeSession {
     outVolume = volume * levels.out;
     outPlayer.setVolume(outVolume);
     inPlayer.setVolume(volume * levels.in_);
-    final at = curve.bassSwapAt;
-    if (t >= at && t < 1) {
-      // ベーススワップの位置（一度だけ）: 出る曲の低音を切り、入る曲の低音を戻す。
-      // エコーアウトもここで出る曲に付ける（グラフの作り直しはこの 1 回だけ）
+
+    final posMs = pos.inMicroseconds / 1000;
+    final cutMs = cut.inMicroseconds / 1000;
+    if (posMs >= swapStartMs && t < 1) {
+      // ベーススワップ: 拍の頭から 2 拍かけて、出る曲の低音を切りつつ入る曲の低音を戻す
+      // （フィルタは付けっぱなしで値だけ動かすので音は途切れない）
+      if (bassSwap && swapEndMs > swapStartMs) {
+        final r = ((posMs - swapStartMs) / (swapEndMs - swapStartMs)).clamp(0.0, 1.0);
+        unawaited(AudioFilters.setBassDb(outPlayer, AudioFilters.bassDb(r)));
+        unawaited(AudioFilters.setBassDb(inPlayer, AudioFilters.bassDb(1 - r)));
+      }
+      // エコーアウト: 出る曲に半拍のエコーを付ける（グラフの作り直しはこの 1 回だけ）
       if (!_swapped) {
         _swapped = true;
-        final echo = effect == TransitionEffect.echoOut;
-        if (bassSwap || echo) {
-          unawaited(AudioFilters.apply(outPlayer,
-              bassCut: bassSwap,
-              sweep: effect == TransitionEffect.filterSweep,
-              echo: echo));
+        if (effect == TransitionEffect.echoOut) {
+          unawaited(AudioFilters.setEcho(outPlayer, echoDelayMs));
         }
-        if (bassSwap) unawaited(AudioFilters.clear(inPlayer));
       }
-      // スイープ: 位置から切替点にかけてローパスを閉じていく
-      if (effect == TransitionEffect.filterSweep && at < 1) {
-        unawaited(AudioFilters.setSweep(
-            outPlayer, AudioFilters.sweepHz((t - at) / (1 - at))));
+      // スイープ: スワップの位置から切替点にかけてローパスを閉じていく
+      if (effect == TransitionEffect.filterSweep && cutMs > swapStartMs) {
+        unawaited(AudioFilters.setSweep(outPlayer,
+            AudioFilters.sweepHz((posMs - swapStartMs) / (cutMs - swapStartMs))));
       }
     }
     return t;
@@ -832,15 +922,15 @@ class _CrossfadeSession {
   }
 
   /// 新プレイヤーだけ本来の音量に戻す（旧プレイヤーは別途落としてから戻す）。
-  /// 低音カットが残っていれば外す（入れ替え前にスワップが来た場合）
+  /// 低音が戻り切っていなければ戻す（ランプの途中でスワップが来た場合）
   void finishIn() {
     inPlayer.setVolume(volume);
-    if (bassSwap && !_swapped) unawaited(AudioFilters.clear(inPlayer));
+    if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
   }
 
-  /// 出る曲のフィルタを外す（停止した後に呼ぶ。次にプリロード側として使うため）
+  /// 出る曲のフィルタを初期値に戻す（停止した後に呼ぶ。次にプリロード側として使うため）
   void clearOutFilter() {
-    if (_outFiltered) unawaited(AudioFilters.clear(outPlayer));
+    unawaited(AudioFilters.reset(outPlayer));
   }
 
   /// 取り消し。新プレイヤーを頭に戻して待機状態へ
@@ -850,7 +940,7 @@ class _CrossfadeSession {
     inPlayer.setVolume(volume);
     if (appliedInRate != inBaseRate) inPlayer.setRate(inBaseRate);
     outPlayer.setVolume(volume);
-    if (bassSwap) unawaited(AudioFilters.clear(inPlayer));
+    if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
     clearOutFilter();
   }
 }

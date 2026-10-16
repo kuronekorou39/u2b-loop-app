@@ -164,18 +164,29 @@ class SeekStepNotifier extends StateNotifier<int> {
   }
 }
 
-/// プレイリスト遷移のクロスフェード秒数（0=オフ）
+/// プレイリスト遷移のクロスフェードの長さ（拍数。0=オフ）。
+/// DJ は秒ではなく小節で数える（4 拍 = 1 小節）。秒数は曲の BPM から PlaylistEngine が出す
 final crossfadeProvider =
     StateNotifierProvider<CrossfadeNotifier, int>((ref) => CrossfadeNotifier());
 
 class CrossfadeNotifier extends StateNotifier<int> {
-  static const _key = SettingsKeys.crossfadeSeconds;
+  static const _key = SettingsKeys.crossfadeBeats;
 
-  /// 選べる秒数。0はオフ
-  static const options = [0, 2, 4, 6, 8];
+  /// 選べる拍数。0はオフ。4 拍 = 1 小節
+  static const options = [0, 4, 8, 16, 32];
+
+  /// v1.94 までの秒数設定からの移行先（オンだった人は 8 拍 = 2 小節）
+  static const migratedBeats = 8;
 
   CrossfadeNotifier() : super(0) {
-    state = AppBoxes.settings.get(_key, defaultValue: 0) as int;
+    final box = AppBoxes.settings;
+    final beats = box.get(_key) as int?;
+    if (beats != null) {
+      state = beats;
+    } else {
+      final seconds = box.get(SettingsKeys.crossfadeSeconds, defaultValue: 0) as int;
+      state = seconds > 0 ? migratedBeats : 0;
+    }
   }
 
   set value(int v) {

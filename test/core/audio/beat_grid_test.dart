@@ -38,6 +38,28 @@ void main() {
       });
     }
 
+    test('信頼度: クリック音は高く、拍の無いノイズは低い', () {
+      final clicks = BpmKeyDetector.onsetEnvelope(_click(128, seconds: 30), _sr)!;
+      final good = BpmKeyDetector.detectBeatGrid(clicks, 128)!;
+      expect(good.confidence, greaterThan(0.5), reason: '$good');
+      expect(good.reliable, isTrue);
+
+      // 拍の無い音（ランダムな間隔の短い音）
+      final rng = Random(1);
+      final y = Int16List(_sr * 30);
+      var i = 0;
+      while (i + 300 < y.length) {
+        for (var j = 0; j < 300; j++) {
+          y[i + j] = ((rng.nextDouble() * 2 - 1) * (1 - j / 300) * 20000).round();
+        }
+        i += (_sr * (0.15 + rng.nextDouble() * 0.6)).round();
+      }
+      final noise = BpmKeyDetector.onsetEnvelope(y, _sr)!;
+      final bad = BpmKeyDetector.detectBeatGrid(noise, 128)!;
+      expect(bad.confidence, lessThan(BeatGrid.minConfidence), reason: '$bad');
+      expect(bad.reliable, isFalse);
+    });
+
     test('analyze は BPM と一緒に格子を返し、無音なら返さない', () {
       final result = BpmKeyDetector.analyze(_click(120, offsetMs: 250, seconds: 30), _sr);
       expect(result.bpm, closeTo(120, 2));
@@ -56,6 +78,24 @@ void main() {
       expect(grid.phaseAt(50), closeTo(0.9, 1e-9)); // 最初の拍より前も折り返す
       expect(grid.toNextBeatMs(100), 0);
       expect(grid.toNextBeatMs(350), closeTo(250, 1e-9));
+    });
+
+    test('直前の拍の頭', () {
+      expect(grid.floorBeatMs(600), closeTo(600, 1e-9));
+      expect(grid.floorBeatMs(1099), closeTo(600, 1e-9));
+      expect(grid.floorBeatMs(1100), closeTo(1100, 1e-9));
+    });
+
+    test('小節の格子: 基準点に最も近い拍を小節頭として 4 拍ごと', () {
+      // 基準点なし → 最初の拍（100）が小節頭。小節は 2000ms
+      final bars = grid.barGrid();
+      expect(bars.periodMs, 2000);
+      expect(bars.offsetMs, 100);
+      // ドロップが 3610ms（拍の頭 3600 のすぐ後）→ 3600 を小節頭に。1600, 3600, 5600…
+      final anchored = grid.barGrid(3610);
+      expect(anchored.offsetMs, closeTo(1600, 1e-9));
+      expect(anchored.floorBeatMs(5000), closeTo(3600, 1e-9));
+      expect(anchored.confidence, 1);
     });
   });
 

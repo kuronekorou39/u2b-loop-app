@@ -247,8 +247,25 @@ class BpmKeyDetector {
     search(bpm, 0.015, 0.001);
     search(bestBpm, 0.001, 0.00005);
 
+    // 信頼度: 周期を 10〜20% ずらした格子でも同じくらいのスコアが出るなら、
+    // 立ち上がりが等間隔に並んでいない（生演奏・揺れる曲・拍の無い音）
+    final bestPeriod = 60 * fps / bestBpm;
+    var wrong = 0.0;
+    for (final ratio in const [0.8, 0.85, 0.9, 1.1, 1.15, 1.2, 1.25]) {
+      final period = bestPeriod * ratio;
+      for (var phase = 0.0; phase < period; phase += 0.5) {
+        final s = comb(period, phase);
+        if (s > wrong) wrong = s;
+      }
+    }
+    final confidence =
+        bestScore <= 0 ? 0.0 : (1 - wrong / bestScore).clamp(0.0, 1.0);
+
     final period = 60000 / bestBpm;
-    return BeatGrid(bpm: bestBpm, offsetMs: env.timeMs(bestPhase) % period);
+    return BeatGrid(
+        bpm: bestBpm,
+        offsetMs: env.timeMs(bestPhase) % period,
+        confidence: confidence);
   }
 
   static double _rms(Float64List v) {

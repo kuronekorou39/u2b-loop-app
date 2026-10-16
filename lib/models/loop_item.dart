@@ -77,8 +77,8 @@ class LoopItem {
   /// 境目の前後に旧いアプリで解析した曲を取りこぼす）
   int? analysisVersion;
 
-  /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子）
-  static const currentAnalysisVersion = 2;
+  /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度）
+  static const currentAnalysisVersion = 3;
 
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
@@ -101,6 +101,9 @@ class LoopItem {
   /// null = 未計測（v1.85 以前の解析）または BPM が取れなかった
   double? beatOffsetMs;
   double? beatBpm;
+
+  /// 拍の格子の当てはまり（0〜1）。null = 未計測（v1.94 以前の解析）→ 信用する扱い
+  double? beatConfidence;
 
   /// 曲の長さ（ミリ秒）。再生したとき、または解析の前に YouTube へ問い合わせて埋まる。
   /// 長すぎる曲（ミックス音源・配信など）を解析から外す判定に使う。null = 不明
@@ -142,6 +145,7 @@ class LoopItem {
     this.mixOutMs,
     this.beatOffsetMs,
     this.beatBpm,
+    this.beatConfidence,
     this.durationMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
@@ -157,7 +161,8 @@ class LoopItem {
 
   /// 拍の格子（両方の値が揃っているときだけ）
   BeatGrid? get beatGrid => beatBpm != null && beatOffsetMs != null
-      ? BeatGrid(bpm: beatBpm!, offsetMs: beatOffsetMs!)
+      ? BeatGrid(
+          bpm: beatBpm!, offsetMs: beatOffsetMs!, confidence: beatConfidence ?? 1)
       : null;
 
   /// YouTube由来か（文字列比較を19箇所に散らさないための入口）
@@ -271,6 +276,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       beatBpm: (fields[33] as num?)?.toDouble(),
       durationMs: fields[34] as int?,
       analysisVersion: fields[35] as int?,
+      beatConfidence: (fields[36] as num?)?.toDouble(),
     );
   }
 
@@ -313,6 +319,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       33: obj.beatBpm,
       34: obj.durationMs,
       35: obj.analysisVersion,
+      36: obj.beatConfidence,
     });
   }
 }

@@ -37,7 +37,8 @@ class SettingsKeys {
 
   static const darkMode = 'dark_mode';
   static const seekStep = 'seek_step';
-  static const crossfadeSeconds = 'crossfade_seconds';
+  static const crossfadeSeconds = 'crossfade_seconds'; // v1.94 まで（秒）。拍への移行判定にだけ使う
+  static const crossfadeBeats = 'crossfade_beats';
   static const tempoMatch = 'tempo_match';
   static const mixPointAlign = 'mix_point_align';
   static const crossfadeCurve = 'crossfade_curve';
