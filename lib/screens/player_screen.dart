@@ -133,6 +133,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // Preload state
   int? _preloadedTrackIndex;
   int? _pendingJumpIndex; // 手動選択時: 次の自動遷移でjumpToするインデックス
+  Duration? _pendingReplaySeek; // ミックスビューで前曲に戻って聴き直す位置
   bool _isPreloading = false;
   Timer? _preloadCheckTimer;
   int _preloadGeneration = 0; // レース条件防止用の世代カウンタ
@@ -667,6 +668,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     await _directLoadTrack(prevTrack, prevIdx);
   }
 
+  /// ミックスビューで切り替わった後、前曲側（切替点より前）をタップしたとき。
+  /// 前の曲に戻ってその位置から再生し、切り替わりをもう一度聴けるようにする
+  /// （2 秒後に次曲が再びプリロードされ、クロスフェードが繰り返される）。
+  void _replayPreviousFrom(Duration oldPos) {
+    final ps = ref.read(playlistPlayerProvider);
+    if (!ps.hasPrev || _trackLoading || _isPreloading) return;
+    _pendingReplaySeek = oldPos < Duration.zero ? Duration.zero : oldPos;
+    _manualPrev();
+  }
+
   /// 手動: トラック選択（パネルからタップ）
   Future<void> _selectTrack(int trackIndex) async {
     // 最初の曲を開いている最中は一覧は見られるが選べない（同じプレイヤーを取り合うため）
@@ -772,6 +783,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // スワップ後のボリュームストリーム同期
       // （旧プレイヤーのフェードアウト値が残らないよう新プレイヤーに明示設定）
       try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
+    }
+    // ミックスビューから前曲に戻って聴き直す指定があれば、その位置へ
+    final replay = _pendingReplaySeek;
+    _pendingReplaySeek = null;
+    if (replay != null) {
+      try { ref.read(playerProvider).seek(replay); } catch (_) {}
     }
     _consecutiveLoadErrors = 0;
     // 字幕（プレイリスト曲切替時）: キャッシュSRT優先、無ければネット取得
@@ -2085,6 +2102,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
             onRetryWaveform: _retryWaveform,
+            onReplayPrevious: _replayPreviousFrom,
             waveformFor: (item) => _waveformCache[item.id],
             titleFor: (item) => item.title,
           ),

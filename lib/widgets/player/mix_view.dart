@@ -68,9 +68,9 @@ class MixView extends StatelessWidget {
 
   final double height;
 
-  /// 切り替わり地点の前後に見せる長さ
-  static const lead = Duration(seconds: 8);
-  static const tail = Duration(seconds: 8);
+  /// 切り替わり地点の前後に見せる長さ（切り替え付近を何度も聴けるよう広めに取る）
+  static const lead = Duration(seconds: 16);
+  static const tail = Duration(seconds: 16);
 
   /// 幅 [width] のビューの x 座標を時間軸（旧曲の時計）に直す。
   /// 窓は start − [lead] 〜 cut + [tail]。端を超えた分は窓の端に丸める

@@ -20,6 +20,7 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
     required this.compact,
     required this.onToggleCompact,
     required this.onRetryWaveform,
+    this.onReplayPrevious,
     required this.waveformFor,
     required this.titleFor,
     this.waveHeight = 72,
@@ -29,6 +30,10 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   final bool compact;
   final VoidCallback onToggleCompact;
   final VoidCallback onRetryWaveform;
+
+  /// 切り替わった後にミックスビューで前曲側（切替点より前）をタップしたとき、
+  /// 前の曲に戻ってその位置から聴き直す。null なら次曲のシークだけ
+  final ValueChanged<Duration>? onReplayPrevious;
 
   /// 波形シークバーの高さ（compact でないとき）
   final double waveHeight;
@@ -158,13 +163,23 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
 
   /// ミックスビュー上のシーク。[t] は旧曲の時計。
   /// 切り替わる前は旧曲をそのまま動かす（交差の手前へ戻せばエンジンが交差を取り消し、
-  /// 切断点を越えれば従来どおり切り替わる）。
-  /// 切り替わった後は旧曲はもう止まっているので、次曲の時計に直して動かし、
-  /// ミックスビューは閉じてふつうのシークバーに戻す
+  /// 切断点を越えれば従来どおり切り替わる）ので、ここで交差を何度でも聴き直せる。
+  /// 切り替わった後は旧曲はもう止まっているので、切替点より前をタップしたら
+  /// 前の曲に戻って聴き直し（[onReplayPrevious]）、切替点より後は次曲の時計で動かす。
+  /// どちらもミックスビューは閉じてふつうのシークバーに戻す
   void _seekInMix(_MixSnapshot snap, Duration t, {required bool swapped}) {
     final player = ref.read(playerProvider);
     if (!swapped) {
       player.seek(_clamp(t, snap.outDuration));
+      return;
+    }
+    final onReplayPrevious = widget.onReplayPrevious;
+    if (t < snap.cut && onReplayPrevious != null) {
+      setState(() {
+        _snapshot = null;
+        _swappedAt = null;
+      });
+      onReplayPrevious(_clamp(t, snap.outDuration));
       return;
     }
     final pos = snap.inStart + (t - snap.start);
