@@ -229,6 +229,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 同一コンテキスト: ロードスキップ、再生状態を復元
         final wasPlaying = miniState.wasPlaying;
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
+        // ミニプレイヤーの進行役から画面が引き継ぐ（予約済みのクロスフェードは使える）
+        ref.read(playlistEngineProvider).endSession(keepCrossfade: true);
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
         PipBridge.setAutoPiP(
@@ -255,6 +257,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         } catch (_) {}
       }
 
+      // 前のプレイリスト（ミニプレイヤーで続いていた分も）を打ち切る
+      final engine = ref.read(playlistEngineProvider);
+      _isPlaylist ? engine.endSession() : engine.endPlaylist();
       ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
@@ -347,6 +352,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ref.read(loopProvider.notifier).onBPointReached = null;
         ref.read(loopProvider.notifier).onTrackEnd = null;
         if (_isPlaylist) ref.read(playlistPlayerProvider.notifier).clear();
+        ref.read(playlistEngineProvider).endSession();
         ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
       } catch (_) {}
     }

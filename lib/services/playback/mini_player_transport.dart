@@ -32,9 +32,17 @@ class MiniPlayerTransport {
   bool _isPreloading = false;
   DateTime? _lastReplayAt;
 
+  /// 作られたときのプレイリスト再生の番号（[PlaylistEngine.session]）
+  late final int _session;
+
+  /// 別の曲・別のプレイリストが始まった（またはこのプレイリストの再生画面に戻った）
+  bool get _ended => engine.session != _session;
+
   /// ループのコールバックを握り、最初のプリロードを始める
   void start() {
+    _session = engine.session;
     loop.onBPointReached = () {
+      if (_ended) return false;
       if (playlist.currentState.repeatMode == pl.RepeatMode.single) {
         return false;
       }
@@ -52,6 +60,7 @@ class MiniPlayerTransport {
     };
 
     loop.onTrackEnd = () {
+      if (_ended) return;
       final readiness = engine.readiness(preloadedIndex: _preloadedIdx);
       if (readiness == AdvanceReadiness.sameItem ||
           readiness == AdvanceReadiness.preloaded) {
@@ -73,6 +82,7 @@ class MiniPlayerTransport {
   }
 
   void next() {
+    if (_ended) return;
     final readiness = engine.readiness(preloadedIndex: _preloadedIdx);
     if (readiness == AdvanceReadiness.none) return;
     if (readiness == AdvanceReadiness.notReady) {
@@ -84,6 +94,7 @@ class MiniPlayerTransport {
 
   /// 前の曲。同一アイテムの別区間ならシーク、違う曲ならアクティブ側に直接読み込む
   Future<void> prev() async {
+    if (_ended) return;
     final ps = playlist.currentState;
     final prevIdx = ps.peekPrevTrackIndex();
     if (prevIdx == null) return;
@@ -96,7 +107,9 @@ class MiniPlayerTransport {
       return;
     }
     try {
-      await engine.prepare(engine.activePlayer, prevTrack);
+      await engine.prepare(engine.activePlayer, prevTrack,
+          isStale: () => _ended);
+      if (_ended) return;
       playlist.jumpTo(prevIdx);
       final track = playlist.currentState.currentTrack;
       if (track == null) return;
@@ -122,7 +135,7 @@ class MiniPlayerTransport {
 
   /// 次トラックをプリロードプレイヤーに読み込む
   Future<void> _preloadNext() async {
-    if (_isPreloading || _preloadedIdx != null) return;
+    if (_ended || _isPreloading || _preloadedIdx != null) return;
     final ps = playlist.currentState;
     final nextIdx = ps.peekNextTrackIndex();
     if (nextIdx == null) return;
@@ -133,7 +146,10 @@ class MiniPlayerTransport {
 
     _isPreloading = true;
     try {
-      await engine.prepare(engine.preloadPlayer, nextTrack, downloadFirst: true);
+      await engine.prepare(engine.preloadPlayer, nextTrack,
+          isStale: () => _ended, downloadFirst: true);
+      // 先読み中に別の曲が始まっていたら、予約もしない（単体再生の曲末で鳴り出す）
+      if (_ended) return;
       _preloadedIdx = nextIdx;
       engine.armCrossfade(nextTrack);
     } catch (e) {
@@ -144,7 +160,7 @@ class MiniPlayerTransport {
   }
 
   void _advance(AdvanceReadiness readiness) {
-    if (!playlist.next()) return;
+    if (_ended || !playlist.next()) return;
     final track = playlist.currentState.currentTrack;
     if (track == null) return;
     if (readiness == AdvanceReadiness.sameItem) {

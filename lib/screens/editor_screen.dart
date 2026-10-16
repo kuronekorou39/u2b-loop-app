@@ -16,6 +16,7 @@ import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/playlist_engine.dart';
 import '../services/export_runner.dart';
 import '../services/export_source.dart';
 import '../services/playback/load_progress.dart';
@@ -104,13 +105,16 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _initialRegions = _regions.map((r) => r.copyWith()).toList();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // ミニプレイヤーが再生中なら停止
+      // ミニプレイヤーが再生中なら停止（プレイリストの進行役・クロスフェード予約も打ち切る。
+      // 裏のプレイヤーに次の曲が残っていると、曲末で鳴り出す）
       if (ref.read(miniPlayerProvider).active) {
         ref.read(miniPlayerProvider.notifier).deactivate();
         try {
-          ref.read(playerProvider).stop();
+          ref.read(playerAProvider).stop();
+          ref.read(playerBProvider).stop();
         } catch (_) {}
       }
+      ref.read(playlistEngineProvider).endPlaylist();
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
       ref.read(waveformDataProvider.notifier).state = null;

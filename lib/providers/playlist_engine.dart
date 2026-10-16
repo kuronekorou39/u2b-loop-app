@@ -349,6 +349,31 @@ class PlaylistEngine {
 
   Timer? _crossfadeMonitor;
   PlaylistTrack? _armedTrack;
+
+  /// プレイリスト再生のひと続きの番号。ミニプレイヤーの進行役（MiniPlayerTransport）は
+  /// 作られたときの値を覚え、変わっていたら何もしない。
+  /// 以前は別の曲を開いても進行役が止まらず、途中だった先読みが終わると
+  /// プレイリストの次の曲を読み込んでクロスフェードを予約し、単体再生の曲末で鳴り出していた
+  int get session => _session;
+  int _session = 0;
+
+  /// 今のプレイリスト再生を打ち切る（進行役の先読み・遷移を無効にする）。
+  /// [keepCrossfade] は同じプレイリストの再生画面に戻るとき（予約はそのまま使える）
+  void endSession({bool keepCrossfade = false}) {
+    _session++;
+    if (!keepCrossfade) disarmCrossfade();
+  }
+
+  /// 単体再生・AB 設定など、プレイリストでない再生を始めるとき。
+  /// ミニプレイヤーで続いていたプレイリストの後始末（進行役・クロスフェード予約・
+  /// ループのコールバック・プレイリストの状態）をまとめて行う
+  void endPlaylist() {
+    endSession();
+    _ref.read(loopProvider.notifier)
+      ..onBPointReached = null
+      ..onTrackEnd = null;
+    _ref.read(playlistPlayerProvider.notifier).clear();
+  }
   _CrossfadeSession? _crossfade;
 
   /// 交差中か。画面側はこの間、旧プレイヤーの音量を触らないこと
