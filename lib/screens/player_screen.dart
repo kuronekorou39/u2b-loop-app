@@ -605,6 +605,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 手動: 次のトラックへ
   Future<void> _manualNext() async {
     if (_guardManualOp()) return;
+    ref.read(playlistEngineProvider).releaseParked();
     final ps = ref.read(playlistPlayerProvider);
     if (!ps.hasNext) return;
 
@@ -644,6 +645,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// _manualNext と対称な構造: peekしてから判断し、状態変更はロード完了後
   Future<void> _manualPrev() async {
     if (_guardManualOp()) return;
+    ref.read(playlistEngineProvider).releaseParked();
     final ps = ref.read(playlistPlayerProvider);
     if (!ps.hasPrev) return;
 
@@ -674,8 +676,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _replayPreviousFrom(Duration oldPos) {
     final ps = ref.read(playlistPlayerProvider);
     if (!ps.hasPrev || _trackLoading || _isPreloading) return;
-    _pendingReplaySeek = oldPos < Duration.zero ? Duration.zero : oldPos;
+    final pos = oldPos < Duration.zero ? Duration.zero : oldPos;
+    final prevIdx = ps.peekPrevTrackIndex();
+    final nextIdx = ps.currentTrackIndex;
+    final engine = ref.read(playlistEngineProvider);
+    // 前曲のプレイヤーがまだ生きている（パーク中）なら、開き直さずに戻る
+    if (prevIdx != null &&
+        nextIdx != null &&
+        engine.parkedItemId == ps.tracks[prevIdx].item.id &&
+        engine.stepBackToParked(pos)) {
+      _afterStepBack(prevIdx, nextIdx);
+      return;
+    }
+    // パークが切れていた（重ね表示が消えた後など）→ 開き直してでも戻る
+    _pendingReplaySeek = pos;
     _manualPrev();
+  }
+
+  /// パークした前曲に戻れたときの後始末（開き直しなし）。
+  /// プレイリストを前曲に戻し、さっきまで鳴っていた曲を「プリロード済みの次曲」として
+  /// 登録し直してクロスフェードを予約する（そのまま進めばもう一度つながる）
+  void _afterStepBack(int prevIdx, int nextIdx) {
+    final notifier = ref.read(playlistPlayerProvider.notifier);
+    notifier.jumpTo(prevIdx);
+    final ps = ref.read(playlistPlayerProvider);
+    final track = ps.currentTrack;
+    if (track == null) return;
+    final item = track.item;
+    _cancelFade();
+    // 映像・波形・区間・コールバックを前曲に戻す
+    final openedUri =
+        ref.read(playerProvider).state.playlist.medias.firstOrNull?.uri;
+    ref.read(videoSourceProvider.notifier).state = VideoSource(
+      type: item.isYouTube ? VideoSourceType.youtube : VideoSourceType.local,
+      uri: openedUri ?? item.uri,
+      title: item.title,
+      videoId: item.videoId,
+      thumbnailUrl: item.thumbnailUrl,
+    );
+    ref.read(waveformDataProvider.notifier).state = _waveformCache[item.id];
+    ref.read(waveformErrorProvider.notifier).state = null;
+    ref.read(waveformLoadingProvider.notifier).state = false;
+    _loadTrackRegion(track);
+    _setupPlaylistCallbacks();
+    ref.read(loopProvider.notifier).setCurrentItem(item.id);
+    _baseVolume = _normalizedVolume(item);
+    try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
+    _subtitles.loadFor(item);
+    // さっきまでの曲はプリロード側に載ったまま。次曲として予約し直す
+    _preloadGeneration++;
+    _isPreloading = false;
+    _preloadingTargetIndex = null;
+    _preloadedTrackIndex = nextIdx;
+    ref.read(playlistEngineProvider).armCrossfade(ps.tracks[nextIdx]);
+    if (mounted) setState(() {});
   }
 
   /// 手動: トラック選択（パネルからタップ）
@@ -685,6 +739,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_guardManualOp()) return;
     final ps = ref.read(playlistPlayerProvider);
     if (trackIndex == ps.currentTrackIndex) return;
+    ref.read(playlistEngineProvider).releaseParked();
 
     final targetTrack = ps.tracks[trackIndex];
     final current = ps.currentTrack;
@@ -795,7 +850,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitles.loadFor(track.item);
     // 2秒後に次曲プリロード開始（再生を安定させてから）
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
+      if (mounted &&
+          !_isPreloading &&
+          _preloadedTrackIndex == null &&
+          !ref.read(playlistEngineProvider).hasParked) {
         _preloadNextTrack();
       }
     });
@@ -937,8 +995,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _preloadedTrackIndex = null;
     _preloadingTargetIndex = null;
     _isPreloading = false;
-    // プリロードプレイヤーの実行中の操作を確実に中断
-    try { ref.read(preloadPlayerProvider).stop(); } catch (_) {}
+    // プリロードプレイヤーの実行中の操作を確実に中断。
+    // ただしパーク中はプリロード側に前曲が残っているので止めない
+    if (!ref.read(playlistEngineProvider).hasParked) {
+      try { ref.read(preloadPlayerProvider).stop(); } catch (_) {}
+    }
   }
 
   void _startPreloadMonitor() {
@@ -957,6 +1018,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _checkPreload() {
     if (!mounted || !_isPlaylist || _loading) return;
     if (_isPreloading || _preloadedTrackIndex != null) return;
+    // 重ね表示の間は前曲をプリロード側に残している（戻って聴き直せるように）
+    if (ref.read(playlistEngineProvider).hasParked) return;
 
     // 連続失敗時はバックオフ（失敗数 × 10秒）、上限5回で停止
     if (_preloadFailCount > 0) {

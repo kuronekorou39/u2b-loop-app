@@ -110,6 +110,8 @@ class PlaylistEngine {
 
     // どちらのプレイヤーを読み直す場合も、進行中のクロスフェードは成立しなくなる
     disarmCrossfade();
+    // パークしていた前曲のプレイヤーを別の曲で開き直すなら、もう戻れない
+    if (identical(player, _parkedPlayer)) _clearParked();
     // 読み直す側がテンポを戻している途中なら、その速度を上書きされないよう止める
     if (identical(player, _tempoRampPlayer)) _cancelTempoRamp();
     // 音声フィルタは外して開く（作れない列が付いたまま開くと、その曲の音声が無効になる）。
@@ -320,17 +322,16 @@ class PlaylistEngine {
 
     // 切替点の瞬間の効果音（インパクト）はここで鳴らす
     session?.onCut();
-    if (session != null && session.outVolume > 1) {
-      // 曲線が 0 に着く前にスワップが来た（YouTube の音声がメタデータの長さより
-      // 早く終わった等）。即 stop すると旧曲がぶつぎりになるので短く落としてから止める
+    if (session != null) {
+      // 交差していた（重ね表示が出ている）: 前曲は止めずにパークする。
+      // 重ね表示の間は前曲側に戻って、開き直さずに聴き直せる（[stepBackToParked]）。
+      // 曲線が 0 に着く前にスワップが来た場合も、短く落としてからポーズするのでぶつぎりにならない
       session.finishIn();
-      unawaited(_fadeOutAndStop(oldPlayer, session.outVolume, session.volume)
+      _parkPlayer(oldPlayer, _armedFrom?.id);
+      unawaited(_fadeOutAndPark(oldPlayer, session.outVolume, session.volume)
           .then((_) => session.clearOut()));
     } else {
       oldPlayer.stop();
-      session?.finish();
-    }
-    if (session == null) {
       // 交差なしの切り替え: 新しい曲の大きさに合わせた音量にしてから鳴らす
       newPlayer.setVolume(
           _carryVolume(oldPlayer.state.volume, _armedFrom, armed?.item));
@@ -344,19 +345,88 @@ class PlaylistEngine {
     return newPlayer;
   }
 
-  /// 旧プレイヤーを [from] から 150ms で 0 に落として停止し、
-  /// 次にプリロード側として使われたとき無音にならないよう音量を [restore] に戻す
-  Future<void> _fadeOutAndStop(Player player, double from, double restore) async {
+  // --- 前曲のパーク（重ね表示の間、前曲を生かしておく） ---
+  //
+  // 交差して切り替わった後も、前曲のプレイヤーは止めずにポーズで保持する。
+  // 重ね表示で前曲側をタップしたら、それを鳴らし直すだけで戻れる（開き直さない）。
+  // パークしたプレイヤーはプリロード側にいるので、その間は次の次の曲を読み込まない
+  // （再生画面は [hasParked] を見て待つ）。[parkLinger] 経てば止めて手放す
+
+  /// パークを続ける長さ。重ね表示が切り替わり後に出ている長さ（16 秒）より少し長く
+  static const parkLinger = Duration(seconds: 20);
+
+  Player? _parkedPlayer;
+  String? _parkedItemId;
+  Timer? _parkTimer;
+
+  /// 前曲のプレイヤーをパーク中か（この間はプリロード側を使わない）
+  bool get hasParked => _parkedPlayer != null;
+
+  /// パーク中の前曲の id（戻る先が本当にその曲か確かめる）
+  String? get parkedItemId => _parkedItemId;
+
+  void _parkPlayer(Player player, String? itemId) {
+    releaseParked();
+    _parkedPlayer = player;
+    _parkedItemId = itemId;
+    _parkTimer = Timer(parkLinger, releaseParked);
+  }
+
+  /// パークの記録だけ消す（プレイヤーは呼び出し側が使う）
+  void _clearParked() {
+    _parkTimer?.cancel();
+    _parkTimer = null;
+    _parkedPlayer = null;
+    _parkedItemId = null;
+  }
+
+  /// パークをやめて前曲のプレイヤーを止める（時間切れ・別の曲へ移ったとき）
+  void releaseParked() {
+    final player = _parkedPlayer;
+    _clearParked();
+    if (player == null) return;
+    // すでにアクティブ側に戻っていたら止めない
+    if (identical(player, activePlayer)) return;
+    try {
+      player.stop();
+    } catch (e) {
+      debugPrint('[PlaylistEngine] パークした前曲の停止に失敗: $e');
+    }
+  }
+
+  /// 重ね表示で前曲側に戻るとき、パークした前曲のプレイヤーを [oldPos] から鳴らし直す。
+  /// 今アクティブな次曲のプレイヤーはポーズしてプリロード側に戻す（そのまま次曲として使える）。
+  /// 戻り値は戻れたか（パークが切れていれば false → 呼び出し側は開き直す）
+  bool stepBackToParked(Duration oldPos) {
+    final parked = _parkedPlayer;
+    if (parked == null || identical(parked, activePlayer)) return false;
+    final nextPlayer = activePlayer;
+    final parkedSlot =
+        identical(parked, _ref.read(playerAProvider)) ? ActiveSlot.a : ActiveSlot.b;
+    _clearParked();
+    _cancelTempoRamp();
+    unawaited(nextPlayer.pause());
+    _ref.read(activeSlotProvider.notifier).state = parkedSlot;
+    unawaited(parked.seek(oldPos));
+    unawaited(parked.play());
+    return true;
+  }
+
+  /// 前曲を [from] から 150ms で 0 に落としてポーズする（止めない）。
+  /// 戻ったときに鳴るよう、音量は [restore] に戻しておく
+  Future<void> _fadeOutAndPark(Player player, double from, double restore) async {
     const steps = 3;
     try {
       for (var i = 1; i <= steps; i++) {
         await Future.delayed(const Duration(milliseconds: 50));
+        if (identical(player, activePlayer)) return; // もう戻っていた
         await player.setVolume(from * (1 - i / steps));
       }
-      await player.stop();
+      if (identical(player, activePlayer)) return;
+      await player.pause();
       await player.setVolume(restore);
     } catch (e) {
-      debugPrint('[PlaylistEngine] 旧プレイヤーの停止に失敗: $e');
+      debugPrint('[PlaylistEngine] 前曲のパークに失敗: $e');
     }
   }
 
@@ -390,7 +460,10 @@ class PlaylistEngine {
   /// [keepCrossfade] は同じプレイリストの再生画面に戻るとき（予約はそのまま使える）
   void endSession({bool keepCrossfade = false}) {
     _session++;
-    if (!keepCrossfade) disarmCrossfade();
+    if (!keepCrossfade) {
+      disarmCrossfade();
+      releaseParked();
+    }
   }
 
   /// 単体再生・AB 設定など、プレイリストでない再生を始めるとき。
