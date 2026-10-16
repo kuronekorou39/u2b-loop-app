@@ -112,6 +112,10 @@ class LoopItem {
   double? endFadeDb;
   double? dropDb;
 
+  /// 曲全体の RMS（dBFS）。音量正規化が曲の大きさを揃えるのに使う（Loudness）。
+  /// 波形を作るときにデコードした PCM から測る。null = 未計測
+  double? loudnessDb;
+
   /// 曲の長さ（ミリ秒）。再生したとき、または解析の前に YouTube へ問い合わせて埋まる。
   /// 長すぎる曲（ミックス音源・配信など）を解析から外す判定に使う。null = 不明
   int? durationMs;
@@ -157,6 +161,7 @@ class LoopItem {
     this.tailDb,
     this.endFadeDb,
     this.dropDb,
+    this.loudnessDb,
     this.durationMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
@@ -292,6 +297,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       tailDb: (fields[38] as num?)?.toDouble(),
       endFadeDb: (fields[39] as num?)?.toDouble(),
       dropDb: (fields[40] as num?)?.toDouble(),
+      loudnessDb: (fields[41] as num?)?.toDouble(),
     );
   }
 
@@ -339,6 +345,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       38: obj.tailDb,
       39: obj.endFadeDb,
       40: obj.dropDb,
+      41: obj.loudnessDb,
     });
   }
 }

@@ -74,11 +74,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (final c in CrossfadeCurve.values)
-                  RadioListTile<CrossfadeCurve>(
-                    value: c,
-                    title: Text(c.label),
-                    subtitle: Text(c.description),
-                  ),
+                  RadioListTile<CrossfadeCurve>(value: c, title: Text(c.label)),
               ],
             ),
           ),
@@ -102,11 +98,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (final e in TransitionEffect.values)
-                  RadioListTile<TransitionEffect>(
-                    value: e,
-                    title: Text(e.label),
-                    subtitle: Text(e.description),
-                  ),
+                  RadioListTile<TransitionEffect>(value: e, title: Text(e.label)),
               ],
             ),
           ),
@@ -133,10 +125,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               children: [
                 for (final db in SfxLevelNotifier.options)
                   RadioListTile<int>(
-                    value: db,
-                    title: Text(SfxLevelNotifier.label(db)),
-                    subtitle: Text(SfxLevelNotifier.describe(db)),
-                  ),
+                      value: db, title: Text(SfxLevelNotifier.label(db))),
               ],
             ),
           ),
@@ -170,12 +159,6 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsRow(
               icon: Icons.multitrack_audio,
               title: 'クロスフェード',
-              subtitle: !on
-                  ? 'オフ。曲が終わってから次の曲へ'
-                  : auto
-                      ? 'オン。長さはおまかせが曲ごとに 4〜16 拍で決める'
-                      : '${crossfadeLabel(crossfade)}（${crossfade ~/ 4} 小節）かけて次の曲に重ねる。'
-                          '長さは曲のテンポから',
               trailing: Text(crossfadeLabel(crossfade),
                   style: Theme.of(context).textTheme.bodyMedium),
               onTap: () => _pickCrossfade(context, ref),
@@ -189,10 +172,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsSwitchRow(
               icon: Icons.auto_mode,
               title: 'おまかせ',
-              subtitle: on
-                  ? '2 曲のテンポ・ビート・ドロップ・音量の流れから、つなぎ方を曲ごとに選ぶ。'
-                      '選んだ理由はミックスビューに出る'
-                  : needsFade,
+              subtitle: on ? null : needsFade,
               value: auto,
               onChanged: on
                   ? (v) => ref.read(autoMixProvider.notifier).value = v
@@ -203,7 +183,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               icon: Icons.show_chart,
               title: 'つなぎ方',
               subtitle: manual
-                  ? '${curve.label}: ${curve.description}'
+                  ? curve.label
                   : on
                       ? autoNote
                       : needsFade,
@@ -214,9 +194,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
             SettingsSwitchRow(
               icon: Icons.trending_up,
               title: 'ドロップに合わせる',
-              subtitle: on
-                  ? '次の曲の盛り上がりが切り替わりに来るよう開始位置をずらし、前の曲はアウトロで切る'
-                  : needsFade,
+              subtitle: on ? null : needsFade,
               value: ref.watch(mixPointAlignProvider),
               onChanged: on
                   ? (v) => ref.read(mixPointAlignProvider.notifier).value = v
@@ -227,7 +205,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               icon: Icons.speed,
               title: 'テンポ合わせ',
               subtitle: manual
-                  ? '次曲の速度を前曲のテンポに寄せる'
+                  ? null
                   : on
                       ? autoNote
                       : needsFade,
@@ -241,7 +219,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               icon: Icons.align_horizontal_center,
               title: '拍合わせ',
               subtitle: manual
-                  ? '拍の頭を揃えて重ね、交差中は次曲の速度を微調整して合わせ続ける'
+                  ? null
                   : on
                       ? autoNote
                       : needsFade,
@@ -260,7 +238,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               icon: Icons.graphic_eq,
               title: 'ベーススワップ',
               subtitle: manual
-                  ? '次の曲の低音を切って重ね、途中で前の曲と低音を入れ替える'
+                  ? null
                   : on
                       ? autoNote
                       : needsFade,
@@ -274,7 +252,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
               icon: Icons.auto_awesome,
               title: '切り替えの演出',
               subtitle: manual
-                  ? '${effect.label}: ${effect.description}'
+                  ? effect.label
                   : on
                       ? autoNote
                       : needsFade,
@@ -286,9 +264,9 @@ class DjMixSettingsScreen extends ConsumerWidget {
               icon: Icons.campaign,
               title: '効果音の音量',
               subtitle: sfxOn
-                  ? SfxLevelNotifier.describe(sfxLevel)
+                  ? null
                   : on
-                      ? '効果音を使う演出（ライザー / インパクト / スピンバック）で使えます'
+                      ? '効果音を使う演出で使えます'
                       : needsFade,
               enabled: sfxOn,
               trailing: Text(SfxLevelNotifier.label(sfxLevel),

@@ -134,6 +134,19 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
+  /// 保存されている最新のアイテム（画面が持つ古いコピーではなく）
+  LoopItem? byId(String id) => _box.get(id);
+
+  /// 曲全体の大きさ（音量正規化用）。並びが変わらないよう updatedAt は触らない
+  Future<void> saveLoudness(String id, double loudnessDb) async {
+    final item = _box.get(id);
+    if (item == null) return;
+    if (item.loudnessDb != null && (item.loudnessDb! - loudnessDb).abs() < 0.1) return;
+    item.loudnessDb = loudnessDb;
+    await _box.put(id, item);
+    _refresh();
+  }
+
   Future<void> delete(String id) async {
     // 削除前にオフラインキャッシュのファイルパスを退避して掃除
     final item = _box.get(id);

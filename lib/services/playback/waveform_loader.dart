@@ -31,11 +31,16 @@ class WaveformLoader {
 
   static const failedMessage = '波形取得失敗';
 
+  /// 音量正規化がオンで、曲の大きさがまだ無い（保存済みの波形からは分からない）
+  bool _needLoudness(LoopItem item) =>
+      _ref.read(volumeNormProvider) && item.loudnessDb == null;
+
   /// 音声を先読みしてから [generate] を呼ぶ（待たない）。
   /// 波形が保存済み（かつ解析不要）なら DL せずにすぐ [generate]
   void prefetchThenGenerate(
       LoopItem item, StreamManifest manifest, VoidCallback generate) {
-    WaveformService.canSkipAudioFetch(item).then((skip) async {
+    WaveformService.canSkipAudioFetch(item, needLoudness: _needLoudness(item))
+        .then((skip) async {
       if (!isMounted()) return;
       if (!skip) {
         final videoId = item.videoId;
@@ -84,6 +89,10 @@ class WaveformLoader {
         onPcm: AudioAnalysisService.sinkFor(
             _ref.read(loopItemsProvider.notifier), item,
             duration: _ref.read(playerProvider).state.duration),
+        // 曲の大きさ（音量正規化用）はデコードしたときに毎回測って残す
+        onLoudness: (db) =>
+            _ref.read(loopItemsProvider.notifier).saveLoudness(item.id, db),
+        needLoudness: _needLoudness(item),
         cacheKey: item.id,
       );
       if (!isMounted()) return null;

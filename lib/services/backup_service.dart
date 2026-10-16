@@ -147,6 +147,7 @@ class BackupService {
         'tailDb': item.tailDb,
         'endFadeDb': item.endFadeDb,
         'dropDb': item.dropDb,
+        'loudnessDb': item.loudnessDb,
         'durationMs': item.durationMs,
       };
 
@@ -191,6 +192,7 @@ class BackupService {
         tailDb: (j['tailDb'] as num?)?.toDouble(),
         endFadeDb: (j['endFadeDb'] as num?)?.toDouble(),
         dropDb: (j['dropDb'] as num?)?.toDouble(),
+        loudnessDb: (j['loudnessDb'] as num?)?.toDouble(),
         durationMs: j['durationMs'] as int?,
       );
 

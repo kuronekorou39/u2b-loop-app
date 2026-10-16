@@ -403,8 +403,22 @@ final waveformDataProvider = StateProvider<List<double>?>((ref) => null);
 final waveformLoadingProvider = StateProvider<bool>((ref) => false);
 final waveformErrorProvider = StateProvider<String?>((ref) => null);
 
-/// 音量正規化ON/OFF
-final volumeNormProvider = StateProvider<bool>((ref) => false);
+/// 音量正規化（曲ごとに測った大きさで音量を揃える。Loudness）。既定オフ、保存する
+final volumeNormProvider =
+    StateNotifierProvider<VolumeNormNotifier, bool>((ref) => VolumeNormNotifier());
+
+class VolumeNormNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.volumeNorm;
+
+  VolumeNormNotifier() : super(false) {
+    state = AppBoxes.settings.get(_key, defaultValue: false) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
 
 /// 現在のオーディオ出力デバイス（speaker/headphones/bluetooth）
 final audioDeviceProvider = StateProvider<String>((ref) => 'speaker');

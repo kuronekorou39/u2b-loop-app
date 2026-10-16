@@ -105,6 +105,6 @@ void main() {
     await tester.tap(find.text('大きめ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.sfxLevelDb), 0);
-    expect(find.text('曲と同じ大きさ'), findsOneWidget);
+    expect(chipOf(tester, '大きめ').selected, isTrue);
   });
 }

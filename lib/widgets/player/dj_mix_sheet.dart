@@ -49,7 +49,6 @@ class DjMixSheet extends ConsumerWidget {
             const _SectionLabel(
               icon: Icons.multitrack_audio,
               label: 'クロスフェード',
-              hint: '次の曲に重ねる長さ（拍。4 拍 = 1 小節）',
             ),
             _Chips<int>(
               values: CrossfadeNotifier.options,
@@ -60,7 +59,6 @@ class DjMixSheet extends ConsumerWidget {
             SwitchListTile(
               secondary: const Icon(Icons.auto_mode),
               title: const Text('おまかせ'),
-              subtitle: const Text('2 曲のテンポ・ビート・ドロップ・音量の流れから、つなぎ方を曲ごとに選ぶ'),
               value: auto,
               onChanged: on
                   ? (v) => ref.read(autoMixProvider.notifier).value = v
@@ -71,7 +69,7 @@ class DjMixSheet extends ConsumerWidget {
               icon: Icons.show_chart,
               label: 'つなぎ方',
               hint: manual
-                  ? curve.description
+                  ? null
                   : on
                       ? autoNote
                       : 'クロスフェードをオンにすると使えます',
@@ -88,7 +86,6 @@ class DjMixSheet extends ConsumerWidget {
             SwitchListTile(
               secondary: const Icon(Icons.trending_up),
               title: const Text('ドロップに合わせる'),
-              subtitle: const Text('次の曲の盛り上がりが切り替わりに来るようにする'),
               value: ref.watch(mixPointAlignProvider),
               onChanged: on
                   ? (v) => ref.read(mixPointAlignProvider.notifier).value = v
@@ -97,7 +94,6 @@ class DjMixSheet extends ConsumerWidget {
             SwitchListTile(
               secondary: const Icon(Icons.speed),
               title: const Text('テンポ合わせ'),
-              subtitle: const Text('次曲の速度を前曲のテンポに寄せる'),
               value: ref.watch(tempoMatchProvider),
               onChanged: manual
                   ? (v) => ref.read(tempoMatchProvider.notifier).value = v
@@ -106,7 +102,6 @@ class DjMixSheet extends ConsumerWidget {
             SwitchListTile(
               secondary: const Icon(Icons.align_horizontal_center),
               title: const Text('拍合わせ'),
-              subtitle: const Text('拍の頭を揃えて重ね、速度を微調整して合わせ続ける'),
               value: ref.watch(beatMatchProvider),
               onChanged: manual
                   ? (v) => ref.read(beatMatchProvider.notifier).value = v
@@ -116,7 +111,6 @@ class DjMixSheet extends ConsumerWidget {
             SwitchListTile(
               secondary: const Icon(Icons.graphic_eq),
               title: const Text('ベーススワップ'),
-              subtitle: const Text('次の曲の低音を切って重ね、途中で低音を入れ替える'),
               value: ref.watch(bassSwapProvider),
               onChanged: manual
                   ? (v) => ref.read(bassSwapProvider.notifier).value = v
@@ -126,7 +120,7 @@ class DjMixSheet extends ConsumerWidget {
               icon: Icons.auto_awesome,
               label: '切り替えの演出',
               hint: manual
-                  ? effect.description
+                  ? null
                   : on
                       ? autoNote
                       : 'クロスフェードをオンにすると使えます',
@@ -144,9 +138,7 @@ class DjMixSheet extends ConsumerWidget {
             _SectionLabel(
               icon: Icons.campaign,
               label: '効果音の音量',
-              hint: sfxOn
-                  ? SfxLevelNotifier.describe(sfxLevel)
-                  : '効果音を使う演出（ライザー / インパクト / スピンバック）で使えます',
+              hint: sfxOn ? null : '効果音を使う演出で使えます',
               enabled: sfxOn,
             ),
             _Chips<int>(
@@ -164,18 +156,18 @@ class DjMixSheet extends ConsumerWidget {
   }
 }
 
-/// 「その他」シートの速度の行と同じ見た目の見出し（アイコン + 名前 + 説明）
+/// 見出し（アイコン + 名前）。[hint] は触れない理由だけ（説明は出さない）
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({
     required this.icon,
     required this.label,
-    required this.hint,
+    this.hint,
     this.enabled = true,
   });
 
   final IconData icon;
   final String label;
-  final String hint;
+  final String? hint;
   final bool enabled;
 
   @override
@@ -195,10 +187,11 @@ class _SectionLabel extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label, style: textTheme.bodyLarge),
-                  Text(hint,
-                      style: textTheme.labelSmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  if (hint != null)
+                    Text(hint!,
+                        style: textTheme.labelSmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),

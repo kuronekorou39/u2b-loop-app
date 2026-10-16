@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../core/audio/loudness.dart';
 import '../core/native_channels.dart';
 import '../models/loop_item.dart';
 import '../models/video_source.dart';
@@ -18,6 +19,9 @@ import 'youtube_service.dart';
 /// テンポ/キー解析用に間引いたモノラル PCM を受け取る。
 /// 波形生成のデコードに相乗りするので、呼び出し側のデコードコストは増えない。
 typedef PcmCallback = void Function(Int16List pcm, int sampleRate);
+
+/// 曲全体の RMS（dBFS）。MediaCodec でデコードしたときだけ分かる（[Loudness.measureDb]）
+typedef LoudnessCallback = void Function(double loudnessDb);
 
 class WaveformService {
 
@@ -35,6 +39,7 @@ class WaveformService {
     String url,
     int targetSamples, {
     PcmCallback? onPcm,
+    LoudnessCallback? onLoudness,
   }) async {
     final withPcm = onPcm != null;
     final raw = await NativeChannels.waveform.invokeMethod<dynamic>(
@@ -59,6 +64,11 @@ class WaveformService {
     }
 
     final amplitudes = result.cast<int>();
+    if (onLoudness != null) {
+      // 正規化する前の RMS（16bit の絶対値）から曲の大きさを測る
+      final db = Loudness.measureDb(amplitudes);
+      if (db != null) onLoudness(db);
+    }
     return _downsampleAndNormalize(amplitudes, targetSamples);
   }
 
@@ -76,10 +86,12 @@ class WaveformService {
     String path,
     int targetSamples, {
     PcmCallback? onPcm,
+    LoudnessCallback? onLoudness,
   }) async {
     // まずMediaCodecデコードで試行
     try {
-      final result = await generateFromUrl(path, targetSamples, onPcm: onPcm);
+      final result = await generateFromUrl(path, targetSamples,
+          onPcm: onPcm, onLoudness: onLoudness);
       if (result != null) return result;
     } catch (_) {
       // MediaCodecが失敗したらフォールバックへ
@@ -291,23 +303,31 @@ class WaveformService {
   /// 使い終わった一時ファイルは内部で削除する。
   ///
   /// [cacheKey]（アイテムID）を渡すと [WaveformCache] を使う。
-  /// ただし [onPcm] がある＝解析が必要なときは、PCM を取るために生成し直す。
+  /// ただし [onPcm] がある＝解析が必要なとき、[needLoudness]＝曲の大きさがまだ無いときは、
+  /// デコードし直す（保存した波形はピーク正規化済みで大きさが分からない）。
+  /// 大きさは [onLoudness] で返す
   Future<List<double>?> generateForVideoSource(
     VideoSource source,
     YouTubeService ytService, {
     String? cachedAudioPath,
     int targetSamples = 4000,
     PcmCallback? onPcm,
+    LoudnessCallback? onLoudness,
+    bool needLoudness = false,
     String? cacheKey,
   }) async {
-    if (cacheKey != null && onPcm == null && cachedAudioPath == null) {
+    if (cacheKey != null &&
+        onPcm == null &&
+        !needLoudness &&
+        cachedAudioPath == null) {
       final cached = await WaveformCache.load(cacheKey);
       if (cached != null && cached.isNotEmpty) return cached;
     }
     final waveform = await _generateForVideoSource(source, ytService,
         cachedAudioPath: cachedAudioPath,
         targetSamples: targetSamples,
-        onPcm: onPcm);
+        onPcm: onPcm,
+        onLoudness: onLoudness);
     if (cacheKey != null && waveform != null && waveform.isNotEmpty) {
       await WaveformCache.save(cacheKey, waveform);
     }
@@ -320,9 +340,11 @@ class WaveformService {
     String? cachedAudioPath,
     required int targetSamples,
     PcmCallback? onPcm,
+    LoudnessCallback? onLoudness,
   }) async {
     if (source.type == VideoSourceType.local) {
-      return generateForLocalFile(source.uri, targetSamples, onPcm: onPcm);
+      return generateForLocalFile(source.uri, targetSamples,
+          onPcm: onPcm, onLoudness: onLoudness);
     }
     final videoId = source.videoId;
     if (videoId == null) return null;
@@ -332,7 +354,8 @@ class WaveformService {
       // 通信せずに使える音声があれば落とさない（自動キャッシュ・オフライン保存も含む）
       final local = await localAudioFor(videoId, playingUri: source.uri);
       if (local != null) {
-        return generateForLocalFile(local, targetSamples, onPcm: onPcm);
+        return generateForLocalFile(local, targetSamples,
+            onPcm: onPcm, onLoudness: onLoudness);
       }
       final manifest = await ytService
           .getManifestWithFallback(videoId)
@@ -340,7 +363,8 @@ class WaveformService {
       path = await prefetchAudio(manifest, ytService, videoId: videoId);
       if (path == null) return null;
     }
-    return generateFromCachedAudio(path, targetSamples: targetSamples, onPcm: onPcm);
+    return generateFromCachedAudio(path,
+        targetSamples: targetSamples, onPcm: onPcm, onLoudness: onLoudness);
   }
 
   /// 通信せずに使える [videoId] の音声のパス。高音質の音声 → 自動キャッシュの映像 →
@@ -359,18 +383,22 @@ class WaveformService {
     return null;
   }
 
-  /// 波形がキャッシュ済みで、解析も不要なら true（音声 DL を省ける）
-  static Future<bool> canSkipAudioFetch(LoopItem item) async =>
+  /// 波形がキャッシュ済みで、解析も曲の大きさの計測も不要なら true（音声 DL を省ける）
+  static Future<bool> canSkipAudioFetch(LoopItem item,
+          {bool needLoudness = false}) async =>
       !AudioAnalysisService.needsAnalysis(item) &&
+      !needLoudness &&
       await WaveformCache.exists(item.id);
 
   Future<List<double>?> generateFromCachedAudio(
     String audioPath, {
     int targetSamples = 4000,
     PcmCallback? onPcm,
+    LoudnessCallback? onLoudness,
   }) async {
     try {
-      return await generateForLocalFile(audioPath, targetSamples, onPcm: onPcm);
+      return await generateForLocalFile(audioPath, targetSamples,
+          onPcm: onPcm, onLoudness: onLoudness);
     } finally {
       // 再生にも使う高音質の音声は HqAudio が寿命を持つので消さない
       if (!HqAudio.isManagedPath(audioPath)) {

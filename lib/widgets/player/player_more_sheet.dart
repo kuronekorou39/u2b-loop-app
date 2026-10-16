@@ -122,32 +122,23 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
               },
             ),
             const Divider(),
-            // 速度
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, 0),
-              child: Row(
-                children: [
-                  const Icon(Icons.speed, size: AppIconSizes.lg),
-                  const SizedBox(width: AppSpacing.xl),
-                  Text('速度', style: textTheme.bodyLarge),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.xs),
-              child: Wrap(
-                spacing: AppSpacing.sm,
-                children: [
+            // 速度（候補を並べると見づらいのでプルダウン）
+            ListTile(
+              leading: const Icon(Icons.speed),
+              title: Text('速度', style: textTheme.bodyLarge),
+              trailing: DropdownButton<double>(
+                value: PlayerMoreSheet.speeds.contains(rate) ? rate : null,
+                hint: Text('${rate}x'),
+                underline: const SizedBox.shrink(),
+                items: [
                   for (final s in PlayerMoreSheet.speeds)
-                    ChoiceChip(
-                      label: Text('${s}x'),
-                      selected: s == rate,
-                      onSelected: hasSource ? (_) => player.setRate(s) : null,
-                      visualDensity: VisualDensity.compact,
-                    ),
+                    DropdownMenuItem(value: s, child: Text('${s}x')),
                 ],
+                onChanged: hasSource
+                    ? (s) {
+                        if (s != null) player.setRate(s);
+                      }
+                    : null,
               ),
             ),
             const VolumeSliderRow(),

@@ -11,6 +11,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../app.dart';
 import '../core/audio/energy_profile.dart';
+import '../core/audio/loudness.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/constants.dart';
 import '../core/loop/region_edit_controller.dart';
@@ -153,7 +154,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _isFading = false;
   bool _pendingFadeIn = false;
 
-  /// 音量正規化の結果（正規化OFFなら100）。
+  /// 音量正規化の結果（正規化OFFなら100。[_applyVolumeNorm]）。
   /// フェードイン/アウトはこの値を上限にする。100固定にすると
   /// フェード完了時に正規化した音量が上書きされてしまう。
   double _baseVolume = 100.0;
@@ -763,6 +764,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _setupPlaylistCallbacks();
     ref.read(loopProvider.notifier).setCurrentItem(track.item.id);
     _startPreloadMonitor();
+    // 新しい曲の大きさに合わせた音量を上限にする（下で setVolume / フェードインに使う）
+    _baseVolume = _normalizedVolume(track.item);
     if (shouldFadeIn) {
       _startFadeIn();
     } else {
@@ -1308,6 +1311,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 再生カウント: 現在のアイテムを設定
     ref.read(loopProvider.notifier).setCurrentItem(item.id);
 
+    // 音量正規化（前に測ってあればこの時点で合う。無ければ波形ができたとき）
+    _applyVolumeNorm(item);
+
     // Auto-play + バックグラウンド再生サービス開始
     player.play();
     WakelockPlus.enable();
@@ -1611,33 +1617,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         unawaited(_updateMixPoints(track, waveform, preload: false));
       }
     }
-    _applyVolumeNormalization(waveform);
+    // 波形を作ったときに曲の大きさも測って保存される。まだこの曲なら音量に反映する
+    final nowPlaying = _isPlaylist
+        ? ref.read(playlistPlayerProvider).currentTrack?.item.id == item.id
+        : _currentItem.id == item.id;
+    if (nowPlaying) _applyVolumeNorm(item);
   }
 
-  /// 波形データから音量を正規化（デフォルト50を基準に調整）
-  void _applyVolumeNormalization(List<double> waveform) {
-    if (!ref.read(volumeNormProvider)) {
-      _baseVolume = 100.0;
-      return;
-    }
+  /// 音量正規化がオンなら、その曲の大きさ（保存されている最新の値）に合わせた音量。オフなら 100
+  double _normalizedVolume(LoopItem item) {
+    if (!ref.read(volumeNormProvider)) return 100.0;
+    final latest = ref.read(loopItemsProvider.notifier).byId(item.id) ?? item;
+    return Loudness.volumeFor(latest.loudnessDb);
+  }
 
-    // 波形のRMS（二乗平均平方根）を計算
-    var sumSquares = 0.0;
-    for (final v in waveform) {
-      sumSquares += v * v;
-    }
-    final rms = math.sqrt(sumSquares / waveform.length);
-    if (rms <= 0) return;
-
-    // 基準RMS: 0.25（正規化済み波形の中央値想定）
-    const targetRms = 0.25;
-    final ratio = targetRms / rms;
-
-    // 音量 = 50 * ratio（20〜100にクランプ）
-    final volume = (50.0 * ratio).clamp(20.0, 100.0);
-    _baseVolume = volume;
+  /// [_normalizedVolume] を今のプレイヤーに反映する（フェード中は上限だけ更新）
+  void _applyVolumeNorm(LoopItem item) {
+    _baseVolume = _normalizedVolume(item);
+    if (_isFading) return;
     try {
-      ref.read(playerProvider).setVolume(volume);
+      ref.read(playerProvider).setVolume(_baseVolume);
     } catch (_) {}
   }
 
@@ -2321,15 +2320,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _toggleVolumeNorm() {
     final current = ref.read(volumeNormProvider);
-    ref.read(volumeNormProvider.notifier).state = !current;
-    if (!current) {
-      // ONにした時点で現在の波形で正規化を適用
-      final waveform = ref.read(waveformDataProvider);
-      if (waveform != null) _applyVolumeNormalization(waveform);
-    } else {
-      // OFFにしたらデフォルト音量に戻す
-      _baseVolume = 100.0;
-      try { ref.read(playerProvider).setVolume(100); } catch (_) {}
+    ref.read(volumeNormProvider.notifier).value = !current;
+    final item = _isPlaylist
+        ? ref.read(playlistPlayerProvider).currentTrack?.item
+        : _currentItem;
+    if (item == null) return;
+    // オン: 測ってあれば即反映、無ければ波形を作り直して測る（できたときに反映）。
+    // オフ: 100 に戻す（_normalizedVolume がオフなら 100 を返す）
+    _applyVolumeNorm(item);
+    if (!current && _normalizedVolume(item) == 100.0 && item.loudnessDb == null) {
+      final source = ref.read(videoSourceProvider);
+      if (source != null) _generateWaveform(source, item);
     }
   }
 

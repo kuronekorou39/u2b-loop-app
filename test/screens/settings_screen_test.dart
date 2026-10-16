@@ -152,10 +152,10 @@ void main() {
     await tester.tap(find.text('次曲先行'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
-    expect(find.textContaining('次曲先行:'), findsOneWidget);
+    expect(find.text('次曲先行'), findsOneWidget);
 
     // 演出の既定はフィルタースイープ
-    expect(find.textContaining('フィルタースイープ:'), findsOneWidget);
+    expect(find.text('フィルタースイープ'), findsOneWidget);
     await tester.tap(find.text('切り替えの演出'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('ブレーキ'));

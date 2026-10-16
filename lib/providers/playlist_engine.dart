@@ -9,6 +9,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../core/audio/beat_grid.dart';
 import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
+import '../core/audio/loudness.dart';
 import '../core/audio/sfx_library.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/audio/transition_effect.dart';
@@ -311,6 +312,7 @@ class PlaylistEngine {
     // 交差中ならここで完了させる。監視は止める（次のプリロードで再び arm される）
     final session = _crossfade;
     _crossfade = null;
+    final armed = _armedTrack;
     _armedTrack = null;
     _crossfadeMonitor?.cancel();
     _crossfadeMonitor = null;
@@ -327,6 +329,11 @@ class PlaylistEngine {
     } else {
       oldPlayer.stop();
       session?.finish();
+    }
+    if (session == null) {
+      // 交差なしの切り替え: 新しい曲の大きさに合わせた音量にしてから鳴らす
+      newPlayer.setVolume(
+          _carryVolume(oldPlayer.state.volume, _armedFrom, armed?.item));
     }
     newPlayer.play();
     // テンポを寄せていた（拍合わせのナッジ込み）なら、前曲が消えた後にゆっくり本来の速度へ戻す
@@ -362,6 +369,15 @@ class PlaylistEngine {
 
   Timer? _crossfadeMonitor;
   PlaylistTrack? _armedTrack;
+
+  /// 予約したときに鳴っていた曲（スワップ時に音量正規化の補正をかけ直すため）
+  LoopItem? _armedFrom;
+
+  /// 音量正規化: [fromVolume] で鳴っている [from] から [to] に移るときの音量。オフならそのまま
+  double _carryVolume(double fromVolume, LoopItem? from, LoopItem? to) {
+    if (!_ref.read(volumeNormProvider)) return fromVolume;
+    return Loudness.carry(fromVolume, from?.loudnessDb, to?.loudnessDb);
+  }
 
   /// プレイリスト再生のひと続きの番号。ミニプレイヤーの進行役（MiniPlayerTransport）は
   /// 作られたときの値を覚え、変わっていたら何もしない。
@@ -462,6 +478,7 @@ class PlaylistEngine {
   /// 拍合わせの分だけ開始位置をずらすシークはここで済ませておく（交差開始時の遅れを減らす）
   void armCrossfade(PlaylistTrack next) {
     _armedTrack = next;
+    _armedFrom = _ref.read(playlistPlayerProvider).currentTrack?.item;
     _crossfadeMonitor ??= Timer.periodic(
         const Duration(milliseconds: 100), (_) => _crossfadeTick());
     if (crossfadeDuration != Duration.zero) {
@@ -658,6 +675,7 @@ class PlaylistEngine {
     final beatRealMs = beatMs / (outRate > 0 ? outRate : 1);
     final effect = recipe.effect;
     final volume = activePlayer.state.volume;
+    final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
     final session = _CrossfadeSession(
       recipe: recipe,
       outPlayer: activePlayer,
@@ -666,6 +684,7 @@ class PlaylistEngine {
       cut: cut,
       advancesAtCut: advancesAtCut,
       volume: volume,
+      inVolume: _carryVolume(volume, outItem, next.item),
       inStart: inStart,
       inBaseRate: baseRate,
       inRate: inRate,
@@ -894,6 +913,7 @@ class _CrossfadeSession {
     required this.cut,
     required this.advancesAtCut,
     required this.volume,
+    required this.inVolume,
     required this.inStart,
     required this.inBaseRate,
     required this.inRate,
@@ -1123,6 +1143,9 @@ class _CrossfadeSession {
 
   final double volume;
 
+  /// 入る曲の交差後の音量（音量正規化で出る曲と違うことがある）
+  final double inVolume;
+
   /// 取り消し時に新プレイヤーを戻す位置（次曲のA点）
   final Duration inStart;
 
@@ -1143,7 +1166,7 @@ class _CrossfadeSession {
     final levels = effect.cutsHard ? CrossfadeCurve.cut.levels(t) : curve.levels(t);
     outVolume = volume * (_outOverride ?? levels.out);
     outPlayer.setVolume(outVolume);
-    inPlayer.setVolume(volume * levels.in_);
+    inPlayer.setVolume(inVolume * levels.in_);
 
     final posMs = pos.inMicroseconds / 1000;
     final cutMs = cut.inMicroseconds / 1000;
@@ -1175,7 +1198,7 @@ class _CrossfadeSession {
   /// 新プレイヤーだけ本来の音量に戻す（旧プレイヤーは別途落としてから戻す）。
   /// 低音が戻り切っていなければ戻す（ランプの途中でスワップが来た場合）
   void finishIn() {
-    inPlayer.setVolume(volume);
+    inPlayer.setVolume(inVolume);
     if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
   }
 
@@ -1194,7 +1217,7 @@ class _CrossfadeSession {
     unawaited(sfx?.stop());
     inPlayer.pause();
     inPlayer.seek(inStart);
-    inPlayer.setVolume(volume);
+    inPlayer.setVolume(inVolume);
     if (appliedInRate != inBaseRate) inPlayer.setRate(inBaseRate);
     outPlayer.setVolume(volume);
     if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
