@@ -111,9 +111,9 @@ class PlaylistEngine {
     disarmCrossfade();
     // 読み直す側がテンポを戻している途中なら、その速度を上書きされないよう止める
     if (identical(player, _tempoRampPlayer)) _cancelTempoRamp();
-    // 低音シェルフとスイープ用ローパスを 0dB・全開で付けておく（交差中は値だけ動かす）。
-    // 前回の交差の残り（2 枚のプレイヤーを使い回すため）もここで消える
-    await AudioFilters.install(player);
+    // 音声フィルタは外して開く（作れない列が付いたまま開くと、その曲の音声が無効になる）。
+    // 前回の交差の残り（2 枚のプレイヤーを使い回すため）もここで消え、末尾で付け直す
+    await AudioFilters.detach(player);
     // ブレーキ（音程補正オフ）やループロール（mpv の AB ループ）の残りも戻す
     await DeckTricks.reset(player);
 
@@ -209,6 +209,9 @@ class PlaylistEngine {
 
     await player.seek(effectiveStart(track));
     await player.setRate(item.speed);
+    // 音声が鳴れる状態になってから、低音 0dB・スイープ全開のフィルタ列を付ける
+    // （交差中は値だけ動かすので音は途切れない）
+    await AudioFilters.install(player);
     return manifest;
   }
 
@@ -462,6 +465,8 @@ class PlaylistEngine {
     _crossfadeMonitor ??= Timer.periodic(
         const Duration(milliseconds: 100), (_) => _crossfadeTick());
     if (crossfadeDuration != Duration.zero) {
+      // 出る曲にもここで付けておく（交差の最中にグラフを作り直さないため）
+      unawaited(AudioFilters.install(activePlayer));
       unawaited(realignPreload(next));
       unawaited(_preloadSfx());
     }
@@ -671,8 +676,6 @@ class PlaylistEngine {
       beat: beat,
       swapStartMs: swapStartMs,
       swapEndMs: swapEndMs,
-      // エコーの遅延は半拍（実時間）
-      echoDelayMs: (beatRealMs / 2).round(),
       outRate: outRate,
       beatRealMs: beatRealMs,
       beatMediaMs: beatMs,
@@ -900,7 +903,6 @@ class _CrossfadeSession {
     required this.beat,
     required this.swapStartMs,
     required this.swapEndMs,
-    required this.echoDelayMs,
     required this.outRate,
     required this.beatRealMs,
     required this.beatMediaMs,
@@ -1053,12 +1055,9 @@ class _CrossfadeSession {
   }
 
   /// ベーススワップの開始・終了位置（出る曲の媒体ミリ秒）。開始は拍の頭に寄せてある。
-  /// 演出（スイープ・エコー）も開始位置から切替点にかけて
+  /// 演出（スイープ）も開始位置から切替点にかけて
   final double swapStartMs;
   final double swapEndMs;
-
-  /// エコーアウトの遅延（実時間ミリ秒、半拍）
-  final int echoDelayMs;
 
   /// 拍合わせの計画（しないときは null）
   final _BeatPlan? beat;
@@ -1113,9 +1112,6 @@ class _CrossfadeSession {
   /// 出る曲にかける演出。ベーススワップと同じ位置から切替点までかける
   final TransitionEffect effect;
 
-  /// スワップの開始位置を通過したか（エコーを付けるのは一度だけ）
-  bool _swapped = false;
-
   final Player outPlayer;
   final Player inPlayer;
   final Duration start;
@@ -1159,13 +1155,6 @@ class _CrossfadeSession {
         unawaited(AudioFilters.setBassDb(outPlayer, AudioFilters.bassDb(r)));
         unawaited(AudioFilters.setBassDb(inPlayer, AudioFilters.bassDb(1 - r)));
       }
-      // エコーアウト: 出る曲に半拍のエコーを付ける（グラフの作り直しはこの 1 回だけ）
-      if (!_swapped) {
-        _swapped = true;
-        if (effect.echoesOut) {
-          unawaited(AudioFilters.setEcho(outPlayer, echoDelayMs));
-        }
-      }
       // スイープ: スワップの位置から切替点にかけてローパスを閉じていく
       if (effect.sweepsOut && cutMs > swapStartMs) {
         unawaited(AudioFilters.setSweep(outPlayer,
@@ -1190,10 +1179,11 @@ class _CrossfadeSession {
     if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
   }
 
-  /// 出る曲のフィルタとトリックを初期状態に戻す（停止した後に呼ぶ。次にプリロード側として使うため）
+  /// 出る曲のトリックを初期状態に戻す（停止した後に呼ぶ。次にプリロード側として使うため）。
+  /// フィルタは止めた後なので値は戻さず、状態だけ忘れる（次に開く前の detach で外れる）
   void clearOut() {
     _cancelTricks();
-    unawaited(AudioFilters.reset(outPlayer));
+    AudioFilters.forget(outPlayer);
     unawaited(DeckTricks.reset(outPlayer));
     if (effect == TransitionEffect.brake) unawaited(outPlayer.setRate(outRate));
   }

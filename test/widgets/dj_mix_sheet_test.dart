@@ -56,7 +56,7 @@ void main() {
 
     expect(chipOf(tester, 'オフ').selected, isTrue);
     expect(chipOf(tester, '次曲先行').onSelected, isNull);
-    expect(chipOf(tester, 'エコーアウト').onSelected, isNull);
+    expect(chipOf(tester, 'ブレーキ').onSelected, isNull);
     expect(switchOf(tester, 'ベーススワップ').onChanged, isNull);
     // 既定: ベーススワップ オン / 演出はフィルタースイープ
     expect(switchOf(tester, 'ベーススワップ').value, isTrue);
@@ -85,14 +85,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.bassSwap), false);
 
-    await tester.tap(find.text('エコーアウト'));
+    await tester.tap(find.text('ブレーキ'));
     await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'echoOut');
+    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'brake');
   });
 
   testWidgets('効果音の音量は、効果音を使う演出を選んだときだけ触れる', (tester) async {
     await pumpSheet(tester);
-    // 前のテストでクロスフェードはオン、演出はエコーアウト
+    // 前のテストでクロスフェードはオン、演出はブレーキ（効果音は使わない）
     expect(chipOf(tester, 'ふつう').selected, isTrue);
     expect(chipOf(tester, '大きめ').onSelected, isNull);
 

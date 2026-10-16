@@ -8,6 +8,7 @@ import '../../core/audio/audio_quality.dart';
 import '../../models/loop_item.dart';
 import '../../models/video_source.dart';
 import '../../providers/player_provider.dart';
+import '../audio_filters.dart';
 import '../cache_service.dart';
 import '../youtube_service.dart';
 import 'hq_audio.dart';
@@ -96,6 +97,8 @@ class PlayerLoader {
       {void Function(LoadedMedia media)? onOpened}) async {
     try {
       final player = _ref.read(playerProvider);
+      // 音声フィルタは外して開く（PlaylistEngine.prepare と同じ。付けるのは交差の予約時）
+      await AudioFilters.detach(player);
       final offline = CacheService.offlineVideoPath(item);
       final LoadedMedia media;
       Future<String?>? hqAudio;

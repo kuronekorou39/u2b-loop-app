@@ -135,7 +135,7 @@ class TransitionPlanner {
     } else if ((faster ?? 0) <= -fasterPercent || (energy ?? 0) <= -energyStepDb) {
       facts.add(_energyFact(faster, energy, up: false));
       recipe = _make('落ち着かせ', 16, CrossfadeCurve.equalPower,
-          bass: true, effect: TransitionEffect.echoOut, match: true);
+          bass: true, effect: TransitionEffect.filterSweep, match: true);
     } else {
       recipe = _make('ブレンド', 16, CrossfadeCurve.nextFirst,
           bass: true, effect: TransitionEffect.filterSweep, match: true);

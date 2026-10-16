@@ -75,12 +75,12 @@ void main() {
     expect(louder.reason, 'テンポ差 0% · 入る曲が +6dB');
   });
 
-  test('入る曲が遅い / 静か → 落ち着かせ 16 拍 等パワー エコーアウト', () {
+  test('入る曲が遅い / 静か → 落ち着かせ 16 拍 等パワー スイープ', () {
     final slower = TransitionPlanner.plan(item(bpm: 128), item(bpm: 122));
     expect(slower.name, '落ち着かせ');
     expect(slower.beats, 16);
     expect(slower.curve, CrossfadeCurve.equalPower);
-    expect(slower.effect, TransitionEffect.echoOut);
+    expect(slower.effect, TransitionEffect.filterSweep);
 
     final quieter = TransitionPlanner.plan(
         item(bpm: 128, tailDb: -6), item(bpm: 128, headDb: -12));

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -5,6 +6,7 @@ import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/transition_effect.dart';
 import '../models/video_source.dart';
+import '../services/audio_filters.dart';
 import '../services/transition_sfx.dart';
 import '../services/youtube_service.dart';
 import '../core/storage/app_boxes.dart';
@@ -34,9 +36,19 @@ void _disableNativeSubtitles(Player player) {
   }
 }
 
+/// mpv のエラー（media_kit の既定で error 以上だけ届く）を logcat に出す。
+/// 音声フィルタ列が作れなかったときは AudioFilters が以後の使用をやめる
+void _watchMpvLog(Player player, String name) {
+  player.stream.log.listen((log) {
+    debugPrint('[mpv $name] ${log.level} ${log.prefix}: ${log.text}');
+    AudioFilters.noteLog(log);
+  });
+}
+
 final playerAProvider = Provider<Player>((ref) {
   final player = Player();
   _disableNativeSubtitles(player);
+  _watchMpvLog(player, 'A');
   ref.onDispose(player.dispose);
   return player;
 });
@@ -44,6 +56,7 @@ final playerAProvider = Provider<Player>((ref) {
 final playerBProvider = Provider<Player>((ref) {
   final player = Player();
   _disableNativeSubtitles(player);
+  _watchMpvLog(player, 'B');
   ref.onDispose(player.dispose);
   return player;
 });
@@ -52,6 +65,7 @@ final playerBProvider = Provider<Player>((ref) {
 /// 切り替えの演出で効果音を使うときに初めて作られる（使わない人にはコストが無い）
 final sfxPlayerProvider = Provider<Player>((ref) {
   final player = Player();
+  _watchMpvLog(player, 'SFX');
   ref.onDispose(player.dispose);
   return player;
 });
@@ -315,7 +329,7 @@ class BassSwapNotifier extends StateNotifier<bool> {
   }
 }
 
-/// 切り替わりの演出（エコーアウト / フィルタースイープ）。既定はフィルタースイープ
+/// 切り替わりの演出（フィルタースイープ / ライザーなど）。既定はフィルタースイープ
 final transitionEffectProvider =
     StateNotifierProvider<TransitionEffectNotifier, TransitionEffect>(
         (ref) => TransitionEffectNotifier());

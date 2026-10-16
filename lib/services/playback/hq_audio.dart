@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart' show AudioTrack, Player;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../core/storage/app_boxes.dart';
+import '../audio_filters.dart';
 import '../ranged_downloader.dart';
 import '../youtube_client_info.dart';
 import 'media_cache.dart';
@@ -276,6 +277,7 @@ class HqAudio {
   /// media_kit は mpv のエラーを返さないので、トラック一覧に現れるまで待って
   /// 本当に付いたときだけ true（付かなければ一体型の音声のまま鳴る）
   static Future<bool> attach(Player player, String path) async {
+    var filters = false;
     try {
       int size = -1;
       try {
@@ -283,20 +285,27 @@ class HqAudio {
       } catch (_) {}
       _log('取り付け開始 ${labelFor(path)} ${size ~/ 1024}KB '
           '（今のトラック: ${_audioTrackSummary(player)}）');
+      // 音声チェーンが作り直されるので、その間は音声フィルタの列を外しておく
+      // （作れない列を持ち込むと新しい音声トラックが無効になる）
+      filters = await AudioFilters.suspend(player);
       await player
           .setAudioTrack(AudioTrack.uri(path, title: trackTitle))
           .timeout(const Duration(seconds: 10));
-      for (var i = 0; i < 30; i++) {
-        if (isAttached(player)) {
-          _log('取り付け完了 ${labelFor(path)}');
-          return true;
-        }
-        await Future.delayed(const Duration(milliseconds: 100));
+      var attached = false;
+      for (var i = 0; i < 30 && !attached; i++) {
+        attached = isAttached(player);
+        if (!attached) await Future.delayed(const Duration(milliseconds: 100));
+      }
+      if (filters) await AudioFilters.resume(player);
+      if (attached) {
+        _log('取り付け完了 ${labelFor(path)}');
+        return true;
       }
       _log('取り付け未確認（トラック一覧: ${_audioTrackSummary(player)}）');
       return false;
     } catch (e) {
       _log('取り付け失敗 $e');
+      if (filters) unawaited(AudioFilters.resume(player));
       return false;
     }
   }

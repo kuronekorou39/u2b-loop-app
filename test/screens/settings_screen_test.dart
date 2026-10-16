@@ -158,9 +158,9 @@ void main() {
     expect(find.textContaining('フィルタースイープ:'), findsOneWidget);
     await tester.tap(find.text('切り替えの演出'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('エコーアウト'));
+    await tester.tap(find.text('ブレーキ'));
     await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'echoOut');
+    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'brake');
 
     // クロスフェードをオフにすると触れなくなる
     await tester.tap(find.text('クロスフェード'));
@@ -182,7 +182,7 @@ void main() {
     expect(find.textContaining('クロスフェード 16拍'), findsOneWidget);
     expect(find.textContaining('次曲先行'), findsOneWidget);
     expect(find.textContaining('ベーススワップ'), findsOneWidget);
-    expect(find.textContaining('エコーアウト'), findsOneWidget);
+    expect(find.textContaining('ブレーキ'), findsOneWidget);
   });
 
   testWidgets('バージョンが表示される', (tester) async {

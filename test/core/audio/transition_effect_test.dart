@@ -3,14 +3,11 @@ import 'package:u2b_loop_app/core/audio/sfx_library.dart';
 import 'package:u2b_loop_app/core/audio/transition_effect.dart';
 
 void main() {
-  test('フィルタ系: スイープはライザーにも付く、エコーはエコーアウトだけ', () {
+  test('フィルタ系: スイープはライザーにも付く', () {
     expect(TransitionEffect.filterSweep.sweepsOut, isTrue);
     expect(TransitionEffect.riser.sweepsOut, isTrue);
     expect(TransitionEffect.riserImpact.sweepsOut, isTrue);
-    expect(TransitionEffect.echoOut.sweepsOut, isFalse);
     expect(TransitionEffect.brake.sweepsOut, isFalse);
-    expect(TransitionEffect.echoOut.echoesOut, isTrue);
-    expect(TransitionEffect.values.where((e) => e.echoesOut).length, 1);
   });
 
   test('効果音: 先行して鳴らすもの・切替点で鳴らすもの', () {
@@ -41,5 +38,7 @@ void main() {
     expect(TransitionEffect.fromName('filterSweep'), TransitionEffect.filterSweep);
     expect(TransitionEffect.fromName('loopRoll'), TransitionEffect.loopRoll);
     expect(TransitionEffect.fromName('bogus'), TransitionEffect.defaultEffect);
+    // 廃止したエコーアウトの保存値も既定に落ちる
+    expect(TransitionEffect.fromName('echoOut'), TransitionEffect.defaultEffect);
   });
 }
