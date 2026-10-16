@@ -110,24 +110,38 @@ final videoSourceProvider = StateProvider<VideoSource?>((ref) => null);
 /// その画面がそのままPiPに映ってしまう。
 final pipModeProvider = StateProvider<bool>((ref) => false);
 
+// 再生状態の配信。曲が替わると playerProvider が裏のプレイヤーに切り替わるが、
+// media_kit のストリームは値が変わったときしか流れないので、切り替え直後は
+// 前のプレイヤーの値（曲末でフェードアウトした音量 0 など）が残って見えていた。
+// 最初に今の値を流してから購読する
+Stream<T> _currentThenChanges<T>(T current, Stream<T> changes) async* {
+  yield current;
+  yield* changes;
+}
+
 final playingProvider = StreamProvider<bool>((ref) {
-  return ref.watch(playerProvider).stream.playing;
+  final p = ref.watch(playerProvider);
+  return _currentThenChanges(p.state.playing, p.stream.playing);
 });
 
 final positionProvider = StreamProvider<Duration>((ref) {
-  return ref.watch(playerProvider).stream.position;
+  final p = ref.watch(playerProvider);
+  return _currentThenChanges(p.state.position, p.stream.position);
 });
 
 final durationProvider = StreamProvider<Duration>((ref) {
-  return ref.watch(playerProvider).stream.duration;
+  final p = ref.watch(playerProvider);
+  return _currentThenChanges(p.state.duration, p.stream.duration);
 });
 
 final volumeProvider = StreamProvider<double>((ref) {
-  return ref.watch(playerProvider).stream.volume;
+  final p = ref.watch(playerProvider);
+  return _currentThenChanges(p.state.volume, p.stream.volume);
 });
 
 final rateProvider = StreamProvider<double>((ref) {
-  return ref.watch(playerProvider).stream.rate;
+  final p = ref.watch(playerProvider);
+  return _currentThenChanges(p.state.rate, p.stream.rate);
 });
 
 final seekStepProvider =
