@@ -160,6 +160,8 @@ class PlayerLoader {
       await _attachHqAudio(player, hqAudio, media);
       _checkMounted();
       await player.setRate(item.speed);
+      // 音声フィルタ（ベーススワップ・スイープ用）は鳴らす前に付ける（再生中には付けられない）
+      await AudioFilters.install(player);
       // ここで初めてソースを公開する。画面のコントローラーはこれを見て押せるようになるので、
       // メタデータ待ちや音声の取り付けの最中に操作されない
       _ref.read(videoSourceProvider.notifier).state = media.source;

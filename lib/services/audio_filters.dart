@@ -23,7 +23,7 @@ import 'package:media_kit/media_kit.dart';
 /// （mpv は開くときのフィルタ列の失敗で音声を捨てる。映像があれば無音で進み、音声だけなら止まる。
 /// 再生中の変更の失敗なら元の音が鳴り続ける）。v1.95〜v1.97 で 2 曲目から無音になったのはこれ。
 /// - 曲を開く前は必ず [detach] で外す（PlaylistEngine.prepare / PlayerLoader の両方）
-/// - 付けるのは音声が鳴れる状態（開いてメタデータが取れた後）になってから（[install]）
+/// - 付けるのは開いてメタデータが取れた後、**鳴らす前**（[install]。再生中には付けない）
 /// - 外部音声を付け替える間も外す（[suspend] / [resume]）
 /// - mpv が「Audio filter initialized failed」を出したら以後いっさい触らない（[noteLog]）
 ///
@@ -70,6 +70,12 @@ class AudioFilters {
     if (!available) return;
     final s = _stateOf(player);
     if (s.installed) return;
+    // 鳴っている最中に `af` を書くと、端末によっては音が出なくなる（シークするまで戻らない）。
+    // v1.97.1〜v1.98.2 で 1 曲目だけ交差の前に無音になったのはこれ。止まっている間にだけ付ける
+    if (player.state.playing) {
+      debugPrint('[AudioFilters] 再生中なので付けない');
+      return;
+    }
     await _rebuild(player, s);
   }
 
@@ -86,6 +92,8 @@ class AudioFilters {
   /// [suspend] の後、覚えている値で付け直す
   static Future<void> resume(Player player) async {
     if (!available) return;
+    // 鳴っている最中なら付け直さない（[install] と同じ理由）。その曲は演出なしになる
+    if (player.state.playing) return;
     await _rebuild(player, _stateOf(player));
   }
 
@@ -96,7 +104,8 @@ class AudioFilters {
   static Future<void> setBassDb(Player player, double db) async {
     if (!available) return;
     final s = _stateOf(player);
-    if (!s.installed) await _rebuild(player, s);
+    // 付いていなければ何もしない（交差中＝再生中に作り直すと音が消えることがある）
+    if (!s.installed) return;
     if ((s.bassDb - db).abs() < 0.05) return;
     s.bassDb = db;
     await _command(player, _bassLabel, 'gain', db.toStringAsFixed(1));
@@ -106,7 +115,7 @@ class AudioFilters {
   static Future<void> setSweep(Player player, double edgeHz) async {
     if (!available) return;
     final s = _stateOf(player);
-    if (!s.installed) await _rebuild(player, s);
+    if (!s.installed) return;
     if ((s.sweepHz - edgeHz).abs() < 1) return;
     s.sweepHz = edgeHz;
     final (f, w) = sweepBand(edgeHz);

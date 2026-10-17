@@ -670,6 +670,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     await _directLoadTrack(prevTrack, prevIdx);
   }
 
+  /// 重ね表示の次曲の波形。手元に無ければ保存済みの波形を読みに行く（1 曲につき 1 回）
+  final _mixWaveformLoads = <String>{};
+  List<double>? _mixWaveformFor(LoopItem item) {
+    final cached = _waveformCache[item.id];
+    if (cached != null) return cached;
+    if (_mixWaveformLoads.add(item.id)) {
+      WaveformCache.load(item.id).then((w) {
+        if (w == null || w.isEmpty || !mounted) return;
+        _waveformCache[item.id] = w;
+        setState(() {});
+      });
+    }
+    return null;
+  }
+
   /// ミックスビューで切り替わった後、前曲側（切替点より前）をタップしたとき。
   /// 前の曲に戻ってその位置から再生し、切り替わりをもう一度聴けるようにする
   /// （2 秒後に次曲が再びプリロードされ、クロスフェードが繰り返される）。
@@ -1191,8 +1206,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (onPcm == null) {
         waveform = await WaveformCache.load(item.id);
         if (waveform != null && waveform.isNotEmpty) {
+          // 波形は曲のものなので、世代が変わっても残す（重ね表示が使う）
+          _waveformCache[item.id] = waveform;
           if (gen == _preloadGeneration) {
-            _waveformCache[item.id] = waveform;
             await _updateMixPoints(track, waveform, preload: true);
           }
           return;
@@ -1252,8 +1268,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       if (waveform != null && waveform.isNotEmpty) {
         await WaveformCache.save(item.id, waveform);
+        _waveformCache[item.id] = waveform;
         if (gen == _preloadGeneration) {
-          _waveformCache[item.id] = waveform;
           await _updateMixPoints(track, waveform, preload: true);
         }
       }
@@ -1293,7 +1309,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     ref.read(loopProvider.notifier).setCurrentItem(item.id);
 
     // Apply cached waveform or generate fresh
-    final cachedWaveform = _waveformCache.remove(item.id);
+    // 一覧からは消さない（前曲に戻ったとき、重ね表示で次曲の波形として使う）
+    final cachedWaveform = _waveformCache[item.id];
     if (cachedWaveform != null) {
       ref.read(waveformDataProvider.notifier).state = cachedWaveform;
       ref.read(waveformErrorProvider.notifier).state = null;
@@ -2166,7 +2183,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 setState(() => _compactSeekbar = !_compactSeekbar),
             onRetryWaveform: _retryWaveform,
             onReplayPrevious: _replayPreviousFrom,
-            waveformFor: (item) => _waveformCache[item.id],
+            waveformFor: _mixWaveformFor,
             titleFor: (item) => item.title,
           ),
           listOpen: panelOpen,

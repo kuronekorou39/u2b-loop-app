@@ -555,8 +555,6 @@ class PlaylistEngine {
     _crossfadeMonitor ??= Timer.periodic(
         const Duration(milliseconds: 100), (_) => _crossfadeTick());
     if (crossfadeDuration != Duration.zero) {
-      // 出る曲にもここで付けておく（交差の最中にグラフを作り直さないため）
-      unawaited(AudioFilters.install(activePlayer));
       unawaited(realignPreload(next));
       unawaited(_preloadSfx());
     }

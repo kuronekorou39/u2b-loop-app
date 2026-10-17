@@ -30,7 +30,11 @@ class MixView extends StatelessWidget {
     this.bassSwap = false,
     this.note,
     this.onSeek,
+    this.onShowFull,
   });
+
+  /// 「全体」: 重ね表示の代わりに曲全体のシークバーを出す（曲の前のほうへ行きたいとき）
+  final VoidCallback? onShowFull;
 
   /// 長さの横に出す短い説明（おまかせが選んだレシピと理由）。null なら出さない
   final String? note;
@@ -191,6 +195,20 @@ class MixView extends StatelessWidget {
                       : '切替まで ${TimeUtils.formatShort(untilCut)}',
                   style: labelStyle,
                 ),
+                if (onShowFull != null) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  InkWell(
+                    onTap: onShowFull,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm, vertical: 2),
+                      child: Text('全体',
+                          style: labelStyle?.copyWith(
+                              color: AppTheme.accentGreen)),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
