@@ -821,28 +821,16 @@ class _CompactSeekbarPainter extends CustomPainter {
       );
     }
 
-    // A marker
+    // A / B marker
     if (pointA != null) {
       final aX = toX(pointA!);
-      canvas.drawLine(
-        Offset(aX, cy - 6),
-        Offset(aX, cy + 6),
-        Paint()
-          ..color = AppTheme.pointAColor
-          ..strokeWidth = 1.5,
-      );
+      drawPointLine(
+          canvas, Offset(aX, cy - 6), Offset(aX, cy + 6), AppTheme.pointAColor);
     }
-
-    // B marker
     if (pointB != null) {
       final bX = toX(pointB!);
-      canvas.drawLine(
-        Offset(bX, cy - 6),
-        Offset(bX, cy + 6),
-        Paint()
-          ..color = AppTheme.pointBColor
-          ..strokeWidth = 1.5,
-      );
+      drawPointLine(
+          canvas, Offset(bX, cy - 6), Offset(bX, cy + 6), AppTheme.pointBColor);
     }
 
     // Position dot
@@ -1072,19 +1060,15 @@ class _WaveformSeekbarPainter extends CustomPainter {
     Color color, {
     bool labelAtBottom = false,
   }) {
-    canvas.drawLine(
-      Offset(x, 0),
-      Offset(x, size.height),
-      Paint()
-        ..color = color
-        ..strokeWidth = 2.5,
-    );
+    drawPointLine(canvas, Offset(x, 0), Offset(x, size.height), color);
 
+    // 札: AB 編集の行と同じ作り（色を薄く敷いて、文字は色そのもの）。
+    // 波形の上でも読めるよう、下に暗い地を敷いて細い縁取りを付ける
     final tp = TextPainter(
       text: TextSpan(
         text: label,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: color,
           fontSize: 11,
           fontWeight: FontWeight.bold,
         ),
@@ -1092,19 +1076,24 @@ class _WaveformSeekbarPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
 
-    final labelW = tp.width + 8;
+    final labelW = tp.width + 10;
     final labelH = tp.height + 4;
     final labelX = (x - labelW / 2).clamp(0.0, size.width - labelW);
     final labelY = labelAtBottom ? size.height - labelH - 2 : 2.0;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(labelX, labelY, labelW, labelH),
-        const Radius.circular(3),
-      ),
-      Paint()..color = color,
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(labelX, labelY, labelW, labelH),
+      const Radius.circular(6),
     );
-    tp.paint(canvas, Offset(labelX + 4, labelY + 2));
+    canvas.drawRRect(rect, Paint()..color = Colors.black.withValues(alpha: 0.35));
+    canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.22));
+    canvas.drawRRect(
+      rect,
+      Paint()
+        ..color = color.withValues(alpha: 0.6)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    tp.paint(canvas, Offset(labelX + 5, labelY + 2));
   }
 
   @override
@@ -1202,28 +1191,16 @@ class _MinimapPainter extends CustomPainter {
       );
     }
 
-    // A marker line (show when set)
+    // A / B marker line (show when set)
     if (pointA != null) {
       final aX = toX(pointA!);
-      canvas.drawLine(
-        Offset(aX, 0),
-        Offset(aX, size.height),
-        Paint()
-          ..color = AppTheme.pointAColor
-          ..strokeWidth = 1.5,
-      );
+      drawPointLine(
+          canvas, Offset(aX, 0), Offset(aX, size.height), AppTheme.pointAColor);
     }
-
-    // B marker line (show when set)
     if (pointB != null) {
       final bX = toX(pointB!);
-      canvas.drawLine(
-        Offset(bX, 0),
-        Offset(bX, size.height),
-        Paint()
-          ..color = AppTheme.pointBColor
-          ..strokeWidth = 1.5,
-      );
+      drawPointLine(
+          canvas, Offset(bX, 0), Offset(bX, size.height), AppTheme.pointBColor);
     }
 
     // Position line
@@ -1262,4 +1239,24 @@ class _MinimapPainter extends CustomPainter {
       old.pointB != pointB ||
       old.loopEnabled != loopEnabled ||
       old.waveform != waveform;
+}
+
+/// A/B 点の線。ガラス風に合わせて、細い芯の周りにほんのり同じ色を滲ませる
+/// （以前は 1.5〜2.5px の不透明な 1 本線で、板の上で硬く見えた）
+void drawPointLine(Canvas canvas, Offset top, Offset bottom, Color color) {
+  canvas.drawLine(
+    top,
+    bottom,
+    Paint()
+      ..color = color.withValues(alpha: 0.22)
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.round,
+  );
+  canvas.drawLine(
+    top,
+    bottom,
+    Paint()
+      ..color = color.withValues(alpha: 0.95)
+      ..strokeWidth = 1.5,
+  );
 }
