@@ -454,7 +454,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _autoAdvance();
         return true;
       }
-      if (readiness == AdvanceReadiness.none) return false;
+      if (readiness == AdvanceReadiness.none) {
+        // リピートなしで最後の曲: ループせずにそこで止める
+        _finishPlaylist();
+        return true;
+      }
       // 未準備 → ABループ継続、プリロード確保
       if (!_isPreloading) _preloadNextTrack();
       return false;
@@ -487,6 +491,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // ----- 自動遷移（B点到達 / 曲終了） -----
+
+  /// プレイリストの終わり（リピートなしで最後の曲の B 点）。
+  /// 1 番だけモードの曲末フェードは戻して、次に再生を押したとき無音にならないように
+  void _finishPlaylist() {
+    _cancelFade();
+    try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
+    ref.read(playlistEngineProvider).pauseAtPlaylistEnd();
+  }
 
   void _autoAdvance() {
     if (_consecutiveLoadErrors >= _maxConsecutiveErrors) return;

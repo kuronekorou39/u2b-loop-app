@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../models/playlist_mode.dart' as pl;
@@ -52,10 +54,13 @@ class MiniPlayerTransport {
         _advance(readiness);
         return true;
       }
-      // 未準備 → AB ループ継続、裏でプリロードを確保
-      if (readiness == AdvanceReadiness.notReady && !_isPreloading) {
-        _preloadNext();
+      if (readiness == AdvanceReadiness.none) {
+        // リピートなしで最後の曲: ループせずにそこで止める
+        unawaited(engine.pauseAtPlaylistEnd().then((_) => notifyPlayState()));
+        return true;
       }
+      // 未準備 → AB ループ継続、裏でプリロードを確保
+      if (!_isPreloading) _preloadNext();
       return false;
     };
 

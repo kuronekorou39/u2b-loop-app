@@ -71,8 +71,14 @@ class LoopNotifier extends StateNotifier<LoopState> {
   /// 曲が自然終了した時の処理
   void _handleTrackCompleted() {
     final player = _ref.read(playerProvider);
-    // ABループが有効ならA点にシーク
+    // ABループが有効ならA点にシーク。B 点が終端と同じで _checkLoop が間に合わなかった
+    // ときも、プレイリストの判断（次へ進む・終わりで止める）を先に通す
     if (state.enabled && state.pointA != null) {
+      if (!_bPointHandled && onBPointReached != null && onBPointReached!()) {
+        _bPointHandled = true;
+        return;
+      }
+      if (_bPointHandled) return;
       player.seek(state.pointA ?? Duration.zero);
       player.play();
       return;

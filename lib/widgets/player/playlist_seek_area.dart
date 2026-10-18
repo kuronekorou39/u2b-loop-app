@@ -15,7 +15,8 @@ import 'mix_view.dart';
 /// 重ね表示は [PlaylistEngine.mixPair]（1 曲目と 2 曲目をつないだ 1 本の時間軸）を
 /// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
 /// 窓（交差の前後）の中かどうかで決め、時間で勝手に閉じない。
-/// 切り替わった後も、前曲が準備線まで残っている間は「ミックス」で戻って来られる
+/// 切り替わった後も、前曲が準備線まで残っている間は「ミックス」で戻って来られる。
+/// 一度閉じた後は、再生位置が窓に戻っても「ミックス」を押すまで出さない
 class PlaylistSeekArea extends ConsumerStatefulWidget {
   const PlaylistSeekArea({
     super.key,
@@ -55,6 +56,11 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   /// 「ミックス」ボタンで重ね表示に戻った（再生位置が窓の外でも出し続ける）
   bool _forceMix = false;
 
+  /// 切り替わった後、再生位置が一度窓の外に出た（重ね表示を閉じた）。
+  /// それ以降は「ミックス」を押すまで勝手に出さない。出さないと、最後の曲が
+  /// AB ループや 1 曲リピートで頭に戻るたびに前曲との重ね表示が現れてしまう
+  bool _closedOnce = false;
+
   /// 重ね表示の窓（見えている範囲、出る曲の時計）。「−」「＋」「交差」「全体」や
   /// ミニマップで変わる。[_pairKey] の組が変わったら最初の窓に戻す
   MixWindow? _window;
@@ -92,6 +98,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final pair = engine.mixPair();
     if (pair == null) {
       _forceMix = false;
+      _closedOnce = false;
       _window = null;
       _pairKey = null;
       return _seekbar();
@@ -99,6 +106,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final timelineEnd = _timelineEnd(pair);
     if (pair.key != _pairKey) {
       _forceMix = false;
+      _closedOnce = false;
       _pairKey = pair.key;
       _window = null;
     }
@@ -114,11 +122,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     // 出す条件: 切替点の前後（最初の窓）に再生位置があるか、自分で広げた窓の中にあるか
     final nearCut =
         now >= pair.start - MixView.lead && now <= pair.cut + MixView.tail;
-    if (_forceMix || nearCut || window.contains(now)) {
+    final inView = nearCut || window.contains(now);
+    if (_forceMix || (inView && !_closedOnce)) {
       return _mix(pair, now, window, timelineEnd, swapped: swapped);
     }
     // 切り替わった後（前曲が残っている間）は、重ね表示に戻れる
     if (!swapped) return _seekbar();
+    _closedOnce = true;
     return _seekbar(
       trailing: _BackToMixChip(
         onTap: () => setState(() => _forceMix = true),

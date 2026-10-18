@@ -673,6 +673,16 @@ class PlaylistEngine {
     }
   }
 
+  /// リピートなしで最後の曲の終点（B 点）に達した。次の曲は無いので鳴らすのをやめる
+  /// （AB ループはしない）。前曲のパークはそのまま残す（重ね表示から戻れる）
+  Future<void> pauseAtPlaylistEnd() async {
+    try {
+      await activePlayer.pause();
+    } catch (e) {
+      debugPrint('[PlaylistEngine] プレイリストの終わりで止められない: $e');
+    }
+  }
+
   /// 単体再生・AB 設定など、プレイリストでない再生を始めるとき。
   /// ミニプレイヤーで続いていたプレイリストの後始末（進行役・クロスフェード予約・
   /// ループのコールバック・プレイリストの状態）をまとめて行う
