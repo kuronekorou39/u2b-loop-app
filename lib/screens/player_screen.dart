@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -687,7 +686,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// ミックスビューで切り替わった後、前曲側（切替点より前）をタップしたとき。
   /// 前の曲に戻ってその位置から再生し、切り替わりをもう一度聴けるようにする
-  /// （2 秒後に次曲が再びプリロードされ、クロスフェードが繰り返される）。
+  /// （さっきまで鳴っていた曲を次曲として予約し直すので、クロスフェードが繰り返される。
+  ///   交差の中に戻ったときは、エンジンが次曲をその分だけ進めた位置から重ねる）。
   void _replayPreviousFrom(Duration oldPos) {
     final ps = ref.read(playlistPlayerProvider);
     if (!ps.hasPrev || _trackLoading || _isPreloading) return;
@@ -1059,23 +1059,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         plState.firstVerseMode && loop.enabled && loop.hasB;
     final endPoint = isFirstVerse ? loop.pointB! : duration;
 
-    final remaining = endPoint - position;
-    // 1番だけモードでは早めにプリロード開始（30秒前）
-    var thresholdSec = isFirstVerse
-        ? 30
-        : endPoint.inSeconds > 120
-            ? 30
-            : 10;
-    // クロスフェードは曲末の無音を除いた位置の fade 秒前から始まる。
-    // それまでにプリロードが済むよう、その分だけ早める
-    final fadeSec = ref.read(playlistEngineProvider).crossfadeDuration.inSeconds;
-    if (fadeSec > 0 && !isFirstVerse) {
-      final trailingSec =
-          ((_currentItem.trailingSilenceMs ?? 0) / 1000).ceil();
-      thresholdSec = math.max(thresholdSec, fadeSec + trailingSec + 10);
-    }
-
-    if (remaining.inSeconds <= thresholdSec) {
+    // 先読みを始める残り時間の式はエンジンと共通（重ね表示の準備線も同じ式で引く）
+    final lead = PlaylistEngine.preloadLead(
+      item: _currentItem,
+      endPoint: endPoint,
+      firstVerse: isFirstVerse,
+      fade: ref.read(playlistEngineProvider).crossfadeDuration,
+    );
+    if (endPoint - position <= lead) {
       _preloadNextTrack();
     }
   }

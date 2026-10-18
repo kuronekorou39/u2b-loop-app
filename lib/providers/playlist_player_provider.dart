@@ -60,6 +60,19 @@ class PlaylistPlayerState {
     return null;
   }
 
+  /// [trackIndex] の次に鳴るトラックのインデックス（状態を変更しない）。
+  /// 次曲の、そのまた次があるかの判定用（重ね表示の準備線）
+  int? peekNextTrackIndexAfter(int trackIndex) {
+    final enabledIndices = _enabledOrderIndices;
+    final pos = enabledIndices.indexOf(playOrder.indexOf(trackIndex));
+    if (pos < 0) return null;
+    if (pos + 1 < enabledIndices.length) {
+      return playOrder[enabledIndices[pos + 1]];
+    }
+    if (repeatMode == RepeatMode.all) return playOrder[enabledIndices.first];
+    return null;
+  }
+
   /// 前のトラックのインデックスを返す（状態を変更しない）
   int? peekPrevTrackIndex() {
     final enabledIndices = _enabledOrderIndices;

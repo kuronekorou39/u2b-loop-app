@@ -35,6 +35,7 @@ void main() {
   Future<List<Duration>> pump(
     WidgetTester tester, {
     bool seekable = true,
+    Duration? prepLine,
   }) async {
     final seeks = <Duration>[];
     await tester.pumpWidget(
@@ -56,6 +57,7 @@ void main() {
                 cut: cut,
                 now: const Duration(seconds: 95),
                 swapped: false,
+                prepLine: prepLine,
                 height: 80,
                 onSeek: seekable ? seeks.add : null,
               ),
@@ -84,6 +86,21 @@ void main() {
     expect(seeks.length, greaterThan(1));
     // 26px = 窓 42s の 1/10 ≈ 4.2s 進む
     expect(seeks.last.inMilliseconds, closeTo(109200, 200));
+  });
+
+  testWidgets('準備線が窓の中にあれば「次のつなぎへ」を描く（例外なし）', (tester) async {
+    // 窓は 84s〜126s。線を 120s に置く
+    final seeks = await pump(tester, prepLine: const Duration(seconds: 120));
+    expect(find.byType(MixView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    // 線の右（120s より後）を押しても、返る時刻はそのまま（扱いは呼び出し側）
+    final paint = find.descendant(
+      of: find.byType(MixView),
+      matching: find.byType(CustomPaint),
+    );
+    final rect = tester.getRect(paint);
+    await tester.tapAt(Offset(rect.left + 250, rect.center.dy));
+    expect(seeks.single.inMilliseconds, closeTo(124400, 200));
   });
 
   testWidgets('onSeek が無ければ触っても何も起きない', (tester) async {

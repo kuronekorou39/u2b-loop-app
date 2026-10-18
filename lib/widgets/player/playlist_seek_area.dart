@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/audio/transition_planner.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/loop_item.dart';
 import '../../providers/player_provider.dart';
@@ -12,9 +11,10 @@ import 'mix_view.dart';
 /// 下部コントローラーのシーク領域。
 /// ふだんは [LoopSeekbar]（bar モード）、曲の切り替わりが近づくと [MixView] に変わる。
 ///
-/// 切り替わり後も数秒はミックスビューを出し続けるため、交差の情報は
-/// スワップ前にスナップショットとして持っておく（スワップ後はエンジンの予定が消え、
-/// 旧曲の波形・長さもプロバイダから無くなる）。
+/// 重ね表示は [PlaylistEngine.mixPair]（1 曲目と 2 曲目をつないだ 1 本の時間軸）を
+/// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
+/// 窓（交差の前後）の中かどうかで決め、時間で勝手に閉じない。
+/// 切り替わった後も、前曲が準備線まで残っている間は「ミックス」で戻って来られる
 class PlaylistSeekArea extends ConsumerStatefulWidget {
   const PlaylistSeekArea({
     super.key,
@@ -33,7 +33,7 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   final VoidCallback onRetryWaveform;
 
   /// 切り替わった後にミックスビューで前曲側（切替点より前）をタップしたとき、
-  /// 前の曲に戻ってその位置から聴き直す。null なら次曲のシークだけ
+  /// 前の曲に戻ってその位置から聴き直す。null なら戻れない
   final ValueChanged<Duration>? onReplayPrevious;
 
   /// 波形シークバーの高さ（compact でないとき）
@@ -42,7 +42,7 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   /// ミックスビューの高さ（2 段ぶん）
   final double mixHeight;
 
-  /// 次曲の波形（プリロード時に先行生成したもの）。無ければ null
+  /// 曲の波形（プリロード時に先行生成したもの）。無ければ null
   final List<double>? Function(LoopItem item) waveformFor;
   final String Function(LoopItem item) titleFor;
 
@@ -50,63 +50,35 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   ConsumerState<PlaylistSeekArea> createState() => _PlaylistSeekAreaState();
 }
 
-class _MixSnapshot {
-  _MixSnapshot({
-    required this.outWaveform,
-    required this.outDuration,
-    required this.outTitle,
-    required this.inItem,
-    required this.inWaveform,
-    required this.inDuration,
-    required this.inStart,
-    required this.start,
-    required this.cut,
-    required this.recipe,
-  });
-
-  final List<double>? outWaveform;
-  final Duration outDuration;
-  final String outTitle;
-  final LoopItem inItem;
-  final List<double>? inWaveform;
-  final Duration inDuration;
-  final Duration inStart;
-  final Duration start;
-  final Duration cut;
-
-  /// つなぎ方（曲線・低音の印・おまかせの説明）。スワップ後も同じものを描く
-  final TransitionRecipe recipe;
-}
+/// 手動の表示切替（「全体」「ミックス」ボタン）
+enum _MixDisplay { mix, full }
 
 class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
-  _MixSnapshot? _snapshot;
+  /// 手動の表示切替。null なら自動（再生位置が窓の中なら重ね表示）
+  _MixDisplay? _override;
 
-  /// スワップが起きた時刻（null なら交差前）
-  DateTime? _swappedAt;
+  /// [_override] を付けた組。組が変わったら忘れる
+  String? _overrideKey;
 
-  /// 重ね表示でシークした先と時刻。シーク直後の再生位置は少しの間古い値を返すので、
-  /// それで判定すると一瞬ふつうのシークバーに戻ってチラつく。その間はシーク先を使う
+  /// 重ね表示でシークした先（出る曲の時計）と時刻。シーク直後の再生位置は少しの間
+  /// 古い値を返すので、それで判定すると一瞬ふつうのシークバーに戻ってチラつく。
+  /// その間はシーク先を使う
   Duration? _seekTarget;
   DateTime? _seekAt;
   static const _seekHold = Duration(milliseconds: 800);
 
-  /// 重ね表示の代わりに曲全体のシークバーを出している（「全体」ボタン。曲の前のほうへ行くとき）。
-  /// 重ね表示が出ない位置まで戻ったら解除する（次に近づいたらまた重ね表示になる）
-  bool _showFull = false;
+  /// 直近の再生位置。スロットが切り替わった直後、positionProvider は作り直しの
+  /// 一瞬だけ値を持たないので、その間はこれを使う
+  Duration _lastRaw = Duration.zero;
 
-  void _onSlotChanged() {
-    if (_snapshot == null) return;
-    setState(() => _swappedAt = DateTime.now());
-  }
-
-  Duration _displayPosition(Duration raw) {
+  Duration _displayPosition(Duration now) {
     final at = _seekAt;
     if (at != null && DateTime.now().difference(at) < _seekHold) {
-      return _seekTarget ?? raw;
+      return _seekTarget ?? now;
     }
     _seekAt = null;
     _seekTarget = null;
-    return raw;
+    return now;
   }
 
   void _holdAt(Duration target) {
@@ -116,14 +88,35 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(activeSlotProvider, (_, _) => _onSlotChanged());
-    final raw = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
-    final mix = _buildMix(_displayPosition(raw));
-    if (mix == null) {
-      _showFull = false;
+    final slot = ref.watch(activeSlotProvider);
+    final raw = ref.watch(positionProvider).valueOrNull;
+    if (raw != null) _lastRaw = raw;
+    final position = raw ?? _lastRaw;
+
+    final engine = ref.read(playlistEngineProvider);
+    final pair = engine.mixPair();
+    if (pair == null) {
+      _override = null;
+      _overrideKey = null;
       return _seekbar();
     }
-    if (!_showFull) return mix;
+    if (pair.key != _overrideKey) {
+      _override = null;
+      _overrideKey = pair.key;
+    }
+
+    final swapped = slot != pair.outSlot;
+    final now = _displayPosition(swapped ? pair.toOutClock(position) : position);
+    final inWindow =
+        now >= pair.start - MixView.lead && now <= pair.cut + MixView.tail;
+    final showMix = switch (_override) {
+      null => inWindow,
+      _MixDisplay.mix => true,
+      _MixDisplay.full => false,
+    };
+    if (showMix) return _mix(pair, now, swapped: swapped);
+    // 切り替わった後（前曲が残っている間）か「全体」で退けた間は、重ね表示に戻れる
+    if (!swapped && _override == null) return _seekbar();
     return Stack(
       children: [
         _seekbar(),
@@ -131,7 +124,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
           top: 0,
           right: AppSpacing.xl,
           child: _BackToMixChip(
-            onTap: () => setState(() => _showFull = false),
+            onTap: () => setState(() => _override = _MixDisplay.mix),
           ),
         ),
       ],
@@ -147,102 +140,55 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         onRetryWaveform: widget.onRetryWaveform,
       );
 
-  /// 重ね表示を出すならそのウィジェット、出さないなら null
-  Widget? _buildMix(Duration position) {
-    final engine = ref.read(playlistEngineProvider);
-
-    final swappedAt = _swappedAt;
-    if (swappedAt != null) {
-      final snap = _snapshot!;
-      // 切り替わり後: 経過時間で再生位置を進める。
-      // positionProvider はスワップ直後しばらく旧プレイヤーの最後の位置（≒曲末）を
-      // 返すため、それで換算すると一気に窓の外に出てミックスビューが即消えてしまう
-      final elapsed = DateTime.now().difference(swappedAt);
-      if (elapsed <= MixView.tail) {
-        return _mix(snap, snap.cut + elapsed, swapped: true);
-      }
-      _snapshot = null;
-      _swappedAt = null;
-    }
-
-    final plan = engine.plannedCrossfade();
-    if (plan != null && position >= plan.start - MixView.lead) {
-      final outDuration = engine.activePlayer.state.duration;
-      final inItem = plan.next.item;
-      final current = ref.read(videoSourceProvider);
-      final snap = _MixSnapshot(
-        outWaveform: ref.watch(waveformDataProvider),
-        outDuration: outDuration,
-        outTitle: current?.title ?? '',
-        inItem: inItem,
-        inWaveform: widget.waveformFor(inItem),
-        inDuration: engine.preloadPlayer.state.duration,
-        inStart: engine.effectiveStart(plan.next),
-        start: plan.start,
-        cut: plan.cut,
-        recipe: plan.recipe,
-      );
-      _snapshot = snap;
-      return _mix(snap, position, swapped: false);
-    }
-    _snapshot = null;
-    return null;
-  }
-
-  Widget _mix(_MixSnapshot snap, Duration now, {required bool swapped}) {
+  Widget _mix(MixPair pair, Duration now, {required bool swapped}) {
+    final current = ref.watch(waveformDataProvider);
+    final outItem = pair.outItem;
+    final inItem = pair.next.item;
+    // 鳴っている側の波形は waveformDataProvider（生成し立てでも届く）、もう片方は先読み分
+    final outWaveform = swapped
+        ? (outItem == null ? null : widget.waveformFor(outItem))
+        : current ?? (outItem == null ? null : widget.waveformFor(outItem));
+    final inWaveform =
+        swapped ? current ?? widget.waveformFor(inItem) : widget.waveformFor(inItem);
+    final recipe = pair.recipe;
     return MixView(
-      outWaveform: snap.outWaveform,
-      outDuration: snap.outDuration,
-      outTitle: snap.outTitle,
-      inWaveform: snap.inWaveform,
-      inDuration: snap.inDuration,
-      inStart: snap.inStart,
-      inTitle: widget.titleFor(snap.inItem),
-      start: snap.start,
-      cut: snap.cut,
+      outWaveform: outWaveform,
+      outDuration: pair.outDuration,
+      outTitle: outItem == null ? '' : widget.titleFor(outItem),
+      inWaveform: inWaveform,
+      inDuration: pair.inDuration,
+      inStart: pair.inStart,
+      inTitle: widget.titleFor(inItem),
+      start: pair.start,
+      cut: pair.cut,
       now: now,
       swapped: swapped,
+      prepLine: pair.prepLine,
       height: widget.mixHeight,
-      curve: snap.recipe.curve,
-      bassSwap: snap.recipe.bassSwap,
-      note: snap.recipe.auto ? 'おまかせ: ${snap.recipe.summary}' : null,
-      onSeek: (t) => _seekInMix(snap, t, swapped: swapped),
-      onShowFull: () => setState(() => _showFull = true),
+      curve: recipe.curve,
+      bassSwap: recipe.bassSwap,
+      note: recipe.auto ? 'おまかせ: ${recipe.summary}' : null,
+      onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
+      onShowFull: () => setState(() => _override = _MixDisplay.full),
     );
   }
 
-  /// ミックスビュー上のシーク。[t] は旧曲の時計。
-  /// 切り替わる前は旧曲をそのまま動かす（交差の手前へ戻せばエンジンが交差を取り消し、
-  /// 切断点を越えれば従来どおり切り替わる）ので、ここで交差を何度でも聴き直せる。
-  /// 切り替わった後は、切替点より前をタップしたら前の曲に戻って聴き直し
-  /// （[PlaylistSeekArea.onReplayPrevious]。前曲はパークしてあるので開き直さない）、
-  /// 切替点より後は次曲の時計で動かしてミックスビューを閉じる
-  void _seekInMix(_MixSnapshot snap, Duration t, {required bool swapped}) {
-    final player = ref.read(playerProvider);
-    if (!swapped) {
-      final target = _clamp(t, snap.outDuration);
+  /// ミックスビュー上のシーク。[t] は出る曲の時計。
+  /// 切り替わった後に切替点より前を押したら前の曲に戻って聴き直す
+  /// （[PlaylistSeekArea.onReplayPrevious]。前曲はパークしてあるので開き直さない）。
+  /// それ以外は [PlaylistEngine.seekInPair]（交差の中なら両方を合わせ、
+  /// 切替点より後ならその場で切り替える）
+  void _seekInMix(MixPair pair, Duration t, {required bool swapped}) {
+    if (swapped && t < pair.cut) {
+      final onReplayPrevious = widget.onReplayPrevious;
+      if (onReplayPrevious == null) return;
+      final target = _clamp(t, pair.outDuration);
       _holdAt(target);
-      player.seek(target);
-      return;
-    }
-    final onReplayPrevious = widget.onReplayPrevious;
-    if (t < snap.cut && onReplayPrevious != null) {
-      final target = _clamp(t, snap.outDuration);
-      _holdAt(target);
-      setState(() {
-        _snapshot = null;
-        _swappedAt = null;
-      });
       onReplayPrevious(target);
       return;
     }
-    final pos = _clamp(snap.inStart + (t - snap.start), snap.inDuration);
-    _holdAt(pos);
-    player.seek(pos);
-    setState(() {
-      _snapshot = null;
-      _swappedAt = null;
-    });
+    _holdAt(t);
+    ref.read(playlistEngineProvider).seekInPair(pair, t);
   }
 
   static Duration _clamp(Duration d, Duration max) {
@@ -252,7 +198,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   }
 }
 
-/// 全体のシークバーを出している間、重ね表示に戻るボタン
+/// ふつうのシークバーを出している間、重ね表示に戻るボタン
 class _BackToMixChip extends StatelessWidget {
   const _BackToMixChip({required this.onTap});
 

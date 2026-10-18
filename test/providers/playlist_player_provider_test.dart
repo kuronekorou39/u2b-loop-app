@@ -147,6 +147,32 @@ void main() {
     });
   });
 
+  group('peekNextTrackIndexAfter', () {
+    test('指定したトラックの次を言い当てる（現在地は動かさない）', () {
+      final n = PlaylistPlayerNotifier()
+        ..loadPlaylist([_item('a'), _item('b'), _item('c')]);
+      final next = n.currentState.peekNextTrackIndex()!;
+      final after = n.currentState.peekNextTrackIndexAfter(next);
+      expect(n.currentState.tracks[after!].item.id, 'c');
+      expect(n.currentState.currentTrack!.item.id, 'a');
+    });
+
+    test('最後のトラックの次はリピートなしなら null、全曲リピートなら先頭', () {
+      final n = PlaylistPlayerNotifier()
+        ..loadPlaylist([_item('a'), _item('b')]);
+      expect(n.currentState.peekNextTrackIndexAfter(1), isNull);
+      n.cycleRepeatMode(); // none → all
+      expect(n.currentState.peekNextTrackIndexAfter(1), 0);
+    });
+
+    test('無効化したトラックは飛ばす', () {
+      final n = PlaylistPlayerNotifier()
+        ..loadPlaylist([_item('a'), _item('b'), _item('c')]);
+      n.toggleTrackEnabled(1); // b を無効化
+      expect(n.currentState.peekNextTrackIndexAfter(0), 2);
+    });
+  });
+
   group('jumpTo / removeTrack', () {
     test('jumpTo で任意のトラックへ移動する', () {
       final n = PlaylistPlayerNotifier()
