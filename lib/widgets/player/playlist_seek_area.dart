@@ -51,15 +51,14 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   ConsumerState<PlaylistSeekArea> createState() => _PlaylistSeekAreaState();
 }
 
-/// 手動の表示切替（「全体」「ミックス」ボタン）
-enum _MixDisplay { mix, full }
-
 class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
-  /// 手動の表示切替。null なら自動（再生位置が窓の中なら重ね表示）
-  _MixDisplay? _override;
+  /// 「ミックス」ボタンで重ね表示に戻った（再生位置が窓の外でも出し続ける）
+  bool _forceMix = false;
 
-  /// [_override] を付けた組。組が変わったら忘れる
-  String? _overrideKey;
+  /// 重ね表示の窓（見えている範囲、出る曲の時計）。「−」「＋」「交差」「全体」や
+  /// ミニマップで変わる。[_pairKey] の組が変わったら最初の窓に戻す
+  MixWindow? _window;
+  String? _pairKey;
 
   /// 重ね表示でシークした先（出る曲の時計）と時刻。シーク直後の再生位置は少しの間
   /// 古い値を返すので、それで判定すると一瞬ふつうのシークバーに戻ってチラつく。
@@ -92,14 +91,19 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final engine = ref.read(playlistEngineProvider);
     final pair = engine.mixPair();
     if (pair == null) {
-      _override = null;
-      _overrideKey = null;
+      _forceMix = false;
+      _window = null;
+      _pairKey = null;
       return _seekbar();
     }
-    if (pair.key != _overrideKey) {
-      _override = null;
-      _overrideKey = pair.key;
+    final timelineEnd = _timelineEnd(pair);
+    if (pair.key != _pairKey) {
+      _forceMix = false;
+      _pairKey = pair.key;
+      _window = null;
     }
+    final window = _window ??= MixView.initialWindow(
+        start: pair.start, cut: pair.cut, timelineEnd: timelineEnd);
 
     // 再生位置は鳴っている側のプレイヤーから直接読む。positionProvider はスロットが
     // 切り替わった直後、作り直されるまで前のプレイヤーの値を返すので、それを入る曲の
@@ -107,21 +111,29 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final swapped = slot != pair.outSlot;
     final position = ref.read(_playerOf(slot)).state.position;
     final now = _displayPosition(swapped ? pair.toOutClock(position) : position);
-    final inWindow =
+    // 出す条件: 切替点の前後（最初の窓）に再生位置があるか、自分で広げた窓の中にあるか
+    final nearCut =
         now >= pair.start - MixView.lead && now <= pair.cut + MixView.tail;
-    final showMix = switch (_override) {
-      null => inWindow,
-      _MixDisplay.mix => true,
-      _MixDisplay.full => false,
-    };
-    if (showMix) return _mix(pair, now, swapped: swapped);
-    // 切り替わった後（前曲が残っている間）か「全体」で退けた間は、重ね表示に戻れる
-    if (!swapped && _override == null) return _seekbar();
+    if (_forceMix || nearCut || window.contains(now)) {
+      return _mix(pair, now, window, timelineEnd, swapped: swapped);
+    }
+    // 切り替わった後（前曲が残っている間）は、重ね表示に戻れる
+    if (!swapped) return _seekbar();
     return _seekbar(
       trailing: _BackToMixChip(
-        onTap: () => setState(() => _override = _MixDisplay.mix),
+        onTap: () => setState(() => _forceMix = true),
       ),
     );
+  }
+
+  /// 時間軸の終わり: 2 曲目の終わりを出る曲の時計に直したもの。
+  /// 長さがまだ分からなければ、最初の窓の右端まで
+  static Duration _timelineEnd(MixPair pair) {
+    final end = pair.inDuration > Duration.zero
+        ? pair.toOutClock(pair.inDuration)
+        : pair.cut + MixView.tail;
+    final least = pair.cut + MixView.minSpanFloor;
+    return end < least ? least : end;
   }
 
   static ProviderBase<Player> _playerOf(ActiveSlot slot) =>
@@ -137,7 +149,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         trailing: trailing,
       );
 
-  Widget _mix(MixPair pair, Duration now, {required bool swapped}) {
+  Widget _mix(MixPair pair, Duration now, MixWindow window, Duration timelineEnd,
+      {required bool swapped}) {
     final current = ref.watch(waveformDataProvider);
     final outItem = pair.outItem;
     final inItem = pair.next.item;
@@ -160,13 +173,15 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       cut: pair.cut,
       now: now,
       swapped: swapped,
+      window: window,
+      timelineEnd: timelineEnd,
+      onWindowChanged: (w) => setState(() => _window = w),
       prepLine: pair.prepLine,
       height: widget.mixHeight,
       curve: recipe.curve,
       bassSwap: recipe.bassSwap,
       note: recipe.auto ? 'おまかせ: ${recipe.summary}' : null,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
-      onShowFull: () => setState(() => _override = _MixDisplay.full),
     );
   }
 

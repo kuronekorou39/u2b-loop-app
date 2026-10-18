@@ -6,12 +6,39 @@ import '../../core/audio/crossfade_curve.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_utils.dart';
 
+/// 重ね表示の窓（見えている範囲。旧曲の時計）
+class MixWindow {
+  const MixWindow(this.start, this.end);
+
+  final Duration start;
+  final Duration end;
+
+  Duration get span => end - start;
+
+  bool contains(Duration t) => t >= start && t <= end;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MixWindow && other.start == start && other.end == end;
+
+  @override
+  int get hashCode => Object.hash(start, end);
+
+  @override
+  String toString() => 'MixWindow($start〜$end)';
+}
+
 /// 曲の切り替わり前後の「ミックスビュー」。
 ///
-/// 時間軸は旧曲の時計（切り替わる地点 [cut] を基準に前後 [lead] / [tail] 秒）。
-/// 上段に旧曲の終わり側の波形、下段に次曲の頭の波形を同じ時間軸で縦に並べ、
-/// その上に 2 本の音量曲線（旧曲は下がる・次曲は上がる、等パワー）と再生位置を重ねる。
-class MixView extends StatelessWidget {
+/// 1 曲目の頭から 2 曲目の終わりまでを 1 本の時間軸（旧曲の時計）として持ち、
+/// その一部（[window]）を描く。上段に旧曲の波形、下段に次曲の波形を同じ時間軸で縦に並べ、
+/// その上に 2 本の音量曲線（旧曲は下がる・次曲は上がる）と再生位置を重ねる。
+///
+/// 操作: 帯の上のタップ・ドラッグはシーク（[onSeek]）だけ。拡大縮小は「−」「＋」と
+/// 「交差」「全体」のボタン、見る場所は帯の下の細い全体バー（ミニマップ）をドラッグして
+/// ずらす（[onWindowChanged]）。2 本指のつまみは細い帯では安定しないので使わない。
+/// 再生位置が窓の外に出ても追いかけず、端に「現在地へ」の矢印を出す
+class MixView extends StatefulWidget {
   const MixView({
     super.key,
     required this.outWaveform,
@@ -25,27 +52,34 @@ class MixView extends StatelessWidget {
     required this.cut,
     required this.now,
     required this.swapped,
+    required this.window,
+    required this.timelineEnd,
+    this.onWindowChanged,
     this.prepLine,
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
     this.bassSwap = false,
     this.note,
     this.onSeek,
-    this.onShowFull,
   });
+
+  /// 見えている範囲（旧曲の時計）。親が持ち、[onWindowChanged] で更新する
+  final MixWindow window;
+
+  /// 時間軸の終わり（2 曲目の終わりを旧曲の時計に直したもの）。頭は 0
+  final Duration timelineEnd;
+
+  /// 「−」「＋」「交差」「全体」「現在地へ」やミニマップのドラッグで窓が変わったとき
+  final ValueChanged<MixWindow>? onWindowChanged;
 
   /// 準備線（旧曲の時計）。ここから右は次のつなぎの準備に入る（前曲には戻れない）ので、
   /// 次曲の波形を薄くして線を引く。null なら描かない
   final Duration? prepLine;
 
-  /// 「全体」: 重ね表示の代わりに曲全体のシークバーを出す（曲の前のほうへ行きたいとき）
-  final VoidCallback? onShowFull;
-
   /// 長さの横に出す短い説明（おまかせが選んだレシピと理由）。null なら出さない
   final String? note;
 
-  /// タップ・横ドラッグで時間軸上の位置（旧曲の時計）を返す。null なら操作できない。
-  /// 以前はジェスチャーが無く、交差の前後 8 秒ずつ + 交差中はシークの入口が無かった
+  /// タップ・横ドラッグで時間軸上の位置（旧曲の時計）を返す。null なら操作できない
   final ValueChanged<Duration>? onSeek;
 
   /// つなぎ方（音量曲線）。エンジンと同じものを描く
@@ -77,24 +111,127 @@ class MixView extends StatelessWidget {
 
   final double height;
 
-  /// 切り替わり地点の前後に見せる長さ（切り替え付近を何度も聴けるよう広めに取る）
+  /// 最初に見せる範囲: 切り替わり地点の前後（切り替え付近を何度も聴けるよう広めに取る）
   static const lead = Duration(seconds: 16);
   static const tail = Duration(seconds: 16);
 
-  /// 幅 [width] のビューの x 座標を時間軸（旧曲の時計）に直す。
-  /// 窓は start − [lead] 〜 cut + [tail]。端を超えた分は窓の端に丸める
-  static Duration timeAtX(
-    double x,
-    double width, {
+  /// 最も寄せたときの窓の幅の下限（交差がこれより短くても、これより寄せない）
+  static const minSpanFloor = Duration(seconds: 2);
+
+  /// 最も寄せたときの窓の幅: 交差（start〜cut）がちょうど画面幅になる
+  static Duration minSpan(Duration start, Duration cut) {
+    final fade = cut - start;
+    return fade < minSpanFloor ? minSpanFloor : fade;
+  }
+
+  /// 窓を時間軸（0〜[timelineEnd]）と幅の下限に収める
+  static MixWindow clampWindow(
+    MixWindow w, {
+    required Duration minSpan,
+    required Duration timelineEnd,
+  }) {
+    var span = w.span < minSpan ? minSpan : w.span;
+    if (span > timelineEnd) span = timelineEnd;
+    var s = w.start;
+    if (s + span > timelineEnd) s = timelineEnd - span;
+    if (s < Duration.zero) s = Duration.zero;
+    return MixWindow(s, s + span);
+  }
+
+  /// 最初の窓: 切替点の前後 [lead] / [tail]
+  static MixWindow initialWindow({
     required Duration start,
     required Duration cut,
+    required Duration timelineEnd,
+  }) =>
+      clampWindow(MixWindow(start - lead, cut + tail),
+          minSpan: minSpan(start, cut), timelineEnd: timelineEnd);
+
+  /// 「交差」: 重なりがぴったり画面幅
+  static MixWindow crossfadeWindow({
+    required Duration start,
+    required Duration cut,
+    required Duration timelineEnd,
   }) {
-    final winStart = start - lead;
-    final winEnd = cut + tail;
-    if (width <= 0) return winStart;
-    final p = (x / width).clamp(0.0, 1.0);
-    return winStart + (winEnd - winStart) * p;
+    final span = minSpan(start, cut);
+    final mid = start + (cut - start) ~/ 2;
+    return clampWindow(MixWindow(mid - span ~/ 2, mid + span ~/ 2),
+        minSpan: span, timelineEnd: timelineEnd);
   }
+
+  /// 「全体」: 1 曲目の頭から 2 曲目の終わりまで
+  static MixWindow wholeWindow(Duration timelineEnd) =>
+      MixWindow(Duration.zero, timelineEnd);
+
+  /// 「−」「＋」の 1 段ぶんの倍率
+  static const zoomStep = 2.0;
+
+  /// 幅を [factor] 倍にする（[around] の時刻を動かさない。窓の外なら真ん中を基準に）
+  static MixWindow zoomed(
+    MixWindow w,
+    double factor, {
+    required Duration around,
+    required Duration minSpan,
+    required Duration timelineEnd,
+  }) {
+    final spanMs = w.span.inMilliseconds * factor;
+    final anchor = w.contains(around) ? around : w.start + w.span ~/ 2;
+    final p = w.span.inMilliseconds <= 0
+        ? 0.5
+        : (anchor - w.start).inMilliseconds / w.span.inMilliseconds;
+    final startMs = anchor.inMilliseconds - spanMs * p;
+    return clampWindow(
+      MixWindow(Duration(milliseconds: startMs.round()),
+          Duration(milliseconds: (startMs + spanMs).round())),
+      minSpan: minSpan,
+      timelineEnd: timelineEnd,
+    );
+  }
+
+  /// 「現在地へ」: 幅はそのまま、[now] が真ん中に来る窓
+  static MixWindow centeredOn(
+    Duration now, {
+    required Duration span,
+    required Duration minSpan,
+    required Duration timelineEnd,
+  }) =>
+      clampWindow(MixWindow(now - span ~/ 2, now + span ~/ 2),
+          minSpan: minSpan, timelineEnd: timelineEnd);
+
+  /// 幅 [width] のビューの x 座標を時間軸（旧曲の時計）に直す。端を超えた分は窓の端に丸める
+  static Duration timeAtX(double x, double width, {required MixWindow window}) {
+    if (width <= 0) return window.start;
+    final p = (x / width).clamp(0.0, 1.0);
+    return window.start + window.span * p;
+  }
+
+  @override
+  State<MixView> createState() => _MixViewState();
+}
+
+class _MixViewState extends State<MixView> {
+  Duration get _minSpan => MixView.minSpan(widget.start, widget.cut);
+
+  void _changeWindow(MixWindow w) => widget.onWindowChanged?.call(
+        MixView.clampWindow(w,
+            minSpan: _minSpan, timelineEnd: widget.timelineEnd),
+      );
+
+  void _zoom(double factor) => _changeWindow(MixView.zoomed(
+        widget.window,
+        factor,
+        around: widget.now,
+        minSpan: _minSpan,
+        timelineEnd: widget.timelineEnd,
+      ));
+
+  /// ミニマップ: 押した・ドラッグした位置が窓の真ん中に来るようにずらす（幅はそのまま）
+  void _panTo(Duration t) => _changeWindow(MixView.centeredOn(
+        t,
+        span: widget.window.span,
+        minSpan: _minSpan,
+        timelineEnd: widget.timelineEnd,
+      ));
 
   @override
   Widget build(BuildContext context) {
@@ -103,21 +240,23 @@ class MixView extends StatelessWidget {
       fontFeatures: const [FontFeature('tnum')],
     );
     final laneLabel = textTheme.labelSmall!;
-    final untilCut = cut - now;
+    final w = widget;
+    final untilCut = w.cut - w.now;
+    final window = w.window;
+    final nowOutside = !window.contains(w.now);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
         children: [
           SizedBox(
-            height: height,
+            height: w.height,
             width: double.infinity,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final onSeek = this.onSeek;
+                final onSeek = w.onSeek;
                 void seekAt(double x) => onSeek?.call(
-                  timeAtX(x, constraints.maxWidth, start: start, cut: cut),
-                );
+                    MixView.timeAtX(x, constraints.maxWidth, window: window));
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapUp: onSeek == null
@@ -131,18 +270,19 @@ class MixView extends StatelessWidget {
                       Positioned.fill(
                         child: CustomPaint(
                           painter: _MixPainter(
-                            outWaveform: outWaveform,
-                            outDuration: outDuration,
-                            inWaveform: inWaveform,
-                            inDuration: inDuration,
-                            inStart: inStart,
-                            start: start,
-                            cut: cut,
-                            now: now,
-                            swapped: swapped,
-                            curve: curve,
-                            bassSwap: bassSwap,
-                            prepLine: prepLine,
+                            outWaveform: w.outWaveform,
+                            outDuration: w.outDuration,
+                            inWaveform: w.inWaveform,
+                            inDuration: w.inDuration,
+                            inStart: w.inStart,
+                            start: w.start,
+                            cut: w.cut,
+                            now: w.now,
+                            swapped: w.swapped,
+                            window: window,
+                            curve: w.curve,
+                            bassSwap: w.bassSwap,
+                            prepLine: w.prepLine,
                             prepLabelStyle: laneLabel.copyWith(
                               color: Colors.white.withValues(alpha: 0.7),
                               shadows: const [
@@ -157,7 +297,7 @@ class MixView extends StatelessWidget {
                         top: 2,
                         right: 4,
                         child: _LaneLabel(
-                          text: outTitle,
+                          text: w.outTitle,
                           color: AppTheme.pointAColor,
                           style: laneLabel,
                         ),
@@ -167,17 +307,47 @@ class MixView extends StatelessWidget {
                         bottom: 2,
                         right: 4,
                         child: _LaneLabel(
-                          text: '次: $inTitle',
+                          text: '次: ${w.inTitle}',
                           color: AppTheme.pointBColor,
                           style: laneLabel,
                         ),
                       ),
+                      // 再生位置が窓の外: その側の端に「現在地へ」
+                      if (nowOutside && w.onWindowChanged != null)
+                        Positioned(
+                          left: w.now < window.start ? 4 : null,
+                          right: w.now > window.end ? 4 : null,
+                          top: 0,
+                          bottom: 0,
+                          child: Center(
+                            child: _JumpToNowChip(
+                              left: w.now < window.start,
+                              onTap: () => _changeWindow(MixView.centeredOn(
+                                w.now,
+                                span: window.span,
+                                minSpan: _minSpan,
+                                timelineEnd: w.timelineEnd,
+                              )),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 );
               },
             ),
           ),
+          if (w.onWindowChanged != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            _MiniMap(
+              window: window,
+              timelineEnd: w.timelineEnd,
+              start: w.start,
+              cut: w.cut,
+              now: w.now,
+              onPanTo: _panTo,
+            ),
+          ],
           SizedBox(
             height: 24,
             child: Row(
@@ -190,41 +360,288 @@ class MixView extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    note == null
-                        ? 'ミックス ${(cut - start).inSeconds}s'
-                        : 'ミックス ${(cut - start).inSeconds}s · $note',
+                    w.note == null
+                        ? 'ミックス ${(w.cut - w.start).inSeconds}s'
+                        : 'ミックス ${(w.cut - w.start).inSeconds}s · ${w.note}',
                     style: labelStyle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                Text(
-                  swapped
-                      ? '切替から ${TimeUtils.formatShort(now - cut)}'
-                      : untilCut.isNegative
-                      ? '切替中'
-                      : '切替まで ${TimeUtils.formatShort(untilCut)}',
-                  style: labelStyle,
+                // 幅が足りなければ左の説明から消え、それでも足りなければここが欠ける（はみ出さない）
+                Flexible(
+                  child: Text(
+                    w.swapped
+                        ? '切替から ${TimeUtils.formatShort(w.now - w.cut)}'
+                        : untilCut.isNegative
+                            ? '切替中'
+                            : '切替まで ${TimeUtils.formatShort(untilCut)}',
+                    style: labelStyle,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.fade,
+                  ),
                 ),
-                if (onShowFull != null) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  InkWell(
-                    onTap: onShowFull,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm, vertical: 2),
-                      child: Text('全体',
-                          style: labelStyle?.copyWith(
-                              color: AppTheme.accentGreen)),
-                    ),
+                if (w.onWindowChanged != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  _ZoomIconButton(
+                    icon: Icons.remove,
+                    tooltip: '縮小',
+                    onTap: window.span >= w.timelineEnd
+                        ? null
+                        : () => _zoom(MixView.zoomStep),
+                  ),
+                  _ZoomIconButton(
+                    icon: Icons.add,
+                    tooltip: '拡大',
+                    onTap: window.span <= _minSpan
+                        ? null
+                        : () => _zoom(1 / MixView.zoomStep),
+                  ),
+                  _ZoomButton(
+                    label: '交差',
+                    tooltip: '重なっている部分を画面幅いっぱいに',
+                    style: labelStyle,
+                    onTap: () => _changeWindow(MixView.crossfadeWindow(
+                      start: w.start,
+                      cut: w.cut,
+                      timelineEnd: w.timelineEnd,
+                    )),
+                  ),
+                  _ZoomButton(
+                    label: '全体',
+                    tooltip: '1 曲目の頭から 2 曲目の終わりまで',
+                    style: labelStyle,
+                    onTap: () =>
+                        _changeWindow(MixView.wholeWindow(w.timelineEnd)),
                   ),
                 ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ZoomButton extends StatelessWidget {
+  const _ZoomButton({
+    required this.label,
+    required this.tooltip,
+    required this.style,
+    required this.onTap,
+  });
+
+  final String label;
+  final String tooltip;
+  final TextStyle? style;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm, vertical: 2),
+          child: Text(label,
+              style: style?.copyWith(color: AppTheme.accentGreen)),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomIconButton extends StatelessWidget {
+  const _ZoomIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = onTap == null
+        ? AppTheme.muted(context, alpha: 0.35)
+        : AppTheme.accentGreen;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          child: Icon(icon, size: AppIconSizes.sm, color: color),
+        ),
+      ),
+    );
+  }
+}
+
+/// 帯の下の細い全体バー: 1 曲目の頭から 2 曲目の終わりまでを描き、
+/// 見えている範囲（窓）を明るい箱で示す。押す・ドラッグで窓をそこへずらす
+class _MiniMap extends StatelessWidget {
+  const _MiniMap({
+    required this.window,
+    required this.timelineEnd,
+    required this.start,
+    required this.cut,
+    required this.now,
+    required this.onPanTo,
+  });
+
+  final MixWindow window;
+  final Duration timelineEnd;
+  final Duration start;
+  final Duration cut;
+  final Duration now;
+  final ValueChanged<Duration> onPanTo;
+
+  static const height = 10.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          void panAt(double x) {
+            if (timelineEnd <= Duration.zero || width <= 0) return;
+            onPanTo(timelineEnd * (x / width).clamp(0.0, 1.0));
+          }
+
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (d) => panAt(d.localPosition.dx),
+            onHorizontalDragUpdate: (d) => panAt(d.localPosition.dx),
+            child: CustomPaint(
+              painter: _MiniMapPainter(
+                window: window,
+                timelineEnd: timelineEnd,
+                start: start,
+                cut: cut,
+                now: now,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MiniMapPainter extends CustomPainter {
+  _MiniMapPainter({
+    required this.window,
+    required this.timelineEnd,
+    required this.start,
+    required this.cut,
+    required this.now,
+  });
+
+  final MixWindow window;
+  final Duration timelineEnd;
+  final Duration start;
+  final Duration cut;
+  final Duration now;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final totalMs = max(1, timelineEnd.inMilliseconds);
+    double toX(Duration t) => (t.inMilliseconds / totalMs).clamp(0.0, 1.0) * w;
+    final r = Radius.circular(h / 2);
+
+    // 全体の下地
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), r),
+      Paint()..color = Colors.white.withValues(alpha: 0.08),
+    );
+    // 交差の位置
+    canvas.drawRect(
+      Rect.fromLTRB(toX(start), 0, max(toX(cut), toX(start) + 2), h),
+      Paint()..color = Colors.white.withValues(alpha: 0.18),
+    );
+    // 窓
+    final winRect = Rect.fromLTRB(
+        toX(window.start), 0, max(toX(window.end), toX(window.start) + 6), h);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(winRect, r),
+      Paint()..color = AppTheme.accentGreen.withValues(alpha: 0.35),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(winRect, r),
+      Paint()
+        ..color = AppTheme.accentGreen.withValues(alpha: 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    // 再生位置
+    final nx = toX(now);
+    canvas.drawLine(
+      Offset(nx, 0),
+      Offset(nx, h),
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniMapPainter old) =>
+      window != old.window ||
+      timelineEnd != old.timelineEnd ||
+      start != old.start ||
+      cut != old.cut ||
+      now != old.now;
+}
+
+/// 再生位置が窓の外にあるとき、その側の端に出す「現在地へ」
+class _JumpToNowChip extends StatelessWidget {
+  const _JumpToNowChip({required this.left, required this.onTap});
+
+  final bool left;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelSmall;
+    final icon = Icon(
+      left ? Icons.keyboard_double_arrow_left : Icons.keyboard_double_arrow_right,
+      size: AppIconSizes.xs,
+      color: Colors.white,
+    );
+    return Material(
+      color: Colors.black.withValues(alpha: 0.55),
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (left) icon,
+              Text('現在地',
+                  style: style?.copyWith(color: Colors.white)),
+              if (!left) icon,
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -277,6 +694,7 @@ class _MixPainter extends CustomPainter {
     required this.cut,
     required this.now,
     required this.swapped,
+    required this.window,
     required this.curve,
     required this.bassSwap,
     required this.prepLine,
@@ -295,6 +713,7 @@ class _MixPainter extends CustomPainter {
   final Duration cut;
   final Duration now;
   final bool swapped;
+  final MixWindow window;
   final CrossfadeCurve curve;
 
   static const _barStep = 3.0;
@@ -304,8 +723,8 @@ class _MixPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
     final laneH = h / 2;
-    final winStart = (start - MixView.lead).inMilliseconds.toDouble();
-    final winEnd = (cut + MixView.tail).inMilliseconds.toDouble();
+    final winStart = window.start.inMilliseconds.toDouble();
+    final winEnd = window.end.inMilliseconds.toDouble();
     final span = max(1.0, winEnd - winStart);
     double toX(double tMs) => (tMs - winStart) / span * w;
     double toT(double x) => winStart + x / w * span;
@@ -317,7 +736,7 @@ class _MixPainter extends CustomPainter {
 
     // 交差区間の背景
     canvas.drawRect(
-      Rect.fromLTRB(startX, 0, cutX, h),
+      Rect.fromLTRB(max(0, startX), 0, min(w, cutX), h),
       Paint()..color = Colors.white.withValues(alpha: 0.05),
     );
     // 段の境界
@@ -430,22 +849,26 @@ class _MixPainter extends CustomPainter {
     );
 
     // 切り替わり地点
-    canvas.drawLine(
-      Offset(cutX, 0),
-      Offset(cutX, h),
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.35)
-        ..strokeWidth = 1,
-    );
+    if (cutX >= 0 && cutX <= w) {
+      canvas.drawLine(
+        Offset(cutX, 0),
+        Offset(cutX, h),
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.35)
+          ..strokeWidth = 1,
+      );
+    }
 
     // ベーススワップの位置（点線）
     if (bassSwap && curve.bassSwapAt < 1) {
       final bx = startX + (cutX - startX) * curve.bassSwapAt;
-      final paint = Paint()
-        ..color = Colors.amber.withValues(alpha: 0.7)
-        ..strokeWidth = 1;
-      for (var y = 0.0; y < h; y += 6) {
-        canvas.drawLine(Offset(bx, y), Offset(bx, min(y + 3, h)), paint);
+      if (bx >= 0 && bx <= w) {
+        final paint = Paint()
+          ..color = Colors.amber.withValues(alpha: 0.7)
+          ..strokeWidth = 1;
+        for (var y = 0.0; y < h; y += 6) {
+          canvas.drawLine(Offset(bx, y), Offset(bx, min(y + 3, h)), paint);
+        }
       }
     }
 
@@ -461,6 +884,7 @@ class _MixPainter extends CustomPainter {
     }
   }
 
+  /// 1 段ぶんの波形。棒 1 本が覆う範囲の最大値を取る（縮小しても山が消えない）
   void _drawLane(
     Canvas canvas, {
     required double top,
@@ -482,8 +906,14 @@ class _MixPainter extends CustomPainter {
       final t = toT(x);
       final trackMs = toTrackMs(t);
       if (trackMs == null || trackMs < 0 || trackMs >= durationMs) continue;
-      final idx = (trackMs / durationMs * n).floor().clamp(0, n - 1);
-      final bar = max(waveform[idx] * maxBarH, 1.0);
+      final nextMs = toTrackMs(toT(x + _barStep)) ?? trackMs;
+      final idx0 = (trackMs / durationMs * n).floor().clamp(0, n - 1);
+      final idx1 = (nextMs / durationMs * n).ceil().clamp(idx0 + 1, n);
+      var peak = 0.0;
+      for (var i = idx0; i < idx1; i++) {
+        if (waveform[i] > peak) peak = waveform[i];
+      }
+      final bar = max(peak * maxBarH, 1.0);
       var alpha = t <= playedUntilMs ? 0.6 : 0.28;
       if (fadedFromMs != null && t >= fadedFromMs) alpha *= 0.4;
       canvas.drawRRect(
@@ -504,6 +934,7 @@ class _MixPainter extends CustomPainter {
   bool shouldRepaint(covariant _MixPainter old) =>
       now != old.now ||
       swapped != old.swapped ||
+      window != old.window ||
       curve != old.curve ||
       bassSwap != old.bassSwap ||
       prepLine != old.prepLine ||
