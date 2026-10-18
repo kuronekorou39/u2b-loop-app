@@ -572,8 +572,12 @@ class PlaylistEngine {
     _cancelTempoRamp();
     unawaited(nextPlayer.pause());
     _ref.read(activeSlotProvider.notifier).state = parkedSlot;
-    unawaited(parked.seek(oldPos));
-    unawaited(parked.play());
+    // シークが済んでから鳴らす。パークした位置は切替点（曲の終端の 500ms 手前のことが多い）
+    // なので、位置が動く前に鳴らすと LoopNotifier が曲終了とみなして、すぐ次曲へ戻してしまう
+    unawaited(parked.seek(oldPos).then((_) {
+      if (identical(parked, activePlayer)) return parked.play();
+      return null;
+    }));
     return true;
   }
 
@@ -884,8 +888,11 @@ class PlaylistEngine {
     if (session != null) {
       // 終端に達した（playing=false になる）。スワップは LoopNotifier 経由で来る
       if (active.state.completed) return;
-      // 一時停止・巻き戻し（ABループでA点に戻った場合も）は取り消す
-      if (!active.state.playing || pos < session.start) {
+      // 一時停止・巻き戻し（ABループでA点に戻った場合も）は取り消す。
+      // 重ね表示で交差の中へ動かした直後は、位置の報告が落ち着くまで巻き戻しとみなさない
+      // （シーク中の古い位置で取り消すと、入る曲が止まって頭に戻り、出る曲が一瞬大きく鳴る）
+      if (!active.state.playing ||
+          (pos < session.start && !session.settling)) {
         _cancelCrossfade();
         return;
       }
@@ -1370,6 +1377,13 @@ class _CrossfadeSession {
   int _nudgeTicks = 0;
   bool _measuring = false;
   DateTime? _nudgeHoldUntil;
+  DateTime? _settleUntil;
+
+  /// [resync] の直後で、出る曲の位置の報告がまだ信用できない間
+  bool get settling {
+    final until = _settleUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
 
   /// 出る曲を交差の中の [outPos] へ動かしたとき、入る曲も同じ時間軸の位置に合わせる。
   /// 拍合わせは測り直す（シークが済むまでの位置は信用できないので少し待つ）
@@ -1379,7 +1393,9 @@ class _CrossfadeSession {
     _measuring = false;
     _nudgeTicks = 0;
     _errSmooth = 0;
-    _nudgeHoldUntil = DateTime.now().add(const Duration(milliseconds: 400));
+    final now = DateTime.now();
+    _nudgeHoldUntil = now.add(const Duration(milliseconds: 400));
+    _settleUntil = now.add(const Duration(seconds: 1));
     if (appliedInRate != inRate) {
       appliedInRate = inRate;
       unawaited(inPlayer.setRate(inRate));

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../models/loop_item.dart';
@@ -67,10 +68,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   DateTime? _seekAt;
   static const _seekHold = Duration(milliseconds: 800);
 
-  /// 直近の再生位置。スロットが切り替わった直後、positionProvider は作り直しの
-  /// 一瞬だけ値を持たないので、その間はこれを使う
-  Duration _lastRaw = Duration.zero;
-
   Duration _displayPosition(Duration now) {
     final at = _seekAt;
     if (at != null && DateTime.now().difference(at) < _seekHold) {
@@ -89,9 +86,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   @override
   Widget build(BuildContext context) {
     final slot = ref.watch(activeSlotProvider);
-    final raw = ref.watch(positionProvider).valueOrNull;
-    if (raw != null) _lastRaw = raw;
-    final position = raw ?? _lastRaw;
+    // 位置の更新で描き直すためだけに見る。値は下でプレイヤーから直接取る
+    ref.watch(positionProvider);
 
     final engine = ref.read(playlistEngineProvider);
     final pair = engine.mixPair();
@@ -105,7 +101,11 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       _overrideKey = pair.key;
     }
 
+    // 再生位置は鳴っている側のプレイヤーから直接読む。positionProvider はスロットが
+    // 切り替わった直後、作り直されるまで前のプレイヤーの値を返すので、それを入る曲の
+    // 時計として換算すると窓の外に飛び、一瞬ふつうのシークバーに戻ってしまう
     final swapped = slot != pair.outSlot;
+    final position = ref.read(_playerOf(slot)).state.position;
     final now = _displayPosition(swapped ? pair.toOutClock(position) : position);
     final inWindow =
         now >= pair.start - MixView.lead && now <= pair.cut + MixView.tail;
@@ -117,27 +117,24 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     if (showMix) return _mix(pair, now, swapped: swapped);
     // 切り替わった後（前曲が残っている間）か「全体」で退けた間は、重ね表示に戻れる
     if (!swapped && _override == null) return _seekbar();
-    return Stack(
-      children: [
-        _seekbar(),
-        Positioned(
-          top: 0,
-          right: AppSpacing.xl,
-          child: _BackToMixChip(
-            onTap: () => setState(() => _override = _MixDisplay.mix),
-          ),
-        ),
-      ],
+    return _seekbar(
+      trailing: _BackToMixChip(
+        onTap: () => setState(() => _override = _MixDisplay.mix),
+      ),
     );
   }
 
-  Widget _seekbar() => LoopSeekbar(
+  static ProviderBase<Player> _playerOf(ActiveSlot slot) =>
+      slot == ActiveSlot.a ? playerAProvider : playerBProvider;
+
+  Widget _seekbar({Widget? trailing}) => LoopSeekbar(
         compact: widget.compact,
         bar: true,
         barHeight: widget.waveHeight,
         onToggleCompact: widget.onToggleCompact,
         allowMarkerDrag: false,
         onRetryWaveform: widget.onRetryWaveform,
+        trailing: trailing,
       );
 
   Widget _mix(MixPair pair, Duration now, {required bool swapped}) {

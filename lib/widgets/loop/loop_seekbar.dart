@@ -25,6 +25,10 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   final bool allowMarkerDrag;
   final VoidCallback? onRetryWaveform;
 
+  /// 時刻の行の右側（終了時刻の左）に置く小さな部品（プレイリストの「ミックス」に戻るボタン）。
+  /// 波形の上には何も重ねない
+  final Widget? trailing;
+
   const LoopSeekbar({
     super.key,
     this.compact = false,
@@ -33,6 +37,7 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.onToggleCompact,
     this.allowMarkerDrag = true,
     this.onRetryWaveform,
+    this.trailing,
   });
 
   @override
@@ -400,9 +405,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 ),
               ),
 
-          // --- 時刻（左右）+ ズーム（中央）の行 ---
-          // ズームは左右の幅に関係なく画面の真ん中に置く（Row の Spacer で挟むと、
-          // 右端の開閉ボタンのぶんだけ中心がずれて見える）
+          // --- 時刻（左右）+ ズームと開閉（中央）の行 ---
+          // 時刻は端に置き、ズームと開閉ボタンは左右の幅に関係なく真ん中に置く
+          // （開閉ボタンを終了時刻の右に置くと、そのぶん終了時刻が内側にずれて見える）
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
             child: SizedBox(
@@ -415,13 +420,18 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                       Text(TimeUtils.format(position), style: labelStyle),
                       const Spacer(),
                       Text(TimeUtils.format(duration), style: labelStyle),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasSource) _buildZoomControls(context, isZoomed),
                       if (widget.onToggleCompact != null) ...[
-                        const SizedBox(width: AppSpacing.xs),
+                        if (hasSource) const SizedBox(width: AppSpacing.sm),
                         _toggleButton(Icons.unfold_less, 'コンパクト表示'),
                       ],
                     ],
                   ),
-                  if (hasSource) _buildZoomControls(context, isZoomed),
                 ],
               ),
             ),
@@ -643,20 +653,29 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
               },
             ),
           ),
+          // 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも同じ場所）。
+          // [LoopSeekbar.trailing] は終了時刻の左
           SizedBox(
             height: 32,
-            child: Row(
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                Text(TimeUtils.format(position), style: labelStyle),
-                const Spacer(),
-                Text(TimeUtils.format(duration), style: labelStyle),
-                if (widget.onToggleCompact != null) ...[
-                  const SizedBox(width: AppSpacing.sm),
+                Row(
+                  children: [
+                    Text(TimeUtils.format(position), style: labelStyle),
+                    const Spacer(),
+                    if (widget.trailing != null) ...[
+                      widget.trailing!,
+                      const SizedBox(width: AppSpacing.sm),
+                    ],
+                    Text(TimeUtils.format(duration), style: labelStyle),
+                  ],
+                ),
+                if (widget.onToggleCompact != null)
                   _toggleButton(
                     compact ? Icons.unfold_more : Icons.unfold_less,
                     compact ? '波形表示' : 'コンパクト表示',
                   ),
-                ],
               ],
             ),
           ),
