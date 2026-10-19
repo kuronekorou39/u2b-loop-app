@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/time_utils.dart';
 
 /// 重ね表示の窓（見えている範囲。旧曲の時計）
 class MixWindow {
@@ -35,8 +34,8 @@ class MixWindow {
 /// その上に 2 本の音量曲線（旧曲は下がる・次曲は上がる）と再生位置を重ねる。
 ///
 /// 操作: 帯の上のタップ・ドラッグはシーク（[onSeek]）だけ。拡大縮小は「−」「＋」と
-/// 「交差」「全体」のボタン、見る場所は帯の下の細い全体バー（ミニマップ）をドラッグして
-/// ずらす（[onWindowChanged]）。2 本指のつまみは細い帯では安定しないので使わない。
+/// 範囲のピル「交差」「前後」「全体」、見る場所は帯の下の細い全体バー（ミニマップ）を
+/// ドラッグしてずらす（[onWindowChanged]）。2 本指のつまみは細い帯では安定しないので使わない。
 /// 再生位置が窓の外に出ても追いかけず、端に「現在地へ」の矢印を出す
 class MixView extends StatefulWidget {
   const MixView({
@@ -59,7 +58,6 @@ class MixView extends StatefulWidget {
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
     this.bassSwap = false,
-    this.note,
     this.onSeek,
   });
 
@@ -69,15 +67,12 @@ class MixView extends StatefulWidget {
   /// 時間軸の終わり（2 曲目の終わりを旧曲の時計に直したもの）。頭は 0
   final Duration timelineEnd;
 
-  /// 「−」「＋」「交差」「全体」「現在地へ」やミニマップのドラッグで窓が変わったとき
+  /// 「−」「＋」、範囲のピル、「現在地へ」やミニマップのドラッグで窓が変わったとき
   final ValueChanged<MixWindow>? onWindowChanged;
 
   /// 準備線（旧曲の時計）。ここから右は次のつなぎの準備に入る（前曲には戻れない）ので、
   /// 次曲の波形を薄くして線を引く。null なら描かない
   final Duration? prepLine;
-
-  /// 長さの横に出す短い説明（おまかせが選んだレシピと理由）。null なら出さない
-  final String? note;
 
   /// タップ・横ドラッグで時間軸上の位置（旧曲の時計）を返す。null なら操作できない
   final ValueChanged<Duration>? onSeek;
@@ -241,7 +236,6 @@ class _MixViewState extends State<MixView> {
     );
     final laneLabel = textTheme.labelSmall!;
     final w = widget;
-    final untilCut = w.cut - w.now;
     final window = w.window;
     final nowOutside = !window.contains(w.now);
 
@@ -348,43 +342,43 @@ class _MixViewState extends State<MixView> {
               onPanTo: _panTo,
             ),
           ],
-          SizedBox(
-            height: 24,
-            child: Row(
-              children: [
-                Icon(
-                  Icons.swap_horiz,
-                  size: AppIconSizes.xs,
-                  color: AppTheme.muted(context),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    w.note == null
-                        ? 'ミックス ${(w.cut - w.start).inSeconds}s'
-                        : 'ミックス ${(w.cut - w.start).inSeconds}s · ${w.note}',
+          // 範囲のピル（今の窓がどれかを明るく）と「−」「＋」。説明文は置かない
+          if (w.onWindowChanged != null)
+            SizedBox(
+              height: 24,
+              child: Row(
+                children: [
+                  _RangePill(
                     style: labelStyle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    options: [
+                      (
+                        label: '交差',
+                        tooltip: '重なっている部分を画面幅いっぱいに',
+                        window: MixView.crossfadeWindow(
+                          start: w.start,
+                          cut: w.cut,
+                          timelineEnd: w.timelineEnd,
+                        ),
+                      ),
+                      (
+                        label: '前後',
+                        tooltip: '切り替わりの前後 16 秒',
+                        window: MixView.initialWindow(
+                          start: w.start,
+                          cut: w.cut,
+                          timelineEnd: w.timelineEnd,
+                        ),
+                      ),
+                      (
+                        label: '全体',
+                        tooltip: '1 曲目の頭から 2 曲目の終わりまで',
+                        window: MixView.wholeWindow(w.timelineEnd),
+                      ),
+                    ],
+                    current: window,
+                    onSelect: _changeWindow,
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                // 幅が足りなければ左の説明から消え、それでも足りなければここが欠ける（はみ出さない）
-                Flexible(
-                  child: Text(
-                    w.swapped
-                        ? '切替から ${TimeUtils.formatShort(w.now - w.cut)}'
-                        : untilCut.isNegative
-                            ? '切替中'
-                            : '切替まで ${TimeUtils.formatShort(untilCut)}',
-                    style: labelStyle,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.fade,
-                  ),
-                ),
-                if (w.onWindowChanged != null) ...[
-                  const SizedBox(width: AppSpacing.xs),
+                  const Spacer(),
                   _ZoomIconButton(
                     icon: Icons.remove,
                     tooltip: '縮小',
@@ -399,59 +393,65 @@ class _MixViewState extends State<MixView> {
                         ? null
                         : () => _zoom(1 / MixView.zoomStep),
                   ),
-                  _ZoomButton(
-                    label: '交差',
-                    tooltip: '重なっている部分を画面幅いっぱいに',
-                    style: labelStyle,
-                    onTap: () => _changeWindow(MixView.crossfadeWindow(
-                      start: w.start,
-                      cut: w.cut,
-                      timelineEnd: w.timelineEnd,
-                    )),
-                  ),
-                  _ZoomButton(
-                    label: '全体',
-                    tooltip: '1 曲目の頭から 2 曲目の終わりまで',
-                    style: labelStyle,
-                    onTap: () =>
-                        _changeWindow(MixView.wholeWindow(w.timelineEnd)),
-                  ),
                 ],
-              ],
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _ZoomButton extends StatelessWidget {
-  const _ZoomButton({
-    required this.label,
-    required this.tooltip,
+/// 範囲の選択。黒い地の上に候補を並べ、今の窓と同じものを緑で明るくする
+/// （どれでもない途中の窓なら、どれも明るくしない）
+class _RangePill extends StatelessWidget {
+  const _RangePill({
     required this.style,
-    required this.onTap,
+    required this.options,
+    required this.current,
+    required this.onSelect,
   });
 
-  final String label;
-  final String tooltip;
   final TextStyle? style;
-  final VoidCallback onTap;
+  final List<({String label, String tooltip, MixWindow window})> options;
+  final MixWindow current;
+  final ValueChanged<MixWindow> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm, vertical: 2),
-          child: Text(label,
-              style: style?.copyWith(color: AppTheme.accentGreen)),
-        ),
+    return Material(
+      color: Colors.black.withValues(alpha: 0.35),
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final o in options)
+            Tooltip(
+              message: o.tooltip,
+              child: InkWell(
+                onTap: () => onSelect(o.window),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm, vertical: 2),
+                  decoration: o.window == current
+                      ? ShapeDecoration(
+                          shape: const StadiumBorder(),
+                          color: AppTheme.accentGreen.withValues(alpha: 0.22),
+                        )
+                      : null,
+                  child: Text(
+                    o.label,
+                    style: style?.copyWith(
+                      color: o.window == current
+                          ? AppTheme.accentGreen
+                          : AppTheme.muted(context),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

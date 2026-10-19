@@ -126,8 +126,18 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     if (_forceMix || (inView && !_closedOnce)) {
       return _mix(pair, now, window, timelineEnd, swapped: swapped);
     }
+    // 切り替わる前: 重ね表示に入る位置と重なる範囲をシークバーに印す
+    if (!swapped) {
+      final enter = pair.start - MixView.lead;
+      return _seekbar(
+        mixMark: MixMark(
+          enter: enter < Duration.zero ? Duration.zero : enter,
+          start: pair.start,
+          cut: pair.cut,
+        ),
+      );
+    }
     // 切り替わった後（前曲が残っている間）は、重ね表示に戻れる
-    if (!swapped) return _seekbar();
     _closedOnce = true;
     return _seekbar(
       trailing: _BackToMixChip(
@@ -149,7 +159,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   static ProviderBase<Player> _playerOf(ActiveSlot slot) =>
       slot == ActiveSlot.a ? playerAProvider : playerBProvider;
 
-  Widget _seekbar({Widget? trailing}) => LoopSeekbar(
+  Widget _seekbar({Widget? trailing, MixMark? mixMark}) => LoopSeekbar(
         compact: widget.compact,
         bar: true,
         barHeight: widget.waveHeight,
@@ -157,6 +167,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         allowMarkerDrag: false,
         onRetryWaveform: widget.onRetryWaveform,
         trailing: trailing,
+        mixMark: mixMark,
       );
 
   Widget _mix(MixPair pair, Duration now, MixWindow window, Duration timelineEnd,
@@ -190,7 +201,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       height: widget.mixHeight,
       curve: recipe.curve,
       bassSwap: recipe.bassSwap,
-      note: recipe.auto ? 'おまかせ: ${recipe.summary}' : null,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
   }

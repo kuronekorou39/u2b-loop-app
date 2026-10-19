@@ -166,13 +166,15 @@ void main() {
     expect(seeks, isEmpty);
   });
 
-  testWidgets('「−」「＋」「全体」「交差」で窓が変わる', (tester) async {
+  testWidgets('「−」「＋」と範囲のピル「交差」「前後」「全体」で窓が変わる', (tester) async {
     final windows = <MixWindow>[];
     await pump(tester, windows: windows);
     await tester.tap(find.text('全体'));
     expect(windows.last, MixView.wholeWindow(timelineEnd));
     await tester.tap(find.text('交差'));
     expect(windows.last, const MixWindow(start, cut));
+    await tester.tap(find.text('前後'));
+    expect(windows.last, initial);
     await tester.tap(find.byIcon(Icons.remove));
     expect(windows.last.span, const Duration(seconds: 84));
     await tester.tap(find.byIcon(Icons.add));
