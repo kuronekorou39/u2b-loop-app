@@ -31,6 +31,14 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// 2 本まで。細い線だけで札は付けない
   final List<Duration> mixLines;
 
+  /// バーの上に重ねて置くもの（プレイリストの重ね表示の帯、bar モード）。
+  /// 細いバーと時刻行はそのままの位置に残り、その上に足す
+  final Widget? above;
+
+  /// 時刻行の開閉ボタンの右に出す「−」（範囲を広げる）「＋」（狭める）。
+  /// null なら出さない。中の null は押せない
+  final ({VoidCallback? wider, VoidCallback? narrower})? zoom;
+
   const LoopSeekbar({
     super.key,
     this.compact = false,
@@ -40,6 +48,8 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.allowMarkerDrag = true,
     this.onRetryWaveform,
     this.mixLines = const [],
+    this.above,
+    this.zoom,
   });
 
   @override
@@ -444,6 +454,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   }
 
   /// 波形の開閉ボタン。見た目は小さいが押せる範囲は 36px（以前は 24〜28px）
+  /// 「−」「＋」2 つぶんの幅（1 つ = アイコン 16 + 余白 6×2）
+  static const _zoomWidth = 56.0;
+
   Widget _toggleButton(IconData icon, String tooltip) => IconButton(
         icon: Icon(icon, size: AppIconSizes.sm),
         onPressed: widget.onToggleCompact,
@@ -599,10 +612,17 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final barHeight = compact ? 28.0 : widget.barHeight;
     final brightness = Theme.of(context).brightness;
 
+    final above = widget.above;
+    final zoom = widget.zoom;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
         children: [
+          if (above != null) ...[
+            above,
+            const SizedBox(height: AppSpacing.xs),
+          ],
           SizedBox(
             height: barHeight,
             width: double.infinity,
@@ -657,7 +677,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
               },
             ),
           ),
-          // 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも同じ場所）
+          // 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも、重ね表示でも同じ場所）。
+          // 「−」「＋」は開閉ボタンのすぐ右。左にも同じ幅を空けて開閉ボタンを真ん中に保つ
           SizedBox(
             height: 32,
             child: Stack(
@@ -670,10 +691,35 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                     Text(TimeUtils.format(duration), style: labelStyle),
                   ],
                 ),
-                if (widget.onToggleCompact != null)
-                  _toggleButton(
-                    compact ? Icons.unfold_more : Icons.unfold_less,
-                    compact ? '波形表示' : 'コンパクト表示',
+                if (widget.onToggleCompact != null || zoom != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (zoom != null) const SizedBox(width: _zoomWidth),
+                      if (widget.onToggleCompact != null)
+                        _toggleButton(
+                          compact ? Icons.unfold_more : Icons.unfold_less,
+                          compact ? '波形表示' : 'コンパクト表示',
+                        ),
+                      if (zoom != null)
+                        SizedBox(
+                          width: _zoomWidth,
+                          child: Row(
+                            children: [
+                              _MixZoomButton(
+                                icon: Icons.remove,
+                                tooltip: '範囲を広げる',
+                                onTap: zoom.wider,
+                              ),
+                              _MixZoomButton(
+                                icon: Icons.add,
+                                tooltip: '範囲を狭める',
+                                onTap: zoom.narrower,
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
               ],
             ),
@@ -1262,58 +1308,32 @@ class _MinimapPainter extends CustomPainter {
       old.waveform != waveform;
 }
 
-/// 鳴っている曲の細いシークバー 1 本だけ（時刻・開閉ボタン・波形なし）。
-/// 重ね表示の下に置いて、重ね表示の窓の外（曲の前半など）にも飛べるようにする。
-/// タップ・ドラッグでシーク。[mixLines] は重ね表示に切り替わる位置（この曲の時計）
-class ThinSeekbar extends ConsumerWidget {
-  const ThinSeekbar({super.key, this.mixLines = const [], this.height = 24});
+/// 時刻行の「−」「＋」（プレイリストの重ね表示の範囲）。押せないときは薄く
+class _MixZoomButton extends StatelessWidget {
+  const _MixZoomButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
 
-  final List<Duration> mixLines;
-  final double height;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final player = ref.watch(playerProvider);
-    // 位置の更新で描き直すためだけに見る。値はプレイヤーから直接取る
-    // （スロットが切り替わった直後、ストリームは少しの間前のプレイヤーの値を返す）
-    ref.watch(positionProvider);
-    ref.watch(durationProvider);
-    final position = player.state.position;
-    final duration = player.state.duration;
-    final loop = ref.watch(loopProvider);
-    final hasSource = ref.watch(videoSourceProvider) != null;
-    return SizedBox(
-      height: height,
-      width: double.infinity,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          void seekTo(double x) {
-            if (duration.inMilliseconds == 0) return;
-            final norm = (x / width).clamp(0.0, 1.0);
-            player.seek(Duration(
-                milliseconds: (norm * duration.inMilliseconds).round()));
-          }
-
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: hasSource ? (d) => seekTo(d.localPosition.dx) : null,
-            onHorizontalDragUpdate:
-                hasSource ? (d) => seekTo(d.localPosition.dx) : null,
-            child: CustomPaint(
-              size: Size(width, height),
-              painter: _CompactSeekbarPainter(
-                position: position,
-                duration: duration,
-                pointA: loop.pointA,
-                pointB: loop.pointB,
-                loopEnabled: loop.enabled,
-                brightness: Theme.of(context).brightness,
-                mixLines: mixLines,
-              ),
-            ),
-          );
-        },
+  Widget build(BuildContext context) {
+    final color = onTap == null
+        ? AppTheme.muted(context, alpha: 0.35)
+        : AppTheme.accentGreen;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          child: Icon(icon, size: AppIconSizes.sm, color: color),
+        ),
       ),
     );
   }

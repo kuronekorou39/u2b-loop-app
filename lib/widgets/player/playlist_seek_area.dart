@@ -9,15 +9,16 @@ import '../loop/loop_seekbar.dart';
 import 'mix_view.dart';
 
 /// 下部コントローラーのシーク領域。
-/// ふだんは [LoopSeekbar]（bar モード）、曲の切り替わりが近づくと [MixView] に変わる。
+/// ふだんは [LoopSeekbar]（bar モード）、曲の切り替わりが近づくと細いバーと時刻行は
+/// そのままの位置で、その上に [MixView]（重ねの帯）が足される。時刻行の開閉ボタンの右に
+/// 「−」「＋」が出る。閉じれば帯も消えて細いバーと時刻行だけになる
 ///
 /// 重ね表示は [PlaylistEngine] の組（[MixPair]: 1 曲目と 2 曲目をつないだ 1 本の時間軸）を
 /// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
 /// 窓（交差の前後に [_margin] の余白）の中かどうかだけで決める。
 /// 外ではふつうのシークバーに、窓の端（重ね表示に切り替わる位置）を線で印す:
 /// 曲の頭側に前の曲との重ね表示の終わり、終わり側に次の曲との重ね表示の始まり。
-/// 重ね表示の下にも鳴っている曲の細いシークバー（[ThinSeekbar]）を置き、
-/// 窓の外（1 曲目の前半など）へ戻れるようにする
+/// 重ね表示の間も細いバーで窓の外（1 曲目の前半など）へ戻れる
 class PlaylistSeekArea extends ConsumerStatefulWidget {
   const PlaylistSeekArea({
     super.key,
@@ -42,7 +43,7 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   /// 波形シークバーの高さ（compact でないとき）
   final double waveHeight;
 
-  /// ミックスビューの高さ（2 段ぶん）
+  /// 重ねの帯の高さ（2 段ぶん）。この下に細いバー 28px と時刻行が付く
   final double mixHeight;
 
   /// 曲の波形（プリロード時に先行生成したもの）。無ければ null
@@ -154,14 +155,22 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   static ProviderBase<Player> _playerOf(ActiveSlot slot) =>
       slot == ActiveSlot.a ? playerAProvider : playerBProvider;
 
-  Widget _seekbar({List<Duration> mixLines = const []}) => LoopSeekbar(
-        compact: widget.compact,
+  Widget _seekbar({
+    List<Duration> mixLines = const [],
+    Widget? above,
+    ({VoidCallback? wider, VoidCallback? narrower})? zoom,
+  }) =>
+      LoopSeekbar(
+        // 重ね表示の間は波形の代わりに帯を上に置くので、バーは細いまま
+        compact: widget.compact || above != null || zoom != null,
         bar: true,
         barHeight: widget.waveHeight,
         onToggleCompact: widget.onToggleCompact,
         allowMarkerDrag: false,
         onRetryWaveform: widget.onRetryWaveform,
         mixLines: mixLines,
+        above: above,
+        zoom: zoom,
       );
 
   Widget _mix(MixPair pair, Duration now, MixWindow window,
@@ -178,7 +187,14 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final recipe = pair.recipe;
     final narrower = MixView.narrower(_margin);
     final wider = MixView.wider(_margin);
-    return MixView(
+    final zoom = (
+      wider: wider == null ? null : () => setState(() => _margin = wider),
+      narrower:
+          narrower == null ? null : () => setState(() => _margin = narrower),
+    );
+    // 閉じているときは帯を出さない（細いバーの紫の線で範囲は分かる）
+    if (widget.compact) return _seekbar(mixLines: lines, zoom: zoom);
+    final band = MixView(
       outWaveform: outWaveform,
       outDuration: pair.outDuration,
       outTitle: outItem == null ? '' : widget.titleFor(outItem),
@@ -191,16 +207,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       now: now,
       swapped: swapped,
       window: window,
-      bar: ThinSeekbar(mixLines: lines),
-      onZoomIn:
-          narrower == null ? null : () => setState(() => _margin = narrower),
-      onZoomOut: wider == null ? null : () => setState(() => _margin = wider),
       prepLine: pair.prepLine,
       height: widget.mixHeight,
       curve: recipe.curve,
       bassSwap: recipe.bassSwap,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
+    return _seekbar(mixLines: lines, above: band, zoom: zoom);
   }
 
   /// ミックスビュー上のシーク。[t] は出る曲の時計。

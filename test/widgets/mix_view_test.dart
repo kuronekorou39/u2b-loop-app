@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/widgets/player/mix_view.dart';
 
-/// ミックスビュー: 窓は交差の前後に余白を付けた範囲（= 重ね表示を出す範囲）。
-/// タップ・ドラッグした x を時間軸（旧曲の時計）に直して返す。「−」「＋」で余白を 1 段ずつ
+/// ミックスビュー（帯だけ）: 窓は交差の前後に余白を付けた範囲（= 重ね表示を出す範囲）。
+/// タップ・ドラッグした x を時間軸（旧曲の時計）に直して返す。余白の段は親が「−」「＋」で変える
 void main() {
   const start = Duration(seconds: 100);
   const cut = Duration(seconds: 110);
@@ -68,8 +68,6 @@ void main() {
     bool seekable = true,
     Duration? prepLine,
     Duration now = const Duration(seconds: 95),
-    VoidCallback? onZoomIn,
-    VoidCallback? onZoomOut,
   }) async {
     final seeks = <Duration>[];
     await tester.pumpWidget(
@@ -77,8 +75,8 @@ void main() {
         home: Scaffold(
           body: Center(
             child: SizedBox(
-              // 横の余白 16×2 を引いて描画幅が 260 になる
-              width: 292,
+              // 帯は余白を持たないので、そのまま描画幅 260
+              width: 260,
               child: MixView(
                 outWaveform: const [0.5, 0.5],
                 outDuration: const Duration(seconds: 120),
@@ -92,8 +90,6 @@ void main() {
                 now: now,
                 swapped: false,
                 window: initial,
-                onZoomIn: onZoomIn,
-                onZoomOut: onZoomOut,
                 prepLine: prepLine,
                 height: 80,
                 onSeek: seekable ? seeks.add : null,
@@ -149,25 +145,5 @@ void main() {
       ),
     );
     expect(seeks, isEmpty);
-  });
-
-  testWidgets('「−」「＋」でコールバック。片方が null なら押せない', (tester) async {
-    var ins = 0;
-    var outs = 0;
-    await pump(tester, onZoomIn: () => ins++, onZoomOut: () => outs++);
-    await tester.tap(find.byIcon(Icons.remove));
-    await tester.tap(find.byIcon(Icons.add));
-    expect((ins, outs), (1, 1));
-
-    await pump(tester, onZoomOut: () => outs++);
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.tap(find.byIcon(Icons.remove));
-    expect((ins, outs), (1, 2));
-  });
-
-  testWidgets('どちらも無ければ「−」「＋」の行は出ない', (tester) async {
-    await pump(tester);
-    expect(find.byIcon(Icons.remove), findsNothing);
-    expect(find.byIcon(Icons.add), findsNothing);
   });
 }

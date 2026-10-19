@@ -36,9 +36,9 @@ class MixWindow {
 ///
 /// 窓は「重ね表示を出す範囲」そのもの: 親は再生位置がこの中にある間だけ出し、
 /// 外ではふつうのシークバー（窓の端を線で印す）に戻す。
-/// 操作: 帯の上のタップ・ドラッグはシーク（[onSeek]）だけ。「−」「＋」で余白を
-/// 1 段ずつ広げる・狭める（[onZoomOut] / [onZoomIn]）。
-/// 下の行の [bar]（鳴っている曲の細いシークバー）で、窓の外（曲の前半など）にも飛べる。
+/// これは帯だけ。親（PlaylistSeekArea）が [LoopSeekbar] の上に置き、
+/// 細いシークバー・時刻行・「−」「＋」（余白を 1 段ずつ広げる・狭める）はそちらにある。
+/// 操作: 帯の上のタップ・ドラッグはシーク（[onSeek]）だけ。
 /// 2 本指のつまみは細い帯では安定しないので使わない
 class MixView extends StatelessWidget {
   const MixView({
@@ -55,9 +55,6 @@ class MixView extends StatelessWidget {
     required this.now,
     required this.swapped,
     required this.window,
-    this.bar,
-    this.onZoomIn,
-    this.onZoomOut,
     this.prepLine,
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
@@ -67,16 +64,6 @@ class MixView extends StatelessWidget {
 
   /// 見えている範囲（旧曲の時計）。[windowAround] で作る
   final MixWindow window;
-
-  /// 下の行の左に置く、鳴っている曲の細いシークバー（[ThinSeekbar]）。
-  /// 窓の中しか描かない帯の代わりに、曲のどこへでも飛べる口。null なら置かない
-  final Widget? bar;
-
-  /// 「＋」（余白を 1 段狭める）。null なら押せない（これ以上狭くできない）
-  final VoidCallback? onZoomIn;
-
-  /// 「−」（余白を 1 段広げる）。null なら押せない
-  final VoidCallback? onZoomOut;
 
   /// 準備線（旧曲の時計）。ここから右は次のつなぎの準備に入る（前曲には戻れない）ので、
   /// 次曲の波形を薄くして線を引く。null なら描かない
@@ -182,133 +169,72 @@ class MixView extends StatelessWidget {
     final laneLabel = Theme.of(context).textTheme.labelSmall!;
     final onSeek = this.onSeek;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-      child: Column(
-        children: [
-          SizedBox(
-            height: height,
-            width: double.infinity,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                void seekAt(double x) => onSeek?.call(
-                    MixView.timeAtX(x, constraints.maxWidth, window: window));
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: onSeek == null
-                      ? null
-                      : (d) => seekAt(d.localPosition.dx),
-                  onHorizontalDragUpdate: onSeek == null
-                      ? null
-                      : (d) => seekAt(d.localPosition.dx),
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: _MixPainter(
-                            outWaveform: outWaveform,
-                            outDuration: outDuration,
-                            inWaveform: inWaveform,
-                            inDuration: inDuration,
-                            inStart: inStart,
-                            start: start,
-                            cut: cut,
-                            now: now,
-                            swapped: swapped,
-                            window: window,
-                            curve: curve,
-                            bassSwap: bassSwap,
-                            prepLine: prepLine,
-                            prepLabelStyle: laneLabel.copyWith(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              shadows: const [
-                                Shadow(color: Colors.black, blurRadius: 4)
-                              ],
-                            ),
-                          ),
-                        ),
+    // 横の余白は置き場（LoopSeekbar の上）が持つ
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          void seekAt(double x) => onSeek?.call(
+            MixView.timeAtX(x, constraints.maxWidth, window: window),
+          );
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: onSeek == null ? null : (d) => seekAt(d.localPosition.dx),
+            onHorizontalDragUpdate: onSeek == null
+                ? null
+                : (d) => seekAt(d.localPosition.dx),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _MixPainter(
+                      outWaveform: outWaveform,
+                      outDuration: outDuration,
+                      inWaveform: inWaveform,
+                      inDuration: inDuration,
+                      inStart: inStart,
+                      start: start,
+                      cut: cut,
+                      now: now,
+                      swapped: swapped,
+                      window: window,
+                      curve: curve,
+                      bassSwap: bassSwap,
+                      prepLine: prepLine,
+                      prepLabelStyle: laneLabel.copyWith(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        shadows: const [
+                          Shadow(color: Colors.black, blurRadius: 4),
+                        ],
                       ),
-                      Positioned(
-                        left: 4,
-                        top: 2,
-                        right: 4,
-                        child: _LaneLabel(
-                          text: outTitle,
-                          color: AppTheme.pointAColor,
-                          style: laneLabel,
-                        ),
-                      ),
-                      Positioned(
-                        left: 4,
-                        bottom: 2,
-                        right: 4,
-                        child: _LaneLabel(
-                          text: '次: $inTitle',
-                          color: AppTheme.pointBColor,
-                          style: laneLabel,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                );
-              },
+                ),
+                Positioned(
+                  left: 4,
+                  top: 2,
+                  right: 4,
+                  child: _LaneLabel(
+                    text: outTitle,
+                    color: AppTheme.pointAColor,
+                    style: laneLabel,
+                  ),
+                ),
+                Positioned(
+                  left: 4,
+                  bottom: 2,
+                  right: 4,
+                  child: _LaneLabel(
+                    text: '次: $inTitle',
+                    color: AppTheme.pointBColor,
+                    style: laneLabel,
+                  ),
+                ),
+              ],
             ),
-          ),
-          // 鳴っている曲の細いシークバーと「−」「＋」。説明文は置かない
-          if (bar != null || onZoomIn != null || onZoomOut != null)
-            SizedBox(
-              height: 24,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (bar != null) ...[
-                    Expanded(child: bar!),
-                    const SizedBox(width: AppSpacing.sm),
-                  ],
-                  _ZoomIconButton(
-                    icon: Icons.remove,
-                    tooltip: '範囲を広げる',
-                    onTap: onZoomOut,
-                  ),
-                  _ZoomIconButton(
-                    icon: Icons.add,
-                    tooltip: '範囲を狭める',
-                    onTap: onZoomIn,
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ZoomIconButton extends StatelessWidget {
-  const _ZoomIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = onTap == null
-        ? AppTheme.muted(context, alpha: 0.35)
-        : AppTheme.accentGreen;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Icon(icon, size: AppIconSizes.sm, color: color),
-        ),
+          );
+        },
       ),
     );
   }
