@@ -307,6 +307,11 @@ class PlaylistEngine {
   Player swapSlots() {
     final oldPlayer = _ref.read(playerProvider);
     final oldSlot = _ref.read(activeSlotProvider);
+    // 止めた状態で（重ね表示を押して）切り替えたら、新しい曲も止めたまま置く。
+    // 交差中は入る曲がもう鳴っている。終端まで鳴り切った（completed）後の切り替えは鳴らす
+    final wasPlaying = _crossfade != null ||
+        oldPlayer.state.playing ||
+        oldPlayer.state.completed;
     final newSlot = oldSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
     _ref.read(activeSlotProvider.notifier).state = newSlot;
 
@@ -368,7 +373,11 @@ class PlaylistEngine {
         oldPlayer.stop();
       }
     }
-    newPlayer.play();
+    if (wasPlaying) {
+      newPlayer.play();
+    } else {
+      newPlayer.pause();
+    }
     // テンポを寄せていた（拍合わせのナッジ込み）なら、前曲が消えた後にゆっくり本来の速度へ戻す
     if (session != null && session.appliedInRate != session.inBaseRate) {
       _startTempoRamp(
@@ -532,10 +541,17 @@ class PlaylistEngine {
     releaseParked();
     _parkedPlayer = player;
     _parkedPair = pair;
-    final line = pair.prepLine;
-    if (line == null) return;
-    // 再生が準備線を越えたら手放す（押して越えたときも同じ経路）
+    // 再生が準備線を越えたら手放す（押して越えたときも同じ経路）。
+    // 準備線は毎回計算し直す: 最後の曲で線なし（最後まで戻れる）にしていても、
+    // 後からリピートを入れたらその次の曲が生まれ、先読みの席を空けなければならない
     _parkMonitor = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      final current = _parkedPair;
+      if (current == null) return;
+      final lineIn = _prepLineIn(current.next, current.inDuration);
+      final line = lineIn == null ? null : current.start + (lineIn - current.inStart);
+      final pair =
+          line == current.prepLine ? current : _parkedPair = current.withPrepLine(line);
+      if (line == null) return;
       if (_ref.read(activeSlotProvider) == pair.outSlot) return;
       if (pair.toOutClock(activePlayer.state.position) >= line) releaseParked();
     });
@@ -573,6 +589,8 @@ class PlaylistEngine {
     final nextPlayer = activePlayer;
     final parkedSlot =
         identical(parked, _ref.read(playerAProvider)) ? ActiveSlot.a : ActiveSlot.b;
+    // 止めた状態で戻ったら前曲も止めたまま
+    final wasPlaying = nextPlayer.state.playing;
     _clearParked();
     _cancelTempoRamp();
     unawaited(nextPlayer.pause());
@@ -580,7 +598,7 @@ class PlaylistEngine {
     // シークが済んでから鳴らす。パークした位置は切替点（曲の終端の 500ms 手前のことが多い）
     // なので、位置が動く前に鳴らすと LoopNotifier が曲終了とみなして、すぐ次曲へ戻してしまう
     unawaited(parked.seek(oldPos).then((_) {
-      if (identical(parked, activePlayer)) return parked.play();
+      if (wasPlaying && identical(parked, activePlayer)) return parked.play();
       return null;
     }));
     return true;
@@ -678,11 +696,18 @@ class PlaylistEngine {
     }
   }
 
-  /// リピートなしで最後の曲の終点（B 点）に達した。次の曲は無いので鳴らすのをやめる
-  /// （AB ループはしない）。前曲のパークはそのまま残す（重ね表示から戻れる）
+  /// リピートなしで最後の曲の終点（B 点）に達した。次の曲は無いので鳴らすのをやめ、
+  /// 区間の頭（A 点か曲の頭）に戻しておく。B 点に置いたままだと、再生を押しても
+  /// B 点の判定が済んだ扱いで区間の外を鳴らし続け、後からリピートを入れても次へ進めない。
+  /// 前曲のパークはそのまま残す（重ね表示から戻れる）
   Future<void> pauseAtPlaylistEnd() async {
+    final ls = _ref.read(loopProvider);
+    final track = _ref.read(playlistPlayerProvider).currentTrack;
+    final restart = (ls.enabled ? ls.pointA : null) ??
+        Duration(milliseconds: track?.startMs ?? 0);
     try {
       await activePlayer.pause();
+      await activePlayer.seek(restart);
     } catch (e) {
       debugPrint('[PlaylistEngine] プレイリストの終わりで止められない: $e');
     }
@@ -1598,6 +1623,20 @@ class MixPair {
 
   /// 入る曲の時計 → 出る曲の時計
   Duration toOutClock(Duration inPos) => start + (inPos - inStart);
+
+  /// 準備線だけ差し替えた組（パーク中に計算し直したとき）
+  MixPair withPrepLine(Duration? line) => MixPair(
+        outSlot: outSlot,
+        outItem: outItem,
+        outDuration: outDuration,
+        next: next,
+        inDuration: inDuration,
+        inStart: inStart,
+        start: start,
+        cut: cut,
+        recipe: recipe,
+        prepLine: line,
+      );
 
   /// 出る曲の時計 → 入る曲の時計
   Duration toInClock(Duration t) => inStart + (t - start);

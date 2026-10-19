@@ -97,6 +97,16 @@ void main() {
           const Duration(seconds: 42));
     });
 
+    test('withPrepLine は準備線だけ差し替える', () {
+      final moved = pair.withPrepLine(null);
+      expect(moved.prepLine, isNull);
+      expect(moved.key, pair.key);
+      expect(moved.toOutClock(const Duration(seconds: 5)),
+          const Duration(seconds: 170));
+      expect(pair.withPrepLine(const Duration(seconds: 200)).prepLine,
+          const Duration(seconds: 200));
+    });
+
     test('組の見分けは出る曲と入る曲の id', () {
       expect(pair.key, 'a>b');
     });
