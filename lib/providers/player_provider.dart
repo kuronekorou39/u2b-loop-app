@@ -112,9 +112,14 @@ final playerProvider = Provider<Player>((ref) {
 
 final videoControllerProvider = Provider<VideoController>((ref) {
   final slot = ref.watch(activeSlotProvider);
-  return slot == ActiveSlot.a
-      ? ref.read(controllerAProvider)
-      : ref.read(controllerBProvider);
+  // 2 枚とも最初に作る。media_kit_video（Android）は映像の出力先（surface）が付いたとき・
+  // 映像の大きさが変わったときに出力を作り直して player.seek(0) する。
+  // 裏のプレイヤーの分を初めて表に出たときに作ると、交差して切り替わった瞬間に
+  // 入る曲が頭に戻る（起動して最初の切り替えだけ、ぶつっと切れて 2 曲目が最初から鳴った）。
+  // 先に作っておけば、出力先が付くのは裏で次の曲を読み込んでいる（止まっている）間になる
+  final a = ref.read(controllerAProvider);
+  final b = ref.read(controllerBProvider);
+  return slot == ActiveSlot.a ? a : b;
 });
 
 // --- Preload (inactive) player ---
