@@ -15,7 +15,9 @@ import 'mix_view.dart';
 /// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
 /// 窓（交差の前後に [_margin] の余白）の中かどうかだけで決める。
 /// 外ではふつうのシークバーに、窓の端（重ね表示に切り替わる位置）を線で印す:
-/// 曲の頭側に前の曲との重ね表示の終わり、終わり側に次の曲との重ね表示の始まり
+/// 曲の頭側に前の曲との重ね表示の終わり、終わり側に次の曲との重ね表示の始まり。
+/// 重ね表示の下にも鳴っている曲の細いシークバー（[ThinSeekbar]）を置き、
+/// 窓の外（1 曲目の前半など）へ戻れるようにする
 class PlaylistSeekArea extends ConsumerStatefulWidget {
   const PlaylistSeekArea({
     super.key,
@@ -109,19 +111,27 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       final now =
           _displayPosition(pair, swapped ? pair.toOutClock(position) : position);
       if (window.contains(now)) {
-        return _mix(pair, now, window, swapped: swapped);
+        return _mix(pair, now, window,
+            swapped: swapped,
+            lines: [...lines, ..._linesOf(pair, window, swapped: swapped)]);
       }
-      // 窓の外: 窓の両端をこの曲の時計に直し、曲の中に入るものだけ線にする
-      // （切り替わる前はふつう窓の始まりだけ、後は窓の終わりだけが曲の中にある）
-      final duration = swapped ? pair.inDuration : pair.outDuration;
-      for (final edge in [window.start, window.end]) {
-        final t = swapped ? pair.toInClock(edge) : edge;
-        if (t <= Duration.zero) continue;
-        if (duration > Duration.zero && t >= duration) continue;
-        lines.add(t);
-      }
+      lines.addAll(_linesOf(pair, window, swapped: swapped));
     }
     return _seekbar(mixLines: lines);
+  }
+
+  /// 窓の両端を鳴っている曲の時計に直し、曲の中に入るものだけ（線の位置）。
+  /// 切り替わる前はふつう窓の始まりだけ、後は窓の終わりだけが曲の中にある
+  static List<Duration> _linesOf(MixPair pair, MixWindow window,
+      {required bool swapped}) {
+    final duration = swapped ? pair.inDuration : pair.outDuration;
+    return [
+      for (final edge in [window.start, window.end])
+        if (swapped ? pair.toInClock(edge) : edge case final t
+            when t > Duration.zero &&
+                (duration <= Duration.zero || t < duration))
+          t,
+    ];
   }
 
   MixWindow _windowOf(MixPair pair) => MixView.windowAround(
@@ -155,7 +165,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       );
 
   Widget _mix(MixPair pair, Duration now, MixWindow window,
-      {required bool swapped}) {
+      {required bool swapped, required List<Duration> lines}) {
     final current = ref.watch(waveformDataProvider);
     final outItem = pair.outItem;
     final inItem = pair.next.item;
@@ -181,6 +191,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       now: now,
       swapped: swapped,
       window: window,
+      bar: ThinSeekbar(mixLines: lines),
       onZoomIn:
           narrower == null ? null : () => setState(() => _margin = narrower),
       onZoomOut: wider == null ? null : () => setState(() => _margin = wider),

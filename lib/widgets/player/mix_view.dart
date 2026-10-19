@@ -38,6 +38,7 @@ class MixWindow {
 /// 外ではふつうのシークバー（窓の端を線で印す）に戻す。
 /// 操作: 帯の上のタップ・ドラッグはシーク（[onSeek]）だけ。「−」「＋」で余白を
 /// 1 段ずつ広げる・狭める（[onZoomOut] / [onZoomIn]）。
+/// 下の行の [bar]（鳴っている曲の細いシークバー）で、窓の外（曲の前半など）にも飛べる。
 /// 2 本指のつまみは細い帯では安定しないので使わない
 class MixView extends StatelessWidget {
   const MixView({
@@ -54,6 +55,7 @@ class MixView extends StatelessWidget {
     required this.now,
     required this.swapped,
     required this.window,
+    this.bar,
     this.onZoomIn,
     this.onZoomOut,
     this.prepLine,
@@ -65,6 +67,10 @@ class MixView extends StatelessWidget {
 
   /// 見えている範囲（旧曲の時計）。[windowAround] で作る
   final MixWindow window;
+
+  /// 下の行の左に置く、鳴っている曲の細いシークバー（[ThinSeekbar]）。
+  /// 窓の中しか描かない帯の代わりに、曲のどこへでも飛べる口。null なら置かない
+  final Widget? bar;
 
   /// 「＋」（余白を 1 段狭める）。null なら押せない（これ以上狭くできない）
   final VoidCallback? onZoomIn;
@@ -248,13 +254,17 @@ class MixView extends StatelessWidget {
               },
             ),
           ),
-          // 「−」「＋」だけ。説明文は置かない
-          if (onZoomIn != null || onZoomOut != null)
+          // 鳴っている曲の細いシークバーと「−」「＋」。説明文は置かない
+          if (bar != null || onZoomIn != null || onZoomOut != null)
             SizedBox(
               height: 24,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (bar != null) ...[
+                    Expanded(child: bar!),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
                   _ZoomIconButton(
                     icon: Icons.remove,
                     tooltip: '範囲を広げる',

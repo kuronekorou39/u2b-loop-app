@@ -1262,6 +1262,63 @@ class _MinimapPainter extends CustomPainter {
       old.waveform != waveform;
 }
 
+/// 鳴っている曲の細いシークバー 1 本だけ（時刻・開閉ボタン・波形なし）。
+/// 重ね表示の下に置いて、重ね表示の窓の外（曲の前半など）にも飛べるようにする。
+/// タップ・ドラッグでシーク。[mixLines] は重ね表示に切り替わる位置（この曲の時計）
+class ThinSeekbar extends ConsumerWidget {
+  const ThinSeekbar({super.key, this.mixLines = const [], this.height = 24});
+
+  final List<Duration> mixLines;
+  final double height;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final player = ref.watch(playerProvider);
+    // 位置の更新で描き直すためだけに見る。値はプレイヤーから直接取る
+    // （スロットが切り替わった直後、ストリームは少しの間前のプレイヤーの値を返す）
+    ref.watch(positionProvider);
+    ref.watch(durationProvider);
+    final position = player.state.position;
+    final duration = player.state.duration;
+    final loop = ref.watch(loopProvider);
+    final hasSource = ref.watch(videoSourceProvider) != null;
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          void seekTo(double x) {
+            if (duration.inMilliseconds == 0) return;
+            final norm = (x / width).clamp(0.0, 1.0);
+            player.seek(Duration(
+                milliseconds: (norm * duration.inMilliseconds).round()));
+          }
+
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+            onHorizontalDragUpdate:
+                hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+            child: CustomPaint(
+              size: Size(width, height),
+              painter: _CompactSeekbarPainter(
+                position: position,
+                duration: duration,
+                pointA: loop.pointA,
+                pointB: loop.pointB,
+                loopEnabled: loop.enabled,
+                brightness: Theme.of(context).brightness,
+                mixLines: mixLines,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// A/B 点の線。ガラス風に合わせて、細い芯の周りにほんのり同じ色を滲ませる
 /// （以前は 1.5〜2.5px の不透明な 1 本線で、板の上で硬く見えた）
 void drawPointLine(Canvas canvas, Offset top, Offset bottom, Color color) {
