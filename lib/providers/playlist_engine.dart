@@ -408,9 +408,14 @@ class PlaylistEngine {
 
   /// 重ね表示の組。前曲をパーク中ならその組、そうでなければ予定の交差から作る。
   /// 次曲が予約されていない・クロスフェードがオフなら null
-  MixPair? mixPair() {
-    final parked = _parkedPair;
-    if (parked != null) return parked;
+  MixPair? mixPair() => parkedPair ?? plannedPair();
+
+  /// パーク中の前曲との組（切り替わった後）。パークしていなければ null
+  MixPair? get parkedPair => _parkedPair;
+
+  /// 予定の交差から作る次曲との組（切り替わる前）。
+  /// 次曲が予約されていない・クロスフェードがオフなら null
+  MixPair? plannedPair() {
     final plan = plannedCrossfade();
     if (plan == null) return null;
     final inStart = _crossfade?.inStart ??

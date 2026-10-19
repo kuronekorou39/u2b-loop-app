@@ -45,6 +45,9 @@ class AppTheme {
   static const accentGreen = Color(0xFF4ECCA3);
   static const accentRed = Color(0xFFE94560);
 
+  /// プレイリストの重ね表示に切り替わる位置の線（緑の進行・赤青の A/B と区別する紫）
+  static const mixLineColor = Color(0xFFB388FF);
+
   /// ダークテーマの背景（Webアプリ版と揃えた色）
   static const darkBackground = Color(0xFF1A1A2E);
 
