@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
+import '../../core/storage/app_boxes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_sheets.dart';
@@ -9,9 +10,12 @@ import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_surface.dart';
+import '../../widgets/tag_chip.dart';
 import 'home_parts.dart';
 
-/// ホームの「タグ」タブ。タグの一覧（リスト / グリッド）と、名前・色の変更、削除。
+/// ホームの「タグ」タブ。タグの一覧（リスト / グリッド）と、名前・色の変更、削除、並べ替え。
+/// 並べ替えはリスト表示で右の ≡ をドラッグ（長押しは複数選択に使うので取っ手で）。
+/// 曲に付いたタグもこの並びで出る
 ///
 /// 行をタップすると [onTagTap]（曲タブへ移ってそのタグで絞り込む）。
 /// 複数選択中（[selecting]）はタップで選択の切替、操作はホームの選択バー側
@@ -159,17 +163,28 @@ class TagManagerTab extends ConsumerWidget {
       }
     }
 
-    if (grid) return _buildGrid(context, ref, tags, countOf, tap);
+    if (grid) {
+      return Column(
+        children: [
+          const _TagOrderHint(),
+          Expanded(child: _buildGrid(context, ref, tags, countOf, tap)),
+        ],
+      );
+    }
 
     final textTheme = Theme.of(context).textTheme;
     return HomeListSurface(
-      child: ListView.builder(
+      child: ReorderableListView.builder(
         padding: HomeListSurface.listPadding,
+        header: const _TagOrderHint(),
+        buildDefaultDragHandles: false,
         itemCount: tags.length,
+        onReorderItem: ref.read(tagsProvider.notifier).reorder,
         itemBuilder: (context, i) {
           final tag = tags[i];
           final selected = selectedIds.contains(tag.id);
           return ListTile(
+            key: ValueKey(tag.id),
             selected: selected,
             leading: selecting
                 ? Checkbox(
@@ -183,12 +198,21 @@ class TagManagerTab extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('${countOf(tag)} 曲', style: textTheme.bodySmall),
-                if (!selecting)
+                if (!selecting) ...[
                   IconButton(
                     icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
                     tooltip: 'メニュー',
                     onPressed: () => _showMenu(context, ref, tag),
                   ),
+                  ReorderableDragStartListener(
+                    index: i,
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      child: Icon(Icons.drag_handle,
+                          size: AppIconSizes.md, color: AppTheme.muted(context)),
+                    ),
+                  ),
+                ],
               ],
             ),
             onTap: () => tap(tag),
@@ -293,6 +317,82 @@ class TagManagerTab extends ConsumerWidget {
         maxLength: AppLimits.tagNameMaxLength);
     if (name == null) return;
     ref.read(tagsProvider.notifier).rename(tag.id, name);
+  }
+}
+
+/// タグの並びの使い方を一度だけ見せるカード（閉じたら出さない）。
+/// 見本のタグは実際には作らない（データを汚さない）
+class _TagOrderHint extends StatefulWidget {
+  const _TagOrderHint();
+
+  @override
+  State<_TagOrderHint> createState() => _TagOrderHintState();
+}
+
+class _TagOrderHintState extends State<_TagOrderHint> {
+  bool _seen = AppBoxes.settings
+      .get(SettingsKeys.tagOrderHintSeen, defaultValue: false) as bool;
+
+  static final _examples = [
+    Tag(id: '_ex_genre', name: 'ジャンル', colorIndex: 4),
+    Tag(id: '_ex_artist', name: 'アーティスト', colorIndex: 5),
+    Tag(id: '_ex_album', name: 'アルバム', colorIndex: 2),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (_seen) return const SizedBox.shrink();
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+      child: GlassSurface(
+        radius: 14,
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg, AppSpacing.md, AppSpacing.xs, AppSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('上から並べた順に、曲のタグも並びます',
+                      style: textTheme.labelMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final (i, t) in _examples.indexed) ...[
+                        if (i > 0)
+                          Icon(Icons.chevron_right,
+                              size: AppIconSizes.s,
+                              color: AppTheme.muted(context)),
+                        TagChip(tag: t),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text('リスト表示で右の ≡ をドラッグして並べ替え',
+                      style: textTheme.labelSmall),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: AppIconSizes.md),
+              tooltip: '閉じる',
+              onPressed: () {
+                setState(() => _seen = true);
+                AppBoxes.settings.put(SettingsKeys.tagOrderHintSeen, true);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

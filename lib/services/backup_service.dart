@@ -235,11 +235,13 @@ class BackupService {
         'id': tag.id,
         'name': tag.name,
         'colorIndex': tag.colorIndex,
+        'order': tag.order,
       };
 
   static Tag tagFromJson(Map<String, dynamic> j) => Tag(
         id: j['id'] as String,
         name: j['name'] as String,
         colorIndex: j['colorIndex'] as int? ?? 0,
+        order: j['order'] as int?,
       );
 }

@@ -87,8 +87,11 @@ List<Widget> trackTagChips(
   PlaylistTrack track,
   Map<String, Tag> tagMap,
 ) {
-  final itemTags =
-      track.item.tagIds.map((id) => tagMap[id]).whereType<Tag>().take(2).toList();
+  // タグ一覧の並び（ユーザーが決めた順）で先頭 2 件
+  final itemTags = (track.item.tagIds.map((id) => tagMap[id]).whereType<Tag>().toList()
+        ..sort(Tag.compare))
+      .take(2)
+      .toList();
   if (itemTags.isEmpty) return const [];
 
   return [

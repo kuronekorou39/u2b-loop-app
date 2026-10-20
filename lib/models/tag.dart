@@ -19,7 +19,20 @@ class Tag {
   String name;
   int colorIndex;
 
-  Tag({required this.id, required this.name, this.colorIndex = 0});
+  /// 並び順（小さいほど上）。タグ一覧でユーザーが並べ替える。曲に付いたタグもこの順に出す。
+  /// null = まだ決まっていない（v1.101.1 までのタグ。読み込むときに名前順で振る）
+  int? order;
+
+  Tag({required this.id, required this.name, this.colorIndex = 0, this.order});
+
+  /// 一覧の並び: 並び順、決まっていなければ後ろに名前順
+  static int compare(Tag a, Tag b) {
+    final ao = a.order, bo = b.order;
+    if (ao != null && bo != null && ao != bo) return ao.compareTo(bo);
+    if (ao != null && bo == null) return -1;
+    if (ao == null && bo != null) return 1;
+    return a.name.compareTo(b.name);
+  }
 
   Color get color =>
       colorIndex >= 0 && colorIndex < tagPresetColors.length
@@ -38,6 +51,7 @@ class TagAdapter extends TypeAdapter<Tag> {
       id: fields[0] as String,
       name: fields[1] as String,
       colorIndex: fields[2] as int? ?? 0,
+      order: fields[3] as int?,
     );
   }
 
@@ -47,6 +61,7 @@ class TagAdapter extends TypeAdapter<Tag> {
       0: obj.id,
       1: obj.name,
       2: obj.colorIndex,
+      3: obj.order,
     });
   }
 }

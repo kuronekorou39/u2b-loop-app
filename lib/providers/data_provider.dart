@@ -634,19 +634,43 @@ final tagsProvider = StateNotifierProvider<TagsNotifier, List<Tag>>((ref) {
 class TagsNotifier extends StateNotifier<List<Tag>> {
   final Box<Tag> _box;
 
-  TagsNotifier(this._box)
-      : super(_box.values.toList()..sort((a, b) => a.name.compareTo(b.name)));
+  /// 並び順はユーザーが決める（[reorder]）。曲に付いたタグの表示もこの順に従う
+  TagsNotifier(this._box) : super(_sorted(_box)) {
+    // 並び順が無いタグ（以前のタグ・共有やバックアップから入ったもの）に今の並びで番号を振る
+    if (state.any((t) => t.order == null)) _renumber(state);
+  }
 
-  void _refresh() {
-    state = _box.values.toList()..sort((a, b) => a.name.compareTo(b.name));
+  static List<Tag> _sorted(Box<Tag> box) =>
+      box.values.toList()..sort(Tag.compare);
+
+  void _refresh() => state = _sorted(_box);
+
+  /// [tags] の並びどおりに 0, 1, 2… を振って保存する
+  void _renumber(List<Tag> tags) {
+    for (var i = 0; i < tags.length; i++) {
+      tags[i].order = i;
+    }
+    _box.putAll({for (final t in tags) t.id: t});
+    state = List.of(tags);
   }
 
   Future<Tag> create(String name) async {
     final id = IdGenerator.next();
-    final tag = Tag(id: id, name: name.trim());
+    // 新しいタグは末尾に
+    final last = state.map((t) => t.order ?? -1).fold(-1, (a, b) => a > b ? a : b);
+    final tag = Tag(id: id, name: name.trim(), order: last + 1);
     await _box.put(id, tag);
     _refresh();
     return tag;
+  }
+
+  /// 並べ替え。[newIndex] は動かした後の位置（ReorderableListView の onReorderItem と同じ）
+  void reorder(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= state.length) return;
+    final list = List.of(state);
+    final moved = list.removeAt(oldIndex);
+    list.insert(newIndex.clamp(0, list.length), moved);
+    _renumber(list);
   }
 
   Future<void> rename(String id, String newName) async {

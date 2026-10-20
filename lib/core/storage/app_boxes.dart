@@ -57,6 +57,7 @@ class SettingsKeys {
   static const homeItemView = 'home_item_view';
   static const homeTagGrid = 'home_tag_grid';
   static const homePlaylistGrid = 'home_playlist_grid';
+  static const tagOrderHintSeen = 'tag_order_hint_seen';
 
   // 隠しステータスの解放フラグ（設定のバージョン行を 5 回タップ）
   static const eeStats = 'ee_stats';
