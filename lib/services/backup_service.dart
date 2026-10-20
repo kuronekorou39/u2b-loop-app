@@ -209,6 +209,9 @@ class BackupService {
         'disabledItemIds': pl.disabledItemIds.toList(),
         'thumbnailItemId': pl.thumbnailItemId,
         'defaultShuffle': pl.defaultShuffle,
+        'tagIds': pl.tagIds,
+        'tagItemIds': pl.tagItemIds.toList(),
+        'excludedItemIds': pl.excludedItemIds.toList(),
       };
 
   static Playlist playlistFromJson(Map<String, dynamic> j) {
@@ -228,6 +231,9 @@ class BackupService {
       disabledItemIds: (j['disabledItemIds'] as List?)?.cast<String>().toSet(),
       thumbnailItemId: j['thumbnailItemId'] as String?,
       defaultShuffle: j['defaultShuffle'] as bool? ?? false,
+      tagIds: (j['tagIds'] as List?)?.cast<String>(),
+      tagItemIds: (j['tagItemIds'] as List?)?.cast<String>().toSet(),
+      excludedItemIds: (j['excludedItemIds'] as List?)?.cast<String>().toSet(),
     );
   }
 

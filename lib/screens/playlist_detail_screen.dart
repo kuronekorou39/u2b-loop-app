@@ -340,6 +340,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               .firstOrNull;
           if (current == null) return;
           current.itemIds = itemIds;
+          // 戻した曲は手で足した曲として残す（タグで自動に外した印は消す）
+          current.excludedItemIds.remove(itemId);
           if (regions != null) current.regionSelections[itemId] = regions;
           ref.read(playlistsProvider.notifier).update(current);
         },
@@ -435,28 +437,38 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
+  /// 自動で入れるタグを選ぶ（どれか 1 つが付いた曲が入る。後からタグを付けた曲も入る）
   Future<void> _showTagPicker(Playlist pl) async {
     final tags = ref.read(tagsProvider);
     final allItems = ref.read(loopItemsProvider);
-    // まだ入っていない曲だけ数える（「3 曲」と出て 0 曲しか増えないのを避ける）
-    int addable(Tag tag) => allItems
-        .where((i) =>
-            i.isReady &&
-            i.tagIds.contains(tag.id) &&
-            !pl.itemIds.contains(i.id))
-        .length;
+    int countOf(Tag tag) =>
+        allItems.where((i) => i.isReady && i.tagIds.contains(tag.id)).length;
 
-    final tag = await showPlaylistTagPickerDialog(context,
-        tags: tags, countOf: addable);
-    if (tag == null || !mounted) return;
-    final count = addable(tag);
-    await ref
-        .read(playlistsProvider.notifier)
-        .addItemsByTag(pl.id, tag.id, allItems);
+    final result = await showPlaylistTagsDialog(context,
+        tags: tags,
+        selected: pl.tagIds.toSet(),
+        countOf: countOf,
+        excludedCount: pl.excludedItemIds.length);
+    if (result == null || !mounted) return;
+    final notifier = ref.read(playlistsProvider.notifier);
+    final before = pl.itemIds.length;
+    await notifier.setTags(pl.id, result.tagIds);
+    if (result.restoreExcluded) await notifier.restoreExcluded(pl.id);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      AppSnackBar.success('「${tag.name}」の $count 曲を追加しました'),
-    );
+    final after = ref
+            .read(playlistsProvider)
+            .where((p) => p.id == pl.id)
+            .firstOrNull
+            ?.itemIds
+            .length ??
+        before;
+    final added = after - before;
+    ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.success(
+        result.tagIds.isEmpty
+            ? 'タグでの自動追加をやめました'
+            : added > 0
+                ? '$added 曲が入りました'
+                : 'タグを設定しました'));
   }
 
   @override
@@ -627,6 +639,28 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       Text('${items.length} 曲',
                           style: textTheme.bodyMedium
                               ?.copyWith(color: AppTheme.muted(context))),
+                      // 自動で入れるタグ（タップで変更）
+                      if ([
+                        for (final t in tags)
+                          if (pl.tagIds.contains(t.id)) t
+                      ] case final autoTags when autoTags.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        InkWell(
+                          borderRadius: AppRadius.borderSm,
+                          onTap: () => _showTagPicker(pl),
+                          child: Wrap(
+                            spacing: AppSpacing.xs,
+                            runSpacing: AppSpacing.xs,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Icon(Icons.autorenew,
+                                  size: AppIconSizes.s,
+                                  color: AppTheme.muted(context)),
+                              for (final t in autoTags) TagChip(tag: t),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.lg),
                       Row(
                         children: [

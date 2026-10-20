@@ -349,8 +349,9 @@ Future<PlaylistAddChoice?> showPlaylistAddDialog(BuildContext context) {
             ListTile(
               leading:
                   const Icon(Icons.label_outline, color: AppTheme.accentGreen),
-              title: Text('タグで一括追加', style: textTheme.bodyLarge),
-              subtitle: Text('同じタグの曲をまとめて入れる', style: textTheme.bodySmall),
+              title: Text('タグで自動追加', style: textTheme.bodyLarge),
+              subtitle: Text('タグの付いた曲が入り、後からタグを付けた曲も入る',
+                  style: textTheme.bodySmall),
               onTap: () => Navigator.pop(ctx, PlaylistAddChoice.byTag),
             ),
           ],
@@ -360,19 +361,59 @@ Future<PlaylistAddChoice?> showPlaylistAddDialog(BuildContext context) {
   );
 }
 
-/// タグを 1 つ選ぶダイアログ（タグで一括追加）。タグが多くても中で縦に流れる。
-/// [countOf] はそのタグで追加できる曲数。0 のタグは選べない
-Future<Tag?> showPlaylistTagPickerDialog(
+/// 「タグで自動追加」の結果
+typedef PlaylistTagsResult = ({List<String> tagIds, bool restoreExcluded});
+
+/// プレイリストに自動で入れるタグを選ぶダイアログ（複数選べる。どれか 1 つが付いた曲が入る）。
+/// タグが多くても中で縦に流れる。[countOf] はそのタグが付いた曲数。
+/// [excludedCount] は外した曲の数（1 以上なら「戻す」を出す）
+Future<PlaylistTagsResult?> showPlaylistTagsDialog(
   BuildContext context, {
   required List<Tag> tags,
+  required Set<String> selected,
   required int Function(Tag tag) countOf,
+  int excludedCount = 0,
 }) {
-  final textTheme = Theme.of(context).textTheme;
-  final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4);
-  return showDialog<Tag>(
+  return showDialog<PlaylistTagsResult>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text('タグで一括追加', style: textTheme.displaySmall),
+    builder: (_) => _PlaylistTagsDialog(
+      tags: tags,
+      initial: selected,
+      countOf: countOf,
+      excludedCount: excludedCount,
+    ),
+  );
+}
+
+class _PlaylistTagsDialog extends StatefulWidget {
+  const _PlaylistTagsDialog({
+    required this.tags,
+    required this.initial,
+    required this.countOf,
+    required this.excludedCount,
+  });
+
+  final List<Tag> tags;
+  final Set<String> initial;
+  final int Function(Tag tag) countOf;
+  final int excludedCount;
+
+  @override
+  State<_PlaylistTagsDialog> createState() => _PlaylistTagsDialogState();
+}
+
+class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
+  late final Set<String> _selected = {...widget.initial};
+  bool _restoreExcluded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4);
+    // タグ一覧の並び（ユーザーが決めた順）のまま
+    final tags = widget.tags;
+    return AlertDialog(
+      title: Text('タグで自動追加', style: textTheme.displaySmall),
       contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       content: SizedBox(
         width: double.maxFinite,
@@ -382,32 +423,57 @@ Future<Tag?> showPlaylistTagPickerDialog(
                 child: Text('タグがありません',
                     style: textTheme.bodyMedium?.copyWith(color: dim)),
               )
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: tags.length,
-                itemBuilder: (_, i) {
-                  final tag = tags[i];
-                  final count = countOf(tag);
-                  return ListTile(
-                    enabled: count > 0,
-                    leading: Icon(Icons.label,
-                        size: AppIconSizes.md,
-                        color: count > 0 ? tag.color : dim),
-                    title: Text(tag.name, style: textTheme.bodyLarge),
-                    subtitle: Text('$count 曲', style: textTheme.labelSmall),
-                    onTap: () => Navigator.pop(ctx, tag),
-                  );
-                },
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: tags.length,
+                      itemBuilder: (_, i) {
+                        final tag = tags[i];
+                        final on = _selected.contains(tag.id);
+                        return CheckboxListTile(
+                          value: on,
+                          onChanged: (_) => setState(() => on
+                              ? _selected.remove(tag.id)
+                              : _selected.add(tag.id)),
+                          secondary: Icon(Icons.label,
+                              size: AppIconSizes.md, color: tag.color),
+                          title: Text(tag.name, style: textTheme.bodyLarge),
+                          subtitle: Text('${widget.countOf(tag)} 曲',
+                              style: textTheme.labelSmall),
+                        );
+                      },
+                    ),
+                  ),
+                  if (widget.excludedCount > 0)
+                    CheckboxListTile(
+                      value: _restoreExcluded,
+                      onChanged: (v) =>
+                          setState(() => _restoreExcluded = v ?? false),
+                      title: Text('外した ${widget.excludedCount} 曲を戻す',
+                          style: textTheme.bodyMedium),
+                    ),
+                ],
               ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(ctx),
+          onPressed: () => Navigator.pop(context),
           child: const Text('キャンセル'),
         ),
+        TextButton(
+          onPressed: () => Navigator.pop<PlaylistTagsResult>(context, (
+            // タグ一覧の並びで保存
+            tagIds: [for (final t in tags) if (_selected.contains(t.id)) t.id],
+            restoreExcluded: _restoreExcluded,
+          )),
+          child: const Text('OK'),
+        ),
       ],
-    ),
-  );
+    );
+  }
 }
 
 /// 曲の行の下に字下げして出す区間の行

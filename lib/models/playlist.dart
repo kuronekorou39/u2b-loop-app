@@ -1,5 +1,7 @@
 import 'package:hive/hive.dart';
 
+import 'loop_item.dart';
+
 class Playlist {
   String id;
   String name;
@@ -20,6 +22,16 @@ class Playlist {
   /// デフォルトでシャッフルON
   bool defaultShuffle;
 
+  /// 自動で入れるタグ（どれか 1 つが付いた曲を入れる = OR）。
+  /// 後からタグを付けた曲も入り、タグを外した曲は抜ける（[syncTagItems]）
+  List<String> tagIds;
+
+  /// タグで入った曲（手で足した曲は含まない）。タグが外れたらプレイリストから抜く対象
+  Set<String> tagItemIds;
+
+  /// タグに当てはまるが、ユーザーが外した曲（もう自動では入れない）
+  Set<String> excludedItemIds;
+
   Playlist({
     required this.id,
     required this.name,
@@ -29,10 +41,50 @@ class Playlist {
     Set<String>? disabledItemIds,
     this.thumbnailItemId,
     this.defaultShuffle = false,
+    List<String>? tagIds,
+    Set<String>? tagItemIds,
+    Set<String>? excludedItemIds,
   })  : itemIds = itemIds ?? [],
         createdAt = createdAt ?? DateTime.now(),
         regionSelections = regionSelections ?? {},
-        disabledItemIds = disabledItemIds ?? {};
+        disabledItemIds = disabledItemIds ?? {},
+        tagIds = tagIds ?? [],
+        tagItemIds = tagItemIds ?? {},
+        excludedItemIds = excludedItemIds ?? {};
+
+  /// [item] が自動で入れるタグに当てはまるか
+  bool matchesTags(LoopItem item) =>
+      item.isReady && item.tagIds.any(tagIds.contains);
+
+  /// 自動で入れるタグに合わせて中身を直す。変わったら true。
+  /// - 当てはまる曲で、まだ入っておらず外されてもいない曲を末尾に足す（[items] の並び順）
+  /// - タグで入った曲のうち、もう当てはまらない曲を抜く（手で足した曲は残す）
+  bool syncTagItems(Iterable<LoopItem> items) {
+    if (tagIds.isEmpty && tagItemIds.isEmpty && excludedItemIds.isEmpty) {
+      return false;
+    }
+    final matched = [for (final i in items) if (matchesTags(i)) i.id];
+    final matchedSet = matched.toSet();
+    var changed = false;
+    for (final id in tagItemIds.where((id) => !matchedSet.contains(id)).toList()) {
+      tagItemIds.remove(id);
+      itemIds.remove(id);
+      regionSelections.remove(id);
+      disabledItemIds.remove(id);
+      if (thumbnailItemId == id) thumbnailItemId = null;
+      changed = true;
+    }
+    final before = excludedItemIds.length;
+    excludedItemIds.removeWhere((id) => !matchedSet.contains(id));
+    if (excludedItemIds.length != before) changed = true;
+    for (final id in matched) {
+      if (itemIds.contains(id) || excludedItemIds.contains(id)) continue;
+      itemIds.add(id);
+      tagItemIds.add(id);
+      changed = true;
+    }
+    return changed;
+  }
 
   /// サムネに使うアイテムIDを返す（明示設定 or 最初のアイテム）
   String? get effectiveThumbnailItemId =>
@@ -72,6 +124,9 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       disabledItemIds: disabled,
       thumbnailItemId: thumbnailItemId,
       defaultShuffle: fields[7] as bool? ?? false,
+      tagIds: (fields[8] as List?)?.cast<String>(),
+      tagItemIds: (fields[9] as List?)?.cast<String>().toSet(),
+      excludedItemIds: (fields[10] as List?)?.cast<String>().toSet(),
     );
   }
 
@@ -86,6 +141,9 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       5: obj.disabledItemIds.isNotEmpty ? obj.disabledItemIds.toList() : null,
       6: obj.thumbnailItemId,
       7: obj.defaultShuffle ? true : null,
+      8: obj.tagIds.isNotEmpty ? obj.tagIds : null,
+      9: obj.tagItemIds.isNotEmpty ? obj.tagItemIds.toList() : null,
+      10: obj.excludedItemIds.isNotEmpty ? obj.excludedItemIds.toList() : null,
     });
   }
 }

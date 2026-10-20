@@ -706,15 +706,62 @@ final tagFilterProvider = StateProvider<Map<String, bool>>((ref) => {});
 
 final playlistsProvider =
     StateNotifierProvider<PlaylistsNotifier, List<app.Playlist>>((ref) {
-  return PlaylistsNotifier(AppBoxes.playlists);
+  final notifier = PlaylistsNotifier(AppBoxes.playlists,
+      items: () => ref.read(loopItemsProvider));
+  // 曲（タグ・取得完了・削除）が変わったら、タグで自動に入れるプレイリストの中身を合わせる
+  ref.listen<List<LoopItem>>(loopItemsProvider, (_, items) {
+    notifier.syncTagItems(items);
+  }, fireImmediately: true);
+  return notifier;
 });
 
 class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
   final Box<app.Playlist> _box;
 
-  PlaylistsNotifier(this._box)
-      : super(_box.values.toList()
+  /// いまの曲一覧（タグで自動に入れる曲を決めるのに使う）
+  final List<LoopItem> Function() _items;
+
+  PlaylistsNotifier(this._box, {List<LoopItem> Function()? items})
+      : _items = items ?? (() => const []),
+        super(_box.values.toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
+
+  /// 自動で入れるタグに合わせて、全プレイリストの中身を直す
+  void syncTagItems(List<LoopItem> items) {
+    final changed = <String, app.Playlist>{};
+    for (final pl in _box.values) {
+      if (pl.syncTagItems(items)) changed[pl.id] = pl;
+    }
+    if (changed.isEmpty) return;
+    _box.putAll(changed);
+    _refresh();
+  }
+
+  /// 自動で入れるタグを設定する（空で解除。タグで入った曲は手で足した曲として残す）
+  Future<void> setTags(String playlistId, List<String> tagIds) async {
+    final pl = _box.get(playlistId);
+    if (pl == null) return;
+    pl.tagIds = List.of(tagIds);
+    if (tagIds.isEmpty) {
+      // 解除しても今入っている曲は消さない（急に空になるのを避ける）
+      pl.tagItemIds.clear();
+      pl.excludedItemIds.clear();
+    } else {
+      pl.syncTagItems(_items());
+    }
+    await _box.put(playlistId, pl);
+    _refresh();
+  }
+
+  /// 外した曲（タグに当てはまるのに自動で入れないことにした曲）を戻す
+  Future<void> restoreExcluded(String playlistId) async {
+    final pl = _box.get(playlistId);
+    if (pl == null) return;
+    pl.excludedItemIds.clear();
+    pl.syncTagItems(_items());
+    await _box.put(playlistId, pl);
+    _refresh();
+  }
 
   void _refresh() {
     state = _box.values.toList()
@@ -754,6 +801,9 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
       disabledItemIds: Set.from(src.disabledItemIds),
       thumbnailItemId: src.thumbnailItemId,
       defaultShuffle: src.defaultShuffle,
+      tagIds: List.from(src.tagIds),
+      tagItemIds: Set.from(src.tagItemIds),
+      excludedItemIds: Set.from(src.excludedItemIds),
     );
     await _box.put(newId, copy);
     _refresh();
@@ -766,6 +816,9 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     if (pl == null) return;
     for (final id in itemIds) {
       if (!pl.itemIds.contains(id)) pl.itemIds.add(id);
+      // 手で足した曲になる（タグが外れても残す・外した印も消す）
+      pl.tagItemIds.remove(id);
+      pl.excludedItemIds.remove(id);
     }
     if (regions != null) {
       for (final entry in regions.entries) {
@@ -783,6 +836,10 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     if (pl == null) return;
     pl.itemIds.remove(itemId);
     pl.regionSelections.remove(itemId);
+    pl.tagItemIds.remove(itemId);
+    // タグに当てはまる曲は、外したと覚えておかないと次の同期でまた入る
+    final item = _items().where((i) => i.id == itemId).firstOrNull;
+    if (item != null && pl.matchesTags(item)) pl.excludedItemIds.add(itemId);
     await _box.put(playlistId, pl);
     _refresh();
   }
@@ -813,19 +870,6 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     final pl = _box.get(playlistId);
     if (pl == null) return;
     pl.thumbnailItemId = itemId;
-    await _box.put(playlistId, pl);
-    _refresh();
-  }
-
-  Future<void> addItemsByTag(
-      String playlistId, String tagId, List<LoopItem> allItems) async {
-    final pl = _box.get(playlistId);
-    if (pl == null) return;
-    for (final item in allItems) {
-      if (item.tagIds.contains(tagId) && !pl.itemIds.contains(item.id)) {
-        pl.itemIds.add(item.id);
-      }
-    }
     await _box.put(playlistId, pl);
     _refresh();
   }

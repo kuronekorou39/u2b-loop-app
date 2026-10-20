@@ -1,5 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist.dart';
+
+LoopItem _song(String id, List<String> tags, {bool ready = true}) => LoopItem(
+      id: id,
+      title: id,
+      uri: id,
+      sourceType: SourceTypes.youtube,
+      tagIds: tags,
+      fetchStatus: ready ? null : 'fetching',
+    );
 
 void main() {
   group('effectiveThumbnailItemId', () {
@@ -44,6 +54,48 @@ void main() {
       expect(pl.regionSelections.containsKey('a'), isFalse, reason: '未設定');
       expect(pl.regionSelections.containsKey('b'), isTrue);
       expect(pl.regionSelections['b'], isEmpty, reason: 'スキップ設定');
+    });
+  });
+
+  group('タグで自動追加（syncTagItems）', () {
+    test('どれかのタグが付いた曲を末尾に足す（OR）。取得中の曲は入れない', () {
+      final pl = Playlist(id: 'p', name: 'PL', itemIds: ['m'], tagIds: ['rock', 'jazz']);
+      final changed = pl.syncTagItems([
+        _song('m', []),
+        _song('a', ['rock']),
+        _song('b', ['pop']),
+        _song('c', ['jazz', 'rock']),
+        _song('d', ['rock'], ready: false),
+      ]);
+      expect(changed, isTrue);
+      expect(pl.itemIds, ['m', 'a', 'c']);
+      expect(pl.tagItemIds, {'a', 'c'});
+    });
+
+    test('タグが外れた曲は抜く。手で足した曲は残す', () {
+      final pl = Playlist(id: 'p', name: 'PL', tagIds: ['rock']);
+      pl.syncTagItems([_song('a', ['rock'])]);
+      pl.itemIds.add('m'); // 手で足した（tagItemIds に入らない）
+      final changed = pl.syncTagItems([_song('a', []), _song('m', [])]);
+      expect(changed, isTrue);
+      expect(pl.itemIds, ['m']);
+      expect(pl.tagItemIds, isEmpty);
+    });
+
+    test('外した曲は戻さない。タグが外れたら外した印も消える', () {
+      final pl = Playlist(id: 'p', name: 'PL', tagIds: ['rock'], excludedItemIds: {'a'});
+      pl.syncTagItems([_song('a', ['rock'])]);
+      expect(pl.itemIds, isEmpty);
+      pl.syncTagItems([_song('a', [])]);
+      expect(pl.excludedItemIds, isEmpty);
+    });
+
+    test('変わらなければ false', () {
+      final pl = Playlist(id: 'p', name: 'PL', tagIds: ['rock']);
+      pl.syncTagItems([_song('a', ['rock'])]);
+      expect(pl.syncTagItems([_song('a', ['rock'])]), isFalse);
+      expect(Playlist(id: 'q', name: 'Q').syncTagItems([_song('a', ['rock'])]),
+          isFalse);
     });
   });
 }

@@ -175,22 +175,23 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.byType(BottomSheet), findsNothing);
-      await tester.tap(find.text('タグで一括追加'));
+      await tester.tap(find.text('タグで自動追加'));
       await tester.pumpAndSettle();
       expect(result, PlaylistAddChoice.byTag);
     });
 
-    testWidgets('タグのダイアログは件数が多くてもスクロールでき、0 曲のタグは選べない',
+    testWidgets('タグのダイアログは複数選べ、件数が多くてもスクロールできる。結果はタグ一覧の並び',
         (tester) async {
       final many = [for (var i = 1; i <= 30; i++) Tag(id: 't$i', name: 'タグ $i')];
-      Tag? result;
+      PlaylistTagsResult? result;
       await tester.pumpWidget(MaterialApp(
         home: Builder(
           builder: (ctx) => TextButton(
-            onPressed: () async => result = await showPlaylistTagPickerDialog(
+            onPressed: () async => result = await showPlaylistTagsDialog(
               ctx,
               tags: many,
-              countOf: (t) => t.id == 't1' ? 0 : 2,
+              selected: {'t3'},
+              countOf: (_) => 2,
             ),
             child: const Text('開く'),
           ),
@@ -199,24 +200,43 @@ void main() {
       await tester.tap(find.text('開く'));
       await tester.pumpAndSettle();
       expect(find.text('タグ 30'), findsNothing);
-
-      // 0 曲のタグはタップしても閉じない
-      await tester.tap(find.text('タグ 1'));
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
+      // 外した曲が無ければ「戻す」は出さない
+      expect(find.textContaining('を戻す'), findsNothing);
 
       await tester.scrollUntilVisible(find.text('タグ 30'), 300,
-          scrollable: find.byType(Scrollable));
+          scrollable: find.byType(Scrollable).first);
       await tester.tap(find.text('タグ 30'));
       await tester.pumpAndSettle();
-      expect(result?.id, 't30');
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(result?.tagIds, ['t3', 't30']);
+      expect(result?.restoreExcluded, isFalse);
+    });
+
+    testWidgets('外した曲があれば「戻す」を選べる', (tester) async {
+      final result = await open<PlaylistTagsResult>(
+          tester,
+          (ctx) => showPlaylistTagsDialog(ctx,
+              tags: [Tag(id: 't1', name: 'ロック')],
+              selected: {'t1'},
+              countOf: (_) => 5,
+              excludedCount: 2));
+      expect(result, isNull); // まだ閉じていない
+      await tester.tap(find.text('外した 2 曲を戻す'));
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<CheckboxListTile>(find.widgetWithText(
+                  CheckboxListTile, '外した 2 曲を戻す'))
+              .value,
+          isTrue);
     });
 
     testWidgets('タグが無ければその旨を出す', (tester) async {
-      await open<Tag>(
+      await open<PlaylistTagsResult>(
           tester,
-          (ctx) => showPlaylistTagPickerDialog(ctx,
-              tags: const [], countOf: (_) => 0));
+          (ctx) => showPlaylistTagsDialog(ctx,
+              tags: const [], selected: const {}, countOf: (_) => 0));
       expect(find.text('タグがありません'), findsOneWidget);
     });
   });
