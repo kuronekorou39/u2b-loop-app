@@ -54,6 +54,9 @@ class SettingsKeys {
   static const hqAudio = 'hq_audio';
   static const exportQuality = 'export_quality';
   static const mediaCacheLimitMb = 'media_cache_limit_mb';
+  static const homeItemView = 'home_item_view';
+  static const homeTagGrid = 'home_tag_grid';
+  static const homePlaylistGrid = 'home_playlist_grid';
 
   // 隠しステータスの解放フラグ（設定のバージョン行を 5 回タップ）
   static const eeStats = 'ee_stats';

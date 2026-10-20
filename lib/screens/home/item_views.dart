@@ -9,25 +9,23 @@ import '../../widgets/item_thumbnail.dart';
 import '../../widgets/tag_chip.dart';
 import 'home_parts.dart';
 
-/// 曲一覧の表示モード: リスト / 2列 / 4列
+/// 曲一覧の表示モード: リスト / 曲名（曲名を 3 行まで出すリスト）/ 2列 / 4列。
+/// 候補が 4 つなので、AppBar では押して回すのではなくプルダウンで選ぶ
 enum ItemViewMode {
-  list(Icons.view_list, '2列表示へ'),
-  grid2(Icons.grid_view, '4列表示へ'),
-  grid4(Icons.apps, 'リスト表示へ');
+  list(Icons.view_list, 'リスト'),
+  titles(Icons.subject, '曲名'),
+  grid2(Icons.grid_view, '2列'),
+  grid4(Icons.apps, '4列');
 
-  const ItemViewMode(this.icon, this.nextTooltip);
+  const ItemViewMode(this.icon, this.label);
 
-  /// AppBar のボタンに出すアイコン（いまのモード）
+  /// AppBar のボタン・プルダウンに出すアイコン
   final IconData icon;
+  final String label;
 
-  /// 押すと次のモードへ。その説明
-  final String nextTooltip;
-
-  ItemViewMode get next => switch (this) {
-        ItemViewMode.list => ItemViewMode.grid2,
-        ItemViewMode.grid2 => ItemViewMode.grid4,
-        ItemViewMode.grid4 => ItemViewMode.list,
-      };
+  /// 保存した名前から戻す（知らない値なら 2 列）
+  static ItemViewMode fromName(String? name) =>
+      values.where((m) => m.name == name).firstOrNull ?? grid2;
 }
 
 /// ホームの曲一覧（リスト / グリッド）。選択状態と操作はコールバックで親（ListScreen）へ
@@ -62,7 +60,9 @@ class ItemCollectionView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (viewMode) {
-      ItemViewMode.list => _buildList(context),
+      ItemViewMode.list => _buildList(context, titleLines: 1),
+      // 同じサウンドトラックの曲などサムネで見分けにくいときに、曲名を長く出す
+      ItemViewMode.titles => _buildList(context, titleLines: 3),
       // サムネ + 曲名 + 情報 + タグが収まる高さ（ガラス面の余白ぶん縦長）
       ItemViewMode.grid2 =>
         _buildGrid(context, maxExtent: 220, ratio: 16 / 15.5, compact: false),
@@ -242,17 +242,19 @@ class ItemCollectionView extends StatelessWidget {
 
   // === List ===
 
-  Widget _buildList(BuildContext context) {
+  Widget _buildList(BuildContext context, {required int titleLines}) {
     return HomeListSurface(
       child: ListView.builder(
         padding: HomeListSurface.listPadding,
         itemCount: items.length,
-        itemBuilder: (context, i) => _buildTile(context, items[i]),
+        itemBuilder: (context, i) =>
+            _buildTile(context, items[i], titleLines: titleLines),
       ),
     );
   }
 
-  Widget _buildTile(BuildContext context, LoopItem item) {
+  Widget _buildTile(BuildContext context, LoopItem item,
+      {required int titleLines}) {
     final textTheme = Theme.of(context).textTheme;
     final selected = selectedIds.contains(item.id);
     return ListTile(
@@ -316,7 +318,7 @@ class ItemCollectionView extends StatelessWidget {
       ),
       title: Text(
         item.isFetching ? 'データ取得中...' : item.title,
-        maxLines: 1,
+        maxLines: titleLines,
         overflow: TextOverflow.ellipsis,
         style: item.isFetching
             ? textTheme.bodyLarge?.copyWith(color: AppTheme.muted(context))

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
@@ -47,10 +48,28 @@ class _ListScreenState extends ConsumerState<ListScreen>
   late final TabController _tabController;
   int get _tab => _tabController.index;
 
-  // 表示モード（タブごと）
-  ItemViewMode _itemViewMode = ItemViewMode.grid2;
-  bool _tagGrid = false;
-  bool _playlistGrid = false;
+  // 表示モード（タブごと）。次に開いたときも同じ表示にする
+  ItemViewMode _itemViewMode = ItemViewMode.fromName(
+      AppBoxes.settings.get(SettingsKeys.homeItemView) as String?);
+  bool _tagGrid =
+      AppBoxes.settings.get(SettingsKeys.homeTagGrid, defaultValue: false) as bool;
+  bool _playlistGrid = AppBoxes.settings
+      .get(SettingsKeys.homePlaylistGrid, defaultValue: false) as bool;
+
+  void _setItemViewMode(ItemViewMode mode) {
+    setState(() => _itemViewMode = mode);
+    AppBoxes.settings.put(SettingsKeys.homeItemView, mode.name);
+  }
+
+  void _toggleTagGrid() {
+    setState(() => _tagGrid = !_tagGrid);
+    AppBoxes.settings.put(SettingsKeys.homeTagGrid, _tagGrid);
+  }
+
+  void _togglePlaylistGrid() {
+    setState(() => _playlistGrid = !_playlistGrid);
+    AppBoxes.settings.put(SettingsKeys.homePlaylistGrid, _playlistGrid);
+  }
 
   // 複数選択（いま開いているタブのもの。タブを移ると解除）
   final Set<String> _selectedIds = {};
@@ -418,26 +437,34 @@ class _ListScreenState extends ConsumerState<ListScreen>
   /// AppBar: ロゴ / 表示切替 / 複数選択 / 設定。表示と選択はどのタブにも出す
   /// AppBar の右側: 表示の切り替え（タブごと）・複数選択・設定
   List<Widget> _buildAppBarActions({required bool canSelect}) {
-    final (IconData viewIcon, String viewTooltip, VoidCallback onView) =
-        switch (_tab) {
-      _tabTags => (
-          _tagGrid ? Icons.grid_view : Icons.view_list,
-          _tagGrid ? 'リスト表示へ' : 'グリッド表示へ',
-          () => setState(() => _tagGrid = !_tagGrid),
+    final Widget viewButton = switch (_tab) {
+      _tabTags => IconButton(
+          icon: Icon(_tagGrid ? Icons.grid_view : Icons.view_list),
+          onPressed: _toggleTagGrid,
+          tooltip: _tagGrid ? 'リスト表示へ' : 'グリッド表示へ',
         ),
-      _tabItems => (
-          _itemViewMode.icon,
-          _itemViewMode.nextTooltip,
-          () => setState(() => _itemViewMode = _itemViewMode.next),
+      _tabItems => PopupMenuButton<ItemViewMode>(
+          icon: Icon(_itemViewMode.icon),
+          tooltip: '表示の切り替え',
+          initialValue: _itemViewMode,
+          onSelected: _setItemViewMode,
+          itemBuilder: (_) => [
+            for (final m in ItemViewMode.values)
+              CheckedPopupMenuItem(
+                value: m,
+                checked: m == _itemViewMode,
+                child: Text(m.label),
+              ),
+          ],
         ),
-      _ => (
-          _playlistGrid ? Icons.grid_view : Icons.view_list,
-          _playlistGrid ? 'リスト表示へ' : 'グリッド表示へ',
-          () => setState(() => _playlistGrid = !_playlistGrid),
+      _ => IconButton(
+          icon: Icon(_playlistGrid ? Icons.grid_view : Icons.view_list),
+          onPressed: _togglePlaylistGrid,
+          tooltip: _playlistGrid ? 'リスト表示へ' : 'グリッド表示へ',
         ),
     };
     return [
-      IconButton(icon: Icon(viewIcon), onPressed: onView, tooltip: viewTooltip),
+      viewButton,
       if (canSelect)
         IconButton(
           icon: const Icon(Icons.checklist, size: AppIconSizes.ml),

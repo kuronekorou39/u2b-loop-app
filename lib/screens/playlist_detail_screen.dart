@@ -770,9 +770,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           ],
                         ),
                       ),
+                      // 同じサウンドトラックの曲などはサムネで見分けにくいので 2 行まで
                       title: Text(
                         item.title,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: textTheme.bodyLarge?.copyWith(
                           decoration: isDisabled
