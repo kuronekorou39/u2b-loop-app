@@ -768,40 +768,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   /// メモは空にもできるので AppDialogs.prompt（空 = キャンセル扱い）は使わない
   Future<void> _editMemo() async {
-    final controller = TextEditingController(text: _memoController.text);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('メモ'),
-        // 横画面でキーボードが出ても溢れないように
-        scrollable: true,
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: AppLimits.memoMaxLength,
-          maxLines: 4,
-          minLines: 2,
-          decoration: const InputDecoration(
-            hintText: '練習メモなど',
-            isDense: true,
-            border: OutlineInputBorder(),
-            counterText: '',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+    final result = await AppDialogs.prompt(
+      context,
+      title: 'メモ',
+      initialValue: _memoController.text,
+      hintText: '練習メモなど',
+      maxLength: AppLimits.memoMaxLength,
+      maxLines: 4,
+      minLines: 2,
+      allowEmpty: true,
     );
-    controller.dispose();
-    if (result == null) return;
+    if (result == null || !mounted) return;
     setState(() => _memoController.text = result);
   }
 

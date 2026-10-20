@@ -47,7 +47,6 @@ class GlassPanel extends ConsumerWidget {
     Widget panel = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: scrim,
         borderRadius: borderRadius,
         // 左上をわずかに明るくして、板に厚みがあるように見せる
         gradient: LinearGradient(
@@ -61,6 +60,11 @@ class GlassPanel extends ConsumerWidget {
       ),
       child: child,
     );
+    // scrim は白の下に別の層で敷く。BoxDecoration は gradient があると color を無視するので、
+    // 同じ decoration に入れると描かれない（v1.100.7 まで一覧が透けていた原因）
+    if (scrim case final scrim?) {
+      panel = ColoredBox(color: scrim, child: panel);
+    }
 
     if (blurOn) {
       panel = BackdropFilter(

@@ -29,6 +29,18 @@ void main() {
     expect(find.byType(BackdropFilter), findsOneWidget);
   });
 
+  testWidgets('scrim は白の層とは別に敷かれる（gradient に消されない）', (tester) async {
+    await pump(
+        tester,
+        const GlassPanel(
+            blur: false,
+            scrim: Colors.black,
+            child: SizedBox(width: 100, height: 50)));
+    final box = tester.widget<ColoredBox>(find.descendant(
+        of: find.byType(GlassPanel), matching: find.byType(ColoredBox)));
+    expect(box.color, Colors.black);
+  });
+
   testWidgets('blur: false ならぼかしなし', (tester) async {
     await pump(tester,
         const GlassPanel(blur: false, child: SizedBox(width: 100, height: 50)));
