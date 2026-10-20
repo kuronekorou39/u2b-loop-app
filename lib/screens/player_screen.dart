@@ -29,8 +29,7 @@ import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_engine.dart';
 import '../providers/playlist_player_provider.dart';
-import '../services/export_runner.dart';
-import '../services/export_source.dart';
+import '../services/save_flow.dart';
 import '../services/playback/load_progress.dart';
 import '../services/playback/mini_player_transport.dart';
 import '../services/playback/pip_bridge.dart';
@@ -1655,65 +1654,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // --- Export ---
 
-  void _showExportDialog({bool fullTrack = false}) {
+  /// 保存シート（アプリ内に保存 / 端末に書き出し）。AB があれば区間か曲全体かを選べる。
+  /// 単体再生・全画面・プレイリスト再生中（今の曲）で共通
+  Future<void> _showExportDialog({bool fullTrack = false}) async {
+    final item = _currentItem;
     final loop = ref.read(loopProvider);
-    if (!fullTrack && !loop.hasBothPoints) return;
-
-    String subtitle;
-    if (fullTrack) {
-      final dur = ref.read(playerProvider).state.duration;
-      subtitle = '全体 (${TimeUtils.formatShort(dur)})';
-    } else {
-      final aStr = TimeUtils.formatShort(loop.pointA!);
-      final bStr = TimeUtils.formatShort(loop.pointB!);
+    final hasRange = !fullTrack && loop.hasBothPoints;
+    String? rangeText;
+    if (hasRange) {
       final durationSec =
           (loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() /
               1000;
-      subtitle = '$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)';
+      rangeText = '${TimeUtils.formatShort(loop.pointA!)}'
+          ' - ${TimeUtils.formatShort(loop.pointB!)}'
+          ' (${durationSec.toStringAsFixed(1)}s)';
     }
-
-    showExportFormatDialog(
+    final choice = await SaveFlow.showSheet(context,
+        title: item.title,
+        rangeText: rangeText,
+        offline: SaveFlow.canSaveOffline(item));
+    if (choice == null || !mounted) return;
+    final duration = ref.read(playerProvider).state.duration.inMilliseconds;
+    final whole = choice.wholeTrack || !hasRange;
+    await SaveFlow.run(
       context,
-      title: fullTrack ? '全体を書き出し' : '区間を書き出し',
-      rangeText: subtitle,
-      askQuality: ExportSource.canPickQuality(_currentItem),
-    ).then((choice) {
-      if (choice == null || !mounted) return;
-      _executeExport(choice, fullTrack: fullTrack);
-    });
-  }
-
-  Future<void> _executeExport(ExportChoice choice,
-      {bool fullTrack = false}) async {
-    final loop = ref.read(loopProvider);
-    if (!fullTrack && !loop.hasBothPoints) return;
-
-    final source = ref.read(videoSourceProvider);
-    if (source == null) return;
-
-    final inputUri = source.type == VideoSourceType.local
-        ? _currentItem.uri
-        : source.uri;
-
-    final int startMs;
-    final int endMs;
-    if (fullTrack) {
-      startMs = 0;
-      endMs = ref.read(playerProvider).state.duration.inMilliseconds;
-    } else {
-      startMs = loop.pointA!.inMilliseconds;
-      endMs = loop.pointB!.inMilliseconds;
-    }
-
-    if (!mounted) return;
-    await runItemExportFlow(
-      context,
-      item: _currentItem,
-      fallbackUri: inputUri,
-      startMs: startMs,
-      endMs: endMs,
+      ref,
+      item: item,
       choice: choice,
-      title: _currentItem.title,
+      startMs: whole ? 0 : loop.pointA!.inMilliseconds,
+      endMs: whole
+          ? (duration > 0 ? duration : null)
+          : loop.pointB!.inMilliseconds,
+      playingUri: ref.read(videoSourceProvider)?.uri,
     );
   }
 
@@ -2411,6 +2383,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _startPlaylistAbEdit();
         },
         onDjMix: () => DjMixSheet.show(context),
+        onSave: _showExportDialog,
         hideVideo: _hideVideo,
         onHideVideoChanged: (v) => setState(() => _hideVideo = v),
       ),

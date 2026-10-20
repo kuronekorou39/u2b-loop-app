@@ -204,6 +204,13 @@ class LoopItem {
 
   /// オフライン再生用の動画がダウンロード済みか
   bool get isCached => cachedVideoPath != null;
+
+  /// オフライン保存の解像度欄に入れる「音声だけ保存した」印
+  static const audioOnlyResolution = '音声のみ';
+
+  /// オフライン保存したのが音声だけか（映像は無い）
+  bool get isCachedAudioOnly =>
+      isCached && cachedResolution == audioOnlyResolution;
   String? get errorMessage =>
       hasError ? fetchStatus!.substring('error:'.length) : null;
 

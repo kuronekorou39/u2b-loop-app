@@ -17,8 +17,7 @@ import '../providers/loop_provider.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/playlist_engine.dart';
-import '../services/export_runner.dart';
-import '../services/export_source.dart';
+import '../services/save_flow.dart';
 import '../services/playback/load_progress.dart';
 import '../services/playback/player_loader.dart';
 import '../services/playback/waveform_loader.dart';
@@ -290,7 +289,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   // --- Export ---
 
-  void _showExportDialog() {
+  /// 保存シート（アプリ内に保存 / 端末に書き出し）。区間か曲全体かを選べる
+  Future<void> _showExportDialog() async {
     final loop = ref.read(loopProvider);
     final region = _currentRegion;
     if (!loop.hasBothPoints || region == null) return;
@@ -300,41 +300,26 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final durationSec =
         (loop.pointB!.inMilliseconds - loop.pointA!.inMilliseconds).abs() /
             1000;
-
-    showExportFormatDialog(
+    final choice = await SaveFlow.showSheet(
       context,
-      title: '${region.name} を書き出し',
+      title: '${region.name} を保存',
       rangeText: '$aStr - $bStr (${durationSec.toStringAsFixed(1)}s)',
-      askQuality: ExportSource.canPickQuality(_item),
-    ).then((choice) {
-      if (choice == null || !mounted) return;
-      _executeExport(choice);
-    });
-  }
-
-  Future<void> _executeExport(ExportChoice choice) async {
-    final loop = ref.read(loopProvider);
-    if (!loop.hasBothPoints) return;
-
-    final source = ref.read(videoSourceProvider);
-    if (source == null) return;
-
-    // Get input URI
-    // ローカルファイルはアイテムの元URIを使用（source.uriはプレーヤー用）
-    final inputUri = source.type == VideoSourceType.local
-        ? _item.uri
-        : source.uri;
-
-    final region = _currentRegion;
-    if (region == null || !mounted) return;
-    await runItemExportFlow(
+      offline: SaveFlow.canSaveOffline(_item),
+    );
+    if (choice == null || !mounted) return;
+    final duration = ref.read(playerProvider).state.duration.inMilliseconds;
+    await SaveFlow.run(
       context,
+      ref,
       item: _item,
-      fallbackUri: inputUri,
-      startMs: loop.pointA!.inMilliseconds,
-      endMs: loop.pointB!.inMilliseconds,
       choice: choice,
-      title: '${_item.title}_${region.name}',
+      startMs: choice.wholeTrack ? 0 : loop.pointA!.inMilliseconds,
+      endMs: choice.wholeTrack
+          ? (duration > 0 ? duration : null)
+          : loop.pointB!.inMilliseconds,
+      playingUri: ref.read(videoSourceProvider)?.uri,
+      exportTitle:
+          choice.wholeTrack ? _item.title : '${_item.title}_${region.name}',
     );
   }
 

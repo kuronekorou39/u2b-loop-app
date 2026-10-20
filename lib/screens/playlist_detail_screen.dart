@@ -15,6 +15,7 @@ import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
+import '../services/save_flow.dart';
 import '../services/share_service.dart';
 import '../providers/thumb_tone_provider.dart';
 import '../widgets/empty_hint.dart';
@@ -31,7 +32,7 @@ import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
 
-enum _PlaylistMenu { analyze, sortByCompatibility }
+enum _PlaylistMenu { saveAll, analyze, sortByCompatibility }
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   final String playlistId;
@@ -437,6 +438,17 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
+  /// 再生に含める曲をまとめて保存（曲全体）。アプリ内に保存済みの曲は飛ばす
+  Future<void> _saveAll(Playlist pl, List<LoopItem> items) async {
+    final targets =
+        items.where((i) => !pl.disabledItemIds.contains(i.id)).toList();
+    final choice = await SaveFlow.showSheet(context,
+        title: '${pl.name}（${targets.length} 曲）を保存',
+        offline: targets.any(SaveFlow.canSaveOffline));
+    if (choice == null || !mounted) return;
+    await SaveFlow.runBulk(context, ref, items: targets, choice: choice);
+  }
+
   /// 自動で入れるタグを選ぶ（どれか 1 つが付いた曲が入る。後からタグを付けた曲も入る）
   Future<void> _showTagPicker(Playlist pl) async {
     final tags = ref.read(tagsProvider);
@@ -524,6 +536,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             PopupMenuButton<_PlaylistMenu>(
               tooltip: 'その他',
               onSelected: (m) => switch (m) {
+                _PlaylistMenu.saveAll => _saveAll(pl, items),
                 _PlaylistMenu.analyze => _analyzeUnanalyzed(items),
                 _PlaylistMenu.sortByCompatibility =>
                   _sortByCompatibility(pl, items),
@@ -531,6 +544,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               itemBuilder: (_) {
                 final unanalyzed = AudioAnalysisService.unanalyzed(items).length;
                 return [
+                  const PopupMenuItem(
+                    value: _PlaylistMenu.saveAll,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.download_outlined),
+                      title: Text('まとめて保存'),
+                      subtitle: Text('アプリ内に保存 / 端末に書き出し'),
+                    ),
+                  ),
                   PopupMenuItem(
                     value: _PlaylistMenu.analyze,
                     enabled: unanalyzed > 0,

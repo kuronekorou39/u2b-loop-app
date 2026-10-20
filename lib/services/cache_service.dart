@@ -284,21 +284,7 @@ class CacheService {
       }
 
       final sizeBytes = await videoFile.length();
-
-      // 字幕（ja優先、無ければen/先頭）をSRTで保存
-      String? subtitlePath;
-      try {
-        final subResult = await SubtitleService.fetchSubtitles(videoId);
-        final subs = subResult.subs;
-        if (subs != null && subs.isNotEmpty) {
-          final srt = SubtitleService.toSrt(subs);
-          final subFile = File('${dir.path}/$id.srt');
-          await subFile.writeAsString(srt);
-          subtitlePath = subFile.path;
-        }
-      } catch (_) {
-        // 字幕取得失敗は致命的ではない（動画はオフライン再生可能）
-      }
+      final subtitlePath = await _saveSubtitles(dir, id, videoId);
 
       return OfflineCacheResult(
         success: true,
@@ -311,6 +297,53 @@ class CacheService {
       return OfflineCacheResult(error: AppErrors.describe(e));
     } finally {
       service.dispose();
+    }
+  }
+
+  /// [videoId] の音声だけ（高音質の音声専用ストリーム）と字幕を保存する。
+  /// 映像は残さない。再生画面では映像の無い曲として鳴る
+  Future<OfflineCacheResult> downloadAudioForOffline(
+    String id,
+    String videoId, {
+    bool Function()? isCancelled,
+  }) async {
+    try {
+      final dir = await _cacheDir();
+      final hq = await HqAudio.fetch(videoId, isCancelled: isCancelled);
+      if (isCancelled?.call() ?? false) {
+        return const OfflineCacheResult(cancelled: true);
+      }
+      if (hq == null) {
+        return const OfflineCacheResult(error: '音声を取得できませんでした');
+      }
+      // 自動キャッシュの置き場から、消されない保存先へ写す（拡張子は取れた形式のまま）
+      final ext = hq.split('.').last;
+      final out = await File(hq).copy('${dir.path}/$id.audio.$ext');
+      final subtitlePath = await _saveSubtitles(dir, id, videoId);
+      return OfflineCacheResult(
+        success: true,
+        videoPath: out.path,
+        subtitlePath: subtitlePath,
+        resolution: LoopItem.audioOnlyResolution,
+        sizeBytes: await out.length(),
+      );
+    } catch (e) {
+      return OfflineCacheResult(error: AppErrors.describe(e));
+    }
+  }
+
+  /// 字幕（ja優先、無ければen/先頭）をSRTで保存する。無い・取れなければ null
+  /// （字幕取得失敗は致命的ではない。動画はオフライン再生できる）
+  Future<String?> _saveSubtitles(Directory dir, String id, String videoId) async {
+    try {
+      final subResult = await SubtitleService.fetchSubtitles(videoId);
+      final subs = subResult.subs;
+      if (subs == null || subs.isEmpty) return null;
+      final subFile = File('${dir.path}/$id.srt');
+      await subFile.writeAsString(SubtitleService.toSrt(subs));
+      return subFile.path;
+    } catch (_) {
+      return null;
     }
   }
 

@@ -53,6 +53,10 @@ class SettingsKeys {
   static const glassBlur = 'glass_blur';
   static const hqAudio = 'hq_audio';
   static const exportQuality = 'export_quality';
+  // 保存シート（SaveFlow）の前回の選択
+  static const saveTarget = 'save_target';
+  static const saveAudioOnly = 'save_audio_only';
+  static const saveHqAudio = 'save_hq_audio';
   static const mediaCacheLimitMb = 'media_cache_limit_mb';
   static const homeItemView = 'home_item_view';
   static const homeTagGrid = 'home_tag_grid';

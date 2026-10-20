@@ -22,6 +22,7 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
     required this.onToggleVolumeNorm,
     required this.onEditAb,
     required this.onDjMix,
+    this.onSave,
     required this.hideVideo,
     required this.onHideVideoChanged,
   });
@@ -36,6 +37,9 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
 
   /// 「DJ ミックス」の行。このシートを閉じてから呼ばれる（呼び先で DjMixSheet を開く）
   final VoidCallback onDjMix;
+
+  /// 「この曲を保存」（アプリ内に保存 / 端末に書き出し）。このシートを閉じてから呼ばれる
+  final VoidCallback? onSave;
   final bool hideVideo;
   final ValueChanged<bool> onHideVideoChanged;
 
@@ -134,6 +138,17 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
                 widget.onDjMix();
               },
             ),
+            if (widget.onSave != null)
+              ListTile(
+                leading: const Icon(Icons.download_outlined),
+                title: const Text('この曲を保存'),
+                subtitle: const Text('アプリ内に保存 / 端末に書き出し'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onSave!();
+                },
+              ),
             const Divider(),
             // 速度（候補を並べると見づらいのでプルダウン）
             ListTile(

@@ -65,9 +65,12 @@ class ExportSource {
   /// 解像度を聞く意味があるか（YouTube をネットから書き出す時だけ。
   /// ローカルとオフライン保存済みは手元のファイルをそのまま切り出す）
   static bool canPickQuality(LoopItem item) =>
-      item.isYouTube &&
-      item.videoId != null &&
-      CacheService.offlineVideoPath(item) == null;
+      item.isYouTube && item.videoId != null && !usesOffline(item, ExportFormat.mp4);
+
+  /// オフライン保存したファイルから切り出せるか（音声だけ保存した曲は MP4 にできない）
+  static bool usesOffline(LoopItem item, ExportFormat format) =>
+      CacheService.offlineVideoPath(item) != null &&
+      (format == ExportFormat.audioOnly || !item.isCachedAudioOnly);
 
   static const _dirName = 'export_src';
 
@@ -88,12 +91,15 @@ class ExportSource {
     required ExportFormat format,
     required ExportQuality quality,
     required String fallbackUri,
+    bool hqAudio = true,
     void Function(String status)? onStatus,
   }) async {
     final videoId = item.videoId;
-    if (!item.isYouTube ||
-        videoId == null ||
-        CacheService.offlineVideoPath(item) != null) {
+    if (!item.isYouTube || videoId == null || usesOffline(item, format)) {
+      return ExportInput(fallbackUri);
+    }
+    // 音質「標準」: 一体型（96kbps）からそのまま切り出す
+    if (format == ExportFormat.audioOnly && !hqAudio) {
       return ExportInput(fallbackUri);
     }
     try {

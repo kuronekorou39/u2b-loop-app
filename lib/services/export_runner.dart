@@ -2,113 +2,27 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../core/storage/app_boxes.dart';
-import '../core/theme/app_theme.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/app_errors.dart';
 import '../models/loop_item.dart';
 import 'export_service.dart';
 import 'export_source.dart';
 
-/// 書き出しダイアログで決まったこと（形式と、MP4 なら解像度）
+/// 書き出しの形式・解像度・音質（保存シート SaveFlow で決まる）
 class ExportChoice {
-  const ExportChoice(this.format, {this.quality = ExportQuality.p360});
+  const ExportChoice(this.format,
+      {this.quality = ExportQuality.p360, this.hqAudio = true});
 
   final ExportFormat format;
   final ExportQuality quality;
 
+  /// 音声のみで高音質の音声を使うか（false = 一体型の 96kbps）
+  final bool hqAudio;
+
   bool get audioOnly => format == ExportFormat.audioOnly;
 }
 
-/// 書き出し形式（音声のみ / MP4）を選ぶダイアログ。キャンセルは null。
-/// [rangeText] は「0:12 - 1:30 (78.0s)」のような区間の説明。
-/// [askQuality]（YouTube を MP4 で）なら続けて解像度も聞く。前回の選択を覚えておく。
-/// 再生画面・AB 設定画面・曲の詳細で 3 つずつ別に書かれていたものを 1 つに
-Future<ExportChoice?> showExportFormatDialog(
-  BuildContext context, {
-  required String title,
-  String? rangeText,
-  bool askQuality = false,
-}) async {
-  final format = await showDialog<ExportFormat>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: rangeText == null
-          ? null
-          : Text(rangeText, style: Theme.of(ctx).textTheme.bodyMedium),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('キャンセル'),
-        ),
-        TextButton.icon(
-          onPressed: () => Navigator.pop(ctx, ExportFormat.audioOnly),
-          icon: const Icon(Icons.audiotrack, size: AppIconSizes.s),
-          label: const Text('音声のみ'),
-        ),
-        TextButton.icon(
-          onPressed: () => Navigator.pop(ctx, ExportFormat.mp4),
-          icon: const Icon(Icons.videocam, size: AppIconSizes.s),
-          label: const Text('MP4'),
-        ),
-      ],
-    ),
-  );
-  if (format == null) return null;
-  if (format != ExportFormat.mp4 || !askQuality || !context.mounted) {
-    return ExportChoice(format);
-  }
-  final quality = await showExportQualityDialog(context);
-  if (quality == null) return null;
-  return ExportChoice(format, quality: quality);
-}
-
-/// MP4 の解像度を選ぶ。前回の選択を既定にし、選んだら覚える。キャンセルは null
-Future<ExportQuality?> showExportQualityDialog(BuildContext context) async {
-  final last = ExportQuality.fromName(
-      AppBoxes.settings.get(SettingsKeys.exportQuality) as String?);
-  final picked = await showDialog<ExportQuality>(
-    context: context,
-    builder: (ctx) => SimpleDialog(
-      title: const Text('解像度'),
-      children: [
-        for (final q in ExportQuality.values)
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, q),
-            child: Row(
-              children: [
-                Icon(
-                  q == last
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_off,
-                  size: AppIconSizes.s,
-                  color: q == last ? AppTheme.accentGreen : null,
-                ),
-                const SizedBox(width: AppSpacing.lg),
-                Text(q.label),
-              ],
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xl + 8, AppSpacing.md, AppSpacing.xl, AppSpacing.sm),
-          child: Text(
-            '360p 超は映像と高音質の音声を別に取得して結合します（1 曲で数十 MB）',
-            style: Theme.of(ctx)
-                .textTheme
-                .bodySmall!
-                .copyWith(color: AppTheme.muted(ctx)),
-          ),
-        ),
-      ],
-    ),
-  );
-  if (picked != null) AppBoxes.settings.put(SettingsKeys.exportQuality, picked.name);
-  return picked;
-}
-
-/// 曲を書き出す（3 画面共通の入口）。
+/// 曲を書き出す（保存シート SaveFlow から）。
 ///
 /// YouTube の曲は [ExportSource] が高画質・高音質の入力を用意する
 /// （音声のみ → 高音質の音声、360p 超 → 映像専用 + 高音質の音声を結合）。
@@ -134,6 +48,7 @@ Future<void> runItemExportFlow(
     format: choice.format,
     quality: choice.quality,
     fallbackUri: fallbackUri,
+    hqAudio: choice.hqAudio,
     onStatus: status,
   );
   messenger.hideCurrentSnackBar();

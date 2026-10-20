@@ -15,10 +15,7 @@ import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
-import '../services/cache_service.dart';
-import '../services/export_runner.dart';
-import '../services/export_source.dart';
-import '../services/youtube_service.dart';
+import '../services/save_flow.dart';
 import '../providers/thumb_tone_provider.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/glass_panel.dart';
@@ -33,7 +30,6 @@ import '../widgets/tempo_key_sheet.dart';
 import 'editor_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
-import '../core/utils/app_errors.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
 
@@ -310,143 +306,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   // --- オフライン保存 ---
 
-  /// 動画＋字幕をアプリ内にダウンロードし、オフライン再生可能にする。
-  /// 画質を選んでから保存する（1080p等はネイティブで映像+音声を結合）。
-  Future<void> _downloadOffline(LoopItem item) async {
-    if (item.videoId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.info('YouTube動画のみオフライン保存できます'),
-      );
-      return;
-    }
-
-    // 画質一覧を取得
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      AppSnackBar.progress('画質を取得中...'),
-    );
-    List<CacheQuality> options;
-    try {
-      options = await CacheService().qualityOptions(item.videoId!);
-    } catch (e) {
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(AppSnackBar.error(
-          '画質の取得に失敗しました: ${AppErrors.describe(e)}'));
-      return;
-    }
-    messenger.hideCurrentSnackBar();
-    if (!mounted) return;
-    if (options.isEmpty) {
-      messenger.showSnackBar(
-        AppSnackBar.info('保存できる画質が見つかりません'),
-      );
-      return;
-    }
-
-    // 画質選択
-    final quality = await showDialog<CacheQuality>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('画質を選択'),
-        children: [
-          for (final q in options)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, q),
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                    q.needsMerge ? Icons.high_quality : Icons.hd,
-                    color: AppTheme.accentGreen),
-                title: Text(q.label,
-                    style: Theme.of(ctx).textTheme.bodyLarge),
-                subtitle: Text(
-                  [
-                    q.sizeLabel,
-                    if (q.needsMerge) '映像+音声を結合' else '音声込み',
-                  ].where((s) => s.isNotEmpty).join(' · '),
-                  style: Theme.of(ctx).textTheme.bodySmall,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-    if (quality == null || !mounted) return;
-
-    final progress = ValueNotifier<double>(0);
-    var cancelled = false;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('オフライン保存中...'),
-        content: ValueListenableBuilder<double>(
-          valueListenable: progress,
-          builder: (_, p, _) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              LinearProgressIndicator(value: p > 0 ? p : null),
-              const SizedBox(height: AppSpacing.md),
-              Text('${(p * 100).toStringAsFixed(0)}%',
-                  style: Theme.of(context).textTheme.bodyMedium),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              cancelled = true;
-              Navigator.pop(context);
-            },
-            child: const Text('キャンセル'),
-          ),
-        ],
-      ),
-    );
-
-    final result = await CacheService().downloadForOffline(
-      item.id,
-      item.videoId!,
-      quality: quality,
-      onProgress: (p) => progress.value = p,
-      isCancelled: () => cancelled,
-    );
-
-    if (cancelled) {
-      progress.dispose();
-      // キャンセル直前に完走していたら孤児ファイルを掃除
-      if (result.videoPath != null) {
-        await CacheService()
-            .deletePaths(result.videoPath, result.subtitlePath);
-      }
-      return;
-    }
-    if (mounted) Navigator.of(context).pop(); // 進捗ダイアログを閉じる
-    progress.dispose();
-    if (!mounted) return;
-
-    if (result.success) {
-      await ref.read(loopItemsProvider.notifier).saveCacheInfo(
-            item.id,
-            videoPath: result.videoPath!,
-            subtitlePath: result.subtitlePath,
-            resolution: result.resolution,
-            sizeBytes: result.sizeBytes,
-          );
-      if (!mounted) return;
-      final mb = (result.sizeBytes / 1024 / 1024).toStringAsFixed(1);
-      final subMsg = result.subtitlePath != null ? '・字幕付き' : '（字幕なし）';
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.success(
-            'オフライン保存しました（${result.resolution ?? ''} ${mb}MB$subMsg）',
-            duration: const Duration(seconds: 4)),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        AppSnackBar.error('保存失敗: ${result.error}'),
-      );
-    }
+  /// 保存シート（アプリ内に保存 / 端末に書き出し）。曲全体
+  Future<void> _saveItem(LoopItem item) async {
+    final choice = await SaveFlow.showSheet(context,
+        title: item.title, offline: SaveFlow.canSaveOffline(item));
+    if (choice == null || !mounted) return;
+    await SaveFlow.run(context, ref, item: item, choice: choice);
   }
 
   Future<void> _clearOffline(LoopItem item) async {
@@ -546,7 +411,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               onSelected: (v) {
                 if (v == 'duplicate') _duplicateItem(item);
                 if (v == 'playlist') _showAddToPlaylist(item);
-                if (v == 'offline_save') _downloadOffline(item);
+                if (v == 'offline_save') _saveItem(item);
                 if (v == 'offline_delete') _clearOffline(item);
                 if (v == 'delete') _deleteItem(item);
               },
@@ -555,13 +420,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     value: 'duplicate', child: Text('複製')),
                 const PopupMenuItem(
                     value: 'playlist', child: Text('プレイリストに追加')),
-                if (item.isYouTube && item.videoId != null)
-                  PopupMenuItem(
-                    value: item.isCached ? 'offline_delete' : 'offline_save',
-                    child: Text(item.isCached
-                        ? 'オフラインデータを削除'
-                        : 'オフライン保存（字幕付き）'),
-                  ),
+                const PopupMenuItem(
+                    value: 'offline_save', child: Text('保存・書き出し')),
+                if (item.isCached)
+                  const PopupMenuItem(
+                      value: 'offline_delete', child: Text('アプリ内の保存を削除')),
                 const PopupMenuItem(
                     value: 'delete',
                     child:
@@ -654,17 +517,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ],
                         ),
                       ),
-                      if (item.isYouTube && item.videoId != null) ...[
+                      ...[
                         const SizedBox(width: AppSpacing.md),
                         GlassPill(
                           active: item.isCached,
                           tooltip: item.isCached
-                              ? 'オフライン保存済み。タップで削除'
-                              : 'オフライン保存（字幕付き）',
+                              ? 'アプリ内に保存済み。タップで削除'
+                              : '保存・書き出し',
                           padding: const EdgeInsets.all(10),
                           onTap: () => item.isCached
                               ? _clearOffline(item)
-                              : _downloadOffline(item),
+                              : _saveItem(item),
                           child: Icon(
                             item.isCached ? Icons.offline_pin : Icons.download_outlined,
                             size: AppIconSizes.md,
@@ -802,8 +665,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ),
         SheetAction(
           icon: Icons.file_download_outlined,
-          label: '書き出し',
-          subtitle: 'この区間を MP4 / 音声で保存',
+          label: '保存・書き出し',
+          subtitle: 'この区間を音声 / 動画で端末に書き出す',
           onTap: () => _exportRegion(item, index),
         ),
         SheetAction(
@@ -829,59 +692,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       return;
     }
 
-    // 形式選択
-    final choice = await showExportFormatDialog(
+    final choice = await SaveFlow.showSheet(
       context,
-      title: '${region.name} を書き出し',
+      title: '${region.name} を保存',
       rangeText: '${TimeUtils.formatShortMs(region.pointAMs)}'
           ' - ${TimeUtils.formatShortMs(region.pointBMs)}',
-      askQuality: ExportSource.canPickQuality(item),
+      offline: SaveFlow.canSaveOffline(item),
     );
     if (choice == null || !mounted) return;
-
-    // 入力URI解決（local=元URI、YouTube=stream URL を都度解決）
-    String? inputUri;
-    if (item.isLocal) {
-      inputUri = item.uri;
-    } else if (item.videoId != null) {
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.showSnackBar(
-        AppSnackBar.progress('動画を準備中...'),
-      );
-      final service = YouTubeService();
-      try {
-        final source = await service.getVideoSource(item.videoId!);
-        inputUri = source.uri;
-      } catch (e) {
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          AppSnackBar.error('動画の取得に失敗しました: ${AppErrors.describe(e)}'),
-        );
-        return;
-      } finally {
-        service.dispose();
-      }
-      messenger.hideCurrentSnackBar();
-    }
-
-    if (inputUri == null || inputUri.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          AppSnackBar.info('書き出せる動画ソースがありません'),
-        );
-      }
-      return;
-    }
-
-    if (!mounted) return;
-    await runItemExportFlow(
+    await SaveFlow.run(
       context,
+      ref,
       item: item,
-      fallbackUri: inputUri,
-      startMs: region.pointAMs!,
-      endMs: region.pointBMs!,
       choice: choice,
-      title: '${item.title}_${region.name}',
+      startMs: region.pointAMs,
+      endMs: region.pointBMs,
+      exportTitle: choice.wholeTrack ? item.title : '${item.title}_${region.name}',
     );
   }
 
