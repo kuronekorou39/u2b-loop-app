@@ -116,6 +116,15 @@ class LoopItem {
   /// 波形を作るときにデコードした PCM から測る。null = 未計測
   double? loudnessDb;
 
+  /// 「1番だけ」で使う範囲（ミリ秒）。1番モード中に AB を手で直したときに残す。
+  /// null なら毎回波形から自動で探す（VerseDetector）。区間（regions）とは別で、
+  /// 1番モードでないふつうの再生には影響しない
+  int? firstVerseAMs;
+  int? firstVerseBMs;
+
+  /// 手で直した 1 番の範囲があるか
+  bool get hasFirstVerse => firstVerseAMs != null && firstVerseBMs != null;
+
   /// 曲の長さ（ミリ秒）。再生したとき、または解析の前に YouTube へ問い合わせて埋まる。
   /// 長すぎる曲（ミックス音源・配信など）を解析から外す判定に使う。null = 不明
   int? durationMs;
@@ -162,6 +171,8 @@ class LoopItem {
     this.endFadeDb,
     this.dropDb,
     this.loudnessDb,
+    this.firstVerseAMs,
+    this.firstVerseBMs,
     this.durationMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
@@ -298,6 +309,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       endFadeDb: (fields[39] as num?)?.toDouble(),
       dropDb: (fields[40] as num?)?.toDouble(),
       loudnessDb: (fields[41] as num?)?.toDouble(),
+      firstVerseAMs: fields[42] as int?,
+      firstVerseBMs: fields[43] as int?,
     );
   }
 
@@ -346,6 +359,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       39: obj.endFadeDb,
       40: obj.dropDb,
       41: obj.loudnessDb,
+      42: obj.firstVerseAMs,
+      43: obj.firstVerseBMs,
     });
   }
 }

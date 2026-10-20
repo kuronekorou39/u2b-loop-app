@@ -887,7 +887,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _loadTrackRegion(PlaylistTrack track) {
-    // 曲が変わったら前の曲の AB 編集は閉じる
+    // 曲が変わったら前の曲の AB 編集は閉じる（1 番を直していたら覚える）
+    if (_editMode) _rememberFirstVerse();
     _editMode = false;
     // AB区間の反映はミニプレイヤー側と共通（PlaylistEngine）
     ref.read(playlistEngineProvider).applyRegion(track);
@@ -902,7 +903,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mounted) setState(() {});
   }
 
-  /// 1番だけモード: 波形から切断点を計算してB点にセット
+  /// 1番だけモード: この曲の 1 番の範囲を A/B にセット。
+  /// 手で直した範囲（LoopItem.firstVerseAMs/BMs）があればそれを、無ければ波形から切断点を探す。
   /// AB設定済みの区間トラックには適用しない（_loadTrackRegionで分岐済み）
   void _applyFirstVerseCut(PlaylistTrack track, [int retryCount = 0]) {
     // フェードアウト監視のみキャンセル（フェードインは中断しない）
@@ -921,6 +923,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (mounted) _applyFirstVerseCut(track, retryCount + 1);
         });
       }
+      return;
+    }
+
+    // 手で直した範囲（画面が持つ track.item は古いことがあるので保存済みの方を見る）
+    final saved =
+        ref.read(loopItemsProvider.notifier).byId(track.item.id) ?? track.item;
+    if (saved.hasFirstVerse) {
+      final a = Duration(milliseconds: saved.firstVerseAMs!);
+      final notifier = ref.read(loopProvider.notifier);
+      notifier.setPointA(a);
+      notifier.setPointB(Duration(milliseconds: saved.firstVerseBMs!));
+      if (!ref.read(loopProvider).enabled) notifier.toggleEnabled();
+      // A が曲の頭でなければ A から聴かせる。交差で入ってきた曲は位置をエンジンが決めるので触らない
+      final player = ref.read(playerProvider);
+      if (a > Duration.zero &&
+          player.state.position < a &&
+          !ref.read(playlistEngineProvider).isCrossfading) {
+        player.seek(a);
+      }
+      _startFadeOutMonitor(saved.firstVerseBMs!);
       return;
     }
 
@@ -1608,6 +1630,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _finishEdit() {
     _syncRegionFromLoop();
     _saveRegions();
+    _rememberFirstVerse();
     setState(() => _editMode = false);
   }
 
@@ -2375,6 +2398,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       PlayerMoreSheet(
         firstVerseMode: plState.firstVerseMode,
         onToggleFirstVerse: _toggleFirstVerseMode,
+        onResetFirstVerse: () {
+          final id = plState.currentTrack?.item.id;
+          final saved =
+              id == null ? null : ref.read(loopItemsProvider.notifier).byId(id);
+          return saved != null && saved.hasFirstVerse ? _resetFirstVerse : null;
+        }(),
         onToggleVolumeNorm: _toggleVolumeNorm,
         // AB 編集の UI は全画面には無い（横レイアウトの板）ので、全画面なら解除してから
         onEditAb: () {
@@ -2448,10 +2477,71 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final total = ref.read(playerProvider).state.duration;
       if (total > Duration.zero) notifier.setPointB(total);
     }
+    final started = ref.read(loopProvider);
+    _editStartPoints = (started.pointA, started.pointB);
+    _editTrack = ref.read(playlistPlayerProvider).currentTrack;
     setState(() {
       _editMode = true;
       _panelOpen = false;
     });
+  }
+
+  /// AB 編集を始めたときの A/B（閉じたときに直したかどうかを見る）
+  (Duration?, Duration?)? _editStartPoints;
+
+  /// AB 編集を始めた曲（閉じる前に次の曲へ進んでも、直した曲に覚えさせる）
+  PlaylistTrack? _editTrack;
+
+  /// 1番モード中に AB を直して閉じたら、この曲の 1 番として覚える（次回からそれを使う）。
+  /// 区間として登録すると 1 番モードでないふつうの再生まで狭まるので、それとは別に持つ
+  void _rememberFirstVerse() {
+    final start = _editStartPoints;
+    final track = _editTrack;
+    _editStartPoints = null;
+    _editTrack = null;
+    if (!_isPlaylist) return;
+    if (!ref.read(playlistPlayerProvider).firstVerseMode ||
+        track == null ||
+        track.hasRegion) {
+      return;
+    }
+    final loop = ref.read(loopProvider);
+    if (!loop.hasBothPoints) return;
+    if (start != null && start.$1 == loop.pointA && start.$2 == loop.pointB) return;
+
+    final items = ref.read(loopItemsProvider.notifier);
+    final id = track.item.id;
+    final before = items.byId(id);
+    final prevA = before?.firstVerseAMs, prevB = before?.firstVerseBMs;
+    final b = loop.pointB!.inMilliseconds;
+    unawaited(items.saveFirstVerse(id,
+        aMs: loop.pointA!.inMilliseconds, bMs: b));
+    final stillCurrent =
+        ref.read(playlistPlayerProvider).currentTrack?.item.id == id;
+    if (stillCurrent) _startFadeOutMonitor(b);
+    ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.action(
+      'この曲の1番として覚えました',
+      label: '取り消し',
+      onPressed: () async {
+        await items.saveFirstVerse(id, aMs: prevA, bMs: prevB);
+        if (!mounted) return;
+        final current = ref.read(playlistPlayerProvider).currentTrack;
+        if (current?.item.id == id) _applyFirstVerseCut(current!);
+      },
+    ));
+  }
+
+  /// この曲の 1 番を自動（波形から探す）に戻す
+  Future<void> _resetFirstVerse() async {
+    final track = ref.read(playlistPlayerProvider).currentTrack;
+    if (track == null) return;
+    await ref
+        .read(loopItemsProvider.notifier)
+        .saveFirstVerse(track.item.id);
+    if (!mounted) return;
+    _applyFirstVerseCut(track);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(AppSnackBar.success('1番を自動に戻しました'));
   }
 
   /// 現在のAB区間をLoopItemのリージョンとして保存

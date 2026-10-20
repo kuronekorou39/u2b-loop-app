@@ -18,6 +18,7 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
     super.key,
     required this.firstVerseMode,
     required this.onToggleFirstVerse,
+    this.onResetFirstVerse,
     required this.onToggleVolumeNorm,
     required this.onEditAb,
     required this.onDjMix,
@@ -27,6 +28,9 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
 
   final bool firstVerseMode;
   final VoidCallback onToggleFirstVerse;
+
+  /// この曲の 1 番を手で直してあるときだけ渡す（自動に戻す）
+  final VoidCallback? onResetFirstVerse;
   final VoidCallback onToggleVolumeNorm;
   final VoidCallback onEditAb;
 
@@ -84,6 +88,15 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
                 widget.onToggleFirstVerse();
               },
             ),
+            if (_firstVerse && widget.onResetFirstVerse != null)
+              ListTile(
+                leading: const SizedBox(width: 24),
+                title: const Text('この曲の1番を自動に戻す'),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onResetFirstVerse!();
+                },
+              ),
             SwitchListTile(
               secondary: const Icon(Icons.equalizer),
               title: const Text('音量正規化'),

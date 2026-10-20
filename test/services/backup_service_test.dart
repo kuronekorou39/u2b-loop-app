@@ -50,6 +50,17 @@ void main() {
       expect(back.regions.single.pointBMs, 5000);
     });
 
+    test('手で直した 1 番の範囲が保たれる', () {
+      final item = _item('a')
+        ..firstVerseAMs = 2000
+        ..firstVerseBMs = 65000;
+      final back = _roundTrip(items: [item]).items.single;
+      expect(back.firstVerseAMs, 2000);
+      expect(back.firstVerseBMs, 65000);
+      expect(back.hasFirstVerse, isTrue);
+      expect(_roundTrip(items: [_item('b')]).items.single.hasFirstVerse, isFalse);
+    });
+
     test('日時が保たれる', () {
       final back = _roundTrip(items: [_item('a')]).items.single;
       expect(back.createdAt, DateTime(2026, 1, 2, 3, 4, 5));

@@ -148,6 +148,8 @@ class BackupService {
         'endFadeDb': item.endFadeDb,
         'dropDb': item.dropDb,
         'loudnessDb': item.loudnessDb,
+        'firstVerseAMs': item.firstVerseAMs,
+        'firstVerseBMs': item.firstVerseBMs,
         'durationMs': item.durationMs,
       };
 
@@ -193,6 +195,8 @@ class BackupService {
         endFadeDb: (j['endFadeDb'] as num?)?.toDouble(),
         dropDb: (j['dropDb'] as num?)?.toDouble(),
         loudnessDb: (j['loudnessDb'] as num?)?.toDouble(),
+        firstVerseAMs: j['firstVerseAMs'] as int?,
+        firstVerseBMs: j['firstVerseBMs'] as int?,
         durationMs: j['durationMs'] as int?,
       );
 
