@@ -80,7 +80,7 @@ class GlassPanel extends ConsumerWidget {
   }
 }
 
-/// ガラス板の上に置く小さな丸いボタン（「トラック一覧」「1番」「…」）。
+/// ガラス板の上に置く小さな丸いボタン（「トラック」「1番」「…」）。
 class GlassPill extends StatelessWidget {
   const GlassPill({
     super.key,

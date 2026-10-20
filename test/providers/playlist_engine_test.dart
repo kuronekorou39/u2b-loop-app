@@ -66,6 +66,41 @@ void main() {
     });
   });
 
+  group('endPointFor（準備線を引く入る曲の終点）', () {
+    const dur = Duration(minutes: 4);
+    test('1 番だけモードでなければ曲の最後', () {
+      expect(
+          PlaylistEngine.endPointFor(
+              duration: dur, firstVerseMode: false, regionEndMs: 60000),
+          (dur, false));
+    });
+    test('区間の B 点 → ループの B 点 → 手で直した 1 番の順に使う', () {
+      expect(
+          PlaylistEngine.endPointFor(
+              duration: dur,
+              firstVerseMode: true,
+              regionEndMs: 60000,
+              liveB: const Duration(seconds: 70),
+              savedFirstVerseBMs: 80000),
+          (const Duration(seconds: 60), true));
+      expect(
+          PlaylistEngine.endPointFor(
+              duration: dur,
+              firstVerseMode: true,
+              liveB: const Duration(seconds: 70),
+              savedFirstVerseBMs: 80000),
+          (const Duration(seconds: 70), true));
+      expect(
+          PlaylistEngine.endPointFor(
+              duration: dur, firstVerseMode: true, savedFirstVerseBMs: 80000),
+          (const Duration(seconds: 80), true));
+    });
+    test('区間の無い曲で 1 番の終わりが未定なら曲の最後（後で計算し直す）', () {
+      expect(PlaylistEngine.endPointFor(duration: dur, firstVerseMode: true),
+          (dur, false));
+    });
+  });
+
   group('MixPair', () {
     final pair = MixPair(
       outSlot: ActiveSlot.a,

@@ -6,6 +6,7 @@ import '../../core/utils/time_utils.dart';
 import '../../models/playlist_track.dart';
 import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
+import '../../providers/player_provider.dart';
 import '../../providers/playlist_player_provider.dart';
 import '../equalizer_icon.dart';
 import '../glass_panel.dart';
@@ -48,6 +49,7 @@ class TrackList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final plState = ref.watch(playlistPlayerProvider);
     final currentIdx = plState.currentTrackIndex;
+    final playing = ref.watch(playingProvider).valueOrNull ?? false;
     final allTags = ref.watch(tagsProvider);
     final tagMap = {for (final t in allTags) t.id: t};
     // タグ変更時にトラック一覧を再描画するために監視
@@ -64,6 +66,7 @@ class TrackList extends ConsumerWidget {
         track: plState.tracks[i],
         tagMap: tagMap,
         isCurrent: i == currentIdx,
+        playing: playing,
         isPreloading: preloadingIndex == i,
         isPreloaded: preloadedIndex == i,
         dense: dense,
@@ -82,6 +85,7 @@ class _TrackRow extends StatelessWidget {
     required this.track,
     required this.tagMap,
     required this.isCurrent,
+    required this.playing,
     required this.isPreloading,
     required this.isPreloaded,
     required this.dense,
@@ -93,6 +97,9 @@ class _TrackRow extends StatelessWidget {
   final PlaylistTrack track;
   final Map<String, Tag> tagMap;
   final bool isCurrent;
+
+  /// 再生中か（一時停止中は再生中の行のバーを下げて止める）
+  final bool playing;
   final bool isPreloading;
   final bool isPreloaded;
   final bool dense;
@@ -105,7 +112,8 @@ class _TrackRow extends StatelessWidget {
 
     final Widget status;
     if (isCurrent) {
-      status = const EqualizerIcon(color: AppTheme.accentGreen, size: 18);
+      status = EqualizerIcon(
+          color: AppTheme.accentGreen, size: 18, playing: playing);
     } else if (isPreloading) {
       status = const SizedBox(
         width: AppIconSizes.s,
@@ -237,7 +245,7 @@ class _TrackRow extends StatelessWidget {
 }
 
 /// 開閉できるトラック一覧（動画の上に重ねるガラス板）。見出しに曲数。
-/// 開閉はコントローラーの「トラック一覧」ピル（同じ場所で開いて閉じる）
+/// 開閉はコントローラーの「トラック」ピル（同じ場所で開いて閉じる）
 class TrackListPanel extends ConsumerWidget {
   const TrackListPanel({super.key, required this.list});
 
@@ -265,7 +273,7 @@ class TrackListPanel extends ConsumerWidget {
                 AppSpacing.xl, AppSpacing.md, AppSpacing.xl, AppSpacing.md),
             child: Row(
               children: [
-                Text('トラック一覧', style: textTheme.titleSmall),
+                Text('トラック', style: textTheme.titleSmall),
                 const SizedBox(width: AppSpacing.md),
                 Text('$trackCount 曲', style: textTheme.labelSmall),
               ],

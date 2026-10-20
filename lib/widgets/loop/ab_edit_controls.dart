@@ -201,6 +201,7 @@ class _PointRow extends StatelessWidget {
 /// 微調整ステップ（0.001〜100 秒）の選択。段が多いので全部は並べず、
 /// 真ん中に今の段を大きく、左右に隣の段を小さく出し、その先は「…」にする。
 /// 左右の段をタップするか、横にスワイプすると 1 段ずつ動く。
+/// 段を変えると文字が横に滑って、真ん中の緑の枠に入りながら大きくなる。
 /// 各枠の幅は固定（段を動かしても真ん中の位置がずれない）
 class _StepSelector extends StatelessWidget {
   const _StepSelector({
@@ -214,12 +215,11 @@ class _StepSelector extends StatelessWidget {
   final bool compact;
 
   static const _steps = LoopControls.steps;
+  static const _dotsWidth = 20.0;
+  static const _height = 36.0;
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
-    final muted = scheme.onSurface.withValues(alpha: 0.7);
     final index = _steps.indexOf(selected).clamp(0, _steps.length - 1);
     void move(int delta) {
       final next = index + delta;
@@ -227,45 +227,11 @@ class _StepSelector extends StatelessWidget {
       onChanged(_steps[next]);
     }
 
-    final sideWidth = compact ? 48.0 : 56.0;
-    final centerWidth = compact ? 64.0 : 76.0;
-
-    Widget side(int i) {
-      if (i < 0 || i >= _steps.length) return SizedBox(width: sideWidth);
-      return SizedBox(
-        width: sideWidth,
-        child: TextButton(
-          onPressed: () => onChanged(_steps[i]),
-          style: TextButton.styleFrom(
-            foregroundColor: muted,
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(0, 36),
-          ),
-          child: Text(
-            AbEditControls.stepLabel(_steps[i]),
-            style: textTheme.labelSmall!.copyWith(
-              fontFeatures: const [FontFeature('tnum')],
-              color: muted,
-            ),
-          ),
-        ),
-      );
-    }
-
-    Widget dots(bool more) => SizedBox(
-          width: 20,
-          child: Text(
-            more ? '…' : '',
-            textAlign: TextAlign.center,
-            style: textTheme.labelSmall!.copyWith(color: muted),
-          ),
-        );
-
     return Row(
       children: [
         Padding(
           padding: EdgeInsets.only(right: compact ? AppSpacing.xs : AppSpacing.sm),
-          child: Text('ステップ', style: textTheme.labelSmall),
+          child: Text('ステップ', style: Theme.of(context).textTheme.labelSmall),
         ),
         Expanded(
           child: GestureDetector(
@@ -276,34 +242,108 @@ class _StepSelector extends StatelessWidget {
               if (v < -100) move(1);
               if (v > 100) move(-1);
             },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                dots(index >= 2),
-                side(index - 1),
-                Container(
-                  width: centerWidth,
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-                  decoration: ShapeDecoration(
-                    color: AppTheme.accentGreen.withValues(alpha: 0.18),
-                    shape: const StadiumBorder(),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    AbEditControls.stepLabel(_steps[index]),
-                    style: textTheme.titleSmall!.copyWith(
-                      fontFeatures: const [FontFeature('tnum')],
-                      color: AppTheme.accentGreen,
-                    ),
-                  ),
-                ),
-                side(index + 1),
-                dots(index <= _steps.length - 3),
-              ],
+            child: Center(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(end: index.toDouble()),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                builder: (context, pos, _) => _strip(context, pos),
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  /// [pos]（今の段の位置。アニメーション中は段の間の値）に合わせて並べる
+  Widget _strip(BuildContext context, double pos) {
+    final textTheme = Theme.of(context).textTheme;
+    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7);
+    final sideWidth = compact ? 48.0 : 56.0;
+    final centerWidth = compact ? 64.0 : 76.0;
+    // 隣の段との中心の間隔。文字の枠もこの幅にして、隣どうしが重ならないようにする
+    final pitch = (centerWidth + sideWidth) / 2;
+    final width = _dotsWidth * 2 + sideWidth * 2 + centerWidth;
+    final mid = width / 2;
+
+    final centerStyle = textTheme.titleSmall!.copyWith(
+      fontFeatures: const [FontFeature('tnum')],
+      color: AppTheme.accentGreen,
+    );
+    final sideStyle = textTheme.labelSmall!.copyWith(
+      fontFeatures: const [FontFeature('tnum')],
+      color: muted,
+    );
+
+    final labels = <Widget>[];
+    for (var i = 0; i < _steps.length; i++) {
+      final d = i - pos;
+      final dist = d.abs();
+      // 2 段以上離れた段は出さない（その先は「…」）
+      if (dist >= 2) continue;
+      // 隣までは pitch ずつ、その先は外へ抜けながら消える
+      final offset = dist <= 1
+          ? d * pitch
+          : d.sign * (pitch + (dist - 1) * (sideWidth / 2 + _dotsWidth));
+      labels.add(Positioned(
+        left: mid + offset - pitch / 2,
+        width: pitch,
+        top: 0,
+        bottom: 0,
+        child: Opacity(
+          opacity: dist <= 1 ? 1 : 2 - dist,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: dist > 0.5 ? () => onChanged(_steps[i]) : null,
+            child: Center(
+              child: Text(
+                AbEditControls.stepLabel(_steps[i]),
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle.lerp(centerStyle, sideStyle, dist.clamp(0.0, 1.0)),
+              ),
+            ),
+          ),
+        ),
+      ));
+    }
+
+    Widget dots(double opacity) => SizedBox(
+          width: _dotsWidth,
+          child: Opacity(
+            opacity: opacity.clamp(0.0, 1.0),
+            child: Text('…',
+                textAlign: TextAlign.center,
+                style: textTheme.labelSmall!.copyWith(color: muted)),
+          ),
+        );
+
+    return SizedBox(
+      width: width,
+      height: _height,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        alignment: Alignment.center,
+        children: [
+          // 真ん中の緑の枠は動かない。文字がここへ滑り込む
+          Container(
+            width: centerWidth,
+            height: _height,
+            decoration: ShapeDecoration(
+              color: AppTheme.accentGreen.withValues(alpha: 0.18),
+              shape: const StadiumBorder(),
+            ),
+          ),
+          ...labels,
+          Positioned(left: 0, top: 0, bottom: 0, child: Center(child: dots(pos - 1))),
+          Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: Center(child: dots(_steps.length - 2 - pos))),
+        ],
+      ),
     );
   }
 }

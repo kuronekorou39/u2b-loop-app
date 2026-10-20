@@ -472,10 +472,7 @@ class PlaylistEngine {
   /// 入る曲の終点（1 番だけモードなら B 点）から引く。その次の曲が無ければ null
   Duration? _prepLineIn(PlaylistTrack next, Duration inDuration) {
     if (inDuration <= Duration.zero || !_hasTrackAfter(next)) return null;
-    final endMs = next.endMs;
-    final firstVerse =
-        _ref.read(playlistPlayerProvider).firstVerseMode && endMs != null;
-    final endPoint = firstVerse ? Duration(milliseconds: endMs) : inDuration;
+    final (endPoint, firstVerse) = _endPointIn(next, inDuration);
     final lead = preloadLead(
       item: next.item,
       endPoint: endPoint,
@@ -484,6 +481,50 @@ class PlaylistEngine {
     );
     final line = endPoint - lead;
     return line < Duration.zero ? Duration.zero : line;
+  }
+
+  /// 入る曲の終点と、それが 1 番の終わりか。1 番だけモードなら区間の B 点、
+  /// 区間の無い曲は 1 番の終わり（鳴っている曲ならループの B 点、まだなら手で直した 1 番）。
+  /// 再生画面の先読み判定（ループの B 点を終点にする）と揃えるため。
+  /// 以前は区間の無い曲で曲の最後を終点にしていて、準備線が 1 番の終わりより後ろになり、
+  /// 2 曲目の 1 番が終わるまで 3 曲目を読み込めなかった（交差も ✓ も出なかった）
+  (Duration, bool) _endPointIn(PlaylistTrack next, Duration inDuration) {
+    final ps = _ref.read(playlistPlayerProvider);
+    Duration? liveB;
+    // ループがもうこの曲のものか（切り替えた直後はまだ前の曲の A/B が残っている）
+    if (ps.currentTrack?.item.id == next.item.id &&
+        _ref.read(loopProvider.notifier).currentItemId == next.item.id) {
+      final loop = _ref.read(loopProvider);
+      if (loop.enabled) liveB = loop.pointB;
+    }
+    return endPointFor(
+      duration: inDuration,
+      firstVerseMode: ps.firstVerseMode,
+      regionEndMs: next.endMs,
+      liveB: liveB,
+      savedFirstVerseBMs: next.item.firstVerseBMs,
+    );
+  }
+
+  /// [_endPointIn] の決め方（テスト用に切り出し）。優先順: 区間の B 点 →
+  /// 鳴っている曲のループの B 点 → 手で直した 1 番の終わり → 曲の最後（1 番の終わりが未定）
+  @visibleForTesting
+  static (Duration, bool) endPointFor({
+    required Duration duration,
+    required bool firstVerseMode,
+    int? regionEndMs,
+    Duration? liveB,
+    int? savedFirstVerseBMs,
+  }) {
+    if (!firstVerseMode) return (duration, false);
+    if (regionEndMs != null) return (Duration(milliseconds: regionEndMs), true);
+    if (liveB != null && liveB < duration) return (liveB, true);
+    if (savedFirstVerseBMs != null) {
+      return (Duration(milliseconds: savedFirstVerseBMs), true);
+    }
+    // 1 番の終わりがまだ分からない（波形から求めるのは鳴り始めてから）。
+    // 切り替わった後はパークの監視が計算し直す
+    return (duration, false);
   }
 
   /// [next] の後にまだ曲があるか（無ければ準備線は要らない）

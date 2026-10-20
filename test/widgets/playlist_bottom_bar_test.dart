@@ -64,12 +64,12 @@ void main() {
     return (events: events);
   }
 
-  testWidgets('ふだんはトラック一覧・1番・その他のピル', (tester) async {
+  testWidgets('ふだんはトラック・1番・その他のピル', (tester) async {
     final r = await pump(tester);
-    expect(find.text('トラック一覧'), findsOneWidget);
+    expect(find.text('トラック'), findsOneWidget);
     expect(find.text('1番'), findsOneWidget);
     expect(find.byKey(const Key('edit')), findsNothing);
-    await tester.tap(find.text('トラック一覧'));
+    await tester.tap(find.text('トラック'));
     await tester.tap(find.byTooltip('その他'));
     expect(r.events, ['list', 'more']);
   });
@@ -77,7 +77,7 @@ void main() {
   testWidgets('編集中は編集ブロックと 終了・今を A/B・登録 のピル', (tester) async {
     final r = await pump(tester, editing: true);
     expect(find.byKey(const Key('edit')), findsOneWidget);
-    expect(find.text('トラック一覧'), findsNothing);
+    expect(find.text('トラック'), findsNothing);
     await tester.tap(find.text('今をA'));
     await tester.tap(find.text('今をB'));
     await tester.tap(find.byTooltip('この A–B を区間として登録'));

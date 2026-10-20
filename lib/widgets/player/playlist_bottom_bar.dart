@@ -9,7 +9,7 @@ import 'player_glass_bar.dart';
 
 /// プレイリスト再生画面の下部コントローラー（[PlayerGlassBar] の中身）。
 ///
-/// シーク領域 / シャッフル・前・再生(大)・次・リピート / ピル（トラック一覧・1番・その他）。
+/// シーク領域 / シャッフル・前・再生(大)・次・リピート / ピル（トラック・1番・その他）。
 /// トラック一覧を開いている間は [compact]（波形を低く、再生ボタンを小さく、ピル行なし）で、
 /// 一覧側の見出しから閉じたり「その他」を開いたりできる。
 /// 1番だけ以外の補助機能（AB区間・音量正規化・速度・音量）は「その他」シート側。
@@ -159,7 +159,7 @@ class PlaylistBottomBar extends ConsumerWidget {
         GlassPill(
           onTap: onToggleList,
           active: listOpen,
-          tooltip: listOpen ? 'トラック一覧を閉じる' : 'トラック一覧を開く',
+          tooltip: listOpen ? 'トラックを閉じる' : 'トラックを開く',
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -167,7 +167,7 @@ class PlaylistBottomBar extends ConsumerWidget {
                   size: AppIconSizes.sm,
                   color: listOpen ? AppTheme.accentGreen : null),
               const SizedBox(width: AppSpacing.sm),
-              Text('トラック一覧',
+              Text('トラック',
                   style: theme.textTheme.labelMedium!.copyWith(
                       color: listOpen ? AppTheme.accentGreen : null)),
               const SizedBox(width: AppSpacing.xs),
