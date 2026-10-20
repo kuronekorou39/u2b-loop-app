@@ -5,5 +5,5 @@ class LoopControls {
   LoopControls._();
 
   /// 微調整のステップ候補（秒）
-  static const steps = [0.001, 0.01, 0.1, 1.0];
+  static const steps = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0];
 }

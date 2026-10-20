@@ -74,11 +74,29 @@ void main() {
     expect(find.text('--:--.---'), findsOneWidget);
   });
 
-  testWidgets('ステップのピルで切り替える', (tester) async {
+  testWidgets('ステップは今の段と左右の隣だけ出し、隣をタップで 1 段動く', (tester) async {
     final r = await pump(tester, loop: loop, step: 0.1);
+    expect(find.text('0.1s'), findsOneWidget);
+    expect(find.text('1s'), findsOneWidget);
+    expect(find.text('0.01s'), findsOneWidget);
+    // 2 段以上離れた段は出さない
+    expect(find.text('10s'), findsNothing);
+    expect(find.text('0.001s'), findsNothing);
     await tester.tap(find.text('1s'));
     await tester.tap(find.text('0.01s'));
     expect(r.steps, [1.0, 0.01]);
+  });
+
+  testWidgets('横スワイプで 1 段動く。端の先は無い', (tester) async {
+    final r = await pump(tester, loop: loop, step: 10.0);
+    expect(find.text('100s'), findsOneWidget);
+    await tester.fling(find.text('10s'), const Offset(-200, 0), 1000);
+    await tester.fling(find.text('10s'), const Offset(200, 0), 1000);
+    expect(r.steps, [100.0, 1.0]);
+
+    final top = await pump(tester, loop: loop, step: 100.0);
+    await tester.fling(find.text('100s'), const Offset(-200, 0), 1000);
+    expect(top.steps, isEmpty);
   });
 
   testWidgets('compact でも同じ操作ができる', (tester) async {

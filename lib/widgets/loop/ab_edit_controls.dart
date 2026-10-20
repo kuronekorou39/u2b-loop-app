@@ -198,7 +198,10 @@ class _PointRow extends StatelessWidget {
   }
 }
 
-/// 微調整ステップ（0.001〜1秒）の選択行（ピル）
+/// 微調整ステップ（0.001〜100 秒）の選択。段が多いので全部は並べず、
+/// 真ん中に今の段を大きく、左右に隣の段を小さく出し、その先は「…」にする。
+/// 左右の段をタップするか、横にスワイプすると 1 段ずつ動く。
+/// 各枠の幅は固定（段を動かしても真ん中の位置がずれない）
 class _StepSelector extends StatelessWidget {
   const _StepSelector({
     required this.selected,
@@ -210,46 +213,96 @@ class _StepSelector extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final bool compact;
 
+  static const _steps = LoopControls.steps;
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    // 幅が足りなければ折り返す（横画面のドロワーで溢れていた）。
-    // チップの高さは 32px 以上（以前は 20〜22px で押しにくかった）
-    return Wrap(
-      spacing: compact ? AppSpacing.xs : AppSpacing.sm,
-      runSpacing: AppSpacing.xs,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    final muted = scheme.onSurface.withValues(alpha: 0.7);
+    final index = _steps.indexOf(selected).clamp(0, _steps.length - 1);
+    void move(int delta) {
+      final next = index + delta;
+      if (next < 0 || next >= _steps.length) return;
+      onChanged(_steps[next]);
+    }
+
+    final sideWidth = compact ? 48.0 : 56.0;
+    final centerWidth = compact ? 64.0 : 76.0;
+
+    Widget side(int i) {
+      if (i < 0 || i >= _steps.length) return SizedBox(width: sideWidth);
+      return SizedBox(
+        width: sideWidth,
+        child: TextButton(
+          onPressed: () => onChanged(_steps[i]),
+          style: TextButton.styleFrom(
+            foregroundColor: muted,
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 36),
+          ),
+          child: Text(
+            AbEditControls.stepLabel(_steps[i]),
+            style: textTheme.labelSmall!.copyWith(
+              fontFeatures: const [FontFeature('tnum')],
+              color: muted,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget dots(bool more) => SizedBox(
+          width: 20,
+          child: Text(
+            more ? '…' : '',
+            textAlign: TextAlign.center,
+            style: textTheme.labelSmall!.copyWith(color: muted),
+          ),
+        );
+
+    return Row(
       children: [
         Padding(
           padding: EdgeInsets.only(right: compact ? AppSpacing.xs : AppSpacing.sm),
           child: Text('ステップ', style: textTheme.labelSmall),
         ),
-        for (final s in LoopControls.steps)
-          Material(
-            color: selected == s
-                ? AppTheme.accentGreen.withValues(alpha: 0.18)
-                : scheme.onSurface.withValues(alpha: 0.08),
-            shape: const StadiumBorder(),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () => onChanged(s),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: compact ? AppSpacing.md + 2 : AppSpacing.lg,
-                    vertical: compact ? AppSpacing.md : AppSpacing.md + 1),
-                child: Text(
-                  AbEditControls.stepLabel(s),
-                  style: textTheme.labelSmall!.copyWith(
-                    fontFeatures: const [FontFeature('tnum')],
-                    color: selected == s
-                        ? AppTheme.accentGreen
-                        : scheme.onSurface.withValues(alpha: 0.7),
+        Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // 指を左へ払うと右の（大きい）段へ。カルーセルを送る向き
+            onHorizontalDragEnd: (d) {
+              final v = d.primaryVelocity ?? 0;
+              if (v < -100) move(1);
+              if (v > 100) move(-1);
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                dots(index >= 2),
+                side(index - 1),
+                Container(
+                  width: centerWidth,
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  decoration: ShapeDecoration(
+                    color: AppTheme.accentGreen.withValues(alpha: 0.18),
+                    shape: const StadiumBorder(),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    AbEditControls.stepLabel(_steps[index]),
+                    style: textTheme.titleSmall!.copyWith(
+                      fontFeatures: const [FontFeature('tnum')],
+                      color: AppTheme.accentGreen,
+                    ),
                   ),
                 ),
-              ),
+                side(index + 1),
+                dots(index <= _steps.length - 3),
+              ],
             ),
           ),
+        ),
       ],
     );
   }
