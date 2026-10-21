@@ -143,7 +143,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   }
 
   static ProviderBase<Player> _playerOf(ActiveSlot slot) =>
-      slot == ActiveSlot.a ? playerAProvider : playerBProvider;
+      slotPlayerProvider(slot);
 
   Widget _seekbar({
     List<MixRange> mixRanges = const [],
@@ -197,7 +197,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       now: now,
       swapped: swapped,
       window: window,
-      prepLine: pair.prepLine,
       height: widget.mixHeight,
       curve: recipe.curve,
       bassSwap: recipe.bassSwap,

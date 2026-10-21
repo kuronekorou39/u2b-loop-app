@@ -17,11 +17,20 @@ final youtubeServiceProvider = Provider<YouTubeService>((ref) {
   return service;
 });
 
-// --- Dual Player System ---
+// --- プレイヤー 3 台（鳴っている曲 / 次の曲 / 前の曲） ---
+//
+// プレイリストでは、鳴っている曲（[activeSlotProvider]）・先読みした次の曲
+// （[preloadSlotProvider]）・交差して切り替わった後も戻れるよう残す前の曲
+// （PlaylistEngine のパーク）の 3 台を回して使う。
+// 2 台のころは前の曲を残している間、次の曲を読み込めなかった（2 曲目の間に
+// 3 曲目の交差も ✓ も出なかった）。C は前の曲を残すときに初めて作る
 
-enum ActiveSlot { a, b }
+enum ActiveSlot { a, b, c }
 
 final activeSlotProvider = StateProvider<ActiveSlot>((ref) => ActiveSlot.a);
+
+/// 次の曲を読み込むスロット（鳴っている曲とも、パーク中の前の曲とも別）
+final preloadSlotProvider = StateProvider<ActiveSlot>((ref) => ActiveSlot.b);
 
 /// mpv(media_kit)が動画ファイルの隣にある同名字幕(.srt)を自動読み込みして
 /// ネイティブ字幕として表示してしまうのを無効化する。
@@ -61,6 +70,41 @@ final playerBProvider = Provider<Player>((ref) {
   return player;
 });
 
+/// 3 台目。前の曲を残しながら次の曲を読み込むときに初めて作られる
+final playerCProvider = Provider<Player>((ref) {
+  final player = Player();
+  _disableNativeSubtitles(player);
+  _watchMpvLog(player, 'C');
+  ref.onDispose(player.dispose);
+  return player;
+});
+
+/// スロットのプレイヤー
+final slotPlayerProvider = Provider.family<Player, ActiveSlot>((ref, slot) {
+  return switch (slot) {
+    ActiveSlot.a => ref.watch(playerAProvider),
+    ActiveSlot.b => ref.watch(playerBProvider),
+    ActiveSlot.c => ref.watch(playerCProvider),
+  };
+});
+
+/// 作ってあるプレイヤーをすべて止め、スロットを最初（A が鳴る・B が次）に戻す。
+/// C は作っていなければ作らない
+void stopAllPlayers(WidgetRef ref, {bool resetSlots = false}) {
+  try {
+    ref.read(playerAProvider).stop();
+    ref.read(playerBProvider).stop();
+    if (ref.exists(playerCProvider)) ref.read(playerCProvider).stop();
+  } catch (_) {}
+  if (resetSlots) resetPlayerSlots(ref);
+}
+
+/// スロットを最初（A が鳴る・B が次）に戻す
+void resetPlayerSlots(WidgetRef ref) {
+  ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
+  ref.read(preloadSlotProvider.notifier).state = ActiveSlot.b;
+}
+
 /// 効果音用の 3 枚目のプレイヤー（映像なし）。
 /// 切り替えの演出で効果音を使うときに初めて作られる（使わない人にはコストが無い）
 final sfxPlayerProvider = Provider<Player>((ref) {
@@ -79,6 +123,12 @@ final controllerAProvider = Provider<VideoController>((ref) {
 
 final controllerBProvider = Provider<VideoController>((ref) {
   return VideoController(ref.watch(playerBProvider));
+});
+
+/// C の映像。C を次の曲の読み込みに使う前（止まっている間）に作る。
+/// 鳴っているプレイヤーに初めて作ると頭に戻る（[videoControllerProvider] の注記）
+final controllerCProvider = Provider<VideoController>((ref) {
+  return VideoController(ref.watch(playerCProvider));
 });
 
 /// プレイヤーごとの「いま鳴っている音声の素性」。
@@ -104,10 +154,7 @@ final activeAudioQualityProvider = Provider<AudioQuality?>((ref) {
 // --- Compatibility Layer (active player) ---
 
 final playerProvider = Provider<Player>((ref) {
-  final slot = ref.watch(activeSlotProvider);
-  return slot == ActiveSlot.a
-      ? ref.read(playerAProvider)
-      : ref.read(playerBProvider);
+  return ref.read(slotPlayerProvider(ref.watch(activeSlotProvider)));
 });
 
 final videoControllerProvider = Provider<VideoController>((ref) {
@@ -119,16 +166,18 @@ final videoControllerProvider = Provider<VideoController>((ref) {
   // 先に作っておけば、出力先が付くのは裏で次の曲を読み込んでいる（止まっている）間になる
   final a = ref.read(controllerAProvider);
   final b = ref.read(controllerBProvider);
-  return slot == ActiveSlot.a ? a : b;
+  return switch (slot) {
+    ActiveSlot.a => a,
+    ActiveSlot.b => b,
+    // C は読み込みに使う前に PlaylistEngine が作っている
+    ActiveSlot.c => ref.read(controllerCProvider),
+  };
 });
 
 // --- Preload (inactive) player ---
 
 final preloadPlayerProvider = Provider<Player>((ref) {
-  final slot = ref.watch(activeSlotProvider);
-  return slot == ActiveSlot.a
-      ? ref.read(playerBProvider)
-      : ref.read(playerAProvider);
+  return ref.read(slotPlayerProvider(ref.watch(preloadSlotProvider)));
 });
 
 final videoSourceProvider = StateProvider<VideoSource?>((ref) => null);

@@ -108,10 +108,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // 裏のプレイヤーに次の曲が残っていると、曲末で鳴り出す）
       if (ref.read(miniPlayerProvider).active) {
         ref.read(miniPlayerProvider.notifier).deactivate();
-        try {
-          ref.read(playerAProvider).stop();
-          ref.read(playerBProvider).stop();
-        } catch (_) {}
+        stopAllPlayers(ref);
       }
       ref.read(playlistEngineProvider).endPlaylist();
       ref.read(videoSourceProvider.notifier).state = null;

@@ -72,7 +72,6 @@ void main() {
   Future<List<Duration>> pump(
     WidgetTester tester, {
     bool seekable = true,
-    Duration? prepLine,
     Duration now = const Duration(seconds: 95),
   }) async {
     final seeks = <Duration>[];
@@ -96,7 +95,6 @@ void main() {
                 now: now,
                 swapped: false,
                 window: wide,
-                prepLine: prepLine,
                 height: 80,
                 onSeek: seekable ? seeks.add : null,
               ),
@@ -127,12 +125,12 @@ void main() {
     expect(seeks.last.inMilliseconds, closeTo(109200, 200));
   });
 
-  testWidgets('準備線が窓の中にあれば「次のつなぎへ」を描く（例外なし）', (tester) async {
-    // 窓は 84s〜126s。線を 120s に置く
-    final seeks = await pump(tester, prepLine: const Duration(seconds: 120));
+  testWidgets('切替点より右を押しても、返る時刻はそのまま（例外なし）', (tester) async {
+    // 窓は 84s〜126s
+    final seeks = await pump(tester);
     expect(find.byType(MixView), findsOneWidget);
     expect(tester.takeException(), isNull);
-    // 線の右（120s より後）を押しても、返る時刻はそのまま（扱いは呼び出し側）
+    // 扱いは呼び出し側
     final paint = find.descendant(
       of: find.byType(MixView),
       matching: find.byType(CustomPaint),

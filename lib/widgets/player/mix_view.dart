@@ -55,7 +55,6 @@ class MixView extends StatelessWidget {
     required this.now,
     required this.swapped,
     required this.window,
-    this.prepLine,
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
     this.bassSwap = false,
@@ -64,10 +63,6 @@ class MixView extends StatelessWidget {
 
   /// 見えている範囲（旧曲の時計）。[windowAround] で作る
   final MixWindow window;
-
-  /// 準備線（旧曲の時計）。ここから右は次のつなぎの準備に入る（前曲には戻れない）ので、
-  /// 次曲の波形を薄くして線を引く。null なら描かない
-  final Duration? prepLine;
 
   /// タップ・横ドラッグで時間軸上の位置（旧曲の時計）を返す。null なら操作できない
   final ValueChanged<Duration>? onSeek;
@@ -202,13 +197,6 @@ class MixView extends StatelessWidget {
                       window: window,
                       curve: curve,
                       bassSwap: bassSwap,
-                      prepLine: prepLine,
-                      prepLabelStyle: laneLabel.copyWith(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        shadows: const [
-                          Shadow(color: Colors.black, blurRadius: 4),
-                        ],
-                      ),
                     ),
                   ),
                 ),
@@ -291,13 +279,9 @@ class _MixPainter extends CustomPainter {
     required this.window,
     required this.curve,
     required this.bassSwap,
-    required this.prepLine,
-    required this.prepLabelStyle,
   });
 
   final bool bassSwap;
-  final Duration? prepLine;
-  final TextStyle prepLabelStyle;
   final List<double>? outWaveform;
   final Duration outDuration;
   final List<double>? inWaveform;
@@ -356,7 +340,6 @@ class _MixPainter extends CustomPainter {
       playedUntilMs: swapped ? cut.inMilliseconds.toDouble() : nowMs,
       color: AppTheme.pointAColor,
     );
-    final prepMs = prepLine?.inMilliseconds.toDouble();
     _drawLane(
       canvas,
       top: laneH,
@@ -371,30 +354,7 @@ class _MixPainter extends CustomPainter {
           : inStart.inMilliseconds + (t - start.inMilliseconds),
       playedUntilMs: nowMs,
       color: AppTheme.pointBColor,
-      // 準備線より右は薄く（この組を抜ける範囲）
-      fadedFromMs: prepMs,
     );
-
-    // 準備線（点線）と「次のつなぎへ」
-    if (prepMs != null && prepMs > winStart && prepMs < winEnd) {
-      final px = toX(prepMs);
-      final paint = Paint()
-        ..color = Colors.white.withValues(alpha: 0.5)
-        ..strokeWidth = 1;
-      for (var y = 0.0; y < h; y += 6) {
-        canvas.drawLine(Offset(px, y), Offset(px, min(y + 3, h)), paint);
-      }
-      final label = TextPainter(
-        text: TextSpan(text: '次のつなぎへ', style: prepLabelStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      // 右に余白があれば線の右、無ければ左に
-      final fitsRight = px + 4 + label.width <= w;
-      label.paint(
-        canvas,
-        Offset(fitsRight ? px + 4 : px - 4 - label.width, laneH + 2),
-      );
-    }
 
     // 音量曲線（設定のつなぎ方）。全高で描く
     final outPath = Path();
@@ -490,7 +450,6 @@ class _MixPainter extends CustomPainter {
     required double? Function(double t) toTrackMs,
     required double playedUntilMs,
     required Color color,
-    double? fadedFromMs,
   }) {
     if (waveform == null || waveform.isEmpty || durationMs <= 0) return;
     final midY = top + laneH / 2;
@@ -508,8 +467,7 @@ class _MixPainter extends CustomPainter {
         if (waveform[i] > peak) peak = waveform[i];
       }
       final bar = max(peak * maxBarH, 1.0);
-      var alpha = t <= playedUntilMs ? 0.6 : 0.28;
-      if (fadedFromMs != null && t >= fadedFromMs) alpha *= 0.4;
+      final alpha = t <= playedUntilMs ? 0.6 : 0.28;
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
@@ -531,7 +489,6 @@ class _MixPainter extends CustomPainter {
       window != old.window ||
       curve != old.curve ||
       bassSwap != old.bassSwap ||
-      prepLine != old.prepLine ||
       start != old.start ||
       cut != old.cut ||
       outWaveform != old.outWaveform ||

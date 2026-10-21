@@ -252,16 +252,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // ミニプレイヤーが再生中: 停止してから新規ロード
       if (miniState.item != null || miniState.active) {
         ref.read(miniPlayerProvider.notifier).deactivate();
-        try {
-          ref.read(playerAProvider).stop();
-          ref.read(playerBProvider).stop();
-        } catch (_) {}
+        stopAllPlayers(ref);
       }
 
       // 前のプレイリスト（ミニプレイヤーで続いていた分も）を打ち切る
       final engine = ref.read(playlistEngineProvider);
       _isPlaylist ? engine.endSession() : engine.endPlaylist();
-      ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
+      resetPlayerSlots(ref);
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
       ref.read(waveformDataProvider.notifier).state = null;
@@ -348,13 +345,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       PipBridge.setAutoPiP(enabled: false);
       try {
         ref.read(loopProvider.notifier).setCurrentItem(null);
-        ref.read(playerAProvider).stop();
-        ref.read(playerBProvider).stop();
+        stopAllPlayers(ref);
         ref.read(loopProvider.notifier).onBPointReached = null;
         ref.read(loopProvider.notifier).onTrackEnd = null;
         if (_isPlaylist) ref.read(playlistPlayerProvider.notifier).clear();
         ref.read(playlistEngineProvider).endSession();
-        ref.read(activeSlotProvider.notifier).state = ActiveSlot.a;
+        resetPlayerSlots(ref);
       } catch (_) {}
     }
 
@@ -876,10 +872,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _subtitles.loadFor(track.item);
     // 2秒後に次曲プリロード開始（再生を安定させてから）
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted &&
-          !_isPreloading &&
-          _preloadedTrackIndex == null &&
-          !ref.read(playlistEngineProvider).hasParked) {
+      if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
         _preloadNextTrack();
       }
     });
@@ -1043,11 +1036,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _preloadedTrackIndex = null;
     _preloadingTargetIndex = null;
     _isPreloading = false;
-    // プリロードプレイヤーの実行中の操作を確実に中断。
-    // ただしパーク中はプリロード側に前曲が残っているので止めない
-    if (!ref.read(playlistEngineProvider).hasParked) {
-      try { ref.read(preloadPlayerProvider).stop(); } catch (_) {}
-    }
+    // プリロードプレイヤーの実行中の操作を確実に中断
+    // （パーク中の前曲は別のスロットにいるので止まらない）
+    try { ref.read(preloadPlayerProvider).stop(); } catch (_) {}
   }
 
   void _startPreloadMonitor() {
@@ -1066,8 +1057,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _checkPreload() {
     if (!mounted || !_isPlaylist || _loading) return;
     if (_isPreloading || _preloadedTrackIndex != null) return;
-    // 重ね表示の間は前曲をプリロード側に残している（戻って聴き直せるように）
-    if (ref.read(playlistEngineProvider).hasParked) return;
 
     // 連続失敗時はバックオフ（失敗数 × 10秒）、上限5回で停止
     if (_preloadFailCount > 0) {
@@ -1092,7 +1081,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         plState.firstVerseMode && loop.enabled && loop.hasB;
     final endPoint = isFirstVerse ? loop.pointB! : duration;
 
-    // 先読みを始める残り時間の式はエンジンと共通（重ね表示の準備線も同じ式で引く）
+    // 先読みを始める残り時間の式はエンジンと共通
     final lead = PlaylistEngine.preloadLead(
       item: _currentItem,
       endPoint: endPoint,
@@ -1368,6 +1357,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       ref.read(preloadPlayerProvider).stop();
     } catch (_) {}
+    // 開き直すので前の曲との重ね表示も成り立たない（残していた前の曲も止める）
+    ref.read(playlistEngineProvider).releaseParked();
 
     // Reset player state
     ref.read(videoSourceProvider.notifier).state = null;

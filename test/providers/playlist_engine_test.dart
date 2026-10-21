@@ -66,38 +66,24 @@ void main() {
     });
   });
 
-  group('endPointFor（準備線を引く入る曲の終点）', () {
-    const dur = Duration(minutes: 4);
-    test('1 番だけモードでなければ曲の最後', () {
+  group('canPark（前の曲を 3 台目に残すか）', () {
+    test('どちらも 15 分以内なら残す', () {
       expect(
-          PlaylistEngine.endPointFor(
-              duration: dur, firstVerseMode: false, regionEndMs: 60000),
-          (dur, false));
+          PlaylistEngine.canPark(
+              const Duration(minutes: 4), const Duration(minutes: 15)),
+          isTrue);
     });
-    test('区間の B 点 → ループの B 点 → 手で直した 1 番の順に使う', () {
+    test('どちらかが長い・長さが不明なら残さない（2 台で回す）', () {
       expect(
-          PlaylistEngine.endPointFor(
-              duration: dur,
-              firstVerseMode: true,
-              regionEndMs: 60000,
-              liveB: const Duration(seconds: 70),
-              savedFirstVerseBMs: 80000),
-          (const Duration(seconds: 60), true));
+          PlaylistEngine.canPark(
+              const Duration(hours: 6), const Duration(minutes: 4)),
+          isFalse);
       expect(
-          PlaylistEngine.endPointFor(
-              duration: dur,
-              firstVerseMode: true,
-              liveB: const Duration(seconds: 70),
-              savedFirstVerseBMs: 80000),
-          (const Duration(seconds: 70), true));
-      expect(
-          PlaylistEngine.endPointFor(
-              duration: dur, firstVerseMode: true, savedFirstVerseBMs: 80000),
-          (const Duration(seconds: 80), true));
-    });
-    test('区間の無い曲で 1 番の終わりが未定なら曲の最後（後で計算し直す）', () {
-      expect(PlaylistEngine.endPointFor(duration: dur, firstVerseMode: true),
-          (dur, false));
+          PlaylistEngine.canPark(
+              const Duration(minutes: 4), const Duration(minutes: 16)),
+          isFalse);
+      expect(PlaylistEngine.canPark(Duration.zero, const Duration(minutes: 4)),
+          isFalse);
     });
   });
 
@@ -119,7 +105,6 @@ void main() {
         beatMatch: false,
         tempoMatch: false,
       ),
-      prepLine: const Duration(seconds: 380),
     );
 
     test('入る曲の時計と出る曲の時計を行き来できる', () {
@@ -130,16 +115,6 @@ void main() {
           const Duration(seconds: 13));
       expect(pair.toInClock(pair.toOutClock(const Duration(seconds: 42))),
           const Duration(seconds: 42));
-    });
-
-    test('withPrepLine は準備線だけ差し替える', () {
-      final moved = pair.withPrepLine(null);
-      expect(moved.prepLine, isNull);
-      expect(moved.key, pair.key);
-      expect(moved.toOutClock(const Duration(seconds: 5)),
-          const Duration(seconds: 170));
-      expect(pair.withPrepLine(const Duration(seconds: 200)).prepLine,
-          const Duration(seconds: 200));
     });
 
     test('組の見分けは出る曲と入る曲の id', () {

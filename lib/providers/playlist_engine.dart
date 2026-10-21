@@ -312,13 +312,14 @@ class PlaylistEngine {
     final wasPlaying = _crossfade != null ||
         oldPlayer.state.playing ||
         oldPlayer.state.completed;
-    final newSlot = oldSlot == ActiveSlot.a ? ActiveSlot.b : ActiveSlot.a;
+    final newSlot = _ref.read(preloadSlotProvider);
+    // 鳴っていた曲でも次の曲でもないスロット（前の曲をパーク中ならそこにいる）
+    final spareSlot = ActiveSlot.values
+        .firstWhere((s) => s != oldSlot && s != newSlot);
     _ref.read(activeSlotProvider.notifier).state = newSlot;
 
     // プロバイダ経由だと同一フレーム内で更新が反映されない場合があるため直接参照する
-    final newPlayer = newSlot == ActiveSlot.a
-        ? _ref.read(playerAProvider)
-        : _ref.read(playerBProvider);
+    final newPlayer = _ref.read(slotPlayerProvider(newSlot));
 
     // 交差中ならここで完了させる。監視は止める（次のプリロードで再び arm される）
     final session = _crossfade;
@@ -334,7 +335,8 @@ class PlaylistEngine {
     // 切替点の瞬間の効果音（インパクト）はここで鳴らす
     session?.onCut();
     // 重ね表示の組（交差していた / 重ね表示で切替点より後を押した）。
-    // 前曲は止めずにパークして、準備線を越えるまで開き直さずに行き来できるようにする
+    // 前曲は止めずにパークして、次に切り替わるまで開き直さずに行き来できるようにする。
+    // パークした曲は 3 台目にいるので、次の曲の先読みは空いているスロットで続けられる
     final pair = armed == null
         ? null
         : session != null
@@ -349,9 +351,13 @@ class PlaylistEngine {
                 recipe: session.recipe,
               )
             : tapPair;
+    // その前にパークしていた曲（2 つ前の曲）はここで手放す。そのスロットが次の先読み先になる
+    releaseParked();
+    final park = pair != null &&
+        canPark(oldPlayer.state.duration, newPlayer.state.duration);
     if (session != null) {
       session.finishIn();
-      if (pair != null && _shouldPark(pair)) {
+      if (park) {
         // 曲線が 0 に着く前にスワップが来た場合も、短く落としてからポーズするのでぶつぎりにならない
         _parkPlayer(oldPlayer, pair);
         unawaited(_fadeOutAndPark(oldPlayer, session.outVolume, session.volume)
@@ -365,7 +371,7 @@ class PlaylistEngine {
       // 交差なしの切り替え: 新しい曲の大きさに合わせた音量にしてから鳴らす
       newPlayer.setVolume(
           _carryVolume(oldPlayer.state.volume, _armedFrom, armed?.item));
-      if (pair != null && _shouldPark(pair)) {
+      if (park) {
         _parkPlayer(oldPlayer, pair);
         final volume = oldPlayer.state.volume;
         unawaited(_fadeOutAndPark(oldPlayer, volume, volume));
@@ -378,6 +384,8 @@ class PlaylistEngine {
     } else {
       newPlayer.pause();
     }
+    // 次の曲の読み込み先: 前の曲を残すなら空いているスロット、残さないなら鳴っていた側
+    _setPreloadSlot(park ? spareSlot : oldSlot);
     // テンポを寄せていた（拍合わせのナッジ込み）なら、前曲が消えた後にゆっくり本来の速度へ戻す
     if (session != null && session.appliedInRate != session.inBaseRate) {
       _startTempoRamp(
@@ -392,18 +400,11 @@ class PlaylistEngine {
   // 切り替わる前は予定の交差から組を作り、交差して切り替わった後も前曲のプレイヤーは
   // 止めずにポーズで保持する（パーク）。重ね表示で前曲側をタップしたら、それを
   // 鳴らし直すだけで戻れる（開き直さない）。
-  // パークしたプレイヤーはプリロード側にいるので、その間は次の次の曲を読み込めない
-  // （再生画面は [hasParked] を見て待つ）。どこまで戻れるかは「準備線」で決める:
-  // 2 曲目から 3 曲目への先読みを始めなければならない位置（[preloadLead] と同じ式）で、
-  // 再生がそこを越えても、重ね表示でそこより右を押しても、前曲を手放して先読みに席を空ける
-
-  /// 準備線が切替点からこれより近ければパークしない（戻れる範囲が無いに等しく、
-  /// 3 曲目の先読みを急ぐほうが大事）
-  static const minParkSpan = Duration(seconds: 4);
+  // パークは次に切り替わるまで続く。プレイヤーは 3 台あるので、パークしている間も
+  // 空いているスロットで次の曲を先読みできる（2 曲目の間も前後の交差が両方出る）
 
   Player? _parkedPlayer;
   MixPair? _parkedPair;
-  Timer? _parkMonitor;
 
   /// 重ね表示で切替点より後を押して起こす切り替え（交差の外から）。
   /// 次の [swapSlots] がこれを使って前曲をパークする
@@ -451,103 +452,27 @@ class PlaylistEngine {
     required Duration start,
     required Duration cut,
     required TransitionRecipe recipe,
-  }) {
-    final lineIn = _prepLineIn(next, inDuration);
-    return MixPair(
-      outSlot: outSlot,
-      outItem: _armedFrom,
-      outDuration: outDuration,
-      next: next,
-      inDuration: inDuration,
-      inStart: inStart,
-      start: start,
-      cut: cut,
-      recipe: recipe,
-      prepLine: lineIn == null ? null : start + (lineIn - inStart),
-    );
+  }) =>
+      MixPair(
+        outSlot: outSlot,
+        outItem: _armedFrom,
+        outDuration: outDuration,
+        next: next,
+        inDuration: inDuration,
+        inStart: inStart,
+        start: start,
+        cut: cut,
+        recipe: recipe,
+      );
+
+  /// 次の曲を読み込むスロットを決める。C は初めて使う前に映像の出力も作っておく
+  /// （止まっている間に作らないと、表に出たときに頭に戻る）
+  void _setPreloadSlot(ActiveSlot slot) {
+    if (slot == ActiveSlot.c) _ref.read(controllerCProvider);
+    _ref.read(preloadSlotProvider.notifier).state = slot;
   }
 
-  /// 準備線（入る曲の時計）: 入る曲から更にその次の曲へ移るための先読みを
-  /// 始めなければならない位置。再生画面の先読み判定と同じ式（[preloadLead]）で
-  /// 入る曲の終点（1 番だけモードなら B 点）から引く。その次の曲が無ければ null
-  Duration? _prepLineIn(PlaylistTrack next, Duration inDuration) {
-    if (inDuration <= Duration.zero || !_hasTrackAfter(next)) return null;
-    final (endPoint, firstVerse) = _endPointIn(next, inDuration);
-    final lead = preloadLead(
-      item: next.item,
-      endPoint: endPoint,
-      firstVerse: firstVerse,
-      fade: _fadeFor(next.item),
-    );
-    final line = endPoint - lead;
-    return line < Duration.zero ? Duration.zero : line;
-  }
-
-  /// 入る曲の終点と、それが 1 番の終わりか。1 番だけモードなら区間の B 点、
-  /// 区間の無い曲は 1 番の終わり（鳴っている曲ならループの B 点、まだなら手で直した 1 番）。
-  /// 再生画面の先読み判定（ループの B 点を終点にする）と揃えるため。
-  /// 以前は区間の無い曲で曲の最後を終点にしていて、準備線が 1 番の終わりより後ろになり、
-  /// 2 曲目の 1 番が終わるまで 3 曲目を読み込めなかった（交差も ✓ も出なかった）
-  (Duration, bool) _endPointIn(PlaylistTrack next, Duration inDuration) {
-    final ps = _ref.read(playlistPlayerProvider);
-    Duration? liveB;
-    // ループがもうこの曲のものか（切り替えた直後はまだ前の曲の A/B が残っている）
-    if (ps.currentTrack?.item.id == next.item.id &&
-        _ref.read(loopProvider.notifier).currentItemId == next.item.id) {
-      final loop = _ref.read(loopProvider);
-      if (loop.enabled) liveB = loop.pointB;
-    }
-    return endPointFor(
-      duration: inDuration,
-      firstVerseMode: ps.firstVerseMode,
-      regionEndMs: next.endMs,
-      liveB: liveB,
-      savedFirstVerseBMs: next.item.firstVerseBMs,
-    );
-  }
-
-  /// [_endPointIn] の決め方（テスト用に切り出し）。優先順: 区間の B 点 →
-  /// 鳴っている曲のループの B 点 → 手で直した 1 番の終わり → 曲の最後（1 番の終わりが未定）
-  @visibleForTesting
-  static (Duration, bool) endPointFor({
-    required Duration duration,
-    required bool firstVerseMode,
-    int? regionEndMs,
-    Duration? liveB,
-    int? savedFirstVerseBMs,
-  }) {
-    if (!firstVerseMode) return (duration, false);
-    if (regionEndMs != null) return (Duration(milliseconds: regionEndMs), true);
-    if (liveB != null && liveB < duration) return (liveB, true);
-    if (savedFirstVerseBMs != null) {
-      return (Duration(milliseconds: savedFirstVerseBMs), true);
-    }
-    // 1 番の終わりがまだ分からない（波形から求めるのは鳴り始めてから）。
-    // 切り替わった後はパークの監視が計算し直す
-    return (duration, false);
-  }
-
-  /// [next] の後にまだ曲があるか（無ければ準備線は要らない）
-  bool _hasTrackAfter(PlaylistTrack next) {
-    final ps = _ref.read(playlistPlayerProvider);
-    if (identical(ps.currentTrack, next)) return ps.peekNextTrackIndex() != null;
-    final idx = ps.tracks.indexOf(next);
-    return idx < 0 || ps.peekNextTrackIndexAfter(idx) != null;
-  }
-
-  /// [item] が出る曲になったときのクロスフェードの長さの見込み
-  /// （手動の拍数をその曲のテンポと速度で秒にする。おまかせの拍数は次曲が決まるまで分からない）
-  Duration _fadeFor(LoopItem item) {
-    final beats = _ref.read(crossfadeProvider);
-    if (beats <= 0) return Duration.zero;
-    final bpm = item.bpm;
-    final rate = item.speed > 0 ? item.speed : 1.0;
-    final refBpm = (bpm == null || bpm <= 0 ? 120 : bpm) * rate;
-    return Duration(milliseconds: (beats * 60000 / refBpm).round());
-  }
-
-  /// 次曲の先読みを始めなければならない、終点までの残り時間。
-  /// 再生画面の先読み判定と準備線（[MixPair.prepLine]）の両方がこの式を使う。
+  /// 次曲の先読みを始めなければならない、終点までの残り時間（再生画面の先読み判定）。
   /// [endPoint] は曲の終点（1 番だけモードなら B 点）、[fade] はクロスフェードの長さ
   static Duration preloadLead({
     required LoopItem item,
@@ -570,43 +495,30 @@ class PlaylistEngine {
     return Duration(seconds: sec);
   }
 
-  /// この組で前曲をパークするか。準備線が無い（その次の曲が無い）なら最後まで、
-  /// あるなら切替点から [minParkSpan] 以上離れているときだけ
-  bool _shouldPark(MixPair pair) {
-    final line = pair.prepLine;
-    if (line == null) return !_hasTrackAfter(pair.next);
-    return line >= pair.cut + minParkSpan;
-  }
+  /// 前の曲を残す（3 台目を使う）曲の長さの上限。長い動画を 3 本開いたままにすると
+  /// 重いので、どちらかがこれより長ければ前の曲は残さず 2 台で回す
+  /// （戻るときは開き直す）。自動キャッシュで「長い曲」とする長さと同じ
+  static const maxParkDuration = MediaCache.maxDuration;
+
+  /// [outDuration] の曲を残したまま [inDuration] の曲を鳴らしてよいか（長さが不明なら残さない）
+  static bool canPark(Duration outDuration, Duration inDuration) =>
+      outDuration > Duration.zero &&
+      inDuration > Duration.zero &&
+      outDuration <= maxParkDuration &&
+      inDuration <= maxParkDuration;
 
   void _parkPlayer(Player player, MixPair pair) {
-    releaseParked();
     _parkedPlayer = player;
     _parkedPair = pair;
-    // 再生が準備線を越えたら手放す（押して越えたときも同じ経路）。
-    // 準備線は毎回計算し直す: 最後の曲で線なし（最後まで戻れる）にしていても、
-    // 後からリピートを入れたらその次の曲が生まれ、先読みの席を空けなければならない
-    _parkMonitor = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      final current = _parkedPair;
-      if (current == null) return;
-      final lineIn = _prepLineIn(current.next, current.inDuration);
-      final line = lineIn == null ? null : current.start + (lineIn - current.inStart);
-      final pair =
-          line == current.prepLine ? current : _parkedPair = current.withPrepLine(line);
-      if (line == null) return;
-      if (_ref.read(activeSlotProvider) == pair.outSlot) return;
-      if (pair.toOutClock(activePlayer.state.position) >= line) releaseParked();
-    });
   }
 
   /// パークの記録だけ消す（プレイヤーは呼び出し側が使う）
   void _clearParked() {
-    _parkMonitor?.cancel();
-    _parkMonitor = null;
     _parkedPlayer = null;
     _parkedPair = null;
   }
 
-  /// パークをやめて前曲のプレイヤーを止める（準備線を越えた・別の曲へ移ったとき）
+  /// パークをやめて前曲のプレイヤーを止める（次に切り替わった・別の曲へ移ったとき）
   void releaseParked() {
     _tapSwapPair = null;
     final player = _parkedPlayer;
@@ -623,19 +535,32 @@ class PlaylistEngine {
 
   /// 重ね表示で前曲側に戻るとき、パークした前曲のプレイヤーを [oldPos] から鳴らし直す。
   /// 今アクティブな次曲のプレイヤーはポーズしてプリロード側に戻す（そのまま次曲として使える）。
+  /// その次の曲を読み込んでいたスロットは空ける。
   /// 戻り値は戻れたか（パークが切れていれば false → 呼び出し側は開き直す）
   bool stepBackToParked(Duration oldPos) {
     final parked = _parkedPlayer;
     if (parked == null || identical(parked, activePlayer)) return false;
     final nextPlayer = activePlayer;
-    final parkedSlot =
-        identical(parked, _ref.read(playerAProvider)) ? ActiveSlot.a : ActiveSlot.b;
+    final nextSlot = _ref.read(activeSlotProvider);
+    final parkedSlot = ActiveSlot.values
+        .firstWhere((s) => identical(_ref.read(slotPlayerProvider(s)), parked));
+    final staleSlot = _ref.read(preloadSlotProvider);
     // 止めた状態で戻ったら前曲も止めたまま
     final wasPlaying = nextPlayer.state.playing;
     _clearParked();
     _cancelTempoRamp();
+    // その次の曲への交差の予約は成り立たない（呼び出し側が次曲で予約し直す）
+    disarmCrossfade();
     unawaited(nextPlayer.pause());
     _ref.read(activeSlotProvider.notifier).state = parkedSlot;
+    _setPreloadSlot(nextSlot);
+    if (staleSlot != parkedSlot && staleSlot != nextSlot) {
+      try {
+        _ref.read(slotPlayerProvider(staleSlot)).stop();
+      } catch (e) {
+        debugPrint('[PlaylistEngine] その次の曲の停止に失敗: $e');
+      }
+    }
     // シークが済んでから鳴らす。パークした位置は切替点（曲の終端の 500ms 手前のことが多い）
     // なので、位置が動く前に鳴らすと LoopNotifier が曲終了とみなして、すぐ次曲へ戻してしまう
     unawaited(parked.seek(oldPos).then((_) {
@@ -1636,7 +1561,6 @@ class MixPair {
     required this.start,
     required this.cut,
     required this.recipe,
-    required this.prepLine,
   });
 
   /// 出る曲が載っているスロット
@@ -1658,26 +1582,8 @@ class MixPair {
   /// つなぎ方（曲線・低音の印・おまかせの説明）
   final TransitionRecipe recipe;
 
-  /// 準備線（出る曲の時計）。ここから右は「この組を抜けた」扱いで、
-  /// 前曲を手放してその次の曲を先読みする。null なら線は無い（その次の曲が無い）
-  final Duration? prepLine;
-
   /// 入る曲の時計 → 出る曲の時計
   Duration toOutClock(Duration inPos) => start + (inPos - inStart);
-
-  /// 準備線だけ差し替えた組（パーク中に計算し直したとき）
-  MixPair withPrepLine(Duration? line) => MixPair(
-        outSlot: outSlot,
-        outItem: outItem,
-        outDuration: outDuration,
-        next: next,
-        inDuration: inDuration,
-        inStart: inStart,
-        start: start,
-        cut: cut,
-        recipe: recipe,
-        prepLine: line,
-      );
 
   /// 出る曲の時計 → 入る曲の時計
   Duration toInClock(Duration t) => inStart + (t - start);
