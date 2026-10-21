@@ -13,6 +13,9 @@ import '../glass_panel.dart';
 
 enum _DragTarget { position, pointA, pointB }
 
+/// シークバーに塗る交差の範囲（その曲の時計）
+typedef MixRange = ({Duration start, Duration end});
+
 class LoopSeekbar extends ConsumerStatefulWidget {
   final bool compact;
 
@@ -26,10 +29,10 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   final bool allowMarkerDrag;
   final VoidCallback? onRetryWaveform;
 
-  /// プレイリストの重ね表示に切り替わる位置（この曲の時計、bar モード）。
-  /// 曲の頭側（前の曲との重ね表示の終わり）と終わり側（次の曲との重ね表示の始まり）の
-  /// 2 本まで。細い線だけで札は付けない
-  final List<Duration> mixLines;
+  /// プレイリストの交差の範囲（この曲の時計、bar モード）。紫で塗る。
+  /// 曲の頭側（前の曲との交差）と終わり側（次の曲との交差）の 2 つまで。
+  /// 以前は重ね表示の窓の端を線で印していたが、A/B の線と並んで線だらけになった
+  final List<MixRange> mixRanges;
 
   /// バーの上に重ねて置くもの（プレイリストの重ね表示の帯、bar モード）。
   /// 細いバーと時刻行はそのままの位置に残り、その上に足す
@@ -47,7 +50,7 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.onToggleCompact,
     this.allowMarkerDrag = true,
     this.onRetryWaveform,
-    this.mixLines = const [],
+    this.mixRanges = const [],
     this.above,
     this.zoom,
   });
@@ -653,7 +656,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                                 pointB: loop.pointB,
                                 loopEnabled: loop.enabled,
                                 brightness: brightness,
-                                mixLines: widget.mixLines,
+                                mixRanges: widget.mixRanges,
                               )
                             : _WaveformSeekbarPainter(
                                 position: position,
@@ -665,7 +668,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                                 brightness: brightness,
                                 viewStart: 0,
                                 viewEnd: 1,
-                                mixLines: widget.mixLines,
+                                mixRanges: widget.mixRanges,
                               ),
                       ),
                       if (!compact)
@@ -815,7 +818,7 @@ class _CompactSeekbarPainter extends CustomPainter {
   final Duration? pointB;
   final bool loopEnabled;
   final Brightness brightness;
-  final List<Duration> mixLines;
+  final List<MixRange> mixRanges;
 
   _CompactSeekbarPainter({
     required this.position,
@@ -824,7 +827,7 @@ class _CompactSeekbarPainter extends CustomPainter {
     this.pointB,
     required this.loopEnabled,
     required this.brightness,
-    this.mixLines = const [],
+    this.mixRanges = const [],
   });
 
   @override
@@ -868,11 +871,15 @@ class _CompactSeekbarPainter extends CustomPainter {
       );
     }
 
-    // 重ね表示に切り替わる位置
-    for (final t in mixLines) {
-      final mx = toX(t);
-      drawPointLine(
-          canvas, Offset(mx, cy - 6), Offset(mx, cy + 6), AppTheme.mixLineColor);
+    // 交差の範囲（バーより少し太く塗る）
+    for (final r in mixRanges) {
+      final x0 = toX(r.start);
+      final x1 = toX(r.end);
+      if (x1 <= x0) continue;
+      canvas.drawRRect(
+        RRect.fromLTRBR(x0, cy - 4, x1, cy + 4, const Radius.circular(2)),
+        Paint()..color = AppTheme.mixLineColor.withValues(alpha: 0.6),
+      );
     }
 
     // A / B marker
@@ -898,7 +905,7 @@ class _CompactSeekbarPainter extends CustomPainter {
       pointA != old.pointA ||
       pointB != old.pointB ||
       loopEnabled != old.loopEnabled ||
-      !listEquals(mixLines, old.mixLines);
+      !listEquals(mixRanges, old.mixRanges);
 }
 
 // =============================================================================
@@ -915,7 +922,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
   final Brightness brightness;
   final double viewStart;
   final double viewEnd;
-  final List<Duration> mixLines;
+  final List<MixRange> mixRanges;
 
   _WaveformSeekbarPainter({
     required this.position,
@@ -927,7 +934,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
     required this.brightness,
     required this.viewStart,
     required this.viewEnd,
-    this.mixLines = const [],
+    this.mixRanges = const [],
   });
 
   @override
@@ -988,6 +995,17 @@ class _WaveformSeekbarPainter extends CustomPainter {
       }
     }
 
+    // 交差の範囲（薄く塗る。線は引かない）
+    for (final r in mixRanges) {
+      final x0 = toX(r.start).clamp(0.0, size.width);
+      final x1 = toX(r.end).clamp(0.0, size.width);
+      if (x1 <= x0) continue;
+      canvas.drawRect(
+        Rect.fromLTRB(x0, 0, x1, size.height),
+        Paint()..color = AppTheme.mixLineColor.withValues(alpha: 0.22),
+      );
+    }
+
     // Position line
     if (posX >= 0 && posX <= size.width) {
       canvas.drawLine(
@@ -1019,14 +1037,6 @@ class _WaveformSeekbarPainter extends CustomPainter {
       }
     }
 
-    // 重ね表示に切り替わる位置（線だけ。札は付けない）
-    for (final t in mixLines) {
-      final mx = toX(t);
-      if (mx >= 0 && mx <= size.width) {
-        drawPointLine(canvas, Offset(mx, 0), Offset(mx, size.height),
-            AppTheme.mixLineColor);
-      }
-    }
   }
 
   void _drawWaveform(
@@ -1172,7 +1182,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
       old.waveform != waveform ||
       old.viewStart != viewStart ||
       old.viewEnd != viewEnd ||
-      !listEquals(old.mixLines, mixLines);
+      !listEquals(old.mixRanges, mixRanges);
 }
 
 // =============================================================================

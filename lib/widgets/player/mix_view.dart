@@ -111,8 +111,9 @@ class MixView extends StatelessWidget {
     Duration(seconds: 64),
   ];
 
-  /// 最初の余白（切り替え付近を何度も聴けるよう広めに取る）
-  static const defaultMargin = Duration(seconds: 16);
+  /// 最初の余白。一番狭い（交差だけ）から 1 段広げたところ。
+  /// 16 秒では広すぎた（ユーザー: 交差だけの次の段がちょうどいい）
+  static const defaultMargin = Duration(seconds: 4);
 
   /// 窓の幅の下限（交差が短く余白も無いときに、点にならないように）
   static const minSpanFloor = Duration(seconds: 2);
@@ -330,7 +331,7 @@ class _MixPainter extends CustomPainter {
     // 交差区間の背景
     canvas.drawRect(
       Rect.fromLTRB(max(0, startX), 0, min(w, cutX), h),
-      Paint()..color = Colors.white.withValues(alpha: 0.05),
+      Paint()..color = AppTheme.mixLineColor.withValues(alpha: 0.12),
     );
     // 段の境界
     canvas.drawLine(

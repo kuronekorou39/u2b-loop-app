@@ -16,8 +16,8 @@ import 'mix_view.dart';
 /// 重ね表示は [PlaylistEngine] の組（[MixPair]: 1 曲目と 2 曲目をつないだ 1 本の時間軸）を
 /// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
 /// 窓（交差の前後に [_margin] の余白）の中かどうかだけで決める。
-/// 外ではふつうのシークバーに、窓の端（重ね表示に切り替わる位置）を線で印す:
-/// 曲の頭側に前の曲との重ね表示の終わり、終わり側に次の曲との重ね表示の始まり。
+/// 外ではふつうのシークバーに、交差の範囲を紫で塗る:
+/// 曲の頭側に前の曲との交差、終わり側に次の曲との交差。
 /// 重ね表示の間も細いバーで窓の外（1 曲目の前半など）へ戻れる
 class PlaylistSeekArea extends ConsumerStatefulWidget {
   const PlaylistSeekArea({
@@ -105,35 +105,25 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     // 切り替わった直後、作り直されるまで前のプレイヤーの値を返すので、それを入る曲の
     // 時計として換算すると窓の外に飛び、一瞬ふつうのシークバーに戻ってしまう
     final position = ref.read(_playerOf(slot)).state.position;
-    final lines = <Duration>[];
+    final ranges = [
+      for (final pair in pairs) _rangeOf(pair, swapped: slot != pair.outSlot),
+    ];
     for (final pair in pairs) {
       final window = _windowOf(pair);
       final swapped = slot != pair.outSlot;
       final now =
           _displayPosition(pair, swapped ? pair.toOutClock(position) : position);
       if (window.contains(now)) {
-        return _mix(pair, now, window,
-            swapped: swapped,
-            lines: [...lines, ..._linesOf(pair, window, swapped: swapped)]);
+        return _mix(pair, now, window, swapped: swapped, ranges: ranges);
       }
-      lines.addAll(_linesOf(pair, window, swapped: swapped));
     }
-    return _seekbar(mixLines: lines);
+    return _seekbar(mixRanges: ranges);
   }
 
-  /// 窓の両端を鳴っている曲の時計に直し、曲の中に入るものだけ（線の位置）。
-  /// 切り替わる前はふつう窓の始まりだけ、後は窓の終わりだけが曲の中にある
-  static List<Duration> _linesOf(MixPair pair, MixWindow window,
-      {required bool swapped}) {
-    final duration = swapped ? pair.inDuration : pair.outDuration;
-    return [
-      for (final edge in [window.start, window.end])
-        if (swapped ? pair.toInClock(edge) : edge case final t
-            when t > Duration.zero &&
-                (duration <= Duration.zero || t < duration))
-          t,
-    ];
-  }
+  /// 交差（[MixPair.start]〜[MixPair.cut]）を鳴っている曲の時計に直したもの
+  static MixRange _rangeOf(MixPair pair, {required bool swapped}) => swapped
+      ? (start: pair.toInClock(pair.start), end: pair.toInClock(pair.cut))
+      : (start: pair.start, end: pair.cut);
 
   MixWindow _windowOf(MixPair pair) => MixView.windowAround(
         start: pair.start,
@@ -156,7 +146,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       slot == ActiveSlot.a ? playerAProvider : playerBProvider;
 
   Widget _seekbar({
-    List<Duration> mixLines = const [],
+    List<MixRange> mixRanges = const [],
     Widget? above,
     ({VoidCallback? wider, VoidCallback? narrower})? zoom,
   }) =>
@@ -168,13 +158,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         onToggleCompact: widget.onToggleCompact,
         allowMarkerDrag: false,
         onRetryWaveform: widget.onRetryWaveform,
-        mixLines: mixLines,
+        mixRanges: mixRanges,
         above: above,
         zoom: zoom,
       );
 
   Widget _mix(MixPair pair, Duration now, MixWindow window,
-      {required bool swapped, required List<Duration> lines}) {
+      {required bool swapped, required List<MixRange> ranges}) {
     final current = ref.watch(waveformDataProvider);
     final outItem = pair.outItem;
     final inItem = pair.next.item;
@@ -192,8 +182,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       narrower:
           narrower == null ? null : () => setState(() => _margin = narrower),
     );
-    // 閉じているときは帯を出さない（細いバーの紫の線で範囲は分かる）
-    if (widget.compact) return _seekbar(mixLines: lines, zoom: zoom);
+    // 閉じているときは帯を出さない（細いバーの紫の塗りで範囲は分かる）
+    if (widget.compact) return _seekbar(mixRanges: ranges, zoom: zoom);
     final band = MixView(
       outWaveform: outWaveform,
       outDuration: pair.outDuration,
@@ -213,7 +203,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       bassSwap: recipe.bassSwap,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
-    return _seekbar(mixLines: lines, above: band, zoom: zoom);
+    return _seekbar(mixRanges: ranges, above: band, zoom: zoom);
   }
 
   /// ミックスビュー上のシーク。[t] は出る曲の時計。

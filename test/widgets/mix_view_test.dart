@@ -13,9 +13,15 @@ void main() {
       cut: cut,
       margin: MixView.defaultMargin,
       timelineEnd: timelineEnd);
+  // 帯のテスト用の広い窓（84s〜126s）
+  final wide = MixView.windowAround(
+      start: start,
+      cut: cut,
+      margin: const Duration(seconds: 16),
+      timelineEnd: timelineEnd);
 
-  test('最初の窓は start − 16s 〜 cut + 16s', () {
-    expect(initial, const MixWindow(Duration(seconds: 84), Duration(seconds: 126)));
+  test('最初の窓は start − 4s 〜 cut + 4s', () {
+    expect(initial, const MixWindow(Duration(seconds: 96), Duration(seconds: 114)));
   });
 
   test('余白 0 なら交差そのもの。短い交差は 2s まで両側に広げる', () {
@@ -40,15 +46,15 @@ void main() {
       MixView.windowAround(
           start: const Duration(seconds: 5),
           cut: const Duration(seconds: 295),
-          margin: MixView.defaultMargin,
+          margin: const Duration(seconds: 16),
           timelineEnd: timelineEnd),
       const MixWindow(Duration.zero, timelineEnd),
     );
   });
 
   test('余白の段: 「＋」で 1 段狭く、「−」で 1 段広く。端では null', () {
-    expect(MixView.narrower(MixView.defaultMargin), const Duration(seconds: 8));
-    expect(MixView.wider(MixView.defaultMargin), const Duration(seconds: 32));
+    expect(MixView.narrower(MixView.defaultMargin), Duration.zero);
+    expect(MixView.wider(MixView.defaultMargin), const Duration(seconds: 8));
     expect(MixView.narrower(Duration.zero), isNull);
     expect(MixView.wider(MixView.margins.last), isNull);
     // 段に無い値は、それ以上で最も近い段から数える
@@ -56,11 +62,11 @@ void main() {
   });
 
   test('timeAtX は窓の左端から右端まで。外に出た分は端に丸める', () {
-    expect(MixView.timeAtX(0, 260, window: initial), const Duration(seconds: 84));
-    expect(MixView.timeAtX(260, 260, window: initial), const Duration(seconds: 126));
+    expect(MixView.timeAtX(0, 260, window: initial), const Duration(seconds: 96));
+    expect(MixView.timeAtX(260, 260, window: initial), const Duration(seconds: 114));
     expect(MixView.timeAtX(130, 260, window: initial), const Duration(seconds: 105));
-    expect(MixView.timeAtX(-50, 260, window: initial), const Duration(seconds: 84));
-    expect(MixView.timeAtX(999, 260, window: initial), const Duration(seconds: 126));
+    expect(MixView.timeAtX(-50, 260, window: initial), const Duration(seconds: 96));
+    expect(MixView.timeAtX(999, 260, window: initial), const Duration(seconds: 114));
   });
 
   Future<List<Duration>> pump(
@@ -89,7 +95,7 @@ void main() {
                 cut: cut,
                 now: now,
                 swapped: false,
-                window: initial,
+                window: wide,
                 prepLine: prepLine,
                 height: 80,
                 onSeek: seekable ? seeks.add : null,
