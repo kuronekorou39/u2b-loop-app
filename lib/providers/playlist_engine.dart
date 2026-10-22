@@ -1301,6 +1301,12 @@ class _CrossfadeSession {
         });
       }
     }
+    // インパクト単独も切替点に合わせて予定する。以前は実際の切り替え（スワップ）で鳴らして
+    // いたが、スワップは曲の終わりの検出や 100ms ごとの監視を待つので遅れ、前の曲が
+    // 終わってから鳴っていた
+    if (effect.impactAtCut && lead == null && s != null) {
+      _after(toCut - TransitionSfx.startLatencyMs.round(), _fireImpact);
+    }
     switch (effect) {
       case TransitionEffect.brake:
         final durMs =
@@ -1379,9 +1385,17 @@ class _CrossfadeSession {
   /// プレイリストで続けて鳴る
   void onCut() {
     _cancelTricks();
-    if (effect.impactAtCut && effect.leadInSfx == null) {
-      unawaited(sfx?.start(volume: sfxVolume));
-    }
+    // 予定より早く切り替わった（重ね表示で切替点より後を押した・トリックで切った）ときだけ、ここで鳴らす
+    if (effect.impactAtCut && effect.leadInSfx == null) _fireImpact();
+  }
+
+  bool _impactFired = false;
+
+  /// インパクト単独を 1 回だけ鳴らす
+  void _fireImpact() {
+    if (_impactFired) return;
+    _impactFired = true;
+    unawaited(sfx?.start(volume: sfxVolume));
   }
 
   /// ベーススワップの開始・終了位置（出る曲の媒体ミリ秒）。開始は拍の頭に寄せてある。

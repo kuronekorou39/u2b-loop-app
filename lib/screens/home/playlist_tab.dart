@@ -10,7 +10,7 @@ import '../../core/utils/id_generator.dart';
 import '../../models/loop_item.dart';
 import '../../models/playlist.dart';
 import '../../providers/data_provider.dart';
-import '../../widgets/selection_thumb.dart';
+import '../../widgets/selection_mark.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_controls.dart';
 import '../../widgets/glass_surface.dart';
@@ -120,27 +120,20 @@ class PlaylistTab extends ConsumerWidget {
           final selected = selectedIds.contains(pl.id);
           return ListTile(
             selected: selected,
-            // 選択の印はサムネに重ねる（行に差し込むと名前がずれる）
             leading: ClipRRect(
               borderRadius: AppRadius.borderMd,
               child: SizedBox(
                 width: 56,
                 height: 56,
-                child: SelectionThumb(
-                  selecting: selecting,
-                  selected: selected,
-                  child: _Thumb(item: thumbOf(pl)),
-                ),
+                child: _Thumb(item: thumbOf(pl)),
               ),
             ),
             title: Text(pl.name),
             subtitle: Text('$count 曲', style: textTheme.bodySmall),
-            // 選択中は隠すだけで場所は残す（名前の幅が変わらないように）
-            trailing: Visibility(
-                visible: !selecting,
-                maintainSize: true,
-                maintainAnimation: true,
-                maintainState: true,
+            // 選択の印は右端の再生・メニューの場所に（隠すだけで場所は残す）
+            trailing: SelectionTrailing(
+                selecting: selecting,
+                selected: selected,
                 child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

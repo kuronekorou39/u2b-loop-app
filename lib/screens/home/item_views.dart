@@ -4,7 +4,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_utils.dart';
 import '../../models/loop_item.dart';
 import '../../models/tag.dart';
-import '../../widgets/selection_thumb.dart';
+import '../../widgets/selection_mark.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/item_thumbnail.dart';
 import '../../widgets/tag_chip.dart';
@@ -260,16 +260,12 @@ class ItemCollectionView extends StatelessWidget {
     final selected = selectedIds.contains(item.id);
     return ListTile(
       selected: selected,
-      // 選択の印はサムネに重ねる（行に差し込むと曲名がずれる）
       leading: ClipRRect(
             borderRadius: AppRadius.borderXs,
             child: SizedBox(
               width: 64,
               height: 36,
-              child: SelectionThumb(
-                selecting: selecting,
-                selected: selected,
-                child: Stack(
+              child: Stack(
                 fit: StackFit.expand,
                 children: [
                   ItemThumbnail(item: item, heroTag: 'thumb_${item.id}'),
@@ -307,7 +303,6 @@ class ItemCollectionView extends StatelessWidget {
                     ),
                 ],
               ),
-              ),
             ),
           ),
       title: Text(
@@ -319,12 +314,10 @@ class ItemCollectionView extends StatelessWidget {
             : textTheme.bodyLarge,
       ),
       subtitle: _buildSubtitle(context, item),
-      // 選択中は隠すだけで場所は残す（曲名の幅が変わらないように）
-      trailing: Visibility(
-        visible: !selecting,
-        maintainSize: true,
-        maintainAnimation: true,
-        maintainState: true,
+      // 選択の印は右端のメニューの場所に（メニューは隠すだけで場所は残す）
+      trailing: SelectionTrailing(
+        selecting: selecting,
+        selected: selected,
         child: PopupMenuButton<String>(
           tooltip: 'メニュー',
           onSelected: (v) {

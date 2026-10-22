@@ -10,6 +10,7 @@ import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_surface.dart';
+import '../../widgets/selection_mark.dart';
 import '../../widgets/tag_chip.dart';
 import 'home_parts.dart';
 
@@ -50,9 +51,6 @@ class TagManagerTab extends ConsumerWidget {
   final ValueChanged<Tag> onTagTap;
 
   final TagViewMode viewMode;
-
-  /// リストの先頭（色の丸 / チェック）の幅。選択中も同じ
-  static const _leadWidth = 40.0;
   final bool selecting;
   final Set<String> selectedIds;
   final ValueChanged<Tag>? onToggleSelect;
@@ -216,30 +214,17 @@ class TagManagerTab extends ConsumerWidget {
           return ListTile(
             key: ValueKey(tag.id),
             selected: selected,
-            // 選択中に入っても行の中身が動かないよう、先頭は同じ幅の箱に
-            leading: SizedBox(
-              width: _leadWidth,
-              child: Center(
-                child: selecting
-                    ? Checkbox(
-                        value: selected,
-                        onChanged: (_) => onToggleSelect?.call(tag),
-                        visualDensity: VisualDensity.compact,
-                      )
-                    : _TagDot(tag: tag),
-              ),
-            ),
+            // 色の丸は選択中も出したまま（選択の印は右端）
+            leading: _TagDot(tag: tag),
             title: Text(tag.name, style: textTheme.bodyLarge),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('${countOf(tag)} 曲', style: textTheme.bodySmall),
-                // 選択中は隠すだけで場所は残す（曲数の位置がずれないように）
-                Visibility(
-                  visible: !selecting,
-                  maintainSize: true,
-                  maintainAnimation: true,
-                  maintainState: true,
+                // 選択の印はメニューと ≡ の場所に（隠すだけで場所は残す）
+                SelectionTrailing(
+                  selecting: selecting,
+                  selected: selected,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
