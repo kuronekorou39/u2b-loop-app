@@ -63,7 +63,19 @@ class MixView extends StatelessWidget {
     this.onSeek,
     this.outBeats,
     this.inBeats,
+    this.inRatio = 1,
+    this.beatError,
   });
+
+  /// 出る曲の時計 1ms あたり入る曲の時計が進む量（[MixPair.inRatio]）
+  final double inRatio;
+
+  /// 交差中に測った拍のずれ（実時間 ms）。右上に数字で出す。null なら出さない
+  final double? beatError;
+
+  /// この範囲のずれなら「合っている」色（ms）
+  static const beatErrorGoodMs = 15.0;
+  static const beatErrorFairMs = 40.0;
 
   /// それぞれの曲の拍の線（格子と、小節頭の代わりの基準）。null なら引かない
   final BeatLineSource? outBeats;
@@ -207,6 +219,7 @@ class MixView extends StatelessWidget {
                       bassSwap: bassSwap,
                       outBeats: outBeats,
                       inBeats: inBeats,
+                      inRatio: inRatio,
                     ),
                   ),
                 ),
@@ -230,11 +243,46 @@ class MixView extends StatelessWidget {
                     style: laneLabel,
                   ),
                 ),
+                if (beatError case final err?)
+                  Positioned(
+                    top: 2,
+                    right: 4,
+                    child: _BeatErrorBadge(errorMs: err, style: laneLabel),
+                  ),
               ],
             ),
           );
         },
       ),
+    );
+  }
+}
+
+/// 実際に鳴っている 2 曲の拍のずれ（交差中に測ったもの）。線の見た目ではなく音のずれ
+class _BeatErrorBadge extends StatelessWidget {
+  const _BeatErrorBadge({required this.errorMs, required this.style});
+
+  final double errorMs;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final abs = errorMs.abs();
+    final color = abs <= MixView.beatErrorGoodMs
+        ? AppTheme.accentGreen
+        : abs <= MixView.beatErrorFairMs
+            ? Colors.amber
+            : AppTheme.accentRed;
+    final sign = errorMs >= 0 ? '+' : '−';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text('拍ずれ $sign${abs.round()}ms',
+          style: style.copyWith(
+              color: color, fontFeatures: const [FontFeature.tabularFigures()])),
     );
   }
 }
@@ -291,7 +339,10 @@ class _MixPainter extends CustomPainter {
     required this.bassSwap,
     required this.outBeats,
     required this.inBeats,
+    required this.inRatio,
   });
+
+  final double inRatio;
 
   final bool bassSwap;
   final BeatLineSource? outBeats;
@@ -357,10 +408,10 @@ class _MixPainter extends CustomPainter {
       toT: toT,
       waveform: inWaveform,
       durationMs: inDuration.inMilliseconds,
-      // 次曲は交差開始で inStart から鳴り始める
+      // 次曲は交差開始で inStart から鳴り始める（速度の比 inRatio で進む）
       toTrackMs: (t) => t < start.inMilliseconds
           ? null
-          : inStart.inMilliseconds + (t - start.inMilliseconds),
+          : inStart.inMilliseconds + (t - start.inMilliseconds) * inRatio,
       playedUntilMs: nowMs,
       color: AppTheme.pointBColor,
     );
@@ -384,15 +435,17 @@ class _MixPainter extends CustomPainter {
     }
     final inGrid = inBeats;
     if (inGrid != null) {
-      // 次曲の時刻 = inStart + (旧曲の時計 − start)
-      final shift = inStart.inMilliseconds - start.inMilliseconds.toDouble();
+      // 次曲の時刻 = inStart + (旧曲の時計 − start) × inRatio
+      final s0 = start.inMilliseconds.toDouble();
+      final i0 = inStart.inMilliseconds.toDouble();
+      double toIn(double t) => i0 + (t - s0) * inRatio;
       BeatLines.paint(
         canvas,
         grid: inGrid.grid,
         anchorMs: inGrid.anchorMs,
-        startMs: max(winStart, start.inMilliseconds.toDouble()) + shift,
-        endMs: winEnd + shift,
-        toX: (ms) => toX(ms - shift),
+        startMs: toIn(max(winStart, s0)),
+        endMs: toIn(winEnd),
+        toX: (ms) => toX(s0 + (ms - i0) / inRatio),
         top: laneH,
         bottom: h,
         color: Colors.white,
@@ -534,6 +587,7 @@ class _MixPainter extends CustomPainter {
       curve != old.curve ||
       bassSwap != old.bassSwap ||
       outBeats != old.outBeats ||
+      inRatio != old.inRatio ||
       inBeats != old.inBeats ||
       start != old.start ||
       cut != old.cut ||

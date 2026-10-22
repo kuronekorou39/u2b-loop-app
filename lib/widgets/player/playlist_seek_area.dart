@@ -207,6 +207,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       bassSwap: recipe.bassSwap,
       outBeats: showBeats ? outItem?.beatLines : null,
       inBeats: showBeats ? inItem.beatLines : null,
+      inRatio: pair.inRatio,
+      // 交差の間だけ測れる（切り替わった後・交差の前は出さない）
+      beatError: showBeats ? ref.watch(beatPhaseErrorProvider) : null,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
     return _seekbar(mixRanges: ranges, above: band, zoom: zoom);

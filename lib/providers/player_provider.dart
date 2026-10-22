@@ -366,7 +366,8 @@ class BeatMatchNotifier extends StateNotifier<bool> {
   }
 }
 
-/// 波形に拍の線を出すか（既定オン）。小節頭（1 拍目）は濃く。拍合わせが合っているかを目で確かめる用
+/// 重ね表示（交差の 2 段の波形）に拍の線と拍のずれを出すか（既定オン）。1 拍目は濃く。
+/// 単体の波形には出さない（細くて見えない・v1.108.1）
 final showBeatLinesProvider = StateNotifierProvider<ShowBeatLinesNotifier, bool>(
     (ref) => ShowBeatLinesNotifier());
 

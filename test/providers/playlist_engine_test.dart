@@ -107,6 +107,26 @@ void main() {
       ),
     );
 
+    test('入る曲の速度が違う（テンポ合わせ）ときは、その比で進む', () {
+      final fast = MixPair(
+        outSlot: pair.outSlot,
+        outItem: pair.outItem,
+        outDuration: pair.outDuration,
+        next: pair.next,
+        inDuration: pair.inDuration,
+        inStart: pair.inStart,
+        start: pair.start,
+        cut: pair.cut,
+        recipe: pair.recipe,
+        inRatio: 1.05,
+      );
+      // 出る曲で 8 秒進むと、入る曲は 8.4 秒進む
+      expect(fast.toInClock(const Duration(seconds: 178)),
+          const Duration(milliseconds: 13400));
+      expect(fast.toOutClock(const Duration(milliseconds: 13400)),
+          const Duration(seconds: 178));
+    });
+
     test('入る曲の時計と出る曲の時計を行き来できる', () {
       // 入る曲は交差開始（出る曲 170s）で 5s から鳴り始める
       expect(pair.toOutClock(const Duration(seconds: 5)),

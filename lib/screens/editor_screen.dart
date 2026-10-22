@@ -113,8 +113,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       ref.read(playlistEngineProvider).endPlaylist();
       ref.read(videoSourceProvider.notifier).state = null;
       ref.read(loopProvider.notifier).reset();
-      // 波形の拍の線はこの曲のもの（再生回数は数えないので setCurrentItem は使わない）
-      ref.read(seekbarItemIdProvider.notifier).state = _item.id;
       ref.read(waveformDataProvider.notifier).state = null;
       ref.read(waveformLoadingProvider.notifier).state = false;
       ref.read(waveformErrorProvider.notifier).state = null;

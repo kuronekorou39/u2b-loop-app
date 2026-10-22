@@ -4,14 +4,12 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/audio/beat_grid.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/loop_state.dart';
 import '../../core/utils/time_utils.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../glass_panel.dart';
-import 'beat_lines.dart';
 
 enum _DragTarget { position, pointA, pointB }
 
@@ -74,9 +72,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
 
   // Zoom / pan
   double _zoomLevel = 1.0;
-
-  /// 波形に引く拍の線（build ごとに読み直す）
-  BeatLineSource? _beats;
   double _panOffset = 0.5;
   bool _autoFollow = true;
   double _lastDragX = 0;
@@ -151,7 +146,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final source = ref.watch(videoSourceProvider);
     final hasSource = source != null;
     final waveform = ref.watch(waveformDataProvider);
-    _beats = ref.watch(seekbarBeatsProvider);
     final waveformLoading = ref.watch(waveformLoadingProvider);
     final waveformError = ref.watch(waveformErrorProvider);
 
@@ -362,7 +356,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             brightness: Theme.of(context).brightness,
                             viewStart: viewStart,
                             viewEnd: viewEnd,
-                            beats: _beats,
                           ),
                         ),
                         ..._waveformStatusOverlays(
@@ -659,7 +652,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                               viewStart: 0,
                               viewEnd: 1,
                               mixRanges: widget.mixRanges,
-                              beats: _beats,
                             )
                           : _CompactSeekbarPainter(
                               position: position,
@@ -952,11 +944,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
     required this.viewStart,
     required this.viewEnd,
     this.mixRanges = const [],
-    this.beats,
   });
-
-  /// 拍の線（null なら引かない）
-  final BeatLineSource? beats;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -993,23 +981,6 @@ class _WaveformSeekbarPainter extends CustomPainter {
       _drawWaveform(canvas, size, posX, isDark);
     } else {
       _drawMinimalTrack(canvas, size, posX, isDark);
-    }
-
-    // 拍の線（1 拍目は濃く）。拡大すると何拍目かの数字も出る
-    final beats = this.beats;
-    if (beats != null) {
-      BeatLines.paint(
-        canvas,
-        grid: beats.grid,
-        anchorMs: beats.anchorMs,
-        startMs: viewStart * totalMs,
-        endMs: viewEnd * totalMs,
-        toX: (ms) => ((ms / totalMs - viewStart) / vpWidth) * size.width,
-        top: 0,
-        bottom: size.height,
-        color: isDark ? Colors.white : Colors.black,
-        numbers: true,
-      );
     }
 
     // AB region highlight
@@ -1220,7 +1191,6 @@ class _WaveformSeekbarPainter extends CustomPainter {
       old.waveform != waveform ||
       old.viewStart != viewStart ||
       old.viewEnd != viewEnd ||
-      old.beats != beats ||
       !listEquals(old.mixRanges, mixRanges);
 }
 

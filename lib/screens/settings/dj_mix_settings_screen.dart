@@ -228,7 +228,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
                   ? (v) => ref.read(beatMatchProvider.notifier).value = v
                   : null,
             ),
-            // 波形に拍の線（1 拍目は濃く）。拍合わせが合っているかを目で確かめる
+            // 重ね表示に拍の線（1 拍目は濃く）と拍のずれ。拍合わせが合っているかを目で確かめる
             SettingsSwitchRow(
               icon: Icons.view_week_outlined,
               title: '拍の線を表示',

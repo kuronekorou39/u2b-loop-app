@@ -39,6 +39,10 @@ typedef CrossfadeProgress = ({double progress, LoopItem next});
 final crossfadeProgressProvider =
     StateProvider<CrossfadeProgress?>((ref) => null);
 
+/// 交差中に測った、2 曲の拍の頭のずれ（実時間 ms、平滑後）。正なら入る曲が遅れている。
+/// 拍合わせをしていない・測れていないときは null。重ね表示に数字で出す
+final beatPhaseErrorProvider = StateProvider<double?>((ref) => null);
+
 /// 次トラックへ進めるかの判定結果。
 enum AdvanceReadiness {
   /// 同一アイテムの別区間 → シークだけで移れる（ロード不要）
@@ -329,6 +333,7 @@ class PlaylistEngine {
     _crossfadeMonitor?.cancel();
     _crossfadeMonitor = null;
     _ref.read(crossfadeProgressProvider.notifier).state = null;
+    _ref.read(beatPhaseErrorProvider.notifier).state = null;
     final tapPair = _tapSwapPair;
     _tapSwapPair = null;
 
@@ -349,6 +354,7 @@ class PlaylistEngine {
                 start: session.start,
                 cut: session.cut,
                 recipe: session.recipe,
+                inRatio: session.inRatio,
               )
             : tapPair;
     // その前にパークしていた曲（2 つ前の曲）はここで手放す。そのスロットが次の先読み先になる
@@ -428,9 +434,13 @@ class PlaylistEngine {
   MixPair? plannedPair() {
     final plan = plannedCrossfade();
     if (plan == null) return null;
-    final inStart = _crossfade?.inStart ??
+    final session = _crossfade;
+    final inStart = session?.inStart ??
         plannedInStart(plan.next,
             outStart: plan.start, inRate: _preloadInRate(plan.next));
+    final outRate = activePlayer.state.rate;
+    final inRatio = session?.inRatio ??
+        (outRate > 0 ? _preloadInRate(plan.next) / outRate : 1.0);
     return _pairAtSwap(
       outSlot: _ref.read(activeSlotProvider),
       outDuration: activePlayer.state.duration,
@@ -440,6 +450,7 @@ class PlaylistEngine {
       start: plan.start,
       cut: plan.cut,
       recipe: plan.recipe,
+      inRatio: inRatio,
     );
   }
 
@@ -452,6 +463,7 @@ class PlaylistEngine {
     required Duration start,
     required Duration cut,
     required TransitionRecipe recipe,
+    required double inRatio,
   }) =>
       MixPair(
         outSlot: outSlot,
@@ -463,6 +475,7 @@ class PlaylistEngine {
         start: start,
         cut: cut,
         recipe: recipe,
+        inRatio: inRatio,
       );
 
   /// 次の曲を読み込むスロットを決める。C は初めて使う前に映像の出力も作っておく
@@ -903,7 +916,8 @@ class PlaylistEngine {
         return;
       }
       final progress = session.step(pos);
-      session.nudgeBeats(pos);
+      _ref.read(beatPhaseErrorProvider.notifier).state =
+          session.nudgeBeats(pos);
       _ref.read(crossfadeProgressProvider.notifier).state =
           (progress: progress, next: next.item);
       // 曲末の無音を飛ばす場合、切断点で自分から遷移を起こす（B点到達と同じ経路）
@@ -1002,7 +1016,8 @@ class PlaylistEngine {
       // 交差の途中から始めるとき（重ね表示で交差の中へ戻った・飛んだ）は、その分だけ進めた位置に置く
       final offset = activePlayer.state.position - start;
       final midway = offset >= _resumeSlack;
-      final target = midway ? inStart + offset : inStart;
+      // 入る曲は速度が違う（テンポ合わせ）ので、進めた量もその比で
+      final target = midway ? inStart + offset * session.inRatio : inStart;
       final slack = beat != null ? _seekSlack : _resumeSlack;
       if ((inPlayer.state.position - target).abs() >= slack) {
         await inPlayer.seek(target);
@@ -1043,6 +1058,7 @@ class PlaylistEngine {
     if (session == null) return;
     _crossfade = null;
     _ref.read(crossfadeProgressProvider.notifier).state = null;
+    _ref.read(beatPhaseErrorProvider.notifier).state = null;
     session.rollback();
   }
 
@@ -1392,10 +1408,14 @@ class _CrossfadeSession {
   }
 
   /// 出る曲を交差の中の [outPos] へ動かしたとき、入る曲も同じ時間軸の位置に合わせる。
+  /// 出る曲の媒体時間 1ms あたり、入る曲の媒体時間が進む量（テンポ合わせで速度が違う）
+  double get inRatio => outRate > 0 ? inRate / outRate : 1;
+
   /// 拍合わせは測り直す（シークが済むまでの位置は信用できないので少し待つ）
   void resync(Duration outPos) {
     final offset = outPos - start;
-    unawaited(inPlayer.seek(offset > Duration.zero ? inStart + offset : inStart));
+    unawaited(inPlayer.seek(
+        offset > Duration.zero ? inStart + offset * inRatio : inStart));
     _measuring = false;
     _nudgeTicks = 0;
     _errSmooth = 0;
@@ -1409,16 +1429,18 @@ class _CrossfadeSession {
   }
 
   /// 交差中の拍合わせ: 両プレイヤーの位置から位相のずれを測り、入る曲の速度で寄せる。
-  /// play() 直後は位置が動き出すまで待つ（開始遅延はこの測定で吸収される）
-  void nudgeBeats(Duration outPos) {
+  /// play() 直後は位置が動き出すまで待つ（開始遅延はこの測定で吸収される）。
+  /// 戻り値は測ったずれ（平滑後、実時間 ms）。測れないときは null。
+  /// テンポが揃わず合わせ続けない組（lock でない）も、ずれは測って返す（寄せはしない）
+  double? nudgeBeats(Duration outPos) {
     final plan = beat;
     // トリック中は出る曲の位置が遅くなる・戻るので、位相を測っても意味がない
-    if (plan == null || !plan.lock || effect.cutsHard) return;
+    if (plan == null || effect.cutsHard) return null;
     final hold = _nudgeHoldUntil;
-    if (hold != null && DateTime.now().isBefore(hold)) return;
+    if (hold != null && DateTime.now().isBefore(hold)) return null;
     final inPos = inPlayer.state.position;
     if (!_measuring) {
-      if (inPos <= inStart) return;
+      if (inPos <= inStart) return null;
       _measuring = true;
     }
     final err = BeatMatcher.phaseErrorMs(
@@ -1432,6 +1454,7 @@ class _CrossfadeSession {
     // 位置の報告は粗いので半分ずつ平滑化してから使う
     _errSmooth = _nudgeTicks == 0 ? err : 0.5 * _errSmooth + 0.5 * err;
     _nudgeTicks++;
+    if (!plan.lock) return _errSmooth;
     final target = inRate * (1 + BeatMatcher.rateAdjust(_errSmooth));
     if ((target - appliedInRate).abs() >= 0.0005) {
       appliedInRate = target;
@@ -1441,6 +1464,7 @@ class _CrossfadeSession {
       debugPrint('[BeatMatch] 位相誤差 ${err.toStringAsFixed(0)}ms '
           '(平滑 ${_errSmooth.toStringAsFixed(0)}ms) → rate ${target.toStringAsFixed(4)}');
     }
+    return _errSmooth;
   }
 
   /// つなぎ方（音量曲線）。開始時の設定を交差の間は使い続ける
@@ -1561,7 +1585,13 @@ class MixPair {
     required this.start,
     required this.cut,
     required this.recipe,
+    this.inRatio = 1,
   });
+
+  /// 出る曲の時計 1ms あたり、入る曲の時計が進む量（入る曲の速度 ÷ 出る曲の速度）。
+  /// テンポ合わせで入る曲の速度を変えると 1 ではなくなる。重ね表示の下段と拍の線を
+  /// 実際の鳴り方と揃えるのに使う（1 のまま描くと拍の線が少しずつずれて見えた）
+  final double inRatio;
 
   /// 出る曲が載っているスロット
   final ActiveSlot outSlot;
@@ -1583,10 +1613,11 @@ class MixPair {
   final TransitionRecipe recipe;
 
   /// 入る曲の時計 → 出る曲の時計
-  Duration toOutClock(Duration inPos) => start + (inPos - inStart);
+  Duration toOutClock(Duration inPos) =>
+      start + (inPos - inStart) * (1 / inRatio);
 
   /// 出る曲の時計 → 入る曲の時計
-  Duration toInClock(Duration t) => inStart + (t - start);
+  Duration toInClock(Duration t) => inStart + (t - start) * inRatio;
 
   /// 組の見分け（画面側が手動の表示切替を覚えておく単位）
   String get key => '${outItem?.id}>${next.item.id}';
