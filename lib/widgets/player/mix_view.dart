@@ -312,11 +312,6 @@ class _MixPainter extends CustomPainter {
     final nowMs = now.inMilliseconds.toDouble();
     final nowX = toX(nowMs);
 
-    // 交差区間の背景
-    canvas.drawRect(
-      Rect.fromLTRB(max(0, startX), 0, min(w, cutX), h),
-      Paint()..color = AppTheme.mixLineColor.withValues(alpha: 0.12),
-    );
     // 段の境界
     canvas.drawLine(
       Offset(0, laneH),

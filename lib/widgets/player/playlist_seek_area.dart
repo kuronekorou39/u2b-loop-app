@@ -16,8 +16,8 @@ import 'mix_view.dart';
 /// 重ね表示は [PlaylistEngine] の組（[MixPair]: 1 曲目と 2 曲目をつないだ 1 本の時間軸）を
 /// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
 /// 窓（交差の前後に [_margin] の余白）の中かどうかだけで決める。
-/// 外ではふつうのシークバーに、交差の範囲を紫で塗る:
-/// 曲の頭側に前の曲との交差、終わり側に次の曲との交差。
+/// 外ではふつうのシークバーに、重ね表示に切り替わる範囲を紫で塗る:
+/// 曲の頭側に前の曲とのぶん、終わり側に次の曲とのぶん。
 /// 重ね表示の間も細いバーで窓の外（1 曲目の前半など）へ戻れる
 class PlaylistSeekArea extends ConsumerStatefulWidget {
   const PlaylistSeekArea({
@@ -106,7 +106,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     // 時計として換算すると窓の外に飛び、一瞬ふつうのシークバーに戻ってしまう
     final position = ref.read(_playerOf(slot)).state.position;
     final ranges = [
-      for (final pair in pairs) _rangeOf(pair, swapped: slot != pair.outSlot),
+      for (final pair in pairs)
+        _rangeOf(_windowOf(pair), pair, swapped: slot != pair.outSlot),
     ];
     for (final pair in pairs) {
       final window = _windowOf(pair);
@@ -120,10 +121,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     return _seekbar(mixRanges: ranges);
   }
 
-  /// 交差（[MixPair.start]〜[MixPair.cut]）を鳴っている曲の時計に直したもの
-  static MixRange _rangeOf(MixPair pair, {required bool swapped}) => swapped
-      ? (start: pair.toInClock(pair.start), end: pair.toInClock(pair.cut))
-      : (start: pair.start, end: pair.cut);
+  /// 重ね表示に切り替わる範囲（窓 = 交差 + 前後の余白）を鳴っている曲の時計に
+  /// 直したもの。余白を「−」「＋」で変えると塗りの幅も変わる
+  static MixRange _rangeOf(MixWindow window, MixPair pair,
+          {required bool swapped}) =>
+      swapped
+          ? (start: pair.toInClock(window.start), end: pair.toInClock(window.end))
+          : (start: window.start, end: window.end);
 
   MixWindow _windowOf(MixPair pair) => MixView.windowAround(
         start: pair.start,
