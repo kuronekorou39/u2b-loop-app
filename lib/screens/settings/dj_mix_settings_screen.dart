@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/transition_effect.dart';
 import '../../providers/player_provider.dart';
+import '../../widgets/player/first_verse_sheet.dart';
 import '../../widgets/settings/settings_parts.dart';
 
 /// 設定「DJ ミックス」: クロスフェードと、その中でだけ効く 5 つ
@@ -280,6 +281,19 @@ class DjMixSettingsScreen extends ConsumerWidget {
               trailing: Text(SfxLevelNotifier.label(sfxLevel),
                   style: Theme.of(context).textTheme.bodyMedium),
               onTap: () => _pickSfxLevel(context, ref),
+            ),
+          ],
+        ),
+        SettingsGroup(
+          title: '1番だけ',
+          children: [
+            // 1番モードで「1 番の終わり」を自動で探す範囲。曲ごとの手直しは再生画面の「1番」の長押し
+            SettingsRow(
+              icon: Icons.looks_one_outlined,
+              title: '1番を探す範囲',
+              subtitle: VerseRangeNotifier.label(
+                  ref.watch(verseSearchRangeProvider)),
+              onTap: () => VerseRangeDialog.show(context),
             ),
           ],
         ),

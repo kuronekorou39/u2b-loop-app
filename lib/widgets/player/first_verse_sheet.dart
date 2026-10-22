@@ -202,6 +202,41 @@ class _FirstVerseSheetState extends ConsumerState<FirstVerseSheet> {
   }
 }
 
+/// 設定の「1番を探す範囲」のダイアログ
+class VerseRangeDialog {
+  VerseRangeDialog._();
+
+  static Future<void> show(BuildContext context) => showDialog<void>(
+        context: context,
+        builder: (ctx) => Consumer(
+          builder: (ctx, ref, _) => AlertDialog(
+            title: const Text('1番を探す範囲'),
+            content: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                VerseRangeFields(
+                  range: ref.watch(verseSearchRangeProvider),
+                  onChanged: (v) =>
+                      ref.read(verseSearchRangeProvider.notifier).value = v,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => ref.read(verseSearchRangeProvider.notifier).value =
+                    VerseRangeNotifier.defaultRange,
+                child: const Text('既定に戻す'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('閉じる'),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 /// 自動で探す範囲の「始まり〜終わり」のプルダウン 2 つ（シートと設定で共用）。
 /// 終わりは始まりより後の候補だけ
 class VerseRangeFields extends StatelessWidget {
