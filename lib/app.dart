@@ -12,6 +12,7 @@ import 'screens/list_screen.dart';
 import 'services/share_service.dart';
 import 'services/update_service.dart';
 import 'widgets/mini_player.dart';
+import 'core/ui/app_snack_bar.dart';
 import 'providers/player_provider.dart';
 import 'widgets/perf_overlay.dart';
 import 'widgets/player/player_status_views.dart';
@@ -32,6 +33,7 @@ class App extends ConsumerWidget {
     final showPerfOverlay = ref.watch(perfOverlayProvider);
     return MaterialApp(
       navigatorKey: appNavigatorKey,
+      scaffoldMessengerKey: appMessengerKey,
       title: 'U2B Loop',
       theme: isDark ? AppTheme.dark : AppTheme.light,
       home: const _Home(),

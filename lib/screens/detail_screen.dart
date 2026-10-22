@@ -12,6 +12,7 @@ import '../core/utils/id_generator.dart';
 import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
+import '../providers/bulk_analysis_provider.dart';
 import '../providers/data_provider.dart';
 import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
@@ -105,6 +106,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   /// 音声を取得してテンポ/キーを解析する（再生せずに単独で）
   Future<void> _analyze(LoopItem item) async {
+    // まとめて解析がちょうどこの曲を解析中なら、終わるのを待ってもらう（二重に落とさない）
+    if (ref.read(bulkAnalysisProvider)?.currentId == item.id) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          AppSnackBar.info('まとめて解析でこの曲を解析中です'));
+      return;
+    }
     setState(() => _analyzing = true);
     final result = await AudioAnalysisService.analyzeItem(
       ref.read(loopItemsProvider.notifier),

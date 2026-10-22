@@ -12,8 +12,8 @@ import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
+import '../providers/bulk_analysis_provider.dart';
 import '../providers/data_provider.dart';
-import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/save_flow.dart';
 import '../services/share_service.dart';
@@ -70,82 +70,17 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
   }
 
-  /// 未解析の曲を1曲ずつ順に解析する。音声の取得に時間がかかるので
-  /// 進捗ダイアログを出し、途中で止められるようにする
-  Future<void> _analyzeUnanalyzed(List<LoopItem> items) async {
+  /// 未解析の曲を 1 曲ずつ順に解析する。裏で動かし、進み具合は曲一覧の上に出す
+  /// （解析中も並べ替え・タグの編集・解析が済んだ曲の再生ができる）
+  void _analyzeUnanalyzed(Playlist pl, List<LoopItem> items) {
     final targets = AudioAnalysisService.unanalyzed(items);
     if (targets.isEmpty) {
       _toast(AppSnackBar.info('すべて解析済みです'));
       return;
     }
-    final progress = ValueNotifier<(int done, String title)>((0, targets.first.title));
-    final cancelled = ValueNotifier<bool>(false);
-    BuildContext? dialogContext;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        dialogContext = ctx;
-        final textTheme = Theme.of(ctx).textTheme;
-        return PopScope(
-          canPop: false,
-          child: AlertDialog(
-            title: const Text('テンポ/キーを解析中'),
-            content: ValueListenableBuilder<(int, String)>(
-              valueListenable: progress,
-              builder: (_, p, _) => Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  LinearProgressIndicator(value: p.$1 / targets.length),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text('${p.$1} / ${targets.length}', style: textTheme.bodySmall),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(p.$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.bodySmall),
-                ],
-              ),
-            ),
-            actions: [
-              ValueListenableBuilder<bool>(
-                valueListenable: cancelled,
-                builder: (_, c, _) => TextButton(
-                  onPressed: c ? null : () => cancelled.value = true,
-                  child: Text(c ? 'この曲で止めます…' : '中止'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    final (:done, :skipped) = await AudioAnalysisService.analyzeAll(
-      ref.read(loopItemsProvider.notifier),
-      ref.read(youtubeServiceProvider),
-      targets,
-      onProgress: (i, _, current) => progress.value = (i, current.title),
-      shouldStop: () => cancelled.value,
-    );
-    final wasCancelled = cancelled.value;
-    progress.dispose();
-    cancelled.dispose();
-    if (dialogContext != null && dialogContext!.mounted) {
-      Navigator.of(dialogContext!).pop();
+    if (!ref.read(bulkAnalysisProvider.notifier).start(pl.id, targets)) {
+      _toast(AppSnackBar.info('ほかのプレイリストを解析中です'));
     }
-    if (!mounted) return;
-    final failed = targets.length - done - skipped;
-    final notes = <String>[
-      if (wasCancelled) '中止',
-      if (skipped > 0)
-        '$skipped 曲は ${AudioAnalysisService.maxAnalyzableMinutes} 分以上なので省略',
-      if (!wasCancelled && failed > 0) '$failed 曲は取得できず',
-    ];
-    _toast(AppSnackBar.success(
-      '$done 曲を解析しました${notes.isEmpty ? '' : '（${notes.join('、')}）'}',
-    ));
   }
 
   /// テンポ/キーの相性が良い曲が続くように並べ替えて保存する
@@ -537,12 +472,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               tooltip: 'その他',
               onSelected: (m) => switch (m) {
                 _PlaylistMenu.saveAll => _saveAll(pl, items),
-                _PlaylistMenu.analyze => _analyzeUnanalyzed(items),
+                _PlaylistMenu.analyze => _analyzeUnanalyzed(pl, items),
                 _PlaylistMenu.sortByCompatibility =>
                   _sortByCompatibility(pl, items),
               },
               itemBuilder: (_) {
                 final unanalyzed = AudioAnalysisService.unanalyzed(items).length;
+                final bulk = ref.read(bulkAnalysisProvider);
                 return [
                   const PopupMenuItem(
                     value: _PlaylistMenu.saveAll,
@@ -555,14 +491,17 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   ),
                   PopupMenuItem(
                     value: _PlaylistMenu.analyze,
-                    enabled: unanalyzed > 0,
+                    // 動いている間は 2 つ目を始めない（音声のダウンロードが詰まる）
+                    enabled: unanalyzed > 0 && bulk == null,
                     child: ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.music_note),
                       title: const Text('テンポ/キーをまとめて解析'),
-                      subtitle: Text(unanalyzed > 0
-                          ? '未解析・要更新 $unanalyzed 曲を順に解析'
-                          : 'すべて解析済み'),
+                      subtitle: Text(bulk != null
+                          ? '解析中 ${bulk.index} / ${bulk.total}'
+                          : unanalyzed > 0
+                              ? '未解析・要更新 $unanalyzed 曲を順に解析'
+                              : 'すべて解析済み'),
                     ),
                   ),
                   const PopupMenuItem(
@@ -748,6 +687,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               ],
             ),
           ),
+          // まとめて解析の進み具合（このプレイリストで動いているときだけ）
+          _BulkAnalysisCard(playlistId: pl.id),
           // トラック一覧（1 枚のガラス面）
           Expanded(
             child: items.isEmpty
@@ -917,7 +858,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     }
 
     if (item.speed != 1.0) parts.add('${item.speed}x');
-    parts.addAll(item.musicInfoParts);
+    if (ref.watch(bulkAnalysisProvider)?.currentId == item.id) {
+      parts.add('テンポ/キーを解析中…');
+    } else {
+      parts.addAll(item.musicInfoParts);
+    }
 
     final widgets = <Widget>[];
     if (parts.isNotEmpty) {
@@ -1058,4 +1003,59 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
+}
+
+/// まとめて解析の進み具合（曲一覧の上）。閉じられない板で、中止だけできる
+class _BulkAnalysisCard extends ConsumerWidget {
+  const _BulkAnalysisCard({required this.playlistId});
+
+  final String playlistId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(bulkAnalysisProvider);
+    if (s == null || s.playlistId != playlistId) return const SizedBox.shrink();
+    final textTheme = Theme.of(context).textTheme;
+    return GlassSurface(
+      margin: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.md, AppSpacing.sm, AppSpacing.md),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text('テンポ/キーを解析中',
+                        style: textTheme.labelMedium
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    Text('${s.index} / ${s.total}', style: textTheme.labelSmall),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                LinearProgressIndicator(value: s.index / s.total),
+                const SizedBox(height: AppSpacing.xs),
+                Text(s.currentTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.labelSmall
+                        ?.copyWith(color: AppTheme.muted(context))),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          TextButton(
+            onPressed: s.stopping
+                ? null
+                : () => ref.read(bulkAnalysisProvider.notifier).stop(),
+            child: Text(s.stopping ? 'この曲で止めます' : '中止'),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -142,30 +142,4 @@ class AudioAnalysisService {
   /// 解析が必要なアイテムだけを抜き出す（プレイリストの「まとめて解析」用）
   static List<LoopItem> unanalyzed(Iterable<LoopItem> items) =>
       [for (final i in items) if (needsAnalysis(i)) i];
-
-  /// [targets] を1件ずつ順に解析する。
-  /// 並列にすると音声のダウンロードが詰まるので直列。
-  /// [onProgress] は各曲の開始時に (完了数, 総数, これから解析する曲) で呼ぶ。
-  /// [shouldStop] が true を返したら、進行中の1件が終わった時点で打ち切る。
-  /// 戻り値は解析できた件数と、長すぎて省いた件数
-  static Future<({int done, int skipped})> analyzeAll(
-    LoopItemsNotifier items,
-    YouTubeService ytService,
-    List<LoopItem> targets, {
-    void Function(int done, int total, LoopItem current)? onProgress,
-    bool Function()? shouldStop,
-  }) async {
-    var succeeded = 0, skipped = 0;
-    for (var i = 0; i < targets.length; i++) {
-      if (shouldStop?.call() ?? false) break;
-      onProgress?.call(i, targets.length, targets[i]);
-      final result = await analyzeItem(items, ytService, targets[i]);
-      if (result != null) {
-        succeeded++;
-      } else if (isTooLong(targets[i])) {
-        skipped++;
-      }
-    }
-    return (done: succeeded, skipped: skipped);
-  }
 }

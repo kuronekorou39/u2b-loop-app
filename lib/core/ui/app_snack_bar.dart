@@ -8,6 +8,10 @@ import '../theme/app_theme.dart';
 /// 未指定 / 1 / 2 / 3 / 4 / 5 / 8 / 30秒 に分散していた
 /// （同じ「URLをコピーしました」でも画面によって1秒と4秒だった）。
 /// 用途で選べば長さが自然に揃う。
+/// アプリ全体の ScaffoldMessenger。画面を閉じた後に終わる裏の処理（まとめて解析など）が
+/// 結果を知らせるのに使う。画面の中からは今までどおり ScaffoldMessenger.of(context)
+final appMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 class AppSnackBar {
   AppSnackBar._();
 
