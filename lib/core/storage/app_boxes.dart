@@ -59,7 +59,9 @@ class SettingsKeys {
   static const saveHqAudio = 'save_hq_audio';
   static const mediaCacheLimitMb = 'media_cache_limit_mb';
   static const homeItemView = 'home_item_view';
+  /// 旧: タグをグリッドで出すか（bool）。[homeTagView] が無いときだけ読む
   static const homeTagGrid = 'home_tag_grid';
+  static const homeTagView = 'home_tag_view';
   static const homePlaylistGrid = 'home_playlist_grid';
   static const tagOrderHintSeen = 'tag_order_hint_seen';
 

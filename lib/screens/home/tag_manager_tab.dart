@@ -13,9 +13,26 @@ import '../../widgets/glass_surface.dart';
 import '../../widgets/tag_chip.dart';
 import 'home_parts.dart';
 
-/// ホームの「タグ」タブ。タグの一覧（リスト / グリッド）と、名前・色の変更、削除、並べ替え。
-/// 並べ替えはリスト表示で右の ≡ をドラッグ（長押しは複数選択に使うので取っ手で）。
-/// 曲に付いたタグもこの並びで出る
+/// タグ一覧の表示: リスト / 2列 / 4列（4 列は並べ替え向けに小さく）
+enum TagViewMode {
+  list(Icons.view_list, 'リスト'),
+  grid2(Icons.grid_view, '2列'),
+  grid4(Icons.apps, '4列');
+
+  const TagViewMode(this.icon, this.label);
+
+  final IconData icon;
+  final String label;
+
+  /// 保存した名前から戻す。無ければ旧設定（グリッドかどうか）から
+  static TagViewMode fromName(String? name, {bool legacyGrid = false}) =>
+      values.where((m) => m.name == name).firstOrNull ??
+      (legacyGrid ? grid2 : list);
+}
+
+/// ホームの「タグ」タブ。タグの一覧（リスト / 2列 / 4列）と、名前・色の変更、削除、並べ替え。
+/// 並べ替えはリストなら右の ≡ をドラッグ、グリッドなら長押ししたまま動かす
+/// （動かさずに離すと長押し = 複数選択）。曲に付いたタグもこの並びで出る
 ///
 /// 行をタップすると [onTagTap]（曲タブへ移ってそのタグで絞り込む）。
 /// 複数選択中（[selecting]）はタップで選択の切替、操作はホームの選択バー側
@@ -23,7 +40,7 @@ class TagManagerTab extends ConsumerWidget {
   const TagManagerTab({
     super.key,
     required this.onTagTap,
-    this.grid = false,
+    this.viewMode = TagViewMode.list,
     this.selecting = false,
     this.selectedIds = const {},
     this.onToggleSelect,
@@ -32,8 +49,7 @@ class TagManagerTab extends ConsumerWidget {
 
   final ValueChanged<Tag> onTagTap;
 
-  /// グリッド表示（色つきのチップを並べる）
-  final bool grid;
+  final TagViewMode viewMode;
   final bool selecting;
   final Set<String> selectedIds;
   final ValueChanged<Tag>? onToggleSelect;
@@ -163,11 +179,22 @@ class TagManagerTab extends ConsumerWidget {
       }
     }
 
-    if (grid) {
+    if (viewMode != TagViewMode.list) {
       return Column(
         children: [
           const _TagOrderHint(),
-          Expanded(child: _buildGrid(context, ref, tags, countOf, tap)),
+          Expanded(
+            child: _TagGrid(
+              tags: tags,
+              small: viewMode == TagViewMode.grid4,
+              selecting: selecting,
+              selectedIds: selectedIds,
+              countOf: countOf,
+              onTap: tap,
+              onLongPress: (tag) => onLongPress?.call(tag),
+              onReorder: ref.read(tagsProvider.notifier).reorder,
+            ),
+          ),
         ],
       );
     }
@@ -220,67 +247,6 @@ class TagManagerTab extends ConsumerWidget {
           );
         },
       ),
-    );
-  }
-
-  /// グリッド: 色つきのチップ（名前・曲数）。選択中は緑の面 + チェック
-  Widget _buildGrid(BuildContext context, WidgetRef ref, List<Tag> tags,
-      int Function(Tag) countOf, void Function(Tag) tap) {
-    final textTheme = Theme.of(context).textTheme;
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-    return GridView.builder(
-      padding: EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 200,
-        mainAxisExtent: 56,
-        crossAxisSpacing: AppSpacing.md,
-        mainAxisSpacing: AppSpacing.md,
-      ),
-      itemCount: tags.length,
-      itemBuilder: (context, i) {
-        final tag = tags[i];
-        final selected = selectedIds.contains(tag.id);
-        return GlassSurface(
-          radius: 14,
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-          tint: selected
-              ? AppTheme.accentGreen.withValues(alpha: 0.15)
-              : tag.color.withValues(alpha: 0.12),
-          onTap: () => tap(tag),
-          onLongPress: () => onLongPress?.call(tag),
-          child: Row(
-            children: [
-              if (selecting)
-                Icon(
-                  selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: AppIconSizes.md,
-                  color: selected
-                      ? AppTheme.accentGreen
-                      : AppTheme.muted(context),
-                )
-              else
-                _TagDot(tag: tag),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(tag.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.labelMedium
-                            ?.copyWith(fontWeight: FontWeight.w600)),
-                    Text('${countOf(tag)} 曲', style: textTheme.labelSmall),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -376,7 +342,7 @@ class _TagOrderHintState extends State<_TagOrderHint> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Text('リスト表示で右の ≡ をドラッグして並べ替え',
+                  Text('リストは右の ≡、グリッドは長押ししたまま動かして並べ替え',
                       style: textTheme.labelSmall),
                 ],
               ),
@@ -412,6 +378,169 @@ class _TagDot extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: Icon(Icons.label, size: AppIconSizes.xs, color: tag.color),
+    );
+  }
+}
+
+/// タグのグリッド。長押ししたまま動かすと並べ替え（動かしている間は並びを先に見せる）。
+/// 動かさずに離したら [onLongPress]（複数選択）
+class _TagGrid extends StatefulWidget {
+  const _TagGrid({
+    required this.tags,
+    required this.small,
+    required this.selecting,
+    required this.selectedIds,
+    required this.countOf,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onReorder,
+  });
+
+  final List<Tag> tags;
+
+  /// 4 列（名前と曲数だけの小さなチップ）
+  final bool small;
+  final bool selecting;
+  final Set<String> selectedIds;
+  final int Function(Tag) countOf;
+  final ValueChanged<Tag> onTap;
+  final ValueChanged<Tag> onLongPress;
+  final void Function(int oldIndex, int newIndex) onReorder;
+
+  @override
+  State<_TagGrid> createState() => _TagGridState();
+}
+
+class _TagGridState extends State<_TagGrid> {
+  /// ドラッグ中の並び（離すまで保存しない）
+  List<Tag>? _preview;
+
+  void _moveOver(String draggedId, Tag target) {
+    final preview = _preview;
+    if (preview == null || draggedId == target.id) return;
+    final from = preview.indexWhere((t) => t.id == draggedId);
+    final to = preview.indexWhere((t) => t.id == target.id);
+    if (from < 0 || to < 0) return;
+    setState(() => preview.insert(to, preview.removeAt(from)));
+  }
+
+  void _endDrag(Tag tag) {
+    final preview = _preview;
+    setState(() => _preview = null);
+    if (preview == null) return;
+    final oldIndex = widget.tags.indexWhere((t) => t.id == tag.id);
+    final newIndex = preview.indexWhere((t) => t.id == tag.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    if (oldIndex == newIndex) {
+      widget.onLongPress(tag);
+    } else {
+      widget.onReorder(oldIndex, newIndex);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tags = _preview ?? widget.tags;
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+    final small = widget.small;
+    return GridView.builder(
+      padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: small ? 100 : 200,
+        mainAxisExtent: small ? 44 : 56,
+        crossAxisSpacing: small ? AppSpacing.sm : AppSpacing.md,
+        mainAxisSpacing: small ? AppSpacing.sm : AppSpacing.md,
+      ),
+      itemCount: tags.length,
+      // 並びが変わっても同じタグの部品を使い続ける（動かしているタグが作り直されると
+      // ドラッグの終わりが届かない）
+      findChildIndexCallback: (key) {
+        final i = tags.indexWhere((t) => ValueKey(t.id) == key);
+        return i < 0 ? null : i;
+      },
+      itemBuilder: (context, i) {
+        final tag = tags[i];
+        return DragTarget<String>(
+          key: ValueKey(tag.id),
+          onWillAcceptWithDetails: (d) {
+            _moveOver(d.data, tag);
+            return true;
+          },
+          builder: (context, _, _) => LayoutBuilder(
+            builder: (context, constraints) {
+              final chip = _chip(context, tag);
+              return LongPressDraggable<String>(
+                data: tag.id,
+                onDragStarted: () =>
+                    setState(() => _preview = List.of(widget.tags)),
+                onDragEnd: (_) => _endDrag(tag),
+                feedback: Material(
+                  type: MaterialType.transparency,
+                  child: SizedBox(
+                    width: constraints.maxWidth,
+                    height: constraints.maxHeight,
+                    child: Transform.scale(scale: 1.06, child: chip),
+                  ),
+                ),
+                childWhenDragging: Opacity(opacity: 0.3, child: chip),
+                child: chip,
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// 色つきのチップ（名前・曲数）。選択中は緑の面 + チェック
+  Widget _chip(BuildContext context, Tag tag) {
+    final textTheme = Theme.of(context).textTheme;
+    final selected = widget.selectedIds.contains(tag.id);
+    final small = widget.small;
+    final Widget? lead = widget.selecting
+        ? Icon(
+            selected ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: small ? AppIconSizes.s : AppIconSizes.md,
+            color: selected ? AppTheme.accentGreen : AppTheme.muted(context),
+          )
+        : small
+            ? null
+            : _TagDot(tag: tag);
+    return GlassSurface(
+      radius: small ? 10 : 14,
+      padding: EdgeInsets.symmetric(
+          horizontal: small ? AppSpacing.sm : AppSpacing.md,
+          vertical: small ? AppSpacing.xs : AppSpacing.sm),
+      tint: selected
+          ? AppTheme.accentGreen.withValues(alpha: 0.15)
+          : tag.color.withValues(alpha: small ? 0.22 : 0.12),
+      onTap: () => widget.onTap(tag),
+      child: Row(
+        children: [
+          if (lead != null) ...[
+            lead,
+            SizedBox(width: small ? AppSpacing.xs : AppSpacing.md),
+          ],
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tag.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: (small ? textTheme.labelSmall : textTheme.labelMedium)
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                Text('${widget.countOf(tag)} 曲',
+                    maxLines: 1,
+                    style: textTheme.labelSmall
+                        ?.copyWith(color: AppTheme.muted(context))),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

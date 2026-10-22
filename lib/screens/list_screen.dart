@@ -51,8 +51,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // 表示モード（タブごと）。次に開いたときも同じ表示にする
   ItemViewMode _itemViewMode = ItemViewMode.fromName(
       AppBoxes.settings.get(SettingsKeys.homeItemView) as String?);
-  bool _tagGrid =
-      AppBoxes.settings.get(SettingsKeys.homeTagGrid, defaultValue: false) as bool;
+  TagViewMode _tagViewMode = TagViewMode.fromName(
+      AppBoxes.settings.get(SettingsKeys.homeTagView) as String?,
+      legacyGrid: AppBoxes.settings
+          .get(SettingsKeys.homeTagGrid, defaultValue: false) as bool);
   bool _playlistGrid = AppBoxes.settings
       .get(SettingsKeys.homePlaylistGrid, defaultValue: false) as bool;
 
@@ -61,9 +63,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
     AppBoxes.settings.put(SettingsKeys.homeItemView, mode.name);
   }
 
-  void _toggleTagGrid() {
-    setState(() => _tagGrid = !_tagGrid);
-    AppBoxes.settings.put(SettingsKeys.homeTagGrid, _tagGrid);
+  void _setTagViewMode(TagViewMode mode) {
+    setState(() => _tagViewMode = mode);
+    AppBoxes.settings.put(SettingsKeys.homeTagView, mode.name);
   }
 
   void _togglePlaylistGrid() {
@@ -284,7 +286,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                                   : null,
                               children: [
                                 TagManagerTab(
-                                  grid: _tagGrid,
+                                  viewMode: _tagViewMode,
                                   selecting: _isSelecting,
                                   selectedIds: _selectedIds,
                                   onToggleSelect: (t) => _toggleSelectId(t.id),
@@ -438,10 +440,19 @@ class _ListScreenState extends ConsumerState<ListScreen>
   /// AppBar の右側: 表示の切り替え（タブごと）・複数選択・設定
   List<Widget> _buildAppBarActions({required bool canSelect}) {
     final Widget viewButton = switch (_tab) {
-      _tabTags => IconButton(
-          icon: Icon(_tagGrid ? Icons.grid_view : Icons.view_list),
-          onPressed: _toggleTagGrid,
-          tooltip: _tagGrid ? 'リスト表示へ' : 'グリッド表示へ',
+      _tabTags => PopupMenuButton<TagViewMode>(
+          icon: Icon(_tagViewMode.icon),
+          tooltip: '表示の切り替え',
+          initialValue: _tagViewMode,
+          onSelected: _setTagViewMode,
+          itemBuilder: (_) => [
+            for (final m in TagViewMode.values)
+              CheckedPopupMenuItem(
+                value: m,
+                checked: m == _tagViewMode,
+                child: Text(m.label),
+              ),
+          ],
         ),
       _tabItems => PopupMenuButton<ItemViewMode>(
           icon: Icon(_itemViewMode.icon),
