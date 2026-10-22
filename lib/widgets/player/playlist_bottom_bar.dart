@@ -29,6 +29,7 @@ class PlaylistBottomBar extends ConsumerWidget {
     required this.onToggleList,
     required this.firstVerse,
     required this.onToggleFirstVerse,
+    this.onEditFirstVerse,
     this.editing = false,
     this.editBlock,
     this.onFinishEdit,
@@ -65,6 +66,9 @@ class PlaylistBottomBar extends ConsumerWidget {
   final VoidCallback onToggleList;
   final bool firstVerse;
   final VoidCallback onToggleFirstVerse;
+
+  /// 「1番」の長押し: 今の曲の 1 番の範囲を直すシート
+  final VoidCallback? onEditFirstVerse;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -182,8 +186,9 @@ class PlaylistBottomBar extends ConsumerWidget {
         const Spacer(),
         GlassPill(
           onTap: onToggleFirstVerse,
+          onLongPress: onEditFirstVerse,
           active: firstVerse,
-          tooltip: '1番だけ',
+          tooltip: '1番だけ（長押しで範囲）',
           padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.lg, vertical: 9),
           child: Row(

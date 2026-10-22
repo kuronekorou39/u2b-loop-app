@@ -68,6 +68,7 @@ import '../core/storage/app_boxes.dart';
 import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
+import '../widgets/player/first_verse_sheet.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
 /// ミニプレイヤー中に通知・PiPから届くメディア操作の受け口。
@@ -941,9 +942,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // キャッシュ or プロバイダから波形を取得
     final waveform = _waveformCache[track.item.id] ??
         ref.read(waveformDataProvider);
+    final range = ref.read(verseSearchRangeProvider);
     final cutMs = VerseDetector.findCutPoint(
       waveform: waveform,
       durationMs: durationMs,
+      searchStartMs: range.startSec * 1000,
+      searchEndMs: range.endSec * 1000,
     );
 
     if (cutMs != null) {
@@ -2186,6 +2190,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           onToggleList: () => _setPanelOpen(!panelOpen),
           firstVerse: plState.firstVerseMode,
           onToggleFirstVerse: _toggleFirstVerseMode,
+          onEditFirstVerse: _editFirstVerse,
           editing: _editMode,
           onFinishEdit: _finishEdit,
           onSetA: plHasSource
@@ -2493,6 +2498,57 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (current?.item.id == id) _applyFirstVerseCut(current!);
       },
     ));
+  }
+
+  /// 「1番」の長押し: 今の曲の 1 番の終わりを波形の上で直す（自動で探す範囲もここで変えられる）。
+  /// 覚えたら 1 番モードも入れる
+  Future<void> _editFirstVerse() async {
+    final track = ref.read(playlistPlayerProvider).currentTrack;
+    if (track == null) return;
+    if (track.hasRegion) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          AppSnackBar.info('区間を選んだ曲は、その区間を流します（1番は使いません）'));
+      return;
+    }
+    final player = ref.read(playerProvider);
+    final durationMs = player.state.duration.inMilliseconds;
+    if (durationMs <= 0) return;
+    final items = ref.read(loopItemsProvider.notifier);
+    final saved = items.byId(track.item.id) ?? track.item;
+    final rangeBefore = ref.read(verseSearchRangeProvider);
+    final result = await FirstVerseSheet.show(
+      context,
+      title: saved.title,
+      waveform: _waveformCache[saved.id] ?? ref.read(waveformDataProvider),
+      durationMs: durationMs,
+      startMs: saved.firstVerseAMs ?? 0,
+      manualEndMs: saved.firstVerseBMs,
+      positionMs: player.state.position.inMilliseconds,
+    );
+    if (!mounted) return;
+    final firstVerse = ref.read(playlistPlayerProvider).firstVerseMode;
+    switch (result) {
+      case FirstVerseSave(:final endMs):
+        await items.saveFirstVerse(saved.id,
+            aMs: saved.firstVerseAMs ?? 0, bMs: endMs);
+        if (!mounted) return;
+        if (firstVerse) {
+          _applyFirstVerseCut(track);
+        } else {
+          _toggleFirstVerseMode();
+        }
+        ScaffoldMessenger.of(context)
+            .showSnackBar(AppSnackBar.success('この曲の1番として覚えました'));
+      case FirstVerseReset():
+        await _resetFirstVerse();
+      case null:
+        // 自動で探す範囲だけ変えたなら、自動の曲は探し直す
+        if (firstVerse &&
+            !saved.hasFirstVerse &&
+            ref.read(verseSearchRangeProvider) != rangeBefore) {
+          _applyFirstVerseCut(track);
+        }
+    }
   }
 
   /// この曲の 1 番を自動（波形から探す）に戻す

@@ -90,4 +90,34 @@ void main() {
       expect(cut, isNotNull);
     });
   });
+
+  group('探す範囲を変える（設定）', () {
+    test('範囲の外の静かな所は選ばない', () {
+      // 静かな所は 70 秒。範囲を 90 秒〜2分半にすると、そこは選ばれない
+      final waveform = _waveformWithQuietGap(
+        durationMs: 300000,
+        samples: 4000,
+        quietStartMs: 70000,
+        quietEndMs: 75000,
+      );
+      final cut = VerseDetector.findCutPoint(
+          waveform: waveform,
+          durationMs: 300000,
+          searchStartMs: 90000,
+          searchEndMs: 150000)!;
+      expect(cut, inInclusiveRange(90000, 150000));
+    });
+
+    test('曲が範囲の終わりより短ければ全部流す・波形が無ければ範囲内の代わりの値', () {
+      expect(
+          VerseDetector.findCutPoint(
+              durationMs: 200000, searchStartMs: 60000, searchEndMs: 240000),
+          isNull);
+      // 代わりの 1分40秒が範囲の外なら範囲の端に寄せる
+      expect(
+          VerseDetector.findCutPoint(
+              durationMs: 400000, searchStartMs: 120000, searchEndMs: 240000),
+          120000);
+    });
+  });
 }

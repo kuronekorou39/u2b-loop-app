@@ -384,6 +384,46 @@ class ShowBeatLinesNotifier extends StateNotifier<bool> {
   }
 }
 
+/// 1番モードで「1 番の終わり」を自動で探す範囲（秒）。この間で一番静かな所を終わりにする。
+/// 曲がこの範囲の終わりより短ければ全部流す
+typedef VerseRange = ({int startSec, int endSec});
+
+final verseSearchRangeProvider =
+    StateNotifierProvider<VerseRangeNotifier, VerseRange>(
+        (ref) => VerseRangeNotifier());
+
+class VerseRangeNotifier extends StateNotifier<VerseRange> {
+  static const _startKey = SettingsKeys.verseSearchStartSec;
+  static const _endKey = SettingsKeys.verseSearchEndSec;
+
+  /// 既定は 50 秒〜3 分（以前の固定値）
+  static const defaultRange = (startSec: 50, endSec: 180);
+  static const startOptions = [30, 40, 50, 60, 75, 90, 120];
+  static const endOptions = [90, 120, 150, 180, 210, 240, 300];
+
+  VerseRangeNotifier() : super(defaultRange) {
+    final s = AppBoxes.settings.get(_startKey) as int?;
+    final e = AppBoxes.settings.get(_endKey) as int?;
+    if (s != null && e != null && e > s) state = (startSec: s, endSec: e);
+  }
+
+  set value(VerseRange v) {
+    if (v.endSec <= v.startSec) return;
+    state = v;
+    AppBoxes.settings.put(_startKey, v.startSec);
+    AppBoxes.settings.put(_endKey, v.endSec);
+  }
+
+  /// 表示用（「50秒〜3分」）
+  static String label(VerseRange r) => '${secLabel(r.startSec)}〜${secLabel(r.endSec)}';
+
+  static String secLabel(int sec) {
+    final m = sec ~/ 60, s = sec % 60;
+    if (m == 0) return '$s秒';
+    return s == 0 ? '$m分' : '$m分$s秒';
+  }
+}
+
 /// ベーススワップ: 交差中は入る曲の低音を切って重ね、途中で出る曲と入れ替える（既定オン）
 final bassSwapProvider =
     StateNotifierProvider<BassSwapNotifier, bool>((ref) => BassSwapNotifier());

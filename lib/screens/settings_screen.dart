@@ -11,6 +11,7 @@ import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/cache_service.dart';
 import '../services/update_service.dart';
+import '../widgets/player/first_verse_sheet.dart';
 import '../widgets/settings/settings_parts.dart';
 import 'settings/advanced_settings_screen.dart';
 import 'settings/backup_settings_screen.dart';
@@ -59,6 +60,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (picked != null) ref.read(seekStepProvider.notifier).value = picked;
+  }
+
+  Future<void> _pickVerseRange() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Consumer(
+        builder: (ctx, ref, _) => AlertDialog(
+          title: const Text('1番を探す範囲'),
+          content: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              VerseRangeFields(
+                range: ref.watch(verseSearchRangeProvider),
+                onChanged: (v) =>
+                    ref.read(verseSearchRangeProvider.notifier).value = v,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => ref.read(verseSearchRangeProvider.notifier).value =
+                  VerseRangeNotifier.defaultRange,
+              child: const Text('既定に戻す'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('閉じる'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ─── アプリ情報 ───
@@ -115,6 +148,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               title: '早送り・巻き戻し',
               subtitle: '$seekStep秒',
               onTap: _pickSeekStep,
+            ),
+            // 1番モードで「1 番の終わり」を自動で探す範囲（曲ごとの手直しは「1番」の長押し）
+            SettingsRow(
+              icon: Icons.looks_one_outlined,
+              title: '1番を探す範囲',
+              subtitle: VerseRangeNotifier.label(ref.watch(verseSearchRangeProvider)),
+              onTap: _pickVerseRange,
             ),
           ],
         ),

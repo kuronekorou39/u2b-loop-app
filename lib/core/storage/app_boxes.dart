@@ -49,6 +49,8 @@ class SettingsKeys {
   static const volumeNorm = 'volume_norm';
   static const beatMatch = 'beat_match';
   static const showBeatLines = 'show_beat_lines';
+  static const verseSearchStartSec = 'verse_search_start_sec';
+  static const verseSearchEndSec = 'verse_search_end_sec';
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
   static const glassBlur = 'glass_blur';
