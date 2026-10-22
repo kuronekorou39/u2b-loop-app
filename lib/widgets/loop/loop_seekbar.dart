@@ -596,7 +596,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     ];
   }
 
-  /// 1段のシークバー: 全幅の波形（compact なら細いバー）と、その下に時刻と波形切替。
+  /// bar モードのシークバー: 細いバーと、その上に曲全体の波形（閉じていれば無し）か
+  /// 重ね表示の帯。その下に時刻と波形切替。
   /// タップ/ドラッグでシーク
   Widget _buildBarMode(
     BuildContext context,
@@ -612,11 +613,72 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
           fontFeatures: const [FontFeature('tnum')],
         );
     final compact = widget.compact;
-    final barHeight = compact ? 28.0 : widget.barHeight;
     final brightness = Theme.of(context).brightness;
 
-    final above = widget.above;
     final zoom = widget.zoom;
+
+    /// タップ・横ドラッグでシークできる面。[waveformPainter] なら波形、でなければ細いバー
+    Widget seekSurface({required bool waveformPainter, required double height}) =>
+        SizedBox(
+          height: height,
+          width: double.infinity,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              void seekTo(double x) {
+                if (duration.inMilliseconds == 0) return;
+                final norm = (x / width).clamp(0.0, 1.0);
+                ref.read(playerProvider).seek(Duration(
+                    milliseconds: (norm * duration.inMilliseconds).round()));
+              }
+
+              return GestureDetector(
+                onTapUp: hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+                onHorizontalDragUpdate:
+                    hasSource ? (d) => seekTo(d.localPosition.dx) : null,
+                child: Stack(
+                  children: [
+                    CustomPaint(
+                      size: Size(width, height),
+                      painter: waveformPainter
+                          ? _WaveformSeekbarPainter(
+                              position: position,
+                              duration: duration,
+                              pointA: loop.pointA,
+                              pointB: loop.pointB,
+                              loopEnabled: loop.enabled,
+                              waveform: waveform,
+                              brightness: brightness,
+                              viewStart: 0,
+                              viewEnd: 1,
+                              mixRanges: widget.mixRanges,
+                            )
+                          : _CompactSeekbarPainter(
+                              position: position,
+                              duration: duration,
+                              pointA: loop.pointA,
+                              pointB: loop.pointB,
+                              loopEnabled: loop.enabled,
+                              brightness: brightness,
+                              mixRanges: widget.mixRanges,
+                            ),
+                    ),
+                    if (waveformPainter)
+                      ..._waveformStatusOverlays(
+                          waveform, waveformLoading, waveformError),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+
+    // 細いバーは常に出す。上には重ね表示の帯か、開いていれば曲全体の波形を置く
+    // （重ね表示と単体で形を揃え、切り替わったときに表示が大きく動かないように）
+    final above = widget.above ??
+        (compact
+            ? null
+            : seekSurface(waveformPainter: true, height: widget.barHeight));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
@@ -626,60 +688,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             above,
             const SizedBox(height: AppSpacing.xs),
           ],
-          SizedBox(
-            height: barHeight,
-            width: double.infinity,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                void seekTo(double x) {
-                  if (duration.inMilliseconds == 0) return;
-                  final norm = (x / width).clamp(0.0, 1.0);
-                  ref.read(playerProvider).seek(Duration(
-                      milliseconds: (norm * duration.inMilliseconds).round()));
-                }
-
-                return GestureDetector(
-                  onTapUp:
-                      hasSource ? (d) => seekTo(d.localPosition.dx) : null,
-                  onHorizontalDragUpdate:
-                      hasSource ? (d) => seekTo(d.localPosition.dx) : null,
-                  child: Stack(
-                    children: [
-                      CustomPaint(
-                        size: Size(width, barHeight),
-                        painter: compact
-                            ? _CompactSeekbarPainter(
-                                position: position,
-                                duration: duration,
-                                pointA: loop.pointA,
-                                pointB: loop.pointB,
-                                loopEnabled: loop.enabled,
-                                brightness: brightness,
-                                mixRanges: widget.mixRanges,
-                              )
-                            : _WaveformSeekbarPainter(
-                                position: position,
-                                duration: duration,
-                                pointA: loop.pointA,
-                                pointB: loop.pointB,
-                                loopEnabled: loop.enabled,
-                                waveform: waveform,
-                                brightness: brightness,
-                                viewStart: 0,
-                                viewEnd: 1,
-                                mixRanges: widget.mixRanges,
-                              ),
-                      ),
-                      if (!compact)
-                        ..._waveformStatusOverlays(
-                            waveform, waveformLoading, waveformError),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
+          seekSurface(waveformPainter: false, height: 28),
           // 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも、重ね表示でも同じ場所）。
           // 「−」「＋」は開閉ボタンのすぐ右。左にも同じ幅を空けて開閉ボタンを真ん中に保つ
           SizedBox(

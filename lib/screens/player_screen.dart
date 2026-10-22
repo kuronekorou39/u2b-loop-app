@@ -2166,7 +2166,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         controller: PlaylistBottomBar(
           seekbar: PlaylistSeekArea(
             compact: _compactSeekbar,
-            waveHeight: 96,
+            waveHeight: 120,
             mixHeight: 120,
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
