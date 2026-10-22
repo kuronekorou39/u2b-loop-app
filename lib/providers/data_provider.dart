@@ -98,11 +98,15 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       item.beatBpm = beatGrid?.bpm;
       item.beatOffsetMs = beatGrid?.offsetMs;
       item.beatConfidence = beatGrid?.confidence;
+      item.downbeatMs = beatGrid?.downbeatMs;
+      item.downbeatConfidence = beatGrid?.downbeatConfidence;
     } else if (bpm == null ||
         item.beatBpm == null ||
         !_isOctaveRatio(bpm / item.beatBpm!)) {
       item.beatBpm = null;
       item.beatOffsetMs = null;
+      item.downbeatMs = null;
+      item.downbeatConfidence = null;
     }
     await _box.put(id, item);
     _refresh();

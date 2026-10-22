@@ -45,6 +45,32 @@ Int16List _chords(int tonic, bool minor, {int seconds = 20}) {
   return y;
 }
 
+/// 120 BPM のクリックに、[downbeat] 拍目から 4 拍ごとに変わる和音を重ねたもの（60 秒）
+Int16List _bars(int downbeat) {
+  const seconds = 60, bpm = 120.0;
+  final y = Int16List(_sr * seconds);
+  final beatLen = _sr * 60 / bpm;
+  const progression = [
+    [0, 4, 7],
+    [5, 9, 12],
+    [7, 11, 14],
+    [9, 12, 16],
+  ];
+  final click = _click(bpm, seconds: seconds);
+  for (var i = 0; i < y.length; i++) {
+    final beat = (i / beatLen).floor();
+    final bar = ((beat - downbeat) / 4).floor();
+    final chord = progression[bar % 4];
+    final t = i / _sr;
+    var v = 0.0;
+    for (final d in chord) {
+      v += sin(2 * pi * 261.63 * pow(2, d / 12) * t);
+    }
+    y[i] = (v * 0.12 * 32767 + click[i] * 0.5).round().clamp(-32768, 32767);
+  }
+  return y;
+}
+
 void main() {
   group('BPM検出', () {
     for (final bpm in [72.0, 97.0, 128.0]) {
@@ -68,6 +94,28 @@ void main() {
 
     test('短すぎる入力は候補なし', () {
       expect(BpmKeyDetector.detectBpm(Int16List(100), _sr), isEmpty);
+    });
+  });
+
+  group('小節頭の検出', () {
+    for (final downbeat in [0, 1, 3]) {
+      test('和音が $downbeat 拍目から 4 拍ごとに変わる曲で 1 拍目を当てる', () {
+        final pcm = _bars(downbeat);
+        final env = BpmKeyDetector.onsetEnvelope(pcm, _sr)!;
+        final grid = BpmKeyDetector.detectBeatGrid(env, 120)!;
+        final result = BpmKeyDetector.detectDownbeat(pcm, _sr, grid)!;
+        // クリックは 0ms から（格子の最初の拍は 0ms とは限らないので曲頭から数える）
+        final beat = (result.ms / grid.periodMs).round();
+        expect(beat % 4, downbeat);
+        expect(result.confidence, greaterThanOrEqualTo(0.9));
+      });
+    }
+
+    test('8 小節に満たない曲は推定しない', () {
+      final pcm = _click(120, seconds: 10);
+      final env = BpmKeyDetector.onsetEnvelope(pcm, _sr)!;
+      final grid = BpmKeyDetector.detectBeatGrid(env, 120)!;
+      expect(BpmKeyDetector.detectDownbeat(pcm, _sr, grid), isNull);
     });
   });
 

@@ -107,6 +107,13 @@ class DjMixSheet extends ConsumerWidget {
                   ? (v) => ref.read(beatMatchProvider.notifier).value = v
                   : null,
             ),
+            SwitchListTile(
+              secondary: const Icon(Icons.view_week_outlined),
+              title: const Text('拍の線を表示'),
+              value: ref.watch(showBeatLinesProvider),
+              onChanged: (v) =>
+                  ref.read(showBeatLinesProvider.notifier).value = v,
+            ),
             const Divider(),
             SwitchListTile(
               secondary: const Icon(Icons.graphic_eq),

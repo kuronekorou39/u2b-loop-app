@@ -1,10 +1,19 @@
+/// 拍の線の材料: 拍の格子と、小節頭の代わりの基準（ドロップ。解析の小節頭が確かなら使わない）
+typedef BeatLineSource = ({BeatGrid grid, double? anchorMs});
+
 /// 曲の拍の格子（精密な BPM と最初の拍の位置）。
 ///
 /// 解析で求めた BPM は 0.1 刻みで、4 分間では拍の半分ほどズレが積もるので、
 /// 拍合わせには別に精密な値を持つ。テンポが一定（打ち込み・DJ 向きの曲）を前提にした
 /// 等間隔の格子で、生演奏の揺れには追従しない。
 class BeatGrid {
-  const BeatGrid({required this.bpm, required this.offsetMs, this.confidence = 1});
+  const BeatGrid({
+    required this.bpm,
+    required this.offsetMs,
+    this.confidence = 1,
+    this.downbeatMs,
+    this.downbeatConfidence,
+  });
 
   /// 精密な BPM（0.01% 程度）
   final double bpm;
@@ -22,19 +31,60 @@ class BeatGrid {
 
   bool get reliable => confidence >= minConfidence;
 
-  /// 1 小節の拍数。小節頭（ダウンビート）は検出していないので、[barGrid] で基準点から数える
+  /// 解析で求めた小節頭（1 拍目の拍の頭、ミリ秒）。null = 未解析（v1.106 以前）・推定できない
+  final double? downbeatMs;
+
+  /// 小節頭の推定の確かさ（0〜1、[Downbeat.confidence]）
+  final double? downbeatConfidence;
+
+  /// これ以上なら解析の小節頭を使う。未満ならドロップなどの基準点から数える
+  static const minDownbeatConfidence = 0.5;
+
+  bool get hasDownbeat =>
+      downbeatMs != null && (downbeatConfidence ?? 0) >= minDownbeatConfidence;
+
+  /// 1 小節の拍数（4 拍子だけを扱う）
   static const beatsPerBar = 4;
 
-  /// 小節の格子: [anchorMs]（ドロップなど、小節頭とみなす位置）に最も近い拍の頭を
-  /// 小節頭として 4 拍ごとに並べた格子。anchor が無ければ最初の拍を小節頭とみなす
+  /// 小節頭の基準: 解析の小節頭が確かならそれ、無ければ [fallbackMs]（ドロップなど）、
+  /// それも無ければ最初の拍
+  double barAnchorMs([double? fallbackMs]) =>
+      hasDownbeat ? downbeatMs! : (fallbackMs ?? offsetMs);
+
+  /// 小節の格子: [barAnchorMs] に最も近い拍の頭を小節頭として 4 拍ごとに並べた格子
   BeatGrid barGrid([double? anchorMs]) {
     final barMs = periodMs * beatsPerBar;
-    final anchorBeat = anchorMs == null ? 0 : ((anchorMs - offsetMs) / periodMs).round();
+    final anchorBeat = ((barAnchorMs(anchorMs) - offsetMs) / periodMs).round();
     final barOffset = (offsetMs + anchorBeat * periodMs) % barMs;
     return BeatGrid(
         bpm: bpm / beatsPerBar,
         offsetMs: barOffset < 0 ? barOffset + barMs : barOffset,
         confidence: confidence);
+  }
+
+  /// 小節頭を足したもの（解析の結果を格子に載せる）
+  BeatGrid withDownbeat(Downbeat? downbeat) {
+    return BeatGrid(
+        bpm: bpm,
+        offsetMs: offsetMs,
+        confidence: confidence,
+        downbeatMs: downbeat?.ms,
+        downbeatConfidence: downbeat?.confidence);
+  }
+
+  /// [startMs]〜[endMs] にある拍の頭と、小節の何拍目か（1〜[beatsPerBar]）。
+  /// 何拍目かは [barGrid] と同じ基準（[barAnchorMs]）で数える。拍の線の表示用
+  Iterable<({double ms, int number})> beatsBetween(double startMs, double endMs,
+      {double? anchorMs}) sync* {
+    final period = periodMs;
+    if (period <= 0 || endMs < startMs) return;
+    final anchorBeat = ((barAnchorMs(anchorMs) - offsetMs) / period).round();
+    for (var k = ((startMs - offsetMs) / period).ceil();; k++) {
+      final ms = offsetMs + k * period;
+      if (ms > endMs) return;
+      final i = (k - anchorBeat) % beatsPerBar;
+      yield (ms: ms, number: (i < 0 ? i + beatsPerBar : i) + 1);
+    }
   }
 
   /// 位置 [ms] 以前で最も近い拍の頭（媒体のミリ秒）
@@ -58,7 +108,24 @@ class BeatGrid {
   @override
   String toString() => 'BeatGrid(${bpm.toStringAsFixed(2)} BPM, '
       'offset ${offsetMs.toStringAsFixed(0)}ms, '
-      'confidence ${confidence.toStringAsFixed(2)})';
+      'confidence ${confidence.toStringAsFixed(2)}'
+      '${downbeatMs == null ? '' : ', 1拍目 ${downbeatMs!.toStringAsFixed(0)}ms '
+          '(${downbeatConfidence?.toStringAsFixed(2)})'})';
+}
+
+/// 小節頭（1 拍目）の推定
+class Downbeat {
+  const Downbeat({required this.ms, required this.confidence});
+
+  /// 1 拍目の拍の頭（ミリ秒）。曲の中のどれか 1 つ（ふつうは最初の小節頭）
+  final double ms;
+
+  /// 曲を 8 小節ごとに区切って推定し直したとき、同じ答えになった区間の割合（0〜1）
+  final double confidence;
+
+  @override
+  String toString() =>
+      'Downbeat(${ms.toStringAsFixed(0)}ms, ${confidence.toStringAsFixed(2)})';
 }
 
 /// 2 曲の拍を合わせる計算（純粋関数。PlaylistEngine から使う）。

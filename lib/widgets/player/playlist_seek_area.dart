@@ -179,6 +179,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final inWaveform =
         swapped ? current ?? widget.waveformFor(inItem) : widget.waveformFor(inItem);
     final recipe = pair.recipe;
+    final showBeats = ref.watch(showBeatLinesProvider);
     final narrower = MixView.narrower(_margin);
     final wider = MixView.wider(_margin);
     final zoom = (
@@ -204,6 +205,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       height: widget.mixHeight,
       curve: recipe.curve,
       bassSwap: recipe.bassSwap,
+      outBeats: showBeats ? outItem?.beatLines : null,
+      inBeats: showBeats ? inItem.beatLines : null,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
     return _seekbar(mixRanges: ranges, above: band, zoom: zoom);

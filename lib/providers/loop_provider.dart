@@ -6,6 +6,25 @@ import '../models/loop_state.dart';
 import 'player_provider.dart';
 import '../core/storage/app_boxes.dart';
 import 'data_provider.dart';
+import '../core/audio/beat_grid.dart';
+
+/// シークバーに出している曲の ID（拍の線の表示用）。再生画面・ミニプレイヤーは
+/// [LoopNotifier.setCurrentItem] で、AB 設定画面は開いたときに入れる
+final seekbarItemIdProvider = StateProvider<String?>((ref) => null);
+
+/// シークバーの波形に引く拍の線の材料（格子と、小節頭の代わりの基準 = ドロップ）。
+/// 表示オフ・格子が無い・信用できない曲は null
+final seekbarBeatsProvider =
+    Provider<BeatLineSource?>((ref) {
+  if (!ref.watch(showBeatLinesProvider)) return null;
+  final id = ref.watch(seekbarItemIdProvider);
+  if (id == null) return null;
+  return ref
+      .watch(loopItemsProvider)
+      .where((i) => i.id == id)
+      .firstOrNull
+      ?.beatLines;
+});
 
 final loopProvider = StateNotifierProvider<LoopNotifier, LoopState>((ref) {
   final notifier = LoopNotifier(ref);
@@ -263,6 +282,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
       _saveAccumulatedTime();
     }
     currentItemId = itemId;
+    _ref.read(seekbarItemIdProvider.notifier).state = itemId;
     _msSinceLastSave = 0;
     if (itemId != null) {
       final box = AppBoxes.loopItems;

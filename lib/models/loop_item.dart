@@ -77,8 +77,8 @@ class LoopItem {
   /// 境目の前後に旧いアプリで解析した曲を取りこぼす）
   int? analysisVersion;
 
-  /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度）
-  static const currentAnalysisVersion = 3;
+  /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度、4: 小節頭）
+  static const currentAnalysisVersion = 4;
 
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
@@ -104,6 +104,10 @@ class LoopItem {
 
   /// 拍の格子の当てはまり（0〜1）。null = 未計測（v1.94 以前の解析）→ 信用する扱い
   double? beatConfidence;
+
+  /// 小節頭（1 拍目の拍の頭、ミリ秒）とその確かさ（0〜1）。null = 未計測（v1.106 以前の解析）
+  double? downbeatMs;
+  double? downbeatConfidence;
 
   /// 音量の流れ（波形から。ピーク比 dB。EnergyProfile）。おまかせがつなぎ方を選ぶのに使う。
   /// ミックス点と同じく再生中に波形から求めて残す。null = 未計測
@@ -166,6 +170,8 @@ class LoopItem {
     this.beatOffsetMs,
     this.beatBpm,
     this.beatConfidence,
+    this.downbeatMs,
+    this.downbeatConfidence,
     this.headDb,
     this.tailDb,
     this.endFadeDb,
@@ -189,8 +195,20 @@ class LoopItem {
   /// 拍の格子（両方の値が揃っているときだけ）
   BeatGrid? get beatGrid => beatBpm != null && beatOffsetMs != null
       ? BeatGrid(
-          bpm: beatBpm!, offsetMs: beatOffsetMs!, confidence: beatConfidence ?? 1)
+          bpm: beatBpm!,
+          offsetMs: beatOffsetMs!,
+          confidence: beatConfidence ?? 1,
+          downbeatMs: downbeatMs,
+          downbeatConfidence: downbeatConfidence)
       : null;
+
+  /// 拍の線の材料（[BeatGrid.barGrid] と同じ基準で何拍目かを数える）。
+  /// 格子が無い・信用できない曲は null（ずれた線を出しても惑わせるだけ）
+  BeatLineSource? get beatLines {
+    final grid = beatGrid;
+    if (grid == null || !grid.reliable) return null;
+    return (grid: grid, anchorMs: mixInMs?.toDouble());
+  }
 
   /// YouTube由来か（文字列比較を19箇所に散らさないための入口）
   bool get isYouTube => sourceType == SourceTypes.youtube;
@@ -318,6 +336,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       loudnessDb: (fields[41] as num?)?.toDouble(),
       firstVerseAMs: fields[42] as int?,
       firstVerseBMs: fields[43] as int?,
+      downbeatMs: (fields[44] as num?)?.toDouble(),
+      downbeatConfidence: (fields[45] as num?)?.toDouble(),
     );
   }
 
@@ -368,6 +388,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       41: obj.loudnessDb,
       42: obj.firstVerseAMs,
       43: obj.firstVerseBMs,
+      44: obj.downbeatMs,
+      45: obj.downbeatConfidence,
     });
   }
 }

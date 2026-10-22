@@ -48,6 +48,7 @@ class SettingsKeys {
   static const autoMix = 'auto_mix';
   static const volumeNorm = 'volume_norm';
   static const beatMatch = 'beat_match';
+  static const showBeatLines = 'show_beat_lines';
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
   static const glassBlur = 'glass_blur';

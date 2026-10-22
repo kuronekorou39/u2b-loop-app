@@ -3,7 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/crossfade_curve.dart';
+import '../../core/audio/beat_grid.dart';
 import '../../core/theme/app_theme.dart';
+import '../loop/beat_lines.dart';
 
 /// 重ね表示の窓（見えている範囲。旧曲の時計）
 class MixWindow {
@@ -59,7 +61,13 @@ class MixView extends StatelessWidget {
     this.curve = CrossfadeCurve.defaultCurve,
     this.bassSwap = false,
     this.onSeek,
+    this.outBeats,
+    this.inBeats,
   });
+
+  /// それぞれの曲の拍の線（格子と、小節頭の代わりの基準）。null なら引かない
+  final BeatLineSource? outBeats;
+  final BeatLineSource? inBeats;
 
   /// 見えている範囲（旧曲の時計）。[windowAround] で作る
   final MixWindow window;
@@ -197,6 +205,8 @@ class MixView extends StatelessWidget {
                       window: window,
                       curve: curve,
                       bassSwap: bassSwap,
+                      outBeats: outBeats,
+                      inBeats: inBeats,
                     ),
                   ),
                 ),
@@ -279,9 +289,13 @@ class _MixPainter extends CustomPainter {
     required this.window,
     required this.curve,
     required this.bassSwap,
+    required this.outBeats,
+    required this.inBeats,
   });
 
   final bool bassSwap;
+  final BeatLineSource? outBeats;
+  final BeatLineSource? inBeats;
   final List<double>? outWaveform;
   final Duration outDuration;
   final List<double>? inWaveform;
@@ -350,6 +364,41 @@ class _MixPainter extends CustomPainter {
       playedUntilMs: nowMs,
       color: AppTheme.pointBColor,
     );
+
+    // 拍の線（1 拍目は濃く、数字は段の境目側）。それぞれの曲の時計で引く
+    final outGrid = outBeats;
+    if (outGrid != null) {
+      BeatLines.paint(
+        canvas,
+        grid: outGrid.grid,
+        anchorMs: outGrid.anchorMs,
+        startMs: winStart,
+        endMs: min(winEnd, cut.inMilliseconds.toDouble()),
+        toX: toX,
+        top: 0,
+        bottom: laneH,
+        color: Colors.white,
+        numbers: true,
+        numbersAtBottom: true,
+      );
+    }
+    final inGrid = inBeats;
+    if (inGrid != null) {
+      // 次曲の時刻 = inStart + (旧曲の時計 − start)
+      final shift = inStart.inMilliseconds - start.inMilliseconds.toDouble();
+      BeatLines.paint(
+        canvas,
+        grid: inGrid.grid,
+        anchorMs: inGrid.anchorMs,
+        startMs: max(winStart, start.inMilliseconds.toDouble()) + shift,
+        endMs: winEnd + shift,
+        toX: (ms) => toX(ms - shift),
+        top: laneH,
+        bottom: h,
+        color: Colors.white,
+        numbers: true,
+      );
+    }
 
     // 音量曲線（設定のつなぎ方）。全高で描く
     final outPath = Path();
@@ -484,6 +533,8 @@ class _MixPainter extends CustomPainter {
       window != old.window ||
       curve != old.curve ||
       bassSwap != old.bassSwap ||
+      outBeats != old.outBeats ||
+      inBeats != old.inBeats ||
       start != old.start ||
       cut != old.cut ||
       outWaveform != old.outWaveform ||

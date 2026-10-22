@@ -366,6 +366,23 @@ class BeatMatchNotifier extends StateNotifier<bool> {
   }
 }
 
+/// 波形に拍の線を出すか（既定オン）。小節頭（1 拍目）は濃く。拍合わせが合っているかを目で確かめる用
+final showBeatLinesProvider = StateNotifierProvider<ShowBeatLinesNotifier, bool>(
+    (ref) => ShowBeatLinesNotifier());
+
+class ShowBeatLinesNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.showBeatLines;
+
+  ShowBeatLinesNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 /// ベーススワップ: 交差中は入る曲の低音を切って重ね、途中で出る曲と入れ替える（既定オン）
 final bassSwapProvider =
     StateNotifierProvider<BassSwapNotifier, bool>((ref) => BassSwapNotifier());

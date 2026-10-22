@@ -97,6 +97,26 @@ void main() {
       expect(anchored.floorBeatMs(5000), closeTo(3600, 1e-9));
       expect(anchored.confidence, 1);
     });
+
+    test('小節頭: 解析の小節頭が確かならドロップより優先、不確かならドロップ', () {
+      // 拍は 100, 600, 1100, 1600…。解析の 1 拍目は 600
+      const sure = BeatGrid(
+          bpm: 120, offsetMs: 100, downbeatMs: 600, downbeatConfidence: 0.8);
+      expect(sure.barGrid(3610).offsetMs, closeTo(600, 1e-9));
+      const unsure = BeatGrid(
+          bpm: 120, offsetMs: 100, downbeatMs: 600, downbeatConfidence: 0.3);
+      expect(unsure.barGrid(3610).offsetMs, closeTo(1600, 1e-9));
+    });
+
+    test('拍の線: 範囲の拍と何拍目か（基準と同じ数え方）', () {
+      const g = BeatGrid(
+          bpm: 120, offsetMs: 100, downbeatMs: 600, downbeatConfidence: 1);
+      final beats = g.beatsBetween(500, 2700).toList();
+      expect([for (final b in beats) b.ms], [600, 1100, 1600, 2100, 2600]);
+      expect([for (final b in beats) b.number], [1, 2, 3, 4, 1]);
+      // 小節頭より前も数えられる（100 は 600 の 1 拍前 = 4 拍目）
+      expect(g.beatsBetween(0, 200).single.number, 4);
+    });
   });
 
   group('BeatMatcher', () {
@@ -116,6 +136,26 @@ void main() {
       expect(in_.toNextBeatMs(s2), closeTo(125, 1e-6));
       // ずらす量は半拍以内
       expect((s2 - 10000).abs(), lessThanOrEqualTo(250));
+    });
+
+    test('小節の格子で揃えると、入る曲の 1 拍目が出る曲の 1 拍目に重なる', () {
+      // 出る曲の 1 拍目は 1500, 3500…（拍 0, 500, 1000, 1500 の 4 つ目）
+      const outBars = BeatGrid(
+          bpm: 120, offsetMs: 0, downbeatMs: 1500, downbeatConfidence: 1);
+      // 入る曲の 1 拍目は 700, 2700…
+      const inBars = BeatGrid(
+          bpm: 120, offsetMs: 200, downbeatMs: 700, downbeatConfidence: 1);
+      // 出る曲は 61500（1 拍目）で交差開始。入る曲は 10000 から始める予定
+      final s = BeatMatcher.alignedStartMs(
+          out: outBars.barGrid(),
+          in_: inBars.barGrid(),
+          outPosMs: 61500,
+          outRate: 1,
+          inStartMs: 10000,
+          inRate: 1);
+      // 入る曲も 1 拍目（700 + 2000n）から始まる。10000 に一番近いのは 10700
+      expect(s, closeTo(10700, 1e-6));
+      expect(inBars.beatsBetween(s - 1, s + 1).single.number, 1);
     });
 
     test('速度が違っても実時間で揃える', () {

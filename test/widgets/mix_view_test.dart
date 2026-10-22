@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/core/audio/beat_grid.dart';
 import 'package:u2b_loop_app/widgets/player/mix_view.dart';
 
 /// ミックスビュー（帯だけ）: 窓は交差の前後に余白を付けた範囲（= 重ね表示を出す範囲）。
@@ -73,6 +74,7 @@ void main() {
     WidgetTester tester, {
     bool seekable = true,
     Duration now = const Duration(seconds: 95),
+    BeatLineSource? beats,
   }) async {
     final seeks = <Duration>[];
     await tester.pumpWidget(
@@ -97,6 +99,8 @@ void main() {
                 window: wide,
                 height: 80,
                 onSeek: seekable ? seeks.add : null,
+                outBeats: beats,
+                inBeats: beats,
               ),
             ),
           ),
@@ -149,5 +153,21 @@ void main() {
       ),
     );
     expect(seeks, isEmpty);
+  });
+
+  testWidgets('拍の線を付けても描ける（交差の前後どちらの位置でも）', (tester) async {
+    const beats = (
+      grid: BeatGrid(
+          bpm: 120, offsetMs: 0, downbeatMs: 500, downbeatConfidence: 1),
+      anchorMs: null,
+    );
+    for (final now in const [
+      Duration(seconds: 95),
+      Duration(seconds: 105),
+      Duration(seconds: 113),
+    ]) {
+      await pump(tester, now: now, beats: beats);
+      expect(tester.takeException(), isNull);
+    }
   });
 }
