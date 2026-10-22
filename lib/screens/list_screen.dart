@@ -270,12 +270,16 @@ class _ListScreenState extends ConsumerState<ListScreen>
                           Padding(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: AppSpacing.lg),
-                            child: _isSelecting
-                                ? _buildSelectionBar(selectableIds)
-                                : GlassSegmentedTabs(
-                                    controller: _tabController,
-                                    labels: const ['タグ', '曲', 'プレイリスト'],
-                                  ),
+                            // 選択に入っても下の一覧が動かないよう、高さを揃える
+                            child: SizedBox(
+                              height: _topBarHeight,
+                              child: _isSelecting
+                                  ? _buildSelectionBar(selectableIds)
+                                  : GlassSegmentedTabs(
+                                      controller: _tabController,
+                                      labels: const ['タグ', '曲', 'プレイリスト'],
+                                    ),
+                            ),
                           ),
                           const SizedBox(height: AppSpacing.md),
                           Expanded(
@@ -493,6 +497,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
   }
 
   /// 複数選択中の操作バー（タブと同じ場所にガラスの板で出す）。操作はタブごと
+  /// タブ（セグメント 36 + 上下の余白）と選択バーの高さ。切り替えても一覧が動かないように
+  static const _topBarHeight = 44.0;
+
   Widget _buildSelectionBar(Iterable<String> selectableIds) {
     List<Tag> selectedTags() =>
         ref.read(tagsProvider).where((t) => _selectedIds.contains(t.id)).toList();
@@ -537,13 +544,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
     return GlassPanel(
       radius: 999,
-      padding:
-          const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       child: Row(
         children: [
           IconButton(
             icon: const Icon(Icons.close, size: AppIconSizes.md),
             tooltip: '選択をやめる',
+            visualDensity: VisualDensity.compact,
             onPressed: _clearSelection,
           ),
           Text('${_selectedIds.length} 件選択',
@@ -566,7 +573,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       borderRadius: BorderRadius.circular(12),
       child: Container(
         constraints: const BoxConstraints(minWidth: 48, minHeight: 44),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,

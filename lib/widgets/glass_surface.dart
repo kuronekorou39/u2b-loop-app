@@ -23,7 +23,8 @@ class GlassSurface extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
-  /// 面に薄く混ぜる色（選択中の緑など）。null なら白/黒だけ
+  /// 面に混ぜる色（選択中の緑・タグの色など）。null なら白/黒だけ。
+  /// BoxDecoration は gradient があると color を無視するので、gradient の各色に混ぜる
   final Color? tint;
 
   @override
@@ -31,16 +32,18 @@ class GlassSurface extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final base = dark ? Colors.white : Colors.black;
     final borderRadius = BorderRadius.circular(radius);
+    final tint = this.tint;
+    Color layer(double alpha) {
+      final c = base.withValues(alpha: alpha);
+      return tint == null ? c : Color.alphaBlend(c, tint);
+    }
+
     final decoration = BoxDecoration(
       borderRadius: borderRadius,
-      color: tint,
       gradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [
-          base.withValues(alpha: dark ? 0.10 : 0.06),
-          base.withValues(alpha: dark ? 0.04 : 0.03),
-        ],
+        colors: [layer(dark ? 0.10 : 0.06), layer(dark ? 0.04 : 0.03)],
       ),
     );
 

@@ -50,6 +50,9 @@ class TagManagerTab extends ConsumerWidget {
   final ValueChanged<Tag> onTagTap;
 
   final TagViewMode viewMode;
+
+  /// リストの先頭（色の丸 / チェック）の幅。選択中も同じ
+  static const _leadWidth = 40.0;
   final bool selecting;
   final Set<String> selectedIds;
   final ValueChanged<Tag>? onToggleSelect;
@@ -213,33 +216,51 @@ class TagManagerTab extends ConsumerWidget {
           return ListTile(
             key: ValueKey(tag.id),
             selected: selected,
-            leading: selecting
-                ? Checkbox(
-                    value: selected,
-                    onChanged: (_) => onToggleSelect?.call(tag),
-                    visualDensity: VisualDensity.compact,
-                  )
-                : _TagDot(tag: tag),
+            // 選択中に入っても行の中身が動かないよう、先頭は同じ幅の箱に
+            leading: SizedBox(
+              width: _leadWidth,
+              child: Center(
+                child: selecting
+                    ? Checkbox(
+                        value: selected,
+                        onChanged: (_) => onToggleSelect?.call(tag),
+                        visualDensity: VisualDensity.compact,
+                      )
+                    : _TagDot(tag: tag),
+              ),
+            ),
             title: Text(tag.name, style: textTheme.bodyLarge),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('${countOf(tag)} 曲', style: textTheme.bodySmall),
-                if (!selecting) ...[
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
-                    tooltip: 'メニュー',
-                    onPressed: () => _showMenu(context, ref, tag),
+                // 選択中は隠すだけで場所は残す（曲数の位置がずれないように）
+                Visibility(
+                  visible: !selecting,
+                  maintainSize: true,
+                  maintainAnimation: true,
+                  maintainState: true,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
+                        tooltip: 'メニュー',
+                        onPressed: () => _showMenu(context, ref, tag),
+                      ),
+                      ReorderableDragStartListener(
+                        index: i,
+                        enabled: !selecting,
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.sm),
+                          child: Icon(Icons.drag_handle,
+                              size: AppIconSizes.md,
+                              color: AppTheme.muted(context)),
+                        ),
+                      ),
+                    ],
                   ),
-                  ReorderableDragStartListener(
-                    index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      child: Icon(Icons.drag_handle,
-                          size: AppIconSizes.md, color: AppTheme.muted(context)),
-                    ),
-                  ),
-                ],
+                ),
               ],
             ),
             onTap: () => tap(tag),
@@ -493,34 +514,37 @@ class _TagGridState extends State<_TagGrid> {
     );
   }
 
-  /// 色つきのチップ（名前・曲数）。選択中は緑の面 + チェック
+  /// 色つきのチップ（名前・曲数）。2 列は色の丸 + 薄い色、4 列はタグの色で塗る。
+  /// 選択中は緑の枠とチェックを上に重ねるだけ（中身の大きさ・位置は変えない）
   Widget _chip(BuildContext context, Tag tag) {
     final textTheme = Theme.of(context).textTheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final selected = widget.selectedIds.contains(tag.id);
     final small = widget.small;
-    final Widget? lead = widget.selecting
-        ? Icon(
-            selected ? Icons.check_circle : Icons.radio_button_unchecked,
-            size: small ? AppIconSizes.s : AppIconSizes.md,
-            color: selected ? AppTheme.accentGreen : AppTheme.muted(context),
-          )
-        : small
-            ? null
-            : _TagDot(tag: tag);
-    return GlassSurface(
+    // 4 列: タグの色の面に、明るさで白/黒の文字
+    final fill = tag.color.withValues(alpha: dark ? 0.55 : 0.45);
+    final onFill = Color.alphaBlend(
+                    fill, dark ? AppTheme.darkBackground : Colors.white)
+                .computeLuminance() >
+            0.45
+        ? Colors.black87
+        : Colors.white;
+    final nameColor = small ? onFill : null;
+    final countColor =
+        small ? onFill.withValues(alpha: 0.75) : AppTheme.muted(context);
+
+    final surface = GlassSurface(
       radius: small ? 10 : 14,
       padding: EdgeInsets.symmetric(
           horizontal: small ? AppSpacing.sm : AppSpacing.md,
           vertical: small ? AppSpacing.xs : AppSpacing.sm),
-      tint: selected
-          ? AppTheme.accentGreen.withValues(alpha: 0.15)
-          : tag.color.withValues(alpha: small ? 0.22 : 0.12),
+      tint: small ? fill : tag.color.withValues(alpha: 0.12),
       onTap: () => widget.onTap(tag),
       child: Row(
         children: [
-          if (lead != null) ...[
-            lead,
-            SizedBox(width: small ? AppSpacing.xs : AppSpacing.md),
+          if (!small) ...[
+            _TagDot(tag: tag),
+            const SizedBox(width: AppSpacing.md),
           ],
           Expanded(
             child: Column(
@@ -531,16 +555,50 @@ class _TagGridState extends State<_TagGrid> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: (small ? textTheme.labelSmall : textTheme.labelMedium)
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                        ?.copyWith(fontWeight: FontWeight.w600, color: nameColor)),
                 Text('${widget.countOf(tag)} 曲',
                     maxLines: 1,
-                    style: textTheme.labelSmall
-                        ?.copyWith(color: AppTheme.muted(context))),
+                    style: textTheme.labelSmall?.copyWith(color: countColor)),
               ],
             ),
           ),
         ],
       ),
+    );
+    if (!widget.selecting) return surface;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        surface,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(small ? 10 : 14),
+                color: selected
+                    ? AppTheme.accentGreen.withValues(alpha: 0.18)
+                    : null,
+                border: selected
+                    ? Border.all(color: AppTheme.accentGreen, width: 2)
+                    : null,
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 3,
+          right: 3,
+          child: IgnorePointer(
+            child: Icon(
+              selected ? Icons.check_circle : Icons.radio_button_unchecked,
+              size: AppIconSizes.s,
+              color: selected
+                  ? AppTheme.accentGreen
+                  : (small ? countColor : AppTheme.muted(context)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

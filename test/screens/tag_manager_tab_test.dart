@@ -33,7 +33,8 @@ void main() {
   });
 
   Future<(ProviderContainer, List<String>)> pump(
-      WidgetTester tester, TagViewMode mode) async {
+      WidgetTester tester, TagViewMode mode,
+      {bool selecting = false}) async {
     final longPressed = <String>[];
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -43,6 +44,8 @@ void main() {
         home: Scaffold(
           body: TagManagerTab(
             viewMode: mode,
+            selecting: selecting,
+            selectedIds: const {'t0'},
             onTagTap: (_) {},
             onLongPress: (t) => longPressed.add(t.id),
           ),
@@ -78,6 +81,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(names(c), ['あ', 'い', 'う', 'え']);
       expect(longPressed, ['t1']);
+    });
+  }
+
+  for (final mode in TagViewMode.values) {
+    testWidgets('${mode.label}: 選択に入っても名前の位置と大きさが変わらない', (tester) async {
+      await pump(tester, mode);
+      final before = [for (final n in ['あ', 'い']) tester.getRect(find.text(n))];
+      await pump(tester, mode, selecting: true);
+      await tester.pumpAndSettle();
+      final after = [for (final n in ['あ', 'い']) tester.getRect(find.text(n))];
+      expect(after, before);
     });
   }
 
