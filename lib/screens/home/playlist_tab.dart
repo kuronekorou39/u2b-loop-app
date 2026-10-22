@@ -10,6 +10,7 @@ import '../../core/utils/id_generator.dart';
 import '../../models/loop_item.dart';
 import '../../models/playlist.dart';
 import '../../providers/data_provider.dart';
+import '../../widgets/selection_thumb.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_controls.dart';
 import '../../widgets/glass_surface.dart';
@@ -119,31 +120,28 @@ class PlaylistTab extends ConsumerWidget {
           final selected = selectedIds.contains(pl.id);
           return ListTile(
             selected: selected,
-            leading: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (selecting)
-                  Checkbox(
-                    value: selected,
-                    onChanged: (_) => onToggleSelect?.call(pl),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ClipRRect(
-                  borderRadius: AppRadius.borderMd,
-                  child: SizedBox(
-                    width: 56,
-                    height: 56,
-                    child: _Thumb(item: thumbOf(pl)),
-                  ),
+            // 選択の印はサムネに重ねる（行に差し込むと名前がずれる）
+            leading: ClipRRect(
+              borderRadius: AppRadius.borderMd,
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: SelectionThumb(
+                  selecting: selecting,
+                  selected: selected,
+                  child: _Thumb(item: thumbOf(pl)),
                 ),
-              ],
+              ),
             ),
             title: Text(pl.name),
             subtitle: Text('$count 曲', style: textTheme.bodySmall),
-            trailing: selecting
-                ? null
-                : Row(
+            // 選択中は隠すだけで場所は残す（名前の幅が変わらないように）
+            trailing: Visibility(
+                visible: !selecting,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (count > 0)
@@ -160,6 +158,7 @@ class PlaylistTab extends ConsumerWidget {
                       ),
                     ],
                   ),
+            ),
             onTap: () => tap(pl),
             onLongPress: () => onLongPress?.call(pl),
           );

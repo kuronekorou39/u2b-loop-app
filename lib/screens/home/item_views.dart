@@ -4,6 +4,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_utils.dart';
 import '../../models/loop_item.dart';
 import '../../models/tag.dart';
+import '../../widgets/selection_thumb.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/item_thumbnail.dart';
 import '../../widgets/tag_chip.dart';
@@ -259,22 +260,16 @@ class ItemCollectionView extends StatelessWidget {
     final selected = selectedIds.contains(item.id);
     return ListTile(
       selected: selected,
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (selecting)
-            Checkbox(
-              value: selected,
-              onChanged: (_) => onToggleSelect(item),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ClipRRect(
+      // 選択の印はサムネに重ねる（行に差し込むと曲名がずれる）
+      leading: ClipRRect(
             borderRadius: AppRadius.borderXs,
             child: SizedBox(
               width: 64,
               height: 36,
-              child: Stack(
+              child: SelectionThumb(
+                selecting: selecting,
+                selected: selected,
+                child: Stack(
                 fit: StackFit.expand,
                 children: [
                   ItemThumbnail(item: item, heroTag: 'thumb_${item.id}'),
@@ -312,10 +307,9 @@ class ItemCollectionView extends StatelessWidget {
                     ),
                 ],
               ),
+              ),
             ),
           ),
-        ],
-      ),
       title: Text(
         item.isFetching ? 'データ取得中...' : item.title,
         maxLines: titleLines,
@@ -325,20 +319,25 @@ class ItemCollectionView extends StatelessWidget {
             : textTheme.bodyLarge,
       ),
       subtitle: _buildSubtitle(context, item),
-      trailing: selecting
-          ? null
-          : PopupMenuButton<String>(
-              tooltip: 'メニュー',
-              onSelected: (v) {
-                if (v == 'delete') onDelete(item);
-                if (v == 'retry') onRetry(item);
-              },
-              itemBuilder: (_) => [
-                if (item.hasError)
-                  const PopupMenuItem(value: 'retry', child: Text('再試行')),
-                const PopupMenuItem(value: 'delete', child: Text('削除')),
-              ],
-            ),
+      // 選択中は隠すだけで場所は残す（曲名の幅が変わらないように）
+      trailing: Visibility(
+        visible: !selecting,
+        maintainSize: true,
+        maintainAnimation: true,
+        maintainState: true,
+        child: PopupMenuButton<String>(
+          tooltip: 'メニュー',
+          onSelected: (v) {
+            if (v == 'delete') onDelete(item);
+            if (v == 'retry') onRetry(item);
+          },
+          itemBuilder: (_) => [
+            if (item.hasError)
+              const PopupMenuItem(value: 'retry', child: Text('再試行')),
+            const PopupMenuItem(value: 'delete', child: Text('削除')),
+          ],
+        ),
+      ),
       onTap: () => onOpen(item),
       onLongPress: () => onLongPress(item),
     );
