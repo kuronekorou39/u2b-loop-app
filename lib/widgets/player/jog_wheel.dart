@@ -4,18 +4,19 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 
-/// ジョグホイール（円盤）。重ね表示の上に 2 つ並べる。
+/// ジョグホイール（円盤）。デッキの板（[MixDeck]）に 2 つ並べる。
 ///
-/// 回せる円盤（[JogWheel]）は入る曲の拍を手で前後に動かす: 回すと [valueMs]
+/// 回せる円盤（[JogWheel]）は入る曲の拍の位置（位相）を手で前後に動かす: 回すと [valueMs]
 /// （入る曲の媒体ミリ秒、+ で曲を先へ）が増減し [onChanged] を呼ぶ（[touching] は
 /// 指で回している間 true）。離すと [onChangeEnd]。1 周 = 1 拍（[periodMs]）。
-/// 円盤の中心に今の量と拍のずれ、右に「保存」「戻す」。
+/// 円盤の中心に今の量と拍のずれ（保存・戻すのボタンは板の側）。
+/// DJ がプラッターの縁を押す／引く動き。拍の間隔（テンポ）はピッチフェーダー（[PitchFader]）
 ///
 /// 表示だけの円盤（[JogWheel.platter]）は曲の再生に合わせて回る（レコードの回転）。
-/// 触れても何も起きず、下の帯のシークにも落ちない（前曲は鳴っているので動かさない）。
+/// 触れても何も起きない（前曲は鳴っているので動かさない）。
 ///
 /// 値（[valueMs]）は親（[jogOffsetProvider]）が持つ。このウィジェットは差分を返すだけ。
-/// 1 本指の回転だけで操作する（2 本指のつまみは細い帯では安定しないので使わない）
+/// 1 本指の回転だけで操作する（2 本指のつまみは安定しないので使わない）
 class JogWheel extends StatefulWidget {
   const JogWheel({
     super.key,
@@ -25,8 +26,6 @@ class JogWheel extends StatefulWidget {
     required void Function(double valueMs, {required bool touching}) this.onChanged,
     required ValueChanged<double> this.onChangeEnd,
     this.errorMs,
-    this.onSave,
-    this.onReset,
     this.title = '次曲',
     this.size = 88,
   }) : turns = null;
@@ -42,9 +41,7 @@ class JogWheel extends StatefulWidget {
         maxMs = 0,
         onChanged = null,
         onChangeEnd = null,
-        errorMs = null,
-        onSave = null,
-        onReset = null;
+        errorMs = null;
 
   /// 1 拍の長さ（媒体ミリ秒）。1 周でこの分だけ動く
   final double periodMs;
@@ -62,12 +59,6 @@ class JogWheel extends StatefulWidget {
 
   /// 拍のずれ（実時間 ms、+ で入る曲が遅れている）。null なら出さない
   final double? errorMs;
-
-  /// 保存（拍の格子に焼き込む）。動かしていなければ null で無効
-  final VoidCallback? onSave;
-
-  /// 真ん中（0）に戻す。動かしていなければ null で無効
-  final VoidCallback? onReset;
 
   /// 表示だけの円盤の回転数。回せる円盤は [valueMs] から
   final double? turns;
@@ -122,7 +113,9 @@ class _JogWheelState extends State<JogWheel> {
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.labelSmall!;
+    final text = Theme.of(context).textTheme;
+    // 大きい円盤は中の文字も少し大きく
+    final style = (widget.size >= 120 ? text.bodyMedium : text.labelSmall)!;
     final readOnly = widget.readOnly;
     final active = !readOnly && widget.valueMs.abs() >= 1;
     final turns = readOnly
@@ -149,39 +142,16 @@ class _JogWheelState extends State<JogWheel> {
       ),
     );
     if (readOnly) {
-      // 触れても何も起きない。下の帯のシークにも落とさない（鳴っている曲を動かさない）
+      // 触れても何も起きない（鳴っている曲を動かさない）
       return AbsorbPointer(child: disc);
     }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: _onStart,
-          onPanUpdate: _onUpdate,
-          onPanEnd: (_) => _onEnd(),
-          onPanCancel: _onEnd,
-          child: disc,
-        ),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.push_pin_outlined, size: 18),
-              tooltip: 'この曲の拍の位置に保存',
-              visualDensity: VisualDensity.compact,
-              color: AppTheme.accentGreen,
-              onPressed: widget.onSave,
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh, size: 18),
-              tooltip: '真ん中に戻す',
-              visualDensity: VisualDensity.compact,
-              onPressed: widget.onReset,
-            ),
-          ],
-        ),
-      ],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: _onStart,
+      onPanUpdate: _onUpdate,
+      onPanEnd: (_) => _onEnd(),
+      onPanCancel: _onEnd,
+      child: disc,
     );
   }
 
@@ -210,7 +180,7 @@ class _WheelPainter extends CustomPainter {
     final c = Offset(size.width / 2, size.height / 2);
     final r = min(size.width, size.height) / 2 - 2;
 
-    // 円盤（少し透けて、下の波形が見える）
+    // 円盤
     canvas.drawCircle(
       c,
       r,

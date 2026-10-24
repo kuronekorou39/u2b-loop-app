@@ -94,6 +94,30 @@ class BeatGrid {
     );
   }
 
+  /// BPM を [newBpm] に変えた格子（ピッチフェーダーで合わせたテンポの焼き込み、倍/半分の直し）。
+  /// [anchorMs] の直前の拍の頭は動かさず、小節頭はその拍との関係（小節の何拍目か）を保って
+  /// 一番近い小節頭に置き直す。合わせていた位置の拍が、BPM を変えてもずれないようにする
+  BeatGrid withBpm(double newBpm, {required double anchorMs}) {
+    final p = 60000 / newBpm;
+    final beatMs = floorBeatMs(anchorMs);
+    double? newDownbeat;
+    final downbeat = downbeatMs;
+    if (downbeat != null) {
+      final k = ((beatMs - downbeat) / periodMs).round();
+      final m = k % beatsPerBar;
+      newDownbeat = beatMs - m * p;
+    }
+    var off = beatMs % p;
+    if (off < 0) off += p;
+    return BeatGrid(
+      bpm: newBpm,
+      offsetMs: off,
+      confidence: confidence,
+      downbeatMs: newDownbeat,
+      downbeatConfidence: downbeatConfidence,
+    );
+  }
+
   /// 小節頭を足したもの（解析の結果を格子に載せる）
   BeatGrid withDownbeat(Downbeat? downbeat) {
     return BeatGrid(

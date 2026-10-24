@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../../core/audio/track_compatibility.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../models/loop_item.dart';
@@ -10,6 +11,7 @@ import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
 import '../loop/loop_seekbar.dart';
 import 'jog_wheel.dart';
+import 'mix_deck.dart';
 import 'mix_view.dart';
 
 /// 下部コントローラーのシーク領域。
@@ -17,8 +19,9 @@ import 'mix_view.dart';
 /// 上から「前曲の細い棒」「重ねの帯（[MixView]）」「次曲の細い棒」「時刻行（次曲）」。
 /// 前曲の棒で 1 曲目の序盤へ戻れ、次曲の棒で 2 曲目の中を動ける。
 /// 高さはふつうの表示（波形 + 棒 + 時刻行）と同じに揃えて、切り替わっても下部が動かない。
-/// 帯の上には円盤を 2 つ重ねられる（時刻行の左のボタンで開閉。左 = 前曲は回るだけ、
-/// 右 = 次曲は回して拍を合わせ、保存で曲に焼き込む）
+/// 時刻行の左のボタンでデッキの板（[MixDeck]: 円盤 2 つとピッチフェーダー）を開閉する。
+/// 板は帯に重ねず、この領域の上（コントローラーの上。動画や曲名に被さる）に浮かせて出す
+/// （[OverlayPortal]。帯の上に重ねると波形が見えなくなり、操作もかぶる）
 ///
 /// 重ね表示は [PlaylistEngine] の組（[MixPair]: 1 曲目と 2 曲目をつないだ 1 本の時間軸）を
 /// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
@@ -83,8 +86,18 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   /// 帯に描く範囲の余白。「−」「＋」で段を変える。曲が変わっても持ち越す
   Duration _margin = MixView.defaultMargin;
 
-  /// 円盤を出しているか（時刻行の左のボタン。既定は出さない）
+  /// デッキの板を出しているか（時刻行の左のボタン。既定は出さない）
   bool _wheelsOpen = false;
+
+  /// 板をこの領域の上に浮かせる（この領域の上端に板の下端を合わせる）
+  final _link = LayerLink();
+  final _deckPortal = OverlayPortalController();
+
+  /// この領域の幅（板の幅に使う。描画後に分かるので 1 フレーム遅れる）
+  double _width = 0;
+
+  /// 今の build で重ね表示を出しているなら、板に渡す材料。出していなければ null
+  _DeckData? _deckData;
 
   /// 重ね表示でシークした先（出る曲の時計）と時刻、どの組か。シーク直後の再生位置は
   /// 少しの間古い値を返すので、それで判定すると一瞬ふつうのシークバーに戻ってチラつく。
@@ -113,6 +126,35 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
 
   @override
   Widget build(BuildContext context) {
+    _deckData = null;
+    final body = _body();
+    return OverlayPortal(
+      controller: _deckPortal,
+      overlayChildBuilder: _buildDeck,
+      child: CompositedTransformTarget(
+        link: _link,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            _width = constraints.maxWidth;
+            return body;
+          },
+        ),
+      ),
+    );
+  }
+
+  void _toggleDeck() {
+    setState(() {
+      _wheelsOpen = !_wheelsOpen;
+      if (_wheelsOpen) {
+        _deckPortal.show();
+      } else {
+        _deckPortal.hide();
+      }
+    });
+  }
+
+  Widget _body() {
     final slot = ref.watch(activeSlotProvider);
     // 位置の更新で描き直すためだけに見る。値は下でプレイヤーから直接取る
     ref.watch(positionProvider);
@@ -264,13 +306,12 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       beatError: showBeats ? ref.watch(beatPhaseErrorProvider) : null,
       sfxCues: pair.sfx?.cues ?? const [],
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
-      overlay: _wheelsOpen
-          ? _wheels(pair,
-              swapped: swapped,
-              outPosition: outPosition,
-              inPosition: inPosition,
-              size: bandHeight - AppSpacing.md)
-          : null,
+    );
+    _deckData = (
+      pair: pair,
+      swapped: swapped,
+      outPosition: outPosition,
+      inPosition: inPosition,
     );
 
     return Padding(
@@ -319,12 +360,12 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
             leading: IconButton(
               icon: Icon(_wheelsOpen ? Icons.album : Icons.album_outlined,
                   size: AppIconSizes.sm),
-              tooltip: _wheelsOpen ? '円盤を閉じる' : '円盤を出す',
+              tooltip: _wheelsOpen ? 'デッキを閉じる' : 'デッキを出す',
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               visualDensity: VisualDensity.compact,
               color: _wheelsOpen ? AppTheme.accentGreen : null,
-              onPressed: () => setState(() => _wheelsOpen = !_wheelsOpen),
+              onPressed: _toggleDeck,
             ),
           ),
         ],
@@ -332,64 +373,100 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     );
   }
 
-  /// 帯の上に重ねる 2 つの円盤。左（前曲）は再生に合わせて回るだけ、
-  /// 右（次曲）は回して拍を合わせる。切り替わった後は右も回るだけ
-  Widget _wheels(MixPair pair,
-      {required bool swapped,
-      required Duration outPosition,
-      required Duration inPosition,
-      required double size}) {
+  /// デッキの板（この領域の上に浮かせる）。重ね表示を出していないときは空。
+  /// 左（前曲）は再生に合わせて回るだけ、右（次曲）は回して拍の位置を、
+  /// フェーダーでテンポを合わせる。切り替わった後は右も回るだけ
+  Widget _buildDeck(BuildContext portalContext) {
+    final data = _deckData;
+    if (data == null || _width <= 0) return const SizedBox.shrink();
+    final pair = data.pair;
+    final swapped = data.swapped;
     final engine = ref.read(playlistEngineProvider);
+    final inItem = pair.next.item;
+    final grid = inItem.beatGrid;
     final jogMax = swapped ? null : engine.jogMaxMs(pair);
     final jogMs = engine.jogMsFor(pair.next);
-    final period = pair.next.item.beatGrid?.periodMs ?? 500.0;
+    final trim = engine.tempoTrimFor(pair.next);
+    final canTrim = !swapped && grid != null;
+    final touched = jogMs.abs() >= 1 || trim != 0;
+
     void setJog(double ms, {required bool touching}) {
       ref.read(jogOffsetProvider.notifier).state = (key: pair.key, ms: ms);
       engine.jog(pair, ms, touching: touching);
     }
 
-    final Widget right = jogMax == null
-        ? JogWheel.platter(
-            turns: swapped ? JogWheel.platterTurns(inPosition) : 0,
-            title: '次曲',
-            size: size)
-        : JogWheel(
-            periodMs: period,
-            valueMs: jogMs,
-            maxMs: jogMax,
-            errorMs: engine.jogErrorMs(pair),
-            size: size,
-            onChanged: (ms, {required bool touching}) =>
-                setJog(ms, touching: touching),
-            onChangeEnd: (ms) => setJog(ms, touching: false),
-            onReset: jogMs.abs() < 1
-                ? null
-                : () {
-                    ref.read(jogOffsetProvider.notifier).state = null;
-                    engine.jog(pair, 0, touching: false);
-                  },
-            onSave: jogMs.abs() < 1
-                ? null
-                : () async {
-                    await engine.saveJog(pair, jogMs);
-                    ref.read(jogOffsetProvider.notifier).state = null;
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        AppSnackBar.success('この曲の拍の位置を直しました'));
-                  },
-          );
-    return Center(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          JogWheel.platter(
-            turns: JogWheel.platterTurns(outPosition),
-            title: '前曲',
-            size: size,
-          ),
-          const SizedBox(width: AppSpacing.xl),
-          right,
-        ],
+    void setTrim(double percent) {
+      ref.read(tempoTrimProvider.notifier).state =
+          (key: pair.key, percent: percent);
+      engine.trimTempo(pair, percent);
+    }
+
+    void clear() {
+      ref.read(jogOffsetProvider.notifier).state = null;
+      ref.read(tempoTrimProvider.notifier).state = null;
+    }
+
+    Future<void> rescale(double factor) async {
+      await engine.scaleBpm(pair, factor);
+      if (!mounted) return;
+      final bpm = inItem.beatBpm ?? inItem.bpm;
+      ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.success(
+          '次曲の BPM を ${bpm?.toStringAsFixed(1) ?? '--'} にしました'));
+    }
+
+    return Positioned(
+      left: 0,
+      top: 0,
+      child: CompositedTransformFollower(
+        link: _link,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topCenter,
+        followerAnchor: Alignment.bottomCenter,
+        offset: const Offset(0, -MixDeck.liftAbove),
+        child: MixDeck(
+          width: _width,
+          outTurns: JogWheel.platterTurns(data.outPosition),
+          inTurns: swapped ? JogWheel.platterTurns(data.inPosition) : 0,
+          outBpm: engine.outTempoBpm(pair),
+          inBpm: engine.inTempoBpm(pair),
+          jog: jogMax == null
+              ? null
+              : (
+                  periodMs: grid?.periodMs ?? 500.0,
+                  valueMs: jogMs,
+                  maxMs: jogMax,
+                  errorMs: engine.jogErrorMs(pair),
+                ),
+          tempo: canTrim
+              ? (
+                  percent: trim,
+                  maxPercent: TrackCompatibility.maxTempoAdjustPercent,
+                )
+              : null,
+          onJog: setJog,
+          onJogEnd: (ms) => setJog(ms, touching: false),
+          onTempo: setTrim,
+          onTempoEnd: setTrim,
+          onReset: !touched
+              ? null
+              : () {
+                  clear();
+                  engine.jog(pair, 0, touching: false);
+                  engine.trimTempo(pair, 0);
+                },
+          onSave: !touched
+              ? null
+              : () async {
+                  if (jogMs.abs() >= 1) await engine.saveJog(pair, jogMs);
+                  if (trim != 0) await engine.saveTempo(pair, trim);
+                  clear();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      AppSnackBar.success('この曲の拍を直しました'));
+                },
+          onDouble: canTrim ? () => rescale(2) : null,
+          onHalve: canTrim ? () => rescale(0.5) : null,
+        ),
       ),
     );
   }
@@ -418,3 +495,11 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     return d;
   }
 }
+
+/// デッキの板に渡す材料（重ね表示を出している組と、両方の曲の位置）
+typedef _DeckData = ({
+  MixPair pair,
+  bool swapped,
+  Duration outPosition,
+  Duration inPosition,
+});

@@ -50,6 +50,12 @@ final beatPhaseErrorProvider = StateProvider<double?>((ref) => null);
 typedef JogOffset = ({String key, double ms});
 final jogOffsetProvider = StateProvider<JogOffset?>((ref) => null);
 
+/// ピッチフェーダーで手で直している次曲のテンポ（自動のテンポ合わせの速度に掛ける ±%）。
+/// どの組かも持つ（組が変わったら 0 に戻す）。交差中は鳴っている入る曲の速度がその場で変わる。
+/// 保存すると曲の BPM に焼き込んで 0 に戻す
+typedef TempoTrim = ({String key, double percent});
+final tempoTrimProvider = StateProvider<TempoTrim?>((ref) => null);
+
 /// 次トラックへ進めるかの判定結果。
 enum AdvanceReadiness {
   /// 同一アイテムの別区間 → シークだけで移れる（ロード不要）
@@ -266,8 +272,21 @@ class PlaylistEngine {
   double jogMsFor(PlaylistTrack next) {
     final j = _ref.read(jogOffsetProvider);
     if (j == null) return 0;
-    return j.key == '${_armedFrom?.id}>${next.item.id}' ? j.ms : 0;
+    return j.key == _pairKey(next) ? j.ms : 0;
   }
+
+  /// この次曲に効いているテンポの微調整（±%）。組が違えば 0
+  double tempoTrimFor(PlaylistTrack next) {
+    final t = _ref.read(tempoTrimProvider);
+    if (t == null) return 0;
+    return t.key == _pairKey(next) ? t.percent : 0;
+  }
+
+  /// テンポの微調整を速度に掛ける比
+  double _trimFactor(PlaylistTrack next) => 1 + tempoTrimFor(next) / 100;
+
+  /// 今の曲から [next] へつなぐ組のキー（[MixPair.key] と同じ形）
+  String _pairKey(PlaylistTrack next) => '${_armedFrom?.id}>${next.item.id}';
 
   Duration _plannedInStartRaw(PlaylistTrack next,
       {Duration? outStart, required double inRate}) {
@@ -294,10 +313,10 @@ class PlaylistEngine {
     return cutPoint == null ? null : cutPoint.cut - crossfadeDuration;
   }
 
-  /// プリロード側の次曲の交差中の速度（テンポ合わせ後）
+  /// プリロード側の次曲の交差中の速度（テンポ合わせ + 手の微調整）
   double _preloadInRate(PlaylistTrack next) {
     final base = preloadPlayer.state.rate;
-    return _tempoMatchedRate(next, base) ?? base;
+    return (_tempoMatchedRate(next, base) ?? base) * _trimFactor(next);
   }
 
   /// この差より小さければシークし直さない
@@ -1038,7 +1057,8 @@ class PlaylistEngine {
     final inPlayer = preloadPlayer;
     final baseRate = inPlayer.state.rate;
     final recipe = recipeFor(next);
-    final inRate = _tempoMatchedRate(next, baseRate) ?? baseRate;
+    final inMatchedRate = _tempoMatchedRate(next, baseRate) ?? baseRate;
+    final inRate = inMatchedRate * _trimFactor(next);
     final beat = _beatPlan(next, inRate);
     final inStart = plannedInStart(next, outStart: start, inRate: inRate);
     final curve = recipe.curve;
@@ -1073,6 +1093,7 @@ class PlaylistEngine {
       inVolume: _carryVolume(volume, outItem, next.item),
       inStart: inStart,
       inBaseRate: baseRate,
+      inMatchedRate: inMatchedRate,
       inRate: inRate,
       curve: curve,
       // トリック系は切替点まで前の曲だけなので、低音の入れ替えはしない
@@ -1258,6 +1279,77 @@ class PlaylistEngine {
     await _ref.read(loopItemsProvider.notifier).update(item);
   }
 
+  // --- ピッチフェーダー（入る曲のテンポを手で合わせる） ---
+
+  /// テンポの微調整を音に効かせる（[percent] は呼ぶ前に [tempoTrimProvider] へ入れておく）。
+  /// 交差中は重なって鳴っている入る曲の速度をその場で変える。交差の前は次曲はまだ鳴って
+  /// いないので、速度で変わる予定の開始位置だけ取り直す（速度は交差が始まるときに効く）
+  void trimTempo(MixPair pair, double percent) {
+    final session = _crossfade;
+    if (session != null) {
+      session.applyTempoTrim(1 + percent / 100);
+      return;
+    }
+    final target = plannedInStart(pair.next, inRate: _preloadInRate(pair.next));
+    unawaited(preloadPlayer.seek(_clampTo(target, pair.inDuration)));
+  }
+
+  /// 手で合わせたテンポを入る曲の BPM に焼き込む: 速度を +p% して合ったなら、
+  /// 本当の BPM は解析値 ÷ (1 + p/100)。格子は組の開始位置の拍を動かさずに引き直す。
+  /// 音はもう合っているので動かさない（次回からは自動のテンポ合わせが同じ速度を出す）
+  Future<void> saveTempo(MixPair pair, double percent) async {
+    if (percent == 0) return;
+    await _rescaleBpm(pair, 1 / (1 + percent / 100),
+        anchorMs: pair.inStart.inMicroseconds / 1000);
+    _crossfade?.acceptTempo();
+  }
+
+  /// 次曲の BPM を倍（[factor] = 2）か半分（0.5）に直す（解析の倍/半分の取り違え）。
+  /// 小節頭の基準は動かさない。テンポ合わせは倍/半分を同一視するので速度は変わらず、
+  /// 小節・フレーズ単位のもの（重ね始めの位置合わせ・効果音・交差の長さ）が直る
+  Future<void> scaleBpm(MixPair pair, double factor) async {
+    final item = pair.next.item;
+    final grid = item.beatGrid;
+    if (grid == null) return;
+    await _rescaleBpm(pair, factor,
+        anchorMs: grid.barAnchorMs(item.mixInMs?.toDouble()));
+  }
+
+  Future<void> _rescaleBpm(MixPair pair, double factor,
+      {required double anchorMs}) async {
+    final item = pair.next.item;
+    final grid = item.beatGrid;
+    if (grid == null) return;
+    final next = grid.withBpm(grid.bpm * factor, anchorMs: anchorMs);
+    item.beatBpm = next.bpm;
+    item.beatOffsetMs = next.offsetMs;
+    item.downbeatMs = next.downbeatMs;
+    // 表示・相性用の BPM（0.1 刻み）も同じ比で
+    final bpm = item.bpm;
+    if (bpm != null) item.bpm = (bpm * factor * 10).round() / 10;
+    await _ref.read(loopItemsProvider.notifier).update(item);
+  }
+
+  /// 前曲が鳴っているテンポ（BPM × 速度）。BPM が無ければ null。円盤の下に出す
+  double? outTempoBpm(MixPair pair) {
+    final item = pair.outItem;
+    final bpm = item?.beatBpm ?? item?.bpm;
+    if (bpm == null) return null;
+    return bpm * _ref.read(slotPlayerProvider(pair.outSlot)).state.rate;
+  }
+
+  /// 次曲のテンポ（BPM × 速度）。交差の前・交差中はテンポ合わせと微調整を入れた速度で
+  /// （ナッジの一時的な速度は除く）、切り替わった後は鳴っている速度で
+  double? inTempoBpm(MixPair pair) {
+    final item = pair.next.item;
+    final bpm = item.beatBpm ?? item.bpm;
+    if (bpm == null) return null;
+    final rate = _ref.read(activeSlotProvider) != pair.outSlot
+        ? activePlayer.state.rate
+        : _crossfade?.inRate ?? _preloadInRate(pair.next);
+    return bpm * rate;
+  }
+
   // --- テンポ合わせ ---
   //
   // 交差中は次曲の速度を前曲の「実際に鳴っているテンポ」に寄せ、前曲が消えた後に
@@ -1391,6 +1483,7 @@ class _CrossfadeSession {
     required this.inVolume,
     required this.inStart,
     required this.inBaseRate,
+    required this.inMatchedRate,
     required this.inRate,
     required this.curve,
     required this.bassSwap,
@@ -1727,7 +1820,26 @@ class _CrossfadeSession {
 
   /// 次曲本来の速度と、交差中にテンポを寄せた速度（寄せないときは同じ値）
   final double inBaseRate;
-  final double inRate;
+
+  /// テンポ合わせで決めた入る曲の速度（手の微調整を除く）。微調整はこれに掛ける
+  double inMatchedRate;
+
+  /// 入る曲の目標速度（テンポ合わせ × 微調整）。ナッジはこの周りで寄せる
+  double inRate;
+
+  /// ピッチフェーダーを音に効かせる。[factor] はテンポ合わせの速度に掛ける比
+  void applyTempoTrim(double factor) {
+    final next = inMatchedRate * factor;
+    if ((next - inRate).abs() < 0.0005) return;
+    inRate = next;
+    appliedInRate = next;
+    unawaited(inPlayer.setRate(next));
+  }
+
+  /// テンポを保存したので、今の速度を基準に戻す（音は動かさない）
+  void acceptTempo() {
+    inMatchedRate = inRate;
+  }
 
   /// 直近に旧プレイヤーへ設定した音量（スワップ時に残っていれば短く落とす）
   double outVolume;

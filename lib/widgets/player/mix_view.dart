@@ -69,12 +69,7 @@ class MixView extends StatelessWidget {
     this.inRatio = 1,
     this.beatError,
     this.sfxCues = const [],
-    this.overlay,
   });
-
-  /// 帯の上に重ねるもの（円盤など）。帯のシークの層より上に置くので、重ねたものの上の
-  /// タッチはそちらが取り、空いているところのタッチは帯のシークに落ちる
-  final Widget? overlay;
 
   /// 出る曲の時計 1ms あたり入る曲の時計が進む量（[MixPair.inRatio]）
   final double inRatio;
@@ -268,14 +263,7 @@ class MixView extends StatelessWidget {
               ],
             ),
           );
-          final overlay = this.overlay;
-          if (overlay == null) return body;
-          return Stack(
-            children: [
-              Positioned.fill(child: body),
-              Positioned.fill(child: overlay),
-            ],
-          );
+          return body;
         },
       ),
     );

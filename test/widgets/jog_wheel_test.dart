@@ -6,7 +6,7 @@ void main() {
   Widget host(Widget child) =>
       MaterialApp(home: Scaffold(body: Center(child: child)));
 
-  /// 円盤の中心（回せる円盤は Row の左端に円盤、その右にボタン）
+  /// 円盤の中心
   Offset discCenter(WidgetTester tester, {double size = 88}) =>
       tester.getTopLeft(find.byType(JogWheel)) + Offset(size / 2, size / 2);
 
@@ -60,7 +60,7 @@ void main() {
     expect(value, lessThanOrEqualTo(40));
   });
 
-  testWidgets('動かしていなければ保存・戻すは無効、中心に名前とずれが出る', (tester) async {
+  testWidgets('動かしていなければ中心に名前とずれ、動かしていれば量が出る', (tester) async {
     await tester.pumpWidget(host(JogWheel(
       periodMs: 500,
       valueMs: 0,
@@ -68,35 +68,19 @@ void main() {
       errorMs: 8,
       onChanged: (ms, {required bool touching}) {},
       onChangeEnd: (_) {},
-      onSave: null,
-      onReset: null,
     )));
     expect(find.textContaining('次曲'), findsOneWidget);
     expect(find.textContaining('ずれ +8'), findsOneWidget);
-    final save = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.push_pin_outlined));
-    expect(save.onPressed, isNull);
-    final reset =
-        tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.refresh));
-    expect(reset.onPressed, isNull);
-  });
 
-  testWidgets('動かしていれば量を出し、保存・戻すが押せる', (tester) async {
-    var saved = 0, reset = 0;
     await tester.pumpWidget(host(JogWheel(
       periodMs: 500,
       valueMs: -18,
       maxMs: 1000,
       onChanged: (ms, {required bool touching}) {},
       onChangeEnd: (_) {},
-      onSave: () => saved++,
-      onReset: () => reset++,
     )));
     expect(find.textContaining('−18ms'), findsOneWidget);
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.push_pin_outlined));
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
-    expect(saved, 1);
-    expect(reset, 1);
+    expect(find.text('次曲'), findsNothing);
   });
 
   testWidgets('表示だけの円盤（前曲）はボタンが無く、触っても下に落ちない', (tester) async {
@@ -116,9 +100,8 @@ void main() {
       ],
     )));
     expect(find.text('前曲'), findsOneWidget);
-    expect(find.byType(IconButton), findsNothing);
     // 円盤の上を押しても、下のタップにならない
-    await tester.tap(find.byType(JogWheel));
+    await tester.tap(find.byType(JogWheel), warnIfMissed: false);
     expect(behind, 0);
     // 1.8 秒で 1 周
     expect(JogWheel.platterTurns(const Duration(milliseconds: 1800)), 1);

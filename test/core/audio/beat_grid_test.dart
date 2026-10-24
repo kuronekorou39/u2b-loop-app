@@ -264,4 +264,48 @@ void main() {
       // そうやって +50 で合わせた分を shiftedBy(+50) で焼くと、次回も同じ開始に揃う（上のテスト）
     });
   });
+
+  group('withBpm（テンポの焼き込み・倍/半分の直し）', () {
+    // 120 BPM（1 拍 500ms）、拍 100, 600, …、小節頭 1100（拍 100 から 2 拍目）
+    const g = BeatGrid(bpm: 120, offsetMs: 100, downbeatMs: 1100, downbeatConfidence: 1);
+
+    test('基準位置の直前の拍は動かず、小節の何拍目かも保つ', () {
+      // 4300 の直前の拍は 4100（小節頭 1100 から 6 拍 → 3 拍目）
+      final n = g.withBpm(121, anchorMs: 4300);
+      expect(n.bpm, 121);
+      expect(n.phaseAt(4100), closeTo(0, 1e-9));
+      expect(n.floorBeatMs(4300), closeTo(4100, 1e-6));
+      // 新しい小節頭は 4100 の 2 拍前（新しい拍の長さで）
+      expect(n.downbeatMs, closeTo(4100 - 2 * n.periodMs, 1e-6));
+      final number = n.beatsBetween(4099, 4101).single.number;
+      expect(number, 3);
+      expect(g.beatsBetween(4099, 4101).single.number, 3);
+    });
+
+    test('ピッチフェーダー +p% で合ったなら本当の BPM は解析値 ÷ (1 + p/100)', () {
+      // 解析 127.6、+0.3% で揃った → 127.6 / 1.003 ≒ 127.22
+      final n = g.withBpm(127.6 / 1.003, anchorMs: 0);
+      expect(n.bpm, closeTo(127.218, 0.001));
+    });
+
+    test('倍にすると元の拍はすべて残り、半分にしても小節頭は拍のまま', () {
+      final d = g.withBpm(240, anchorMs: g.barAnchorMs());
+      for (final beat in [100.0, 600.0, 1100.0, 5100.0]) {
+        expect(d.phaseAt(beat), closeTo(0, 1e-9), reason: '$beat');
+      }
+      expect(d.downbeatMs, closeTo(1100, 1e-9));
+      final h = g.withBpm(60, anchorMs: g.barAnchorMs());
+      expect(h.periodMs, 1000);
+      expect(h.phaseAt(1100), closeTo(0, 1e-9));
+      expect(h.downbeatMs, closeTo(1100, 1e-9));
+      expect(h.offsetMs, closeTo(100, 1e-9));
+    });
+
+    test('小節頭が無い格子でも位相は保つ', () {
+      const plain = BeatGrid(bpm: 120, offsetMs: 100);
+      final n = plain.withBpm(130, anchorMs: 10000);
+      expect(n.downbeatMs, isNull);
+      expect(n.phaseAt(plain.floorBeatMs(10000)), closeTo(0, 1e-9));
+    });
+  });
 }
