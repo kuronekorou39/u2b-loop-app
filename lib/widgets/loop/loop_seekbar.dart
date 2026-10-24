@@ -458,7 +458,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
 
   /// 波形の開閉ボタン。見た目は小さいが押せる範囲は 36px（以前は 24〜28px）
   /// 「−」「＋」2 つぶんの幅（1 つ = アイコン 16 + 余白 6×2）
-  static const _zoomWidth = 56.0;
 
   Widget _toggleButton(IconData icon, String tooltip) => IconButton(
         icon: Icon(icon, size: AppIconSizes.sm),
@@ -609,9 +608,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     bool waveformLoading,
     String? waveformError,
   ) {
-    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontFeatures: const [FontFeature('tnum')],
-        );
     final compact = widget.compact;
     final brightness = Theme.of(context).brightness;
 
@@ -689,52 +685,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             const SizedBox(height: AppSpacing.xs),
           ],
           seekSurface(waveformPainter: false, height: 28),
-          // 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも、重ね表示でも同じ場所）。
-          // 「−」「＋」は開閉ボタンのすぐ右。左にも同じ幅を空けて開閉ボタンを真ん中に保つ
-          SizedBox(
-            height: 32,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Row(
-                  children: [
-                    Text(TimeUtils.format(position), style: labelStyle),
-                    const Spacer(),
-                    Text(TimeUtils.format(duration), style: labelStyle),
-                  ],
-                ),
-                if (widget.onToggleCompact != null || zoom != null)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (zoom != null) const SizedBox(width: _zoomWidth),
-                      if (widget.onToggleCompact != null)
-                        _toggleButton(
-                          compact ? Icons.unfold_more : Icons.unfold_less,
-                          compact ? '波形表示' : 'コンパクト表示',
-                        ),
-                      if (zoom != null)
-                        SizedBox(
-                          width: _zoomWidth,
-                          child: Row(
-                            children: [
-                              _MixZoomButton(
-                                icon: Icons.remove,
-                                tooltip: '範囲を広げる',
-                                onTap: zoom.wider,
-                              ),
-                              _MixZoomButton(
-                                icon: Icons.add,
-                                tooltip: '範囲を狭める',
-                                onTap: zoom.narrower,
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-              ],
-            ),
+          SeekTimeRow(
+            position: position,
+            duration: duration,
+            compact: compact,
+            onToggleCompact: widget.onToggleCompact,
+            zoom: zoom,
           ),
         ],
       ),
@@ -1376,4 +1332,170 @@ void drawPointLine(Canvas canvas, Offset top, Offset bottom, Color color) {
       ..color = color.withValues(alpha: 0.95)
       ..strokeWidth = 1.5,
   );
+}
+
+// =============================================================================
+// 再利用する部品（プレイリストの重ね表示が、前曲用・次曲用の棒と時刻行を組むのに使う）
+// =============================================================================
+
+/// 細い棒のシークバー 1 本（4px の棒、進んだ分は緑、交差の範囲は紫、白い点が位置）。
+/// どのプレイヤーにも縛られない: 位置・長さ・シーク先の処理は呼ぶ側が渡す。
+/// [onSeek] が null なら見るだけ
+class ThinSeekbar extends StatelessWidget {
+  const ThinSeekbar({
+    super.key,
+    required this.position,
+    required this.duration,
+    this.mixRanges = const [],
+    this.onSeek,
+    this.height = 28,
+    this.pointA,
+    this.pointB,
+    this.loopEnabled = false,
+  });
+
+  final Duration position;
+  final Duration duration;
+  final List<MixRange> mixRanges;
+  final ValueChanged<Duration>? onSeek;
+  final double height;
+  final Duration? pointA;
+  final Duration? pointB;
+  final bool loopEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final onSeek = this.onSeek;
+    final brightness = Theme.of(context).brightness;
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          void seekTo(double x) {
+            if (onSeek == null || duration.inMilliseconds == 0 || width <= 0) {
+              return;
+            }
+            final norm = (x / width).clamp(0.0, 1.0);
+            onSeek(Duration(
+                milliseconds: (norm * duration.inMilliseconds).round()));
+          }
+
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: onSeek == null ? null : (d) => seekTo(d.localPosition.dx),
+            onHorizontalDragUpdate:
+                onSeek == null ? null : (d) => seekTo(d.localPosition.dx),
+            child: CustomPaint(
+              size: Size(width, height),
+              painter: _CompactSeekbarPainter(
+                position: position,
+                duration: duration,
+                pointA: pointA,
+                pointB: pointB,
+                loopEnabled: loopEnabled,
+                brightness: brightness,
+                mixRanges: mixRanges,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 時刻行: 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも、重ね表示でも同じ場所）。
+/// 「−」「＋」（[zoom]）は開閉ボタンのすぐ右。左にも同じ幅を空けて開閉ボタンを真ん中に保ち、
+/// その左の枠に [leading]（重ね表示の円盤の開閉など）を置ける
+class SeekTimeRow extends StatelessWidget {
+  const SeekTimeRow({
+    super.key,
+    required this.position,
+    required this.duration,
+    this.compact = false,
+    this.onToggleCompact,
+    this.zoom,
+    this.leading,
+  });
+
+  final Duration position;
+  final Duration duration;
+  final bool compact;
+  final VoidCallback? onToggleCompact;
+  final ({VoidCallback? wider, VoidCallback? narrower})? zoom;
+  final Widget? leading;
+
+  /// 開閉ボタンの両脇の枠の幅
+  static const sideWidth = 64.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontFeatures: const [FontFeature('tnum')],
+        );
+    final zoom = this.zoom;
+    final sides = zoom != null || leading != null;
+    return SizedBox(
+      height: 32,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Row(
+            children: [
+              Text(TimeUtils.format(position), style: labelStyle),
+              const Spacer(),
+              Text(TimeUtils.format(duration), style: labelStyle),
+            ],
+          ),
+          if (onToggleCompact != null || sides)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (sides)
+                  SizedBox(
+                    width: sideWidth,
+                    child: leading == null
+                        ? null
+                        : Align(
+                            alignment: Alignment.centerRight, child: leading),
+                  ),
+                if (onToggleCompact != null)
+                  IconButton(
+                    icon: Icon(compact ? Icons.unfold_more : Icons.unfold_less,
+                        size: AppIconSizes.sm),
+                    onPressed: onToggleCompact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: compact ? '波形表示' : 'コンパクト表示',
+                  ),
+                if (sides)
+                  SizedBox(
+                    width: sideWidth,
+                    child: zoom == null
+                        ? null
+                        : Row(
+                            children: [
+                              _MixZoomButton(
+                                icon: Icons.remove,
+                                tooltip: '範囲を広げる',
+                                onTap: zoom.wider,
+                              ),
+                              _MixZoomButton(
+                                icon: Icons.add,
+                                tooltip: '範囲を狭める',
+                                onTap: zoom.narrower,
+                              ),
+                            ],
+                          ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 }

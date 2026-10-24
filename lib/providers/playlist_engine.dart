@@ -247,10 +247,29 @@ class PlaylistEngine {
     return leading;
   }
 
-  /// 交差で入る曲の実際の開始位置: [effectiveStart] に拍合わせのずらし（±半拍）を足したもの。
+  /// 交差で入る曲の実際の開始位置: [effectiveStart] に拍合わせのずらし（±半拍）と、
+  /// ジョグで手で動かした分（[jogMsFor]）を足したもの。
   /// [outStart] は出る曲の交差開始位置（省略時は予定の切断点から求める）、
-  /// [inRate] は交差中の入る曲の速度。拍合わせができないときは effectiveStart のまま
+  /// [inRate] は交差中の入る曲の速度。拍合わせができないときは effectiveStart のまま。
+  /// 交差の開始・先読みの取り直し・重ね表示の組がすべてここを通るので、
+  /// ジョグはここに入れておけば交差が始まるときに上書きされない
   Duration plannedInStart(PlaylistTrack next,
+      {Duration? outStart, required double inRate}) {
+    final raw = _plannedInStartRaw(next, outStart: outStart, inRate: inRate);
+    final jog = jogMsFor(next);
+    if (jog == 0) return raw;
+    final shifted = raw + Duration(microseconds: (jog * 1000).round());
+    return shifted < Duration.zero ? Duration.zero : shifted;
+  }
+
+  /// この次曲に効いているジョグの量（入る曲の媒体ミリ秒）。組が違えば 0
+  double jogMsFor(PlaylistTrack next) {
+    final j = _ref.read(jogOffsetProvider);
+    if (j == null) return 0;
+    return j.key == '${_armedFrom?.id}>${next.item.id}' ? j.ms : 0;
+  }
+
+  Duration _plannedInStartRaw(PlaylistTrack next,
       {Duration? outStart, required double inRate}) {
     final base = effectiveStart(next);
     final plan = _beatPlan(next, inRate);
@@ -1069,6 +1088,7 @@ class PlaylistEngine {
       sfxPlan: sfxPlan,
       sfxVolume: TransitionSfx.volumeFor(volume, _ref.read(sfxLevelProvider)),
       sfxOffsetMs: _ref.read(sfxOffsetMsProvider),
+      jogMs: jogMsFor(next),
       onForceCut: _forceCut,
     );
     _crossfade = session;
@@ -1175,9 +1195,9 @@ class PlaylistEngine {
   }
 
   /// ジョグ中に見せる拍のずれ（実時間 ms、+ で入る曲が遅れている）。
-  /// 交差中は実際に測った値（[beatPhaseErrorProvider]）、交差の前は [jogMs] を入れた
-  /// 予想値。測れないときは null
-  double? jogErrorMs(MixPair pair, double jogMs) {
+  /// 交差中は実際に測った値（[beatPhaseErrorProvider]）、交差の前は組の開始位置
+  /// （ジョグ込み）から出す予想値。測れないときは null
+  double? jogErrorMs(MixPair pair) {
     if (_crossfade != null) return _ref.read(beatPhaseErrorProvider);
     final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
     final out = outItem?.beatGrid;
@@ -1191,23 +1211,38 @@ class PlaylistEngine {
       in_: in_,
       outPosMs: activePlayer.state.position.inMicroseconds / 1000,
       outRate: outRate,
-      inPosMs: pair.inStart.inMicroseconds / 1000 + jogMs,
+      inPosMs: pair.inStart.inMicroseconds / 1000,
       inRate: inRate,
     );
   }
 
-  /// ジョグを音に効かせる。[jogMs] は入る曲を進める媒体ミリ秒（絶対値）。
+  /// ジョグを音に効かせる。[jogMs] は入る曲を進める媒体ミリ秒（絶対値。
+  /// 呼ぶ前に [jogOffsetProvider] へ入れておく）。
   /// 交差中は鳴っている入る曲を動かす（手で合わせている間は自動ナッジを止める）、
-  /// 交差の前は止まっている次曲（プリロード）の開始位置を動かす
+  /// 交差の前は止まっている次曲（プリロード）を予定の開始位置（ジョグ込み）へ置き直す
   void jog(MixPair pair, double jogMs, {required bool touching}) {
     final session = _crossfade;
     if (session != null) {
       session.applyJog(jogMs, touching: touching);
       return;
     }
-    final target =
-        pair.inStart + Duration(microseconds: (jogMs * 1000).round());
+    final target = plannedInStart(pair.next, inRate: _preloadInRate(pair.next));
     unawaited(preloadPlayer.seek(_clampTo(target, pair.inDuration)));
+  }
+
+  /// 重ね表示の下の棒（次曲）でのシーク。[u] は入る曲の時計。
+  /// 切り替わった後は鳴っている入る曲を、交差中は重なって鳴っている入る曲を動かす。
+  /// 交差の前は開始位置を決めるのは拍合わせとジョグなので、ここでは動かさない（false）
+  bool seekInTrack(MixPair pair, Duration u) {
+    final target = _clampTo(u, pair.inDuration);
+    if (_ref.read(activeSlotProvider) != pair.outSlot) {
+      unawaited(activePlayer.seek(target));
+      return true;
+    }
+    final session = _crossfade;
+    if (session == null) return false;
+    session.seekIn(target);
+    return true;
   }
 
   /// 手で合わせた分を入る曲の拍の格子に焼き込んで保存する（次回から自動がこの位置で合わせる）。
@@ -1371,8 +1406,10 @@ class _CrossfadeSession {
     required this.sfxVolume,
     required this.sfxOffsetMs,
     required this.onForceCut,
+    required double jogMs,
   })  : outVolume = volume,
-        appliedInRate = inRate;
+        appliedInRate = inRate,
+        _jogMs = jogMs;
 
   /// ベーススワップにかける拍数（DJ の「一動作」。ゆっくり交差させない）
   static const bassSwapBeats = 2;
@@ -1558,8 +1595,15 @@ class _CrossfadeSession {
   /// 直近に入る曲へ設定した速度（テンポ合わせ + ナッジ）。交差後はここから本来の速度へ戻す
   double appliedInRate;
 
-  /// ジョグで動かした量（入る曲の媒体ミリ秒）。[applyJog] が差分だけ入る曲をシークする
-  double _jogMs = 0;
+  /// ジョグで動かした量（入る曲の媒体ミリ秒）。[applyJog] が差分だけ入る曲をシークする。
+  /// 交差を始めたときの量から数える（開始位置にはもう入っているので、二重に効かせない）
+  double _jogMs;
+
+  /// 重なって鳴っている入る曲を [u] へ動かす（下の棒でのシーク）。測定は少し待つ
+  void seekIn(Duration u) {
+    unawaited(inPlayer.seek(u));
+    _nudgeHoldUntil = DateTime.now().add(const Duration(milliseconds: 400));
+  }
 
   /// 手でジョグを回している間は自動ナッジ（速度の寄せ）を止める。ずれの測定は続ける
   bool jogging = false;
