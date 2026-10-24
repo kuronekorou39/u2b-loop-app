@@ -42,6 +42,10 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// null なら出さない。中の null は押せない
   final ({VoidCallback? wider, VoidCallback? narrower})? zoom;
 
+  /// 時刻行の左の枠に出すもの（プレイリストのデッキの開閉ボタン、bar モード）。
+  /// 重ね表示の時刻行と同じ場所に出て、どちらの表示でも同じ所で押せる
+  final Widget? timeRowLeading;
+
   const LoopSeekbar({
     super.key,
     this.compact = false,
@@ -53,6 +57,7 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.mixRanges = const [],
     this.above,
     this.zoom,
+    this.timeRowLeading,
   });
 
   @override
@@ -691,6 +696,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             compact: compact,
             onToggleCompact: widget.onToggleCompact,
             zoom: zoom,
+            leading: widget.timeRowLeading,
           ),
         ],
       ),

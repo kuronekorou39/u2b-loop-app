@@ -8,7 +8,9 @@ import '../../core/theme/app_theme.dart';
 ///
 /// 上へ動かすと速く（+）、真ん中が 0。0 の近く（[snapPercent]）では 0 に吸い付く。
 /// つまみを押さえなくても、縦に動かせばその分だけ動く（細かく合わせやすい）。
-/// 値（[percent]）は親（[tempoTrimProvider]）が持ち、このウィジェットは新しい値を返すだけ。
+/// 値（[percent]）は親（[tempoTrimProvider]）が持ち、このウィジェットは新しい値を返す。
+/// 指で動かしている間は親の描き直しを待たず、返した値でつまみを描く
+/// （親の描き直しが遅れても、つまみが指に付いてくる）。
 /// [onChanged] が null なら表示だけ
 class PitchFader extends StatefulWidget {
   const PitchFader({
@@ -58,6 +60,11 @@ class _PitchFaderState extends State<PitchFader> {
   double? _startPercent;
   double? _startDy;
 
+  /// 指で動かしている間の値（離したら親の値に戻る）
+  double? _dragPercent;
+
+  double get _shown => _dragPercent ?? widget.percent;
+
   /// つまみが動ける長さ
   double get _travel => widget.height - PitchFader.knobHalf * 2;
 
@@ -74,13 +81,16 @@ class _PitchFaderState extends State<PitchFader> {
     var p = sp - (d.localPosition.dy - sd) / _travel * (2 * widget.maxPercent);
     p = p.clamp(-widget.maxPercent, widget.maxPercent);
     if (p.abs() < PitchFader.snapPercent) p = 0;
+    setState(() => _dragPercent = p);
     widget.onChanged!(p);
   }
 
   void _onEnd() {
+    final last = _dragPercent ?? widget.percent;
     _startPercent = null;
     _startDy = null;
-    widget.onChangeEnd?.call(widget.percent);
+    setState(() => _dragPercent = null);
+    widget.onChangeEnd?.call(last);
   }
 
   @override
@@ -89,13 +99,14 @@ class _PitchFaderState extends State<PitchFader> {
           fontFeatures: const [FontFeature.tabularFigures()],
         );
     final readOnly = widget.readOnly;
-    final active = !readOnly && widget.percent != 0;
+    final percent = _shown;
+    final active = !readOnly && percent != 0;
     final fader = SizedBox(
       width: widget.width,
       height: widget.height,
       child: CustomPaint(
         painter: _FaderPainter(
-          percent: widget.percent,
+          percent: percent,
           maxPercent: widget.maxPercent,
           active: active,
           enabled: !readOnly,
@@ -106,7 +117,7 @@ class _PitchFaderState extends State<PitchFader> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          PitchFader.label(widget.percent),
+          PitchFader.label(percent),
           style: style.copyWith(
               color: active ? AppTheme.accentGreen : Colors.white),
         ),

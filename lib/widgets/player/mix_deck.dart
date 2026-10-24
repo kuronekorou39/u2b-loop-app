@@ -11,8 +11,8 @@ import 'pitch_fader.dart';
 /// 左から DJ 機材と同じ並び:
 /// - 前曲の盤: 再生に合わせて回るだけ（鳴っている曲は動かさない）
 /// - 次曲のジョグ（[JogWheel]）: 回して拍の位置（位相）を合わせる。BPM の下にピン = 保存、戻す
-/// - 次曲のピッチフェーダー（[PitchFader]）: 拍の間隔（テンポ）を合わせる。
-///   下に ×2 / ÷2（解析の BPM の倍/半分の取り違えを直す）
+/// - 次曲のピッチフェーダー（[PitchFader]）: 拍の間隔（テンポ）を合わせる
+///   （BPM の倍/半分の取り違えは曲の詳細のテンポ編集で直す。ここには置かない）
 ///
 /// 各円盤の下にそのデッキのテンポ（BPM × 速度）。2 つが揃うと次曲側が緑。
 /// 切り替わった後は次曲側も回る・見るだけ（[jog] / [tempo] が null）。
@@ -33,8 +33,6 @@ class MixDeck extends StatelessWidget {
     this.onTempoEnd,
     this.onSave,
     this.onReset,
-    this.onDouble,
-    this.onHalve,
   });
 
   /// 板の幅（コントローラーの幅に合わせる）
@@ -65,16 +63,12 @@ class MixDeck extends StatelessWidget {
   /// ジョグとテンポを 0 に戻す。何も動かしていなければ null
   final VoidCallback? onReset;
 
-  /// BPM を倍 / 半分に。格子が無ければ null
-  final VoidCallback? onDouble;
-  final VoidCallback? onHalve;
-
   /// 円盤の直径の範囲。幅から決める（脇の狭い横画面は小さく、タブレットは大きく）
   static const maxDiscSize = 150.0;
   static const minDiscSize = 80.0;
 
-  /// フェーダーの列の幅（フェーダー + 下の ×2 / ÷2）
-  static const faderColumnWidth = 72.0;
+  /// フェーダーの列の幅
+  static const faderColumnWidth = 56.0;
 
   static const _padding = AppSpacing.lg;
   static const _gap = AppSpacing.lg;
@@ -157,25 +151,13 @@ class MixDeck extends StatelessWidget {
             const SizedBox(width: _gap),
             SizedBox(
               width: faderColumnWidth,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  PitchFader(
-                    percent: tempo?.percent ?? 0,
-                    maxPercent: tempo?.maxPercent ?? 8,
-                    // ラベル 1 行ぶんを引いて、円盤と下端を揃える
-                    height: size - 20,
-                    onChanged: tempo == null ? null : onTempo,
-                    onChangeEnd: tempo == null ? null : onTempoEnd,
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _smallButton(context, '×2', '次曲の BPM を倍に', onDouble),
-                      _smallButton(context, '÷2', '次曲の BPM を半分に', onHalve),
-                    ],
-                  ),
-                ],
+              child: PitchFader(
+                percent: tempo?.percent ?? 0,
+                maxPercent: tempo?.maxPercent ?? 8,
+                // ラベル 1 行ぶんを引いて、円盤と下端を揃える
+                height: size - 20,
+                onChanged: tempo == null ? null : onTempo,
+                onChangeEnd: tempo == null ? null : onTempoEnd,
               ),
             ),
           ],
@@ -202,20 +184,4 @@ class MixDeck extends StatelessWidget {
           style: style),
     );
   }
-
-  Widget _smallButton(
-          BuildContext context, String text, String tooltip, VoidCallback? onTap) =>
-      Tooltip(
-        message: tooltip,
-        child: TextButton(
-          onPressed: onTap,
-          style: TextButton.styleFrom(
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(32, 32),
-            visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(text, style: Theme.of(context).textTheme.labelSmall),
-        ),
-      );
 }

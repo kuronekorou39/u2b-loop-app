@@ -1286,6 +1286,8 @@ class PlaylistEngine {
   /// いないので、速度で変わる予定の開始位置だけ取り直す（速度は交差が始まるときに効く）
   void trimTempo(MixPair pair, double percent) {
     final session = _crossfade;
+    debugPrint('[Deck] テンポ微調整 ${percent.toStringAsFixed(2)}% '
+        '(${session != null ? '交差中' : '交差前'})');
     if (session != null) {
       session.applyTempoTrim(1 + percent / 100);
       return;
@@ -1302,17 +1304,6 @@ class PlaylistEngine {
     await _rescaleBpm(pair, 1 / (1 + percent / 100),
         anchorMs: pair.inStart.inMicroseconds / 1000);
     _crossfade?.acceptTempo();
-  }
-
-  /// 次曲の BPM を倍（[factor] = 2）か半分（0.5）に直す（解析の倍/半分の取り違え）。
-  /// 小節頭の基準は動かさない。テンポ合わせは倍/半分を同一視するので速度は変わらず、
-  /// 小節・フレーズ単位のもの（重ね始めの位置合わせ・効果音・交差の長さ）が直る
-  Future<void> scaleBpm(MixPair pair, double factor) async {
-    final item = pair.next.item;
-    final grid = item.beatGrid;
-    if (grid == null) return;
-    await _rescaleBpm(pair, factor,
-        anchorMs: grid.barAnchorMs(item.mixInMs?.toDouble()));
   }
 
   Future<void> _rescaleBpm(MixPair pair, double factor,

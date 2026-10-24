@@ -19,13 +19,17 @@ import 'mix_view.dart';
 /// 上から「前曲の細い棒」「重ねの帯（[MixView]）」「次曲の細い棒」「時刻行（次曲）」。
 /// 前曲の棒で 1 曲目の序盤へ戻れ、次曲の棒で 2 曲目の中を動ける。
 /// 高さはふつうの表示（波形 + 棒 + 時刻行）と同じに揃えて、切り替わっても下部が動かない。
-/// 時刻行の左のボタンでデッキの板（[MixDeck]: 円盤 2 つとピッチフェーダー）を開閉する。
-/// 板は帯に重ねず、この領域の上（コントローラーの上。動画や曲名に被さる）に浮かせて出す
-/// （[OverlayPortal]。帯の上に重ねると波形が見えなくなり、操作もかぶる）
+/// 時刻行の左のボタン（ふつうの表示でも同じ場所）でデッキの板（[MixDeck]: 円盤 2 つと
+/// ピッチフェーダー）を開閉する。板は帯に重ねず、この領域の上（コントローラーの上。動画や
+/// 曲名に被さる）に浮かせて出す（[OverlayPortal]。帯の上に重ねると波形が見えなくなり、
+/// 操作もかぶる）。
 ///
 /// 重ね表示は [PlaylistEngine] の組（[MixPair]: 1 曲目と 2 曲目をつないだ 1 本の時間軸）を
 /// そのまま描く。出すか出さないかは、実際の再生位置をその時間軸に写した値が
 /// 「出す範囲」（交差の前後に [triggerMarginFor] の余白）の中かどうかだけで決める。
+/// **デッキを開いている間は範囲の外でも重ね表示のまま**（毎回ボタンを押さなくていい。
+/// 組は自然に切り替える: 出す範囲の中の組があればそれ、無ければ予定の次曲との組、
+/// それも無ければ前曲との組。組がまったく無いときだけふつうのシークバー）。
 /// 帯に描く範囲（窓 = 交差の前後に [_margin]）はそれより狭く、「−」「＋」で変える。
 /// 出す範囲を広く取るので、帯が出た時点では再生位置がまだ窓の左外のことがある
 /// （位置は上下の棒で分かる。その間に円盤で合わせられる）。
@@ -86,7 +90,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   /// 帯に描く範囲の余白。「−」「＋」で段を変える。曲が変わっても持ち越す
   Duration _margin = MixView.defaultMargin;
 
-  /// デッキの板を出しているか（時刻行の左のボタン。既定は出さない）
+  /// デッキの板を出しているか（時刻行の左のボタン。既定は出さない）。
+  /// 出している間は出す範囲の外でも重ね表示を続ける
   bool _wheelsOpen = false;
 
   /// 板をこの領域の上に浮かせる（この領域の上端に板の下端を合わせる）
@@ -158,8 +163,10 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final slot = ref.watch(activeSlotProvider);
     // 位置の更新で描き直すためだけに見る。値は下でプレイヤーから直接取る
     ref.watch(positionProvider);
-    // 組の開始位置はジョグを含むので、回している間は組を作り直す
+    // 組の開始位置はジョグを含むので、回している間は組を作り直す。
+    // テンポの微調整も板に出す値なので、動かしたらすぐ描き直す
     ref.watch(jogOffsetProvider);
+    ref.watch(tempoTrimProvider);
 
     final engine = ref.read(playlistEngineProvider);
     // パーク中の前曲との組（切り替わった後）と、予定の次曲との組（切り替わる前）。
@@ -189,8 +196,30 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
             swapped: swapped, position: position);
       }
     }
+    if (_wheelsOpen) {
+      // デッキを開いている間は範囲の外でも重ね表示。予定の次曲との組を優先
+      // （前曲との組は切り替わった直後に戻るためのもの）
+      final pair = planned ?? pairs.first;
+      final swapped = slot != pair.outSlot;
+      final now =
+          _displayPosition(pair, swapped ? pair.toOutClock(position) : position);
+      return _mix(pair, now, _windowOf(pair),
+          swapped: swapped, position: position);
+    }
     return _seekbar(mixRanges: ranges);
   }
+
+  /// デッキの開閉ボタン。ふつうの表示でも重ね表示でも時刻行の左の同じ場所
+  Widget _deckButton() => IconButton(
+        icon: Icon(_wheelsOpen ? Icons.album : Icons.album_outlined,
+            size: AppIconSizes.sm),
+        tooltip: _wheelsOpen ? 'デッキを閉じる' : 'デッキを出す',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        visualDensity: VisualDensity.compact,
+        color: _wheelsOpen ? AppTheme.accentGreen : null,
+        onPressed: _toggleDeck,
+      );
 
   /// 出す範囲（出る曲の時計）を鳴っている曲の時計に直したもの（細いバーの紫の塗り）
   static MixRange _rangeOf(MixWindow window, MixPair pair,
@@ -241,6 +270,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         onRetryWaveform: widget.onRetryWaveform,
         mixRanges: mixRanges,
         zoom: zoom,
+        timeRowLeading: _deckButton(),
       );
 
   Widget _mix(MixPair pair, Duration now, MixWindow window,
@@ -357,16 +387,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
             duration: pair.inDuration,
             onToggleCompact: widget.onToggleCompact,
             zoom: zoom,
-            leading: IconButton(
-              icon: Icon(_wheelsOpen ? Icons.album : Icons.album_outlined,
-                  size: AppIconSizes.sm),
-              tooltip: _wheelsOpen ? 'デッキを閉じる' : 'デッキを出す',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              visualDensity: VisualDensity.compact,
-              color: _wheelsOpen ? AppTheme.accentGreen : null,
-              onPressed: _toggleDeck,
-            ),
+            leading: _deckButton(),
           ),
         ],
       ),
@@ -404,14 +425,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     void clear() {
       ref.read(jogOffsetProvider.notifier).state = null;
       ref.read(tempoTrimProvider.notifier).state = null;
-    }
-
-    Future<void> rescale(double factor) async {
-      await engine.scaleBpm(pair, factor);
-      if (!mounted) return;
-      final bpm = inItem.beatBpm ?? inItem.bpm;
-      ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.success(
-          '次曲の BPM を ${bpm?.toStringAsFixed(1) ?? '--'} にしました'));
     }
 
     return Positioned(
@@ -464,8 +477,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
                   ScaffoldMessenger.of(context).showSnackBar(
                       AppSnackBar.success('この曲の拍を直しました'));
                 },
-          onDouble: canTrim ? () => rescale(2) : null,
-          onHalve: canTrim ? () => rescale(0.5) : null,
         ),
       ),
     );

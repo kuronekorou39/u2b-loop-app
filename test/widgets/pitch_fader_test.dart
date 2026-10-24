@@ -68,6 +68,27 @@ void main() {
     await g.up();
   });
 
+  testWidgets('親が描き直さなくても、指で動かしている間はつまみと数字が付いてくる', (tester) async {
+    double? last;
+    // 親は値を持ったまま更新しない（percent は 0 のまま）
+    await tester.pumpWidget(host(PitchFader(
+      percent: 0,
+      maxPercent: 8,
+      height: 140,
+      onChanged: (p) => last = p,
+    )));
+    final g = await tester.startGesture(
+        tester.getCenter(find.byType(CustomPaint).last));
+    await g.moveBy(const Offset(0, -30));
+    await tester.pump();
+    expect(last, greaterThan(0));
+    expect(find.text(PitchFader.label(last!)), findsOneWidget);
+    await g.up();
+    await tester.pump();
+    // 離したら親の値（0）に戻る
+    expect(find.text('0'), findsOneWidget);
+  });
+
   testWidgets('onChanged が無ければ見るだけ', (tester) async {
     await tester.pumpWidget(host(const PitchFader(percent: 1.5)));
     expect(find.text('+1.5%'), findsOneWidget);

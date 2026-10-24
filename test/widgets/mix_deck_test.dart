@@ -25,8 +25,8 @@ void main() {
         ),
       );
 
-  testWidgets('合わせられる組: 円盤 2 つ、ジョグにボタン、フェーダー、×2/÷2、BPM', (tester) async {
-    var saved = 0, reset = 0, doubled = 0, halved = 0;
+  testWidgets('合わせられる組: 円盤 2 つ、保存・戻す、フェーダー、BPM', (tester) async {
+    var saved = 0, reset = 0;
     double? tempo;
     await tester.pumpWidget(host(MixDeck(
       width: 372,
@@ -42,8 +42,6 @@ void main() {
       onTempoEnd: (_) {},
       onSave: () => saved++,
       onReset: () => reset++,
-      onDouble: () => doubled++,
-      onHalve: () => halved++,
     )));
     expect(find.byType(JogWheel), findsNWidgets(2));
     expect(find.text('前曲'), findsOneWidget);
@@ -52,22 +50,19 @@ void main() {
     expect(find.text('+0.3%'), findsOneWidget);
     expect(find.text('128.0 BPM'), findsOneWidget);
     expect(find.text('127.9 BPM'), findsOneWidget);
-    // 幅 372: 円盤は (372 − 24 − 24 − 72) / 2 = 126px
-    expect(MixDeck.discSizeFor(372), 126);
+    // 幅 372: 円盤は (372 − 24 − 24 − 56) / 2 = 134px
+    expect(MixDeck.discSizeFor(372), 134);
     final platter = find.byType(JogWheel).first;
-    expect(tester.getSize(platter).width, 126);
+    expect(tester.getSize(platter).width, 134);
     // 左の盤は右の円盤より左
     expect(tester.getCenter(platter).dx,
         lessThan(tester.getCenter(find.byType(JogWheel).last).dx));
 
     await tester.tap(find.widgetWithIcon(IconButton, Icons.push_pin_outlined));
     await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
-    await tester.tap(find.text('×2'));
-    await tester.tap(find.text('÷2'));
     expect(saved, 1);
     expect(reset, 1);
-    expect(doubled, 1);
-    expect(halved, 1);
+    expect(find.text('×2'), findsNothing);
 
     // フェーダーを上へ動かすと onTempo が来る
     final fader = find.descendant(
@@ -95,8 +90,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('円盤の大きさは幅から。狭い横画面の脇は 90、もっと狭くても 80、タブレットでも 150 まで', () {
-    expect(MixDeck.discSizeFor(300), 90);
+  test('円盤の大きさは幅から。狭い横画面の脇は 98、もっと狭くても 80、タブレットでも 150 まで', () {
+    expect(MixDeck.discSizeFor(300), 98);
     expect(MixDeck.discSizeFor(250), 80);
     expect(MixDeck.discSizeFor(800), 150);
   });
