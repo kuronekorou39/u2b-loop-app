@@ -77,6 +77,23 @@ class BeatGrid {
         confidence: confidence);
   }
 
+  /// 手で合わせた分 [deltaMs]（入る曲を進めた媒体ミリ秒。+ で曲を先へ）を格子に焼き込む。
+  /// 拍の位相（[offsetMs]）と小節頭（[downbeatMs]）を同じだけずらす。これで次回の
+  /// 自動の拍合わせ（[BeatMatcher.alignedStartMs] は入る曲の offset に +1 の傾きで比例）が、
+  /// 手で合わせた開始位置をそのまま再現する。位相は 1 拍ぶんに収めて持つ
+  BeatGrid shiftedBy(double deltaMs) {
+    final p = periodMs;
+    var off = p > 0 ? (offsetMs + deltaMs) % p : offsetMs + deltaMs;
+    if (off < 0) off += p;
+    return BeatGrid(
+      bpm: bpm,
+      offsetMs: off,
+      confidence: confidence,
+      downbeatMs: downbeatMs == null ? null : downbeatMs! + deltaMs,
+      downbeatConfidence: downbeatConfidence,
+    );
+  }
+
   /// 小節頭を足したもの（解析の結果を格子に載せる）
   BeatGrid withDownbeat(Downbeat? downbeat) {
     return BeatGrid(

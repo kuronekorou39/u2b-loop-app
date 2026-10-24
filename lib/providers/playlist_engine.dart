@@ -27,6 +27,7 @@ import '../services/youtube_service.dart';
 import 'loop_provider.dart';
 import 'player_provider.dart';
 import 'playlist_player_provider.dart';
+import 'data_provider.dart';
 
 final playlistEngineProvider =
     Provider<PlaylistEngine>((ref) => PlaylistEngine(ref));
@@ -42,6 +43,12 @@ final crossfadeProgressProvider =
 /// 交差中に測った、2 曲の拍の頭のずれ（実時間 ms、平滑後）。正なら入る曲が遅れている。
 /// 拍合わせをしていない・測れていないときは null。重ね表示に数字で出す
 final beatPhaseErrorProvider = StateProvider<double?>((ref) => null);
+
+/// ジョグホイールで手で合わせている入る曲の位置ずらし（入る曲の媒体ミリ秒、+ で曲を先へ）。
+/// どの組かも持つ（組が変わったら 0 に戻す）。重ね表示の入る曲の拍の線をその場で動かし、
+/// [PlaylistEngine.jog] で音にも効かせる。保存すると拍の格子に焼き込んで 0 に戻す
+typedef JogOffset = ({String key, double ms});
+final jogOffsetProvider = StateProvider<JogOffset?>((ref) => null);
 
 /// 次トラックへ進めるかの判定結果。
 enum AdvanceReadiness {
@@ -1156,6 +1163,66 @@ class PlaylistEngine {
     );
   }
 
+  // --- ジョグホイール（入る曲の拍の位置を手で合わせる） ---
+
+  /// ジョグで動かせる幅（入る曲の媒体ミリ秒、片側）。小節頭の取り違えも直せるよう半小節。
+  /// これより広いと自動の拍合わせの寄せ（±半小節）の外に出て、保存の計算が折り返す。
+  /// 格子が無い・信用できない曲は null（手で合わせても自動が使わない）
+  double? jogMaxMs(MixPair pair) {
+    final grid = pair.next.item.beatGrid;
+    if (grid == null || !grid.reliable) return null;
+    return grid.periodMs * (BeatGrid.beatsPerBar / 2);
+  }
+
+  /// ジョグ中に見せる拍のずれ（実時間 ms、+ で入る曲が遅れている）。
+  /// 交差中は実際に測った値（[beatPhaseErrorProvider]）、交差の前は [jogMs] を入れた
+  /// 予想値。測れないときは null
+  double? jogErrorMs(MixPair pair, double jogMs) {
+    if (_crossfade != null) return _ref.read(beatPhaseErrorProvider);
+    final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    final out = outItem?.beatGrid;
+    final in_ = pair.next.item.beatGrid;
+    if (out == null || in_ == null || !out.reliable || !in_.reliable) return null;
+    final outRate = activePlayer.state.rate;
+    final inRate = _preloadInRate(pair.next);
+    if (outRate <= 0 || inRate <= 0) return null;
+    return BeatMatcher.phaseErrorMs(
+      out: out,
+      in_: in_,
+      outPosMs: activePlayer.state.position.inMicroseconds / 1000,
+      outRate: outRate,
+      inPosMs: pair.inStart.inMicroseconds / 1000 + jogMs,
+      inRate: inRate,
+    );
+  }
+
+  /// ジョグを音に効かせる。[jogMs] は入る曲を進める媒体ミリ秒（絶対値）。
+  /// 交差中は鳴っている入る曲を動かす（手で合わせている間は自動ナッジを止める）、
+  /// 交差の前は止まっている次曲（プリロード）の開始位置を動かす
+  void jog(MixPair pair, double jogMs, {required bool touching}) {
+    final session = _crossfade;
+    if (session != null) {
+      session.applyJog(jogMs, touching: touching);
+      return;
+    }
+    final target =
+        pair.inStart + Duration(microseconds: (jogMs * 1000).round());
+    unawaited(preloadPlayer.seek(_clampTo(target, pair.inDuration)));
+  }
+
+  /// 手で合わせた分を入る曲の拍の格子に焼き込んで保存する（次回から自動がこの位置で合わせる）。
+  /// 音はもう合っているので動かさない。拍の線は新しい格子で引き直される
+  Future<void> saveJog(MixPair pair, double jogMs) async {
+    final item = pair.next.item;
+    final grid = item.beatGrid;
+    if (grid == null || jogMs == 0) return;
+    final shifted = grid.shiftedBy(jogMs);
+    item.beatOffsetMs = shifted.offsetMs;
+    item.downbeatMs = shifted.downbeatMs;
+    _crossfade?.acceptJog();
+    await _ref.read(loopItemsProvider.notifier).update(item);
+  }
+
   // --- テンポ合わせ ---
   //
   // 交差中は次曲の速度を前曲の「実際に鳴っているテンポ」に寄せ、前曲が消えた後に
@@ -1491,6 +1558,30 @@ class _CrossfadeSession {
   /// 直近に入る曲へ設定した速度（テンポ合わせ + ナッジ）。交差後はここから本来の速度へ戻す
   double appliedInRate;
 
+  /// ジョグで動かした量（入る曲の媒体ミリ秒）。[applyJog] が差分だけ入る曲をシークする
+  double _jogMs = 0;
+
+  /// 手でジョグを回している間は自動ナッジ（速度の寄せ）を止める。ずれの測定は続ける
+  bool jogging = false;
+
+  /// ジョグを音に効かせる。[jogMs] は絶対量。前回との差だけ入る曲をシークする
+  void applyJog(double jogMs, {required bool touching}) {
+    jogging = touching;
+    final delta = jogMs - _jogMs;
+    _jogMs = jogMs;
+    if (delta.abs() < 1) return;
+    final pos = inPlayer.state.position;
+    unawaited(inPlayer.seek(pos + Duration(microseconds: (delta * 1000).round())));
+    // シーク直後の位置は信用できないので少し測定を待つ
+    _nudgeHoldUntil = DateTime.now().add(const Duration(milliseconds: 250));
+  }
+
+  /// 保存したので、動かした量を基準に戻す（音は動かさない）
+  void acceptJog() {
+    _jogMs = 0;
+    jogging = false;
+  }
+
   double _errSmooth = 0;
   int _nudgeTicks = 0;
   bool _measuring = false;
@@ -1550,7 +1641,7 @@ class _CrossfadeSession {
     // 位置の報告は粗いので半分ずつ平滑化してから使う
     _errSmooth = _nudgeTicks == 0 ? err : 0.5 * _errSmooth + 0.5 * err;
     _nudgeTicks++;
-    if (!plan.lock) return _errSmooth;
+    if (!plan.lock || jogging) return _errSmooth;
     final target = inRate * (1 + BeatMatcher.rateAdjust(_errSmooth));
     if ((target - appliedInRate).abs() >= 0.0005) {
       appliedInRate = target;

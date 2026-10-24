@@ -208,4 +208,60 @@ void main() {
       expect(BeatMatcher.rateAdjust(-250), -BeatMatcher.maxRateAdjust);
     });
   });
+
+  group('shiftedBy（ジョグで合わせた分を格子に焼き込む）', () {
+    // 出る曲: 拍 0,500… 1 拍目 1500。入る曲: 拍 200,700… 1 拍目 700
+    const outBars =
+        BeatGrid(bpm: 120, offsetMs: 0, downbeatMs: 1500, downbeatConfidence: 1);
+    const in_ =
+        BeatGrid(bpm: 120, offsetMs: 200, downbeatMs: 700, downbeatConfidence: 1);
+
+    test('位相（offset）は 1 拍ぶんに収めて、小節頭（downbeat）はそのまま動く', () {
+      final g = in_.shiftedBy(80);
+      expect(g.offsetMs, closeTo(280, 1e-9));
+      expect(g.downbeatMs, closeTo(780, 1e-9));
+      // 1 拍（500ms）ぶん進めても位相は変わらない（折り返す）が、小節頭は 1 拍動く
+      final one = in_.shiftedBy(500);
+      expect(one.offsetMs, closeTo(200, 1e-9));
+      expect(one.downbeatMs, closeTo(1200, 1e-9));
+      // マイナスも 0〜1 拍に収まる
+      expect(in_.shiftedBy(-80).offsetMs, closeTo(120, 1e-9));
+    });
+
+    test('焼き込むと、次の自動の拍合わせが手で合わせた開始位置をそのまま出す', () {
+      const outPos = 61500.0; // 出る曲の 1 拍目で交差開始
+      const inStart = 10000.0;
+      final base = BeatMatcher.alignedStartMs(
+          out: outBars.barGrid(),
+          in_: in_.barGrid(),
+          outPosMs: outPos,
+          outRate: 1,
+          inStartMs: inStart,
+          inRate: 1);
+      // 手で δ だけ入る曲を先へ動かして合わせた → その分を格子へ焼く
+      for (final d in [60.0, -60.0, 300.0, -300.0]) {
+        final shifted = in_.shiftedBy(d);
+        final after = BeatMatcher.alignedStartMs(
+            out: outBars.barGrid(),
+            in_: shifted.barGrid(),
+            outPosMs: outPos,
+            outRate: 1,
+            inStartMs: inStart,
+            inRate: 1);
+        expect(after, closeTo(base + d, 1e-6),
+            reason: 'δ=$d を焼き込むと開始が δ 分ずれる');
+      }
+    });
+
+    test('入る曲を前へ（+）動かすと遅れ（+）のずれが減る＝ジョグの向きと保存の向きが揃う', () {
+      // 入る曲 10150（50ms 遅れ）。ジョグは音源を +50 進めてずれ 0 にする
+      final late = BeatMatcher.phaseErrorMs(
+          out: outBars, in_: in_, outPosMs: 60000, outRate: 1, inPosMs: 10150, inRate: 1);
+      expect(late, closeTo(50, 1e-6));
+      final fixed = BeatMatcher.phaseErrorMs(
+          out: outBars, in_: in_, outPosMs: 60000, outRate: 1, inPosMs: 10150 + 50, inRate: 1);
+      expect(fixed, closeTo(0, 1e-6));
+      // そうやって +50 で合わせた分を shiftedBy(+50) で焼くと、次回も同じ開始に揃う（上のテスト）
+    });
+  });
 }

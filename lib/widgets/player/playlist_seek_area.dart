@@ -7,6 +7,9 @@ import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
 import '../loop/loop_seekbar.dart';
 import 'mix_view.dart';
+import 'jog_wheel.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_snack_bar.dart';
 
 /// 下部コントローラーのシーク領域。
 /// ふだんは [LoopSeekbar]（bar モード）、曲の切り替わりが近づくと細いバーと時刻行は
@@ -180,6 +183,11 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         swapped ? current ?? widget.waveformFor(inItem) : widget.waveformFor(inItem);
     final recipe = pair.recipe;
     final showBeats = ref.watch(showBeatLinesProvider);
+    // ジョグで手で動かした分（この組のぶんだけ）。入る曲の開始を前後にずらして見せる
+    final jog = ref.watch(jogOffsetProvider);
+    final jogMs = (jog != null && jog.key == pair.key) ? jog.ms : 0.0;
+    final jogInStart =
+        pair.inStart + Duration(microseconds: (jogMs * 1000).round());
     final narrower = MixView.narrower(_margin);
     final wider = MixView.wider(_margin);
     final zoom = (
@@ -189,13 +197,17 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     );
     // 閉じているときは帯を出さない（細いバーの紫の塗りで範囲は分かる）
     if (widget.compact) return _seekbar(mixRanges: ranges, zoom: zoom);
+    final engine = ref.read(playlistEngineProvider);
+    // 円盤は、まだ出る曲が鳴っている組（交差の前・最中）だけ。切り替わった後は
+    // 入る曲がもうアクティブで、位置を動かすのは合わせではなく手戻りになる
+    final jogMax = showBeats && !swapped ? engine.jogMaxMs(pair) : null;
     final band = MixView(
       outWaveform: outWaveform,
       outDuration: pair.outDuration,
       outTitle: outItem == null ? '' : widget.titleFor(outItem),
       inWaveform: inWaveform,
       inDuration: pair.inDuration,
-      inStart: pair.inStart,
+      inStart: jogInStart,
       inTitle: widget.titleFor(inItem),
       start: pair.start,
       cut: pair.cut,
@@ -213,7 +225,55 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       sfxCues: pair.sfx?.cues ?? const [],
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
-    return _seekbar(mixRanges: ranges, above: band, zoom: zoom);
+    final above = jogMax == null
+        ? band
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: band),
+              const SizedBox(width: AppSpacing.sm),
+              _jog(pair, jogMs, jogMax),
+            ],
+          );
+    return _seekbar(mixRanges: ranges, above: above, zoom: zoom);
+  }
+
+  /// 入る曲の横の円盤。回すと入る曲の拍を前後に動かし、保存で曲の拍の位置に焼き込む
+  Widget _jog(MixPair pair, double jogMs, double jogMax) {
+    final engine = ref.read(playlistEngineProvider);
+    final period = pair.next.item.beatGrid?.periodMs ?? 500.0;
+    void setJog(double ms, {required bool touching}) {
+      ref.read(jogOffsetProvider.notifier).state = (key: pair.key, ms: ms);
+      engine.jog(pair, ms, touching: touching);
+    }
+
+    return SizedBox(
+      width: 96,
+      child: JogWheel(
+        periodMs: period,
+        valueMs: jogMs,
+        maxMs: jogMax,
+        errorMs: engine.jogErrorMs(pair, jogMs),
+        onChanged: (ms, {required bool touching}) =>
+            setJog(ms, touching: touching),
+        onChangeEnd: (ms) => setJog(ms, touching: false),
+        onReset: jogMs.abs() < 1
+            ? null
+            : () {
+                setJog(0, touching: false);
+                ref.read(jogOffsetProvider.notifier).state = null;
+              },
+        onSave: jogMs.abs() < 1
+            ? null
+            : () async {
+                await engine.saveJog(pair, jogMs);
+                ref.read(jogOffsetProvider.notifier).state = null;
+                if (!mounted) return;
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(AppSnackBar.success('この曲の拍の位置を直しました'));
+              },
+      ),
+    );
   }
 
   /// ミックスビュー上のシーク。[t] は出る曲の時計。
