@@ -113,15 +113,10 @@ class _PitchFaderState extends State<PitchFader> {
         ),
       ),
     );
+    // 値は溝の下（デッキの板で円盤の BPM の行と揃う）
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          PitchFader.label(percent),
-          style: style.copyWith(
-              color: active ? AppTheme.accentGreen : Colors.white),
-        ),
-        const SizedBox(height: AppSpacing.xs),
         if (readOnly)
           AbsorbPointer(child: fader)
         else
@@ -133,6 +128,15 @@ class _PitchFaderState extends State<PitchFader> {
             onVerticalDragCancel: _onEnd,
             child: fader,
           ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          PitchFader.label(percent),
+          // 列が狭くても 1 行（折り返すと BPM の行と揃わない）
+          softWrap: false,
+          overflow: TextOverflow.visible,
+          style: style.copyWith(
+              color: active ? AppTheme.accentGreen : Colors.white),
+        ),
       ],
     );
   }
