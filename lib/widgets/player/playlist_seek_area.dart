@@ -10,9 +10,9 @@ import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
 import '../loop/loop_seekbar.dart';
-import 'advance_switcher.dart';
 import 'jog_wheel.dart';
 import 'mix_deck.dart';
+import 'mix_lanes_advance.dart';
 import 'mix_view.dart';
 
 /// 下部コントローラーのシーク領域。
@@ -84,7 +84,7 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   static const topBarHeight = 20.0;
 
   /// ふつうの波形と重ね表示の行き来はフェード（一瞬で入れ替えない。時刻行の開閉ボタンは
-  /// 両方の同じ場所にあるので動いて見えない）。組が次へ進むときは [AdvanceSwitcher]
+  /// 両方の同じ場所にあるので動いて見えない）。組が次へ進むときは [MixLanesAdvance]
   static const fadeDuration = Duration(milliseconds: 250);
 
   @override
@@ -355,47 +355,45 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       inPosition: inPosition,
     );
 
-    // 棒 2 本と帯は組ごと。組が次へ進んだら上へ送って入れ替える（次曲の段が前曲の段へ）。
-    // 時刻行は外に置いて動かさない（開閉ボタンの場所）
-    final lanes = Column(
-      key: ValueKey(pair.key),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 前曲の棒。切り替わった後に押せば前の曲に戻って聴き直す
-        ThinSeekbar(
-          position: outPosition,
-          duration: pair.outDuration,
-          height: PlaylistSeekArea.topBarHeight,
-          mixRanges: [(start: trigger.start, end: trigger.end)],
-          pointA: swapped ? null : loop.pointA,
-          pointB: swapped ? null : loop.pointB,
-          loopEnabled: !swapped && loop.enabled,
-          onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        band,
-        const SizedBox(height: AppSpacing.xs),
-        // 次曲の棒
-        ThinSeekbar(
-          position: inPosition,
-          duration: pair.inDuration,
-          mixRanges: [
-            (
-              start: pair.toInClock(trigger.start),
-              end: pair.toInClock(trigger.end)
-            ),
-          ],
-          pointA: swapped ? loop.pointA : null,
-          pointB: swapped ? loop.pointB : null,
-          loopEnabled: swapped && loop.enabled,
-          onSeek: swapped || crossfading
-              ? (u) {
-                  ref.read(jogOffsetProvider.notifier).state = null;
-                  engine.seekInTrack(pair, u);
-                }
-              : null,
-        ),
-      ],
+    // 棒 2 本と帯は組ごと。組が次へ進んだら 3 拍子で入れ替える（前曲の段が左へ抜け、
+    // 次曲の段が上がり、新しい次曲の段が右から）。時刻行は外に置いて動かさない（開閉ボタンの場所）
+    final lanes = MixLanesAdvance(
+      pairKey: ValueKey(pair.key),
+      topBarHeight: PlaylistSeekArea.topBarHeight,
+      bandHeight: bandHeight,
+      bottomBarHeight: ThinSeekbar.defaultHeight,
+      // 前曲の棒。切り替わった後に押せば前の曲に戻って聴き直す
+      topBar: ThinSeekbar(
+        position: outPosition,
+        duration: pair.outDuration,
+        height: PlaylistSeekArea.topBarHeight,
+        mixRanges: [(start: trigger.start, end: trigger.end)],
+        pointA: swapped ? null : loop.pointA,
+        pointB: swapped ? null : loop.pointB,
+        loopEnabled: !swapped && loop.enabled,
+        onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
+      ),
+      band: band,
+      // 次曲の棒
+      bottomBar: ThinSeekbar(
+        position: inPosition,
+        duration: pair.inDuration,
+        mixRanges: [
+          (
+            start: pair.toInClock(trigger.start),
+            end: pair.toInClock(trigger.end)
+          ),
+        ],
+        pointA: swapped ? loop.pointA : null,
+        pointB: swapped ? loop.pointB : null,
+        loopEnabled: swapped && loop.enabled,
+        onSeek: swapped || crossfading
+            ? (u) {
+                ref.read(jogOffsetProvider.notifier).state = null;
+                engine.seekInTrack(pair, u);
+              }
+            : null,
+      ),
     );
 
     return Padding(
@@ -403,7 +401,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
         children: [
-          AdvanceSwitcher(child: lanes),
+          lanes,
           SeekTimeRow(
             position: inPosition,
             duration: pair.inDuration,

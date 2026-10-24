@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../glass_panel.dart';
-import 'advance_switcher.dart';
+import 'advance_stage.dart';
 import 'jog_wheel.dart';
 import 'pitch_fader.dart';
+
+typedef _DeckParts = ({Widget out, Widget inCol, Widget fader});
 
 /// デッキの板。重ね表示の間、コントローラーの上に浮かせて出す（動画や曲名に被さってよい。
 /// 出しているときはこれがメイン）。帯には重ねない（波形が見えなくなり、操作もかぶる）。
@@ -20,8 +22,9 @@ import 'pitch_fader.dart';
 /// 各円盤の下にそのデッキのテンポ（BPM × 速度）、フェーダーの下にその値。3 列とも
 /// 「物 + 値の行」で下端を揃える。2 つのテンポが揃うと次曲側が緑。
 /// 切り替わった後は次曲側も回る・見るだけ（[jog] / [tempo] が null）。
-/// 組が次へ進んだら（[contentKey] が変わったら）中身を左へ送って入れ替える
-/// （次曲の円盤が前曲の位置へ）。
+/// 組が次へ進んだら（[contentKey] が変わったら）帯と同じ 3 拍子（[AdvanceStage]）:
+/// 前曲の盤が左へ抜け、次曲の円盤が左へ寄りながら小さくなって前曲の盤になり、
+/// 新しい次曲の円盤が右から入ってくる（フェーダーは新しい次曲の値に溶ける）。
 /// 値はすべて親が持ち、この板は見せて返すだけ
 class MixDeck extends StatelessWidget {
   const MixDeck({
@@ -96,9 +99,6 @@ class MixDeck extends StatelessWidget {
   /// （コントローラーの板の上の余白 18px + 隙間）
   static const liftAbove = 26.0;
 
-  /// 中身を入れ替えるとき左へ送る距離（板の幅に対する割合）
-  static const advanceFraction = 0.2;
-
   /// 幅 [width] のときの次曲の円盤の直径
   static double discSizeFor(double width) =>
       ((width - _padding * 2 - _gap * 2 - faderColumnWidth) / (1 + subDiscRatio))
@@ -163,40 +163,34 @@ class MixDeck extends StatelessWidget {
     final Widget? spacer =
         inButtons == null ? null : const SizedBox(height: buttonsRowHeight);
 
-    final row = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Opacity(
-          opacity: subOpacity,
-          child: _column([
-            JogWheel.platter(turns: outTurns, title: '前曲', size: subSize),
-            _bpmLabel(context, outBpm, matched: false),
-            ?spacer,
-          ]),
-        ),
-        const SizedBox(width: _gap),
-        _column([
-          inDisc,
-          _bpmLabel(context, inBpm, matched: matched),
-          ?inButtons,
+    final parts = (
+      out: Opacity(
+        opacity: subOpacity,
+        child: _column([
+          JogWheel.platter(turns: outTurns, title: '前曲', size: subSize),
+          _bpmLabel(context, outBpm, matched: false),
+          ?spacer,
         ]),
-        const SizedBox(width: _gap),
-        SizedBox(
-          width: faderColumnWidth,
-          child: _column([
-            PitchFader(
-              percent: tempo?.percent ?? 0,
-              maxPercent: tempo?.maxPercent ?? 8,
-              // 溝の下端を円盤の下端に、値を BPM の行に揃える
-              height: size,
-              onChanged: tempo == null ? null : onTempo,
-              onChangeEnd: tempo == null ? null : onTempoEnd,
-            ),
-            ?spacer,
-          ]),
-        ),
-      ],
+      ),
+      inCol: _column([
+        inDisc,
+        _bpmLabel(context, inBpm, matched: matched),
+        ?inButtons,
+      ]),
+      fader: SizedBox(
+        width: faderColumnWidth,
+        child: _column([
+          PitchFader(
+            percent: tempo?.percent ?? 0,
+            maxPercent: tempo?.maxPercent ?? 8,
+            // 溝の下端を円盤の下端に、値を BPM の行に揃える
+            height: size,
+            onChanged: tempo == null ? null : onTempo,
+            onChangeEnd: tempo == null ? null : onTempoEnd,
+          ),
+          ?spacer,
+        ]),
+      ),
     );
 
     return SizedBox(
@@ -205,17 +199,105 @@ class MixDeck extends StatelessWidget {
         padding: const EdgeInsets.all(_padding),
         // 動画の上に置くので暗く敷く（読めることが優先）
         scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.92),
-        child: AdvanceSwitcher(
-          direction: AxisDirection.left,
-          fraction: advanceFraction,
-          child: KeyedSubtree(
-            key: contentKey ?? const ValueKey('deck'),
-            child: row,
+        child: AdvanceStage<_DeckParts>(
+          stageKey: contentKey ?? const ValueKey('deck'),
+          value: parts,
+          builder: (context, current, previous, phases) => _layout(
+            current,
+            previous,
+            phases,
+            size: size,
+            subSize: subSize,
           ),
         ),
       ),
     );
   }
+
+  /// 3 列を並べる。動いていないときは Row。組が進んでいる間は [AdvanceStage] の
+  /// 3 拍子で、前曲の列は左へ抜け、次曲の列は左へ寄りながら前曲の大きさに縮んで
+  /// 新しい前曲の列に溶け、新しい次曲の列は右から入る。フェーダーは新しい値に溶ける
+  Widget _layout(
+    _DeckParts current,
+    _DeckParts? previous,
+    AdvancePhases phases, {
+    required double size,
+    required double subSize,
+  }) {
+    final row = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        current.out,
+        const SizedBox(width: _gap),
+        current.inCol,
+        const SizedBox(width: _gap),
+        current.fader,
+      ],
+    );
+    if (previous == null) return row;
+
+    final leave = phases.leave;
+    final rise = phases.rise;
+    final enter = phases.enter;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final total = subSize + _gap + size + _gap + faderColumnWidth;
+        final xOut = ((w - total) / 2).clamp(0.0, w);
+        final xIn = xOut + subSize + _gap;
+        final xFader = xIn + size + _gap;
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            // 大きさ取りのために今の並びを透明で置く（触れない）
+            IgnorePointer(child: Opacity(opacity: 0, child: row)),
+            // 1. 前曲の盤は左へ抜ける
+            if (leave < 1)
+              _place(
+                left: xOut - (xOut + subSize) * leave,
+                opacity: 1 - leave,
+                child: previous.out,
+              ),
+            // 新しい前曲の盤（次曲が寄ってくるのに合わせて現れる）
+            _place(left: xOut, opacity: rise, child: current.out),
+            // 2. 次曲の円盤が左へ寄りながら縮む
+            if (rise < 1)
+              _place(
+                left: xIn - (xIn - xOut) * rise,
+                opacity: 1 - rise,
+                child: Transform.scale(
+                  scale: 1 - (1 - subDiscRatio) * rise,
+                  alignment: Alignment.bottomLeft,
+                  child: previous.inCol,
+                ),
+              ),
+            // 3. 新しい次曲の円盤が右から入ってくる
+            _place(
+              left: xIn + (w - xIn) * (1 - enter),
+              opacity: enter,
+              child: current.inCol,
+            ),
+            // フェーダーは新しい次曲の値に溶ける
+            if (rise < 1)
+              _place(left: xFader, opacity: 1 - rise, child: previous.fader),
+            _place(left: xFader, opacity: rise, child: current.fader),
+          ],
+        );
+      },
+    );
+  }
+
+  static Widget _place({
+    required double left,
+    required double opacity,
+    required Widget child,
+  }) =>
+      Positioned(
+        left: left,
+        bottom: 0,
+        child: Opacity(opacity: opacity.clamp(0.0, 1.0), child: child),
+      );
 
   Widget _column(List<Widget> children) => Column(
         mainAxisSize: MainAxisSize.min,

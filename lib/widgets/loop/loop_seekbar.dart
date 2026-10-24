@@ -1354,7 +1354,7 @@ class ThinSeekbar extends StatelessWidget {
     required this.duration,
     this.mixRanges = const [],
     this.onSeek,
-    this.height = 28,
+    this.height = defaultHeight,
     this.pointA,
     this.pointB,
     this.loopEnabled = false,
@@ -1365,6 +1365,9 @@ class ThinSeekbar extends StatelessWidget {
   final List<MixRange> mixRanges;
   final ValueChanged<Duration>? onSeek;
   final double height;
+
+  /// 高さの既定（次曲の棒はこれ。前曲の棒は細く）
+  static const defaultHeight = 28.0;
   final Duration? pointA;
   final Duration? pointB;
   final bool loopEnabled;

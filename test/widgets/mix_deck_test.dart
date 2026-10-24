@@ -10,7 +10,7 @@ import 'package:u2b_loop_app/widgets/player/mix_deck.dart';
 import 'package:u2b_loop_app/widgets/player/pitch_fader.dart';
 
 /// デッキの板: 前曲の盤（小さく薄い）・次曲のジョグ・ピッチフェーダーが横に並び、
-/// 幅から円盤の大きさが決まる。組が進んだら中身を左へ送って入れ替える
+/// 幅から円盤の大きさが決まる。組が進んだら 3 拍子で入れ替える
 void main() {
   // 板はガラス板（設定のぼかしを見る）なので、設定の box と ProviderScope が要る
   setUpAll(() async {
@@ -99,7 +99,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('組が進んだら（contentKey が変わったら）中身を左へ送って入れ替える', (tester) async {
+  testWidgets('組が進んだら（contentKey が変わったら）前曲の盤は左へ抜け、新しい次曲は右から', (tester) async {
     await tester.pumpWidget(host(const MixDeck(
       key: Key('deck'),
       width: 372,
@@ -121,8 +121,9 @@ void main() {
     )));
     await tester.pump(const Duration(milliseconds: 120));
     // 出る側（120）は左へ、入る側（100）は右から
+    // （動いている間は大きさ取りの透明な並びもあるので、動いている方 = 後ろの方を見る）
     expect(tester.getCenter(find.text('120.0 BPM')).dx, lessThan(rest.dx));
-    expect(tester.getCenter(find.text('100.0 BPM')).dx,
+    expect(tester.getCenter(find.text('100.0 BPM').last).dx,
         greaterThan(tester.getCenter(find.text('120.0 BPM')).dx));
     await tester.pumpAndSettle();
     expect(find.text('120.0 BPM'), findsNothing);
