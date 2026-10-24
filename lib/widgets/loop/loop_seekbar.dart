@@ -38,10 +38,6 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// 細いバーと時刻行はそのままの位置に残り、その上に足す
   final Widget? above;
 
-  /// 時刻行の開閉ボタンの右に出す「−」（範囲を広げる）「＋」（狭める）。
-  /// null なら出さない。中の null は押せない
-  final ({VoidCallback? wider, VoidCallback? narrower})? zoom;
-
   /// 時刻行の左の枠に出すもの（プレイリストのデッキの開閉ボタン、bar モード）。
   /// 重ね表示の時刻行と同じ場所に出て、どちらの表示でも同じ所で押せる
   final Widget? timeRowLeading;
@@ -56,7 +52,6 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.onRetryWaveform,
     this.mixRanges = const [],
     this.above,
-    this.zoom,
     this.timeRowLeading,
   });
 
@@ -616,8 +611,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     final compact = widget.compact;
     final brightness = Theme.of(context).brightness;
 
-    final zoom = widget.zoom;
-
     /// タップ・横ドラッグでシークできる面。[waveformPainter] なら波形、でなければ細いバー
     Widget seekSurface({required bool waveformPainter, required double height}) =>
         SizedBox(
@@ -695,7 +688,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             duration: duration,
             compact: compact,
             onToggleCompact: widget.onToggleCompact,
-            zoom: zoom,
             leading: widget.timeRowLeading,
           ),
         ],
@@ -1289,37 +1281,6 @@ class _MinimapPainter extends CustomPainter {
       old.waveform != waveform;
 }
 
-/// 時刻行の「−」「＋」（プレイリストの重ね表示の範囲）。押せないときは薄く
-class _MixZoomButton extends StatelessWidget {
-  const _MixZoomButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = onTap == null
-        ? AppTheme.muted(context, alpha: 0.35)
-        : AppTheme.accentGreen;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Icon(icon, size: AppIconSizes.sm, color: color),
-        ),
-      ),
-    );
-  }
-}
-
 /// A/B 点の線。ガラス風に合わせて、細い芯の周りにほんのり同じ色を滲ませる
 /// （以前は 1.5〜2.5px の不透明な 1 本線で、板の上で硬く見えた）
 void drawPointLine(Canvas canvas, Offset top, Offset bottom, Color color) {
@@ -1416,8 +1377,8 @@ class ThinSeekbar extends StatelessWidget {
 }
 
 /// 時刻行: 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも、重ね表示でも同じ場所）。
-/// 「−」「＋」（[zoom]）は開閉ボタンのすぐ右。左にも同じ幅を空けて開閉ボタンを真ん中に保ち、
-/// その左の枠に [leading]（重ね表示の円盤の開閉など）を置ける
+/// 開閉ボタンの左の枠に [leading]（重ね表示のデッキの開閉）を置ける。右にも同じ幅を
+/// 空けて開閉ボタンを真ん中に保つ（「−」「＋」はデッキの板へ移した。右の枠は空）
 class SeekTimeRow extends StatelessWidget {
   const SeekTimeRow({
     super.key,
@@ -1425,7 +1386,6 @@ class SeekTimeRow extends StatelessWidget {
     required this.duration,
     this.compact = false,
     this.onToggleCompact,
-    this.zoom,
     this.leading,
   });
 
@@ -1433,7 +1393,6 @@ class SeekTimeRow extends StatelessWidget {
   final Duration duration;
   final bool compact;
   final VoidCallback? onToggleCompact;
-  final ({VoidCallback? wider, VoidCallback? narrower})? zoom;
   final Widget? leading;
 
   /// 開閉ボタンの両脇の枠の幅
@@ -1444,8 +1403,7 @@ class SeekTimeRow extends StatelessWidget {
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
           fontFeatures: const [FontFeature('tnum')],
         );
-    final zoom = this.zoom;
-    final sides = zoom != null || leading != null;
+    final sides = leading != null;
     return SizedBox(
       height: 32,
       child: Stack(
@@ -1481,26 +1439,7 @@ class SeekTimeRow extends StatelessWidget {
                     visualDensity: VisualDensity.compact,
                     tooltip: compact ? '波形表示' : 'コンパクト表示',
                   ),
-                if (sides)
-                  SizedBox(
-                    width: sideWidth,
-                    child: zoom == null
-                        ? null
-                        : Row(
-                            children: [
-                              _MixZoomButton(
-                                icon: Icons.remove,
-                                tooltip: '範囲を広げる',
-                                onTap: zoom.wider,
-                              ),
-                              _MixZoomButton(
-                                icon: Icons.add,
-                                tooltip: '範囲を狭める',
-                                onTap: zoom.narrower,
-                              ),
-                            ],
-                          ),
-                  ),
+                if (sides) const SizedBox(width: sideWidth),
               ],
             ),
         ],

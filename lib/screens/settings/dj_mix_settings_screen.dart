@@ -238,6 +238,14 @@ class DjMixSettingsScreen extends ConsumerWidget {
               onChanged: (v) =>
                   ref.read(showBeatLinesProvider.notifier).value = v,
             ),
+            // 音量曲線（つなぎ方の 2 本の線）。デッキの板からも切り替えられる
+            SettingsSwitchRow(
+              icon: Icons.ssid_chart,
+              title: '音量の線を表示',
+              value: ref.watch(showMixCurvesProvider),
+              onChanged: (v) =>
+                  ref.read(showMixCurvesProvider.notifier).value = v,
+            ),
           ],
         ),
         SettingsGroup(

@@ -69,7 +69,16 @@ class MixView extends StatelessWidget {
     this.inRatio = 1,
     this.beatError,
     this.sfxCues = const [],
+    this.showCurves = true,
+    this.linesOpacity = 1,
   });
+
+  /// 音量曲線を描くか（デッキの板で切り替え。切替点の線と効果音の印は残す）
+  final bool showCurves;
+
+  /// 2 段をまたぐ線（音量曲線・切替点・ベーススワップ・効果音の印）の濃さ（0〜1）。
+  /// 組が次へ進む演出で、先に消して最後に出す（[MixLanesAdvance]）。再生位置の線は含めない
+  final double linesOpacity;
 
   /// 出る曲の時計 1ms あたり入る曲の時計が進む量（[MixPair.inRatio]）
   final double inRatio;
@@ -231,6 +240,8 @@ class MixView extends StatelessWidget {
                       inBeats: inBeats,
                       inRatio: inRatio,
                       sfxCues: sfxCues,
+                      showCurves: showCurves,
+                      linesOpacity: linesOpacity,
                     ),
                   ),
                 ),
@@ -353,9 +364,13 @@ class _MixPainter extends CustomPainter {
     required this.inBeats,
     required this.inRatio,
     required this.sfxCues,
+    required this.showCurves,
+    required this.linesOpacity,
   });
 
   final List<SfxCue> sfxCues;
+  final bool showCurves;
+  final double linesOpacity;
 
   final double inRatio;
 
@@ -468,7 +483,79 @@ class _MixPainter extends CustomPainter {
       );
     }
 
-    // 音量曲線（設定のつなぎ方）。全高で描く
+    // 2 段をまたぐ線（音量曲線・切替点・ベーススワップ・効果音の印）。
+    // 組が進む演出の間は薄く（層にまとめて濃さを掛ける）、0 なら描かない
+    if (linesOpacity > 0) {
+      final faded = linesOpacity < 1;
+      if (faded) {
+        canvas.saveLayer(
+          Offset.zero & size,
+          Paint()..color = Colors.white.withValues(alpha: linesOpacity),
+        );
+      }
+      _drawCrossingLines(canvas,
+          w: w, h: h, laneH: laneH, toX: toX, toT: toT, startX: startX, cutX: cutX);
+      if (faded) canvas.restore();
+    }
+
+    // 再生位置
+    if (nowX >= 0 && nowX <= w) {
+      canvas.drawLine(
+        Offset(nowX, 0),
+        Offset(nowX, h),
+        Paint()
+          ..color = Colors.white
+          ..strokeWidth = 2,
+      );
+    }
+  }
+
+  /// 2 段をまたぐ線。音量曲線（設定のつなぎ方、全高）は [showCurves] のときだけ
+  void _drawCrossingLines(
+    Canvas canvas, {
+    required double w,
+    required double h,
+    required double laneH,
+    required double Function(double tMs) toX,
+    required double Function(double x) toT,
+    required double startX,
+    required double cutX,
+  }) {
+    if (showCurves) _drawCurves(canvas, w: w, h: h, toT: toT);
+
+    // 切り替わり地点
+    if (cutX >= 0 && cutX <= w) {
+      canvas.drawLine(
+        Offset(cutX, 0),
+        Offset(cutX, h),
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.35)
+          ..strokeWidth = 1,
+      );
+    }
+
+    // ベーススワップの位置（点線）
+    if (bassSwap && curve.bassSwapAt < 1) {
+      final bx = startX + (cutX - startX) * curve.bassSwapAt;
+      if (bx >= 0 && bx <= w) {
+        final paint = Paint()
+          ..color = Colors.amber.withValues(alpha: 0.7)
+          ..strokeWidth = 1;
+        for (var y = 0.0; y < h; y += 6) {
+          canvas.drawLine(Offset(bx, y), Offset(bx, min(y + 3, h)), paint);
+        }
+      }
+    }
+
+    _drawSfx(canvas, w: w, laneH: laneH, toX: toX, cutX: cutX);
+  }
+
+  void _drawCurves(
+    Canvas canvas, {
+    required double w,
+    required double h,
+    required double Function(double x) toT,
+  }) {
     final outPath = Path();
     final inPath = Path();
     const pad = 3.0;
@@ -513,43 +600,6 @@ class _MixPainter extends CustomPainter {
         ..strokeWidth = 2
         ..strokeJoin = StrokeJoin.round,
     );
-
-    // 切り替わり地点
-    if (cutX >= 0 && cutX <= w) {
-      canvas.drawLine(
-        Offset(cutX, 0),
-        Offset(cutX, h),
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.35)
-          ..strokeWidth = 1,
-      );
-    }
-
-    // ベーススワップの位置（点線）
-    if (bassSwap && curve.bassSwapAt < 1) {
-      final bx = startX + (cutX - startX) * curve.bassSwapAt;
-      if (bx >= 0 && bx <= w) {
-        final paint = Paint()
-          ..color = Colors.amber.withValues(alpha: 0.7)
-          ..strokeWidth = 1;
-        for (var y = 0.0; y < h; y += 6) {
-          canvas.drawLine(Offset(bx, y), Offset(bx, min(y + 3, h)), paint);
-        }
-      }
-    }
-
-    _drawSfx(canvas, w: w, laneH: laneH, toX: toX, cutX: cutX);
-
-    // 再生位置
-    if (nowX >= 0 && nowX <= w) {
-      canvas.drawLine(
-        Offset(nowX, 0),
-        Offset(nowX, h),
-        Paint()
-          ..color = Colors.white
-          ..strokeWidth = 2,
-      );
-    }
   }
 
   /// 効果音の印。ライザー / スピンバックは始まりから切替点へ上がる（下がる）線、
@@ -630,6 +680,8 @@ class _MixPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MixPainter old) =>
       now != old.now ||
+      showCurves != old.showCurves ||
+      linesOpacity != old.linesOpacity ||
       swapped != old.swapped ||
       window != old.window ||
       curve != old.curve ||

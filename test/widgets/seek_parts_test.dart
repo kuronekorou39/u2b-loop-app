@@ -35,13 +35,13 @@ void main() {
   });
 
   group('SeekTimeRow', () {
-    testWidgets('時刻は両端、開閉ボタンは真ん中（左の枠に円盤の開閉、右に −/＋）', (tester) async {
-      var toggled = 0, wider = 0;
+    testWidgets('時刻は両端、開閉ボタンは真ん中（左の枠に円盤の開閉。右の枠は幅だけ空ける）',
+        (tester) async {
+      var toggled = 0;
       await tester.pumpWidget(host(SeekTimeRow(
         position: const Duration(seconds: 65),
         duration: const Duration(minutes: 3),
         onToggleCompact: () => toggled++,
-        zoom: (wider: () => wider++, narrower: null),
         leading: const Icon(Icons.album, key: Key('wheels')),
       )));
       expect(find.text('1:05.000'), findsOneWidget);
@@ -49,15 +49,14 @@ void main() {
       final rowCenter = tester.getCenter(find.byType(SeekTimeRow));
       final toggle = find.widgetWithIcon(IconButton, Icons.unfold_less);
       expect(tester.getCenter(toggle).dx, closeTo(rowCenter.dx, 1));
-      // 左の枠に円盤の開閉、右の枠に −/＋
-      expect(tester.getCenter(find.byKey(const Key('wheels'))).dx,
-          lessThan(rowCenter.dx));
-      expect(tester.getCenter(find.byIcon(Icons.remove)).dx,
-          greaterThan(rowCenter.dx));
+      // 左の枠に円盤の開閉（開閉ボタンのすぐ左）
+      final wheels = tester.getCenter(find.byKey(const Key('wheels')));
+      expect(wheels.dx, lessThan(rowCenter.dx));
+      expect(wheels.dx, greaterThan(rowCenter.dx - SeekTimeRow.sideWidth - 18));
+      // 「−」「＋」はデッキの板へ移した（ここには無い）
+      expect(find.byIcon(Icons.remove), findsNothing);
       await tester.tap(toggle);
-      await tester.tap(find.byIcon(Icons.remove));
       expect(toggled, 1);
-      expect(wider, 1);
     });
   });
 

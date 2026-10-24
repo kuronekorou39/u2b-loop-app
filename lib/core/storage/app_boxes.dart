@@ -50,6 +50,7 @@ class SettingsKeys {
   static const volumeNorm = 'volume_norm';
   static const beatMatch = 'beat_match';
   static const showBeatLines = 'show_beat_lines';
+  static const showMixCurves = 'show_mix_curves';
   static const verseSearchStartSec = 'verse_search_start_sec';
   static const verseSearchEndSec = 'verse_search_end_sec';
   static const perfOverlay = 'perf_overlay';

@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/widgets/player/advance_stage.dart';
 
-/// 3 拍子の土台: key が変わったら前の値を渡して、抜ける → 上がる → 入る の順に進む
+/// 5 拍子の土台: key が変わったら前の値を渡して、
+/// 線が消える → 抜ける → 上がる → 入る → 線が出る の順に進む
 void main() {
-  testWidgets('key が変わると前の値が来て、3 拍子が順に進み、終わると前の値は消える',
+  testWidgets('key が変わると前の値が来て、5 拍子が順に進み、終わると前の値は消える',
       (tester) async {
     String? previous;
     AdvancePhases? phases;
@@ -27,23 +28,34 @@ void main() {
     await tester.pump();
     expect(previous, 'a');
     expect(find.text('b/a'), findsOneWidget);
-    // 1 拍目: 抜けるだけが進む
-    await tester.pump(const Duration(milliseconds: 135));
-    expect(phases!.leave, greaterThan(0));
-    expect(phases!.leave, lessThan(1));
+
+    bool mid(double v) => v > 0 && v < 1;
+    // 1.2 秒: 線が消える 0〜150ms
+    await tester.pump(const Duration(milliseconds: 75));
+    expect(mid(phases!.hide), isTrue);
+    expect(phases!.leave, 0);
+    expect(AdvanceStage.hidingOpacity(phases!), 1 - phases!.hide);
+    expect(AdvanceStage.showingOpacity(phases!), 0);
+    // 抜ける 150〜400ms
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(phases!.hide, 1);
+    expect(mid(phases!.leave), isTrue);
     expect(phases!.rise, 0);
-    expect(phases!.enter, 0);
-    // 2 拍目: 抜け終わって、上がる途中
-    await tester.pump(const Duration(milliseconds: 315));
+    // 上がる 400〜700ms
+    await tester.pump(const Duration(milliseconds: 300));
     expect(phases!.leave, 1);
-    expect(phases!.rise, greaterThan(0));
-    expect(phases!.rise, lessThan(1));
+    expect(mid(phases!.rise), isTrue);
     expect(phases!.enter, 0);
-    // 3 拍目: 入る途中
-    await tester.pump(const Duration(milliseconds: 270));
+    // 入る 700〜1000ms
+    await tester.pump(const Duration(milliseconds: 250));
     expect(phases!.rise, 1);
-    expect(phases!.enter, greaterThan(0));
-    expect(phases!.enter, lessThan(1));
+    expect(mid(phases!.enter), isTrue);
+    expect(phases!.show, 0);
+    // 線が出る 1000〜1200ms
+    await tester.pump(const Duration(milliseconds: 225));
+    expect(phases!.enter, 1);
+    expect(mid(phases!.show), isTrue);
+    expect(AdvanceStage.showingOpacity(phases!), phases!.show);
 
     await tester.pumpAndSettle();
     expect(previous, isNull);

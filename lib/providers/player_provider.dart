@@ -384,6 +384,24 @@ class ShowBeatLinesNotifier extends StateNotifier<bool> {
   }
 }
 
+/// 重ね表示に音量曲線（つなぎ方の 2 本の線）を出すか（既定オン）。デッキの板で切り替え。
+/// 切替点の線と効果音の印は消さない（どこで切り替わるかは分かるように）
+final showMixCurvesProvider = StateNotifierProvider<ShowMixCurvesNotifier, bool>(
+    (ref) => ShowMixCurvesNotifier());
+
+class ShowMixCurvesNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.showMixCurves;
+
+  ShowMixCurvesNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 /// 1番モードで「1 番の終わり」を自動で探す範囲（秒）。この間で一番静かな所を終わりにする。
 /// 曲がこの範囲の終わりより短ければ全部流す
 typedef VerseRange = ({int startSec, int endSec});

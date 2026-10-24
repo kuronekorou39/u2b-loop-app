@@ -3,14 +3,19 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import 'advance_stage.dart';
 
-typedef _Parts = ({Widget topBar, Widget band, Widget bottomBar});
+/// 帯を作る。[linesOpacity] は 2 段をまたぐ線（音量曲線・切替点・効果音の印）の濃さ
+typedef MixBandBuilder = Widget Function(double linesOpacity);
+
+typedef _Parts = ({Widget topBar, MixBandBuilder band, Widget bottomBar});
 
 /// 重ね表示の棒 2 本と帯。組が次へ進んだら（[pairKey] が変わったら）[AdvanceStage] の
-/// 3 拍子で入れ替える:
-/// 1. 前曲の段（帯の上の段と前曲の棒）が左へ抜ける
-/// 2. 次曲の段（帯の下の段と次曲の棒）が上がって前曲の段になる。窓（描く範囲）が
+/// 5 拍子で入れ替える:
+/// 1. 2 段をまたぐ線（音量曲線など）が消える
+/// 2. 前曲の段（帯の上の段と前曲の棒）が左へ抜ける
+/// 3. 次曲の段（帯の下の段と次曲の棒）が上がって前曲の段になる。窓（描く範囲）が
 ///    組ごとに違うので中身まで同じにはできず、上がりながら新しい前曲の段に溶ける
-/// 3. 新しい次曲の段（帯の下の段と棒）が右から入ってくる
+/// 4. 新しい次曲の段（帯の下の段と棒）が右から入ってくる
+/// 5. またぐ線が新しい組の形で現れる
 ///
 /// 動いていないときは 3 つを縦に並べるだけ（帯は 1 枚、ふだんの描画と同じ）。
 /// 動いている間は帯を上下半分に切って（[OverflowBox] + [ClipRect]）別々に動かす
@@ -31,7 +36,7 @@ class MixLanesAdvance extends StatelessWidget {
   final Key pairKey;
 
   final Widget topBar;
-  final Widget band;
+  final MixBandBuilder band;
   final Widget bottomBar;
 
   final double topBarHeight;
@@ -62,12 +67,15 @@ class MixLanesAdvance extends StatelessWidget {
         children: [
           current.topBar,
           SizedBox(height: gap),
-          current.band,
+          current.band(1),
           SizedBox(height: gap),
           current.bottomBar,
         ],
       );
     }
+    // 前の組の線は最初に消え、新しい組の線は最後に現れる
+    final oldBand = previous.band(AdvanceStage.hidingOpacity(phases));
+    final newBand = current.band(AdvanceStage.showingOpacity(phases));
     return SizedBox(
       height: height,
       child: LayoutBuilder(
@@ -83,7 +91,7 @@ class MixLanesAdvance extends StatelessWidget {
           return Stack(
             clipBehavior: Clip.hardEdge,
             children: [
-              // 1. 前曲の段は左へ抜ける
+              // 前曲の段は左へ抜ける
               if (leave < 1) ...[
                 _place(
                   left: -w * leave,
@@ -97,7 +105,7 @@ class MixLanesAdvance extends StatelessWidget {
                   top: yBand,
                   width: w,
                   opacity: 1 - leave,
-                  child: _half(previous.band, w, upper: true),
+                  child: _half(oldBand, w, upper: true),
                 ),
               ],
               // 新しい前曲の段（次曲が上がってくるのに合わせて現れる）
@@ -113,16 +121,16 @@ class MixLanesAdvance extends StatelessWidget {
                 top: yBand,
                 width: w,
                 opacity: rise,
-                child: _half(current.band, w, upper: true),
+                child: _half(newBand, w, upper: true),
               ),
-              // 2. 次曲の段が上がる（上がりながら新しい前曲の段に溶ける）
+              // 次曲の段が上がる（上がりながら新しい前曲の段に溶ける）
               if (rise < 1) ...[
                 _place(
                   left: 0,
                   top: yLower - laneH * rise,
                   width: w,
                   opacity: 1 - rise,
-                  child: _half(previous.band, w, upper: false),
+                  child: _half(oldBand, w, upper: false),
                 ),
                 _place(
                   left: 0,
@@ -133,13 +141,13 @@ class MixLanesAdvance extends StatelessWidget {
                       height: bottomBarHeight, child: previous.bottomBar),
                 ),
               ],
-              // 3. 新しい次曲の段が右から入ってくる
+              // 新しい次曲の段が右から入ってくる
               _place(
                 left: w * (1 - enter),
                 top: yLower,
                 width: w,
                 opacity: enter,
-                child: _half(current.band, w, upper: false),
+                child: _half(newBand, w, upper: false),
               ),
               _place(
                 left: w * (1 - enter),

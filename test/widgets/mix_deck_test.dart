@@ -10,7 +10,7 @@ import 'package:u2b_loop_app/widgets/player/mix_deck.dart';
 import 'package:u2b_loop_app/widgets/player/pitch_fader.dart';
 
 /// デッキの板: 前曲の盤（小さく薄い）・次曲のジョグ・ピッチフェーダーが横に並び、
-/// 幅から円盤の大きさが決まる。組が進んだら 3 拍子で入れ替える
+/// 幅から円盤の大きさが決まる。下の 1 行は常にある。組が進んだら 5 拍子で入れ替える
 void main() {
   // 板はガラス板（設定のぼかしを見る）なので、設定の box と ProviderScope が要る
   setUpAll(() async {
@@ -26,9 +26,13 @@ void main() {
         ),
       );
 
-  testWidgets('合わせられる組: 円盤 2 つ、保存・戻す、フェーダー、BPM', (tester) async {
-    var saved = 0, reset = 0;
+  IconButton button(WidgetTester tester, IconData icon) =>
+      tester.widget<IconButton>(find.widgetWithIcon(IconButton, icon));
+
+  testWidgets('合わせられる組: 円盤 2 つ、フェーダー、BPM、下の 1 行', (tester) async {
+    var saved = 0, reset = 0, wider = 0;
     double? tempo;
+    bool? curves, beats;
     await tester.pumpWidget(host(MixDeck(
       width: 372,
       outTurns: 0,
@@ -43,6 +47,11 @@ void main() {
       onTempoEnd: (_) {},
       onSave: () => saved++,
       onReset: () => reset++,
+      onWider: () => wider++,
+      showCurves: true,
+      onShowCurves: (v) => curves = v,
+      showBeats: false,
+      onShowBeats: (v) => beats = v,
     )));
     expect(find.byType(JogWheel), findsNWidgets(2));
     expect(find.text('前曲'), findsOneWidget);
@@ -67,10 +76,26 @@ void main() {
     expect(tester.getCenter(find.text('127.9 BPM')).dy, closeTo(outBpmY, 0.01));
     expect(tester.getCenter(find.text('+0.3%')).dy, closeTo(outBpmY, 0.01));
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.push_pin_outlined));
+    // 下の 1 行: 左に −＋、真ん中にピン・戻す、右に線の切り替え。BPM より下
+    final minus = find.widgetWithIcon(IconButton, Icons.remove);
+    final pin = find.widgetWithIcon(IconButton, Icons.push_pin_outlined);
+    final curvesButton = find.widgetWithIcon(IconButton, Icons.ssid_chart);
+    expect(tester.getCenter(minus).dy, greaterThan(outBpmY));
+    expect(tester.getCenter(minus).dx, lessThan(tester.getCenter(pin).dx));
+    expect(tester.getCenter(pin).dx, lessThan(tester.getCenter(curvesButton).dx));
+    await tester.tap(pin);
     await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
+    await tester.tap(minus);
+    await tester.tap(curvesButton);
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.view_week_outlined));
     expect(saved, 1);
     expect(reset, 1);
+    expect(wider, 1);
+    // 切り替えは今の逆を返す
+    expect(curves, isFalse);
+    expect(beats, isTrue);
+    // 「＋」は無ければ押せない
+    expect(button(tester, Icons.add).onPressed, isNull);
     expect(find.text('×2'), findsNothing);
 
     // フェーダーを上へ動かすと onTempo が来る
@@ -84,7 +109,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('切り替わった後（jog / tempo が null）は両方とも回るだけ', (tester) async {
+  testWidgets('切り替わった後（jog / tempo が null）は両方とも回るだけ。下の 1 行は残り、ピンと戻すは押せないだけ',
+      (tester) async {
     await tester.pumpWidget(host(const MixDeck(
       width: 372,
       outTurns: 1.5,
@@ -92,11 +118,34 @@ void main() {
     )));
     expect(find.text('前曲'), findsOneWidget);
     expect(find.text('次曲'), findsOneWidget);
-    expect(find.byType(IconButton), findsNothing);
     expect(find.text('-- BPM'), findsNWidgets(2));
     // フェーダーは 0 のまま見るだけ
     expect(find.text('0'), findsOneWidget);
+    // 行はある（高さが変わらない）。押せない
+    expect(find.byIcon(Icons.push_pin_outlined), findsOneWidget);
+    expect(button(tester, Icons.push_pin_outlined).onPressed, isNull);
+    expect(button(tester, Icons.refresh).onPressed, isNull);
+    expect(button(tester, Icons.ssid_chart).onPressed, isNull);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('下の 1 行があるぶん、合わせられる組と切り替わった後で板の高さが同じ', (tester) async {
+    await tester.pumpWidget(host(MixDeck(
+      width: 372,
+      outTurns: 0,
+      inTurns: 0,
+      jog: (periodMs: 500, valueMs: 0, maxMs: 1000, errorMs: null),
+      tempo: (percent: 0, maxPercent: 8),
+      onJog: (_, {required bool touching}) {},
+      onJogEnd: (_) {},
+    )));
+    final before = tester.getSize(find.byType(MixDeck)).height;
+    await tester.pumpWidget(host(const MixDeck(
+      width: 372,
+      outTurns: 0,
+      inTurns: 0,
+    )));
+    expect(tester.getSize(find.byType(MixDeck)).height, before);
   });
 
   testWidgets('組が進んだら（contentKey が変わったら）前曲の盤は左へ抜け、新しい次曲は右から', (tester) async {
@@ -110,6 +159,7 @@ void main() {
       inBpm: 128,
     )));
     final rest = tester.getCenter(find.text('120.0 BPM'));
+    final toolbar = tester.getCenter(find.byIcon(Icons.push_pin_outlined));
     await tester.pumpWidget(host(const MixDeck(
       key: Key('deck'),
       width: 372,
@@ -119,12 +169,15 @@ void main() {
       outBpm: 128,
       inBpm: 100,
     )));
-    await tester.pump(const Duration(milliseconds: 120));
+    // 抜ける拍（150〜400ms）
+    await tester.pump(const Duration(milliseconds: 250));
     // 出る側（120）は左へ、入る側（100）は右から
     // （動いている間は大きさ取りの透明な並びもあるので、動いている方 = 後ろの方を見る）
     expect(tester.getCenter(find.text('120.0 BPM')).dx, lessThan(rest.dx));
     expect(tester.getCenter(find.text('100.0 BPM').last).dx,
         greaterThan(tester.getCenter(find.text('120.0 BPM')).dx));
+    // 下の 1 行は動かない
+    expect(tester.getCenter(find.byIcon(Icons.push_pin_outlined)), toolbar);
     await tester.pumpAndSettle();
     expect(find.text('120.0 BPM'), findsNothing);
     expect(tester.getCenter(find.text('128.0 BPM')), rest);

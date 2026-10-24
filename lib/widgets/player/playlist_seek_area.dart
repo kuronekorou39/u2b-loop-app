@@ -31,7 +31,7 @@ import 'mix_view.dart';
 /// **デッキを開いている間は範囲の外でも重ね表示のまま**（毎回ボタンを押さなくていい。
 /// 組は自然に切り替える: 出す範囲の中の組があればそれ、無ければ予定の次曲との組、
 /// それも無ければ前曲との組。組がまったく無いときだけふつうのシークバー）。
-/// 帯に描く範囲（窓 = 交差の前後に [_margin]）はそれより狭く、「−」「＋」で変える。
+/// 帯に描く範囲（窓 = 交差の前後に [_margin]）はそれより狭く、板の「−」「＋」で変える。
 /// 出す範囲を広く取るので、帯が出た時点では再生位置がまだ窓の左外のことがある
 /// （位置は上下の棒で分かる。その間に円盤で合わせられる）。
 /// 外ではふつうのシークバーに、出す範囲を紫で塗る:
@@ -267,20 +267,15 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   static ProviderBase<Player> _playerOf(ActiveSlot slot) =>
       slotPlayerProvider(slot);
 
-  Widget _seekbar({
-    List<MixRange> mixRanges = const [],
-    ({VoidCallback? wider, VoidCallback? narrower})? zoom,
-  }) =>
-      LoopSeekbar(
+  Widget _seekbar({List<MixRange> mixRanges = const []}) => LoopSeekbar(
         key: const ValueKey('bar'),
-        compact: widget.compact || zoom != null,
+        compact: widget.compact,
         bar: true,
         barHeight: widget.waveHeight,
         onToggleCompact: widget.onToggleCompact,
         allowMarkerDrag: false,
         onRetryWaveform: widget.onRetryWaveform,
         mixRanges: mixRanges,
-        zoom: zoom,
         timeRowLeading: _deckButton(),
       );
 
@@ -296,12 +291,12 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final trigger = _triggerOf(pair);
     // 閉じているときは帯を出さない（細いバーの紫の塗りで範囲は分かる）
     if (widget.compact) {
-      return _seekbar(
-          mixRanges: [_rangeOf(trigger, pair, swapped: swapped)], zoom: zoom);
+      return _seekbar(mixRanges: [_rangeOf(trigger, pair, swapped: swapped)]);
     }
 
     final engine = ref.read(playlistEngineProvider);
     final current = ref.watch(waveformDataProvider);
+    final showCurves = ref.watch(showMixCurvesProvider);
     final outItem = pair.outItem;
     final inItem = pair.next.item;
     // 鳴っている側の波形は waveformDataProvider（生成し立てでも届く）、もう片方は先読み分
@@ -324,7 +319,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
 
     final bandHeight =
         widget.mixHeight - PlaylistSeekArea.topBarHeight - AppSpacing.xs;
-    final band = MixView(
+    // 帯。またぐ線の濃さは組が進む演出（MixLanesAdvance）が決める
+    Widget band(double linesOpacity) => MixView(
       outWaveform: outWaveform,
       outDuration: pair.outDuration,
       outTitle: outItem == null ? '' : widget.titleFor(outItem),
@@ -346,6 +342,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       // 交差の間だけ測れる（切り替わった後・交差の前は出さない）
       beatError: showBeats ? ref.watch(beatPhaseErrorProvider) : null,
       sfxCues: pair.sfx?.cues ?? const [],
+      showCurves: showCurves,
+      linesOpacity: linesOpacity,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
     _deckData = (
@@ -353,6 +351,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       swapped: swapped,
       outPosition: outPosition,
       inPosition: inPosition,
+      zoom: zoom,
+      showCurves: showCurves,
+      showBeats: showBeats,
     );
 
     // 棒 2 本と帯は組ごと。組が次へ進んだら 3 拍子で入れ替える（前曲の段が左へ抜け、
@@ -402,11 +403,11 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       child: Column(
         children: [
           lanes,
+          // 「−」「＋」はデッキの板の中（時刻行の右の枠は幅だけ残して空ける）
           SeekTimeRow(
             position: inPosition,
             duration: pair.inDuration,
             onToggleCompact: widget.onToggleCompact,
-            zoom: zoom,
             leading: _deckButton(),
           ),
         ],
@@ -481,6 +482,14 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
           onJogEnd: (ms) => setJog(ms, touching: false),
           onTempo: setTrim,
           onTempoEnd: setTrim,
+          onWider: data.zoom.wider,
+          onNarrower: data.zoom.narrower,
+          showCurves: data.showCurves,
+          onShowCurves: (v) =>
+              ref.read(showMixCurvesProvider.notifier).value = v,
+          showBeats: data.showBeats,
+          onShowBeats: (v) =>
+              ref.read(showBeatLinesProvider.notifier).value = v,
           onReset: !touched
               ? null
               : () {
@@ -528,10 +537,14 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   }
 }
 
-/// デッキの板に渡す材料（重ね表示を出している組と、両方の曲の位置）
+/// デッキの板に渡す材料（重ね表示を出している組と、両方の曲の位置、
+/// 帯の窓の「−」「＋」、線の表示）
 typedef _DeckData = ({
   MixPair pair,
   bool swapped,
   Duration outPosition,
   Duration inPosition,
+  ({VoidCallback? wider, VoidCallback? narrower}) zoom,
+  bool showCurves,
+  bool showBeats,
 });
