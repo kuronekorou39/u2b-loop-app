@@ -6,6 +6,7 @@ import '../../core/audio/transition_effect.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/player_provider.dart';
 import '../../screens/settings/dj_mix_settings_screen.dart';
+import 'sfx_offset_stepper.dart';
 
 /// 再生画面から開く「DJ ミックス」のシート。
 ///
@@ -155,6 +156,17 @@ class DjMixSheet extends ConsumerWidget {
               onSelected: sfxOn
                   ? (v) => ref.read(sfxLevelProvider.notifier).value = v
                   : null,
+            ),
+            _SectionLabel(
+              icon: Icons.timer_outlined,
+              label: '効果音のタイミング',
+              hint: sfxOn ? null : '効果音を使う演出で使えます',
+              enabled: sfxOn,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.xs, AppSpacing.xl, AppSpacing.xs),
+              child: SfxOffsetStepper(enabled: sfxOn),
             ),
           ],
         ),

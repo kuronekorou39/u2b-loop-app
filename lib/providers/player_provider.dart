@@ -507,6 +507,37 @@ class SfxLevelNotifier extends StateNotifier<int> {
   }
 }
 
+/// 切り替えの効果音のタイミングの補正（実時間 ms、+ は遅く、− は早く）。
+/// 音が出るまでの端末の遅れは測って見込んでいるが、それでも耳でずれて聞こえる分を 10ms 刻みで詰める
+final sfxOffsetMsProvider =
+    StateNotifierProvider<SfxOffsetNotifier, int>((ref) => SfxOffsetNotifier());
+
+class SfxOffsetNotifier extends StateNotifier<int> {
+  static const _key = SettingsKeys.sfxOffsetMs;
+
+  static const step = 10;
+  static const maxAbsMs = 200;
+
+  /// 「+20ms」「−20ms」「0ms」
+  static String label(int ms) =>
+      ms == 0 ? '0ms' : '${ms > 0 ? '+' : '−'}${ms.abs()}ms';
+
+  /// 「効果音を 20ms 遅く」。補正なしなら null
+  static String? describe(int ms) =>
+      ms == 0 ? null : '効果音を ${ms.abs()}ms ${ms > 0 ? '遅く' : '早く'}';
+
+  SfxOffsetNotifier() : super(0) {
+    state = AppBoxes.settings.get(_key, defaultValue: 0) as int;
+  }
+
+  set value(int v) {
+    state = v.clamp(-maxAbsMs, maxAbsMs);
+    AppBoxes.settings.put(_key, state);
+  }
+
+  void nudge(int delta) => value = state + delta;
+}
+
 final flipHorizontalProvider = StateProvider<bool>((ref) => false);
 final flipVerticalProvider = StateProvider<bool>((ref) => false);
 final previousVolumeProvider = StateProvider<double>((ref) => 100.0);

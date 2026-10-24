@@ -5,6 +5,7 @@ import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/transition_effect.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/player/first_verse_sheet.dart';
+import '../../widgets/player/sfx_offset_stepper.dart';
 import '../../widgets/settings/settings_parts.dart';
 
 /// 設定「DJ ミックス」: クロスフェードと、その中でだけ効く 5 つ
@@ -281,6 +282,18 @@ class DjMixSettingsScreen extends ConsumerWidget {
               trailing: Text(SfxLevelNotifier.label(sfxLevel),
                   style: Theme.of(context).textTheme.bodyMedium),
               onTap: () => _pickSfxLevel(context, ref),
+            ),
+            // 効果音が拍より遅れて / 早く聞こえるときに 10ms 刻みで詰める
+            SettingsRow(
+              icon: Icons.timer_outlined,
+              title: '効果音のタイミング',
+              subtitle: sfxOn
+                  ? SfxOffsetNotifier.describe(ref.watch(sfxOffsetMsProvider))
+                  : on
+                      ? '効果音を使う演出で使えます'
+                      : needsFade,
+              enabled: sfxOn,
+              trailing: SfxOffsetStepper(enabled: sfxOn),
             ),
           ],
         ),

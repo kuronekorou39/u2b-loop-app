@@ -210,6 +210,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       inRatio: pair.inRatio,
       // 交差の間だけ測れる（切り替わった後・交差の前は出さない）
       beatError: showBeats ? ref.watch(beatPhaseErrorProvider) : null,
+      sfxCues: pair.sfx?.cues ?? const [],
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
     return _seekbar(mixRanges: ranges, above: band, zoom: zoom);

@@ -52,13 +52,28 @@ class BeatGrid {
       hasDownbeat ? downbeatMs! : (fallbackMs ?? offsetMs);
 
   /// 小節の格子: [barAnchorMs] に最も近い拍の頭を小節頭として 4 拍ごとに並べた格子
-  BeatGrid barGrid([double? anchorMs]) {
-    final barMs = periodMs * beatsPerBar;
-    final anchorBeat = ((barAnchorMs(anchorMs) - offsetMs) / periodMs).round();
-    final barOffset = (offsetMs + anchorBeat * periodMs) % barMs;
+  BeatGrid barGrid([double? anchorMs]) =>
+      _grouped(beatsPerBar, barAnchorMs(anchorMs));
+
+  /// 1 フレーズの小節数（8 小節 = 32 拍）。曲の段落（A メロ・サビ・ドロップ）はこの単位で変わる
+  static const barsPerPhrase = 8;
+
+  /// フレーズの格子: [dropMs]（ドロップ = 段落の頭）に最も近い小節頭をフレーズの頭として
+  /// 8 小節ごとに並べた格子。小節頭は [barGrid] と同じ基準。
+  /// ドロップが無ければ小節頭の基準から数える（イントロの長さ次第で外れやすい）
+  BeatGrid phraseGrid([double? dropMs]) {
+    final bars = barGrid(dropMs);
+    return bars._grouped(barsPerPhrase, dropMs ?? bars.offsetMs);
+  }
+
+  /// [beats] 拍ごとの格子。[anchorMs] に最も近い拍の頭をかたまりの頭にする
+  BeatGrid _grouped(int beats, double anchorMs) {
+    final groupMs = periodMs * beats;
+    final anchorBeat = ((anchorMs - offsetMs) / periodMs).round();
+    final off = (offsetMs + anchorBeat * periodMs) % groupMs;
     return BeatGrid(
-        bpm: bpm / beatsPerBar,
-        offsetMs: barOffset < 0 ? barOffset + barMs : barOffset,
+        bpm: bpm / beats,
+        offsetMs: off < 0 ? off + groupMs : off,
         confidence: confidence);
   }
 

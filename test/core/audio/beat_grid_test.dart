@@ -108,6 +108,21 @@ void main() {
       expect(unsure.barGrid(3610).offsetMs, closeTo(1600, 1e-9));
     });
 
+    test('フレーズの格子: ドロップに最も近い小節頭から 8 小節ごと', () {
+      // 拍 100, 600, …（500ms）。小節 2000ms、フレーズ 16000ms。
+      // 解析の 1 拍目 600 → 小節頭は 600, 2600, 4600, …。ドロップ 20650 に最も近い小節頭は 20600
+      const g = BeatGrid(
+          bpm: 120, offsetMs: 100, downbeatMs: 600, downbeatConfidence: 1);
+      final phrases = g.phraseGrid(20650);
+      expect(phrases.periodMs, closeTo(16000, 1e-9));
+      expect(phrases.offsetMs, closeTo(4600, 1e-9));
+      expect(phrases.floorBeatMs(40000), closeTo(36600, 1e-9));
+      // ドロップが無ければ小節頭の基準（600）から
+      expect(g.phraseGrid().offsetMs, closeTo(600, 1e-9));
+      // ドロップが小節の 2 拍目（21100）にあっても、フレーズの頭は小節頭に揃う
+      expect(g.phraseGrid(21100).offsetMs, closeTo(4600, 1e-9));
+    });
+
     test('拍の線: 範囲の拍と何拍目か（基準と同じ数え方）', () {
       const g = BeatGrid(
           bpm: 120, offsetMs: 100, downbeatMs: 600, downbeatConfidence: 1);

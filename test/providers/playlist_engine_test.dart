@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/core/audio/beat_grid.dart';
 import 'package:u2b_loop_app/core/audio/crossfade_curve.dart';
 import 'package:u2b_loop_app/core/audio/transition_effect.dart';
 import 'package:u2b_loop_app/core/audio/transition_planner.dart';
@@ -84,6 +85,43 @@ void main() {
           isFalse);
       expect(PlaylistEngine.canPark(Duration.zero, const Duration(minutes: 4)),
           isFalse);
+    });
+  });
+
+  group('snapCutMs（切断点をフレーズの頭か小節頭へ）', () {
+    // 120 BPM: 拍 500ms、小節 2000ms、フレーズ 16000ms。拍は 0, 500, …。ドロップ 32000（小節頭）
+    const grid = BeatGrid(bpm: 120, offsetMs: 0, downbeatMs: 0, downbeatConfidence: 1);
+    const drop = 32000.0;
+
+    test('フレーズの頭が 2 小節以内の手前にあればそこへ', () {
+      // 180000 はフレーズの頭（32000 + 16000 × 9.25 → 手前の頭は 176000、3 小節先 = 遠い）
+      // 177500（頭の 1500ms 後）→ 176000
+      expect(PlaylistEngine.snapCutMs(grid, 177500, dropMs: drop), 176000);
+      // 2 小節ちょうど（4000ms）後も許す
+      expect(PlaylistEngine.snapCutMs(grid, 180000, dropMs: drop), 176000);
+    });
+
+    test('遠ければ直前の小節頭まで', () {
+      // 184500 は頭 176000 の 8500ms 後（4 小節超）→ 小節頭 184000
+      expect(PlaylistEngine.snapCutMs(grid, 184500, dropMs: drop), 184000);
+    });
+
+    test('allowLater なら後ろのフレーズの頭も 2 小節以内で候補になる', () {
+      // 189000 は次の頭 192000 の 3000ms 手前
+      expect(PlaylistEngine.snapCutMs(grid, 189000, dropMs: drop), 188000);
+      expect(
+          PlaylistEngine.snapCutMs(grid, 189000, dropMs: drop, allowLater: true),
+          192000);
+    });
+
+    test('ドロップが無い曲はフレーズの位置が分からないので小節頭まで', () {
+      expect(PlaylistEngine.snapCutMs(grid, 177500), 176000);
+      expect(PlaylistEngine.snapCutMs(grid, 179000), 178000);
+    });
+
+    test('ドロップが小節の途中でも、寄せる先は小節頭', () {
+      // ドロップ 32700 → 最も近い小節頭 32000 がフレーズの頭
+      expect(PlaylistEngine.snapCutMs(grid, 177500, dropMs: 32700), 176000);
     });
   });
 

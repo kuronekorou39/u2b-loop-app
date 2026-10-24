@@ -1,6 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/core/audio/beat_grid.dart';
+import 'package:u2b_loop_app/core/audio/sfx_library.dart';
+import 'package:u2b_loop_app/core/audio/sfx_plan.dart';
 import 'package:u2b_loop_app/widgets/player/mix_view.dart';
 
 /// ミックスビュー（帯だけ）: 窓は交差の前後に余白を付けた範囲（= 重ね表示を出す範囲）。
@@ -75,6 +79,7 @@ void main() {
     bool seekable = true,
     Duration now = const Duration(seconds: 95),
     BeatLineSource? beats,
+    List<SfxCue> sfxCues = const [],
   }) async {
     final seeks = <Duration>[];
     await tester.pumpWidget(
@@ -101,6 +106,7 @@ void main() {
                 onSeek: seekable ? seeks.add : null,
                 outBeats: beats,
                 inBeats: beats,
+                sfxCues: sfxCues,
               ),
             ),
           ),
@@ -153,6 +159,41 @@ void main() {
       ),
     );
     expect(seeks, isEmpty);
+  });
+
+  testWidgets('効果音の印（ライザーの線・インパクトの点）を描ける', (tester) async {
+    final riser = SfxLibrary.of(SfxRole.riser).first;
+    final impact = SfxLibrary.of(SfxRole.impact).first;
+    final cues = [
+      SfxCue(clip: riser, atMs: 105000, rate: 1.2, bars: 2),
+      SfxCue(clip: impact, atMs: 110000),
+    ];
+    await pump(tester, sfxCues: cues);
+    expect(tester.takeException(), isNull);
+    final paint = find.descendant(
+      of: find.byType(MixView),
+      matching: find.byType(CustomPaint),
+    );
+    // 画像にするのは本物の非同期処理なので runAsync の中で（テストの偽の時間では終わらない）
+    Future<ByteData> shot() => tester.runAsync(() async {
+          final image = await captureImage(tester.element(paint));
+          return (await image.toByteData())!;
+        }).then((v) => v!);
+    final bytes = await shot();
+    // 橙（効果音の色。赤 > 緑 ≫ 青）が描かれている。曲の色（赤は緑 = 青、水色は青が最大）とは混ざらない
+    int orangeIn(ByteData px) {
+      var n = 0;
+      for (var i = 0; i < px.lengthInBytes; i += 4) {
+        final r = px.getUint8(i), g = px.getUint8(i + 1), b = px.getUint8(i + 2);
+        if (g > 20 && r > g && g > 1.8 * b) n++;
+      }
+      return n;
+    }
+
+    expect(orangeIn(bytes), greaterThan(20));
+    // 印が無ければ橙は無い
+    await pump(tester);
+    expect(orangeIn(await shot()), 0);
   });
 
   testWidgets('拍の線を付けても描ける（交差の前後どちらの位置でも）', (tester) async {

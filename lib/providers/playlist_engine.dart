@@ -10,7 +10,7 @@ import '../core/audio/beat_grid.dart';
 import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/loudness.dart';
-import '../core/audio/sfx_library.dart';
+import '../core/audio/sfx_plan.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/audio/transition_effect.dart';
 import '../core/audio/transition_planner.dart';
@@ -355,6 +355,7 @@ class PlaylistEngine {
                 cut: session.cut,
                 recipe: session.recipe,
                 inRatio: session.inRatio,
+                sfx: session.sfxPlan,
               )
             : tapPair;
     // その前にパークしていた曲（2 つ前の曲）はここで手放す。そのスロットが次の先読み先になる
@@ -451,6 +452,7 @@ class PlaylistEngine {
       cut: plan.cut,
       recipe: plan.recipe,
       inRatio: inRatio,
+      sfx: session?.sfxPlan ?? _sfxPlanFor(plan.recipe.effect, plan.start, plan.cut),
     );
   }
 
@@ -464,6 +466,7 @@ class PlaylistEngine {
     required Duration cut,
     required TransitionRecipe recipe,
     required double inRatio,
+    SfxPlan? sfx,
   }) =>
       MixPair(
         outSlot: outSlot,
@@ -476,6 +479,7 @@ class PlaylistEngine {
         cut: cut,
         recipe: recipe,
         inRatio: inRatio,
+        sfx: sfx,
       );
 
   /// 次の曲を読み込むスロットを決める。C は初めて使う前に映像の出力も作っておく
@@ -791,22 +795,43 @@ class PlaylistEngine {
   /// 切り替えごとに回す（同じ長さのライザーが何種類かある）
   int _sfxVariant = 0;
 
-  /// 今の演出で鳴らす効果音（鳴らす順）。[windowMs] はクロスフェードの実時間
-  List<SfxClip> _sfxClips(TransitionEffect effect, int windowMs) {
-    final lead = effect.leadInSfx;
-    return [
-      if (lead != null)
-        SfxLibrary.pick(lead, windowMs: windowMs, variant: _sfxVariant),
-      if (effect.impactAtCut)
-        SfxLibrary.pick(SfxRole.impact, windowMs: windowMs, variant: _sfxVariant),
-    ];
+  /// 今の演出で鳴らす効果音の予定（[start] 〜 [cut] の交差。出る曲の小節に合わせる）。
+  /// 効果音を使わない演出なら null
+  SfxPlan? _sfxPlanFor(TransitionEffect effect, Duration start, Duration cut) {
+    if (!effect.usesSfx) return null;
+    final grid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    return SfxPlan.plan(
+      effect: effect,
+      startMs: start.inMicroseconds / 1000,
+      cutMs: cut.inMicroseconds / 1000,
+      outRate: activePlayer.state.rate,
+      barMediaMs: grid != null && grid.reliable
+          ? grid.periodMs * BeatGrid.beatsPerBar
+          : null,
+      variant: _sfxVariant,
+    );
   }
 
-  /// 出る曲の [from] 〜 [to]（媒体）が実時間で何ミリ秒か
-  int _realMs(Duration from, Duration to) {
+  /// 出る曲の [fromMs] 〜 [to]（媒体）が実時間で何ミリ秒か
+  int _realMs(double fromMs, Duration to) {
     final rate = activePlayer.state.rate;
-    final ms = (to - from).inMilliseconds / (rate > 0 ? rate : 1);
+    final ms = (to.inMicroseconds / 1000 - fromMs) / (rate > 0 ? rate : 1);
     return ms <= 0 ? 0 : ms.round();
+  }
+
+  /// 出る曲のいまの位置（媒体ミリ秒）。state.position は mpv からの報告なので 100ms ほど
+  /// 遅れていることがある。効果音の予定（切替点までの残り時間）には mpv に直接聞いた値を使う
+  Future<double> _precisePositionMs(Player player) async {
+    final platform = player.platform;
+    if (platform is NativePlayer) {
+      try {
+        final sec = double.tryParse(await platform.getProperty('time-pos'));
+        if (sec != null && sec >= 0) return sec * 1000;
+      } catch (_) {
+        // 取れなければ報告された位置で
+      }
+    }
+    return player.state.position.inMicroseconds / 1000;
   }
 
   /// 効果音を使う演出なら、プレイヤーを起こして音源を開いておく（交差の開始で待たないため）。
@@ -817,11 +842,12 @@ class PlaylistEngine {
     final effect = recipeFor(next).effect;
     if (!effect.usesSfx) return;
     final planned = plannedCrossfade();
-    final windowMs = planned == null
-        ? crossfadeDuration.inMilliseconds
-        : _realMs(planned.start, planned.cut);
+    final plan = planned == null
+        ? _sfxPlanFor(effect, Duration.zero, crossfadeDuration)
+        : _sfxPlanFor(effect, planned.start, planned.cut);
+    if (plan == null) return;
     try {
-      await _ref.read(transitionSfxProvider).load(_sfxClips(effect, windowMs));
+      await _ref.read(transitionSfxProvider).load(plan.clips);
     } catch (e) {
       debugPrint('[PlaylistEngine] 効果音の先読みに失敗: $e');
     }
@@ -868,32 +894,63 @@ class PlaylistEngine {
       final cut = Duration(milliseconds: mixOut);
       // すでに通り過ぎていたら曲末で切る
       if (cut < d - _minSilenceCut && activePlayer.state.position < cut) {
-        return _snapToBar(item, (cut: cut, advancesAtCut: true));
+        // アウトロの落ち込みは検出の誤差で少し前後するので、後ろのフレーズの頭も候補にする
+        return _snapToGrid(item, (cut: cut, advancesAtCut: true),
+            latestMs: (d - _minSilenceCut).inMicroseconds / 1000);
       }
     }
     final trailing = Duration(milliseconds: item?.trailingSilenceMs ?? 0);
     if (trailing < _minSilenceCut || trailing >= d) {
-      return _snapToBar(
+      return _snapToGrid(
           item, (cut: d - LoopNotifier.trackEndLead, advancesAtCut: false));
     }
-    return _snapToBar(item, (cut: d - trailing, advancesAtCut: true));
+    return _snapToGrid(item, (cut: d - trailing, advancesAtCut: true));
   }
 
-  /// 切断点を直前の小節頭（ドロップを基準に 4 拍ごと）へ寄せる。DJ は区切りで切り替える。
-  /// 格子が無い・信用できない曲はそのまま。手前に動かしたら遷移はこちらから起こす
-  ({Duration cut, bool advancesAtCut}) _snapToBar(
-      LoopItem? item, ({Duration cut, bool advancesAtCut}) raw) {
+  /// 切断点をフレーズの頭か小節頭へ寄せる（[snapCutMs]）。DJ は段落の区切りで切り替える。
+  /// 格子が無い・信用できない曲はそのまま。[latestMs] より後ろへは動かさない（null なら手前だけ）。
+  /// 動かしたら遷移はこちらから起こす
+  ({Duration cut, bool advancesAtCut}) _snapToGrid(
+      LoopItem? item, ({Duration cut, bool advancesAtCut}) raw,
+      {double? latestMs}) {
     final grid = item?.beatGrid;
     if (grid == null || !grid.reliable) return raw;
-    final bars = grid.barGrid(item!.mixInMs?.toDouble());
-    final snappedMs = bars.floorBeatMs(raw.cut.inMicroseconds / 1000);
+    final rawMs = raw.cut.inMicroseconds / 1000;
+    var snappedMs = snapCutMs(grid, rawMs,
+        dropMs: item!.mixInMs?.toDouble(), allowLater: latestMs != null);
+    if (latestMs != null && snappedMs > latestMs) {
+      snappedMs = snapCutMs(grid, rawMs, dropMs: item.mixInMs?.toDouble());
+    }
     final snapped = Duration(microseconds: (snappedMs * 1000).round());
     if (snapped <= Duration.zero ||
-        snapped >= raw.cut - const Duration(milliseconds: 1) ||
+        (snapped - raw.cut).abs() <= const Duration(milliseconds: 1) ||
         activePlayer.state.position >= snapped) {
       return raw;
     }
     return (cut: snapped, advancesAtCut: true);
+  }
+
+  /// フレーズの頭が切断点の前後この小節数以内にあればそこへ寄せる。
+  /// それより遠いと曲の終わりを大きく削るので、小節頭までにする
+  static const maxPhraseSnapBars = 2;
+
+  /// 切断点 [rawMs] をフレーズ（8 小節）の頭か小節頭へ寄せる（純粋関数）。
+  ///
+  /// フレーズの位置はドロップ [dropMs]（段落の頭）から数える。ドロップの前後
+  /// [maxPhraseSnapBars] 小節以内にフレーズの頭があればそこ（[allowLater] が false なら手前だけ）、
+  /// 無ければ直前の小節頭。ドロップが無い曲はフレーズの位置が分からないので小節頭まで
+  static double snapCutMs(BeatGrid grid, double rawMs,
+      {double? dropMs, bool allowLater = false}) {
+    final bars = grid.barGrid(dropMs);
+    final floorBar = bars.floorBeatMs(rawMs);
+    if (dropMs == null) return floorBar;
+    final phrases = grid.phraseGrid(dropMs);
+    final before = phrases.floorBeatMs(rawMs);
+    final limit = bars.periodMs * maxPhraseSnapBars + 1;
+    if (rawMs - before <= limit) return before;
+    final after = before + phrases.periodMs;
+    if (allowLater && after - rawMs <= limit) return after;
+    return floorBar;
   }
 
   void _crossfadeTick() {
@@ -978,6 +1035,7 @@ class PlaylistEngine {
     final effect = recipe.effect;
     final volume = activePlayer.state.volume;
     final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    final sfxPlan = _sfxPlanFor(effect, start, cut);
     final session = _CrossfadeSession(
       recipe: recipe,
       outPlayer: activePlayer,
@@ -1000,8 +1058,10 @@ class PlaylistEngine {
       outRate: outRate,
       beatRealMs: beatRealMs,
       beatMediaMs: beatMs,
-      sfx: effect.usesSfx ? _ref.read(transitionSfxProvider) : null,
+      sfx: sfxPlan != null ? _ref.read(transitionSfxProvider) : null,
+      sfxPlan: sfxPlan,
       sfxVolume: TransitionSfx.volumeFor(volume, _ref.read(sfxLevelProvider)),
+      sfxOffsetMs: _ref.read(sfxOffsetMsProvider),
       onForceCut: _forceCut,
     );
     _crossfade = session;
@@ -1030,18 +1090,21 @@ class PlaylistEngine {
       }
       await inPlayer.play();
       // 効果音を開く（armCrossfade で同じものを開いてあれば一瞬で返る）
-      if (session.sfx != null) {
-        await session.sfx!.load(_sfxClips(effect, _realMs(start, cut)));
+      if (session.sfx != null && sfxPlan != null) {
+        await session.sfx!.load(sfxPlan.clips);
         _sfxVariant++;
       }
+      // 効果音・トリックは実時間で予定する（切替点までの残り時間から）。
+      // 位置は mpv に直接聞く（報告された位置は遅れていることがある）
+      final posMs = await _precisePositionMs(activePlayer);
       if (_crossfade == session) {
-        // 効果音・トリックは実時間で予定する（切替点までの残り時間から）
-        final toCutMs = _realMs(activePlayer.state.position, cut);
+        final toCutMs = _realMs(posMs, cut);
         session.startTricks(wallToCutMs: toCutMs);
         if (recipe.auto) debugPrint('[DjFx] おまかせ: $recipe');
         if (effect != TransitionEffect.none) {
           debugPrint('[DjFx] 演出 ${effect.name} 切替点まで ${toCutMs}ms '
-              '1拍 ${beatRealMs.round()}ms 効果音 ${session.sfx?.loaded ?? const []} '
+              '1拍 ${beatRealMs.round()}ms 効果音 ${sfxPlan?.cues ?? const []} '
+              '補正 ${session.sfxOffsetMs}ms '
               '開始遅延見込み ${TransitionSfx.startLatencyMs.round()}ms');
         }
         _ref.read(crossfadeProgressProvider.notifier).state =
@@ -1237,7 +1300,9 @@ class _CrossfadeSession {
     required this.beatRealMs,
     required this.beatMediaMs,
     required this.sfx,
+    required this.sfxPlan,
     required this.sfxVolume,
+    required this.sfxOffsetMs,
     required this.onForceCut,
   })  : outVolume = volume,
         appliedInRate = inRate;
@@ -1258,6 +1323,16 @@ class _CrossfadeSession {
   /// 効果音（使わない演出なら null）と、その音量（0〜100 の尺度）
   final TransitionSfx? sfx;
   final double sfxVolume;
+
+  /// 効果音の予定（いつ・どれを・どの速度で）。重ね表示にも出す
+  final SfxPlan? sfxPlan;
+
+  /// 効果音のタイミングの補正（実時間 ms、+ で遅く）。設定で耳に合わせる分
+  final int sfxOffsetMs;
+
+  /// ライザーを伸び縮みさせたとき、続くインパクトのためにこの時間だけ前に素の速度へ戻す
+  /// （ライザーの最後がわずかに速く／遅く鳴るだけ）
+  static const rateResetLeadMs = 40;
 
   /// トリックの終わりに切替点を待たずに遷移を起こす
   final void Function(_CrossfadeSession) onForceCut;
@@ -1288,24 +1363,31 @@ class _CrossfadeSession {
     if (_tricksStarted) return;
     _tricksStarted = true;
     final toCut = max(0, wallToCutMs);
-    final lead = effect.leadInSfx;
     final s = sfx;
-    if (lead != null && s != null) {
-      final clip = s.loaded.firstOrNull;
-      if (clip != null) {
-        // 終わりが切替点に来るように。開始の遅れの分だけ前倒す
-        _after(toCut - clip.durationMs - TransitionSfx.startLatencyMs.round(), () {
-          unawaited(s.start(volume: sfxVolume));
+    final plan = sfxPlan;
+    if (s != null && plan != null) {
+      // 効果音は切替点からの相対で予定する（[SfxPlan] が出る曲の時計で決めた位置を実時間に）。
+      // 音が出るまでの遅れの分だけ前倒し、設定の補正を足す
+      final cutMs = cut.inMicroseconds / 1000;
+      final latency = TransitionSfx.startLatencyMs.round();
+      final lead = plan.lead;
+      if (lead != null) {
+        final leadRealMs = ((cutMs - lead.atMs) / outRate).round();
+        _after(toCut - leadRealMs - latency + sfxOffsetMs, () {
+          unawaited(s.start(volume: sfxVolume, rate: lead.rate));
           // スピンバックはレコードを巻き取る音なので、曲はすぐ消す
           if (effect == TransitionEffect.spinback) _killOut();
         });
+        // 伸び縮みさせたライザーに続けて鳴るインパクトは素の速度で
+        if (lead.rate != 1 && plan.impact != null) {
+          _after(toCut - rateResetLeadMs + sfxOffsetMs, () => unawaited(s.setRate(1)));
+        }
+      } else if (plan.impact != null) {
+        // インパクト単独も切替点に合わせて予定する。以前は実際の切り替え（スワップ）で鳴らして
+        // いたが、スワップは曲の終わりの検出や 100ms ごとの監視を待つので遅れ、前の曲が
+        // 終わってから鳴っていた
+        _after(toCut - latency + sfxOffsetMs, _fireImpact);
       }
-    }
-    // インパクト単独も切替点に合わせて予定する。以前は実際の切り替え（スワップ）で鳴らして
-    // いたが、スワップは曲の終わりの検出や 100ms ごとの監視を待つので遅れ、前の曲が
-    // 終わってから鳴っていた
-    if (effect.impactAtCut && lead == null && s != null) {
-      _after(toCut - TransitionSfx.startLatencyMs.round(), _fireImpact);
     }
     switch (effect) {
       case TransitionEffect.brake:
@@ -1600,6 +1682,7 @@ class MixPair {
     required this.cut,
     required this.recipe,
     this.inRatio = 1,
+    this.sfx,
   });
 
   /// 出る曲の時計 1ms あたり、入る曲の時計が進む量（入る曲の速度 ÷ 出る曲の速度）。
@@ -1625,6 +1708,9 @@ class MixPair {
 
   /// つなぎ方（曲線・低音の印・おまかせの説明）
   final TransitionRecipe recipe;
+
+  /// 効果音の予定（ライザーの始まり・インパクトの位置を重ね表示に描く）。使わなければ null
+  final SfxPlan? sfx;
 
   /// 入る曲の時計 → 出る曲の時計
   Duration toOutClock(Duration inPos) =>

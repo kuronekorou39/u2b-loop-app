@@ -107,4 +107,26 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.sfxLevelDb), 0);
     expect(chipOf(tester, '大きめ').selected, isTrue);
   });
+
+  testWidgets('効果音のタイミングは「−」「+」で 10ms 刻み（効果音を使う演出のときだけ）', (tester) async {
+    await pumpSheet(tester);
+    // 前のテストで演出はライザー＋インパクト
+    await tester.ensureVisible(find.text('0ms'));
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.add));
+    await tester.pumpAndSettle();
+    expect(find.text('+10ms'), findsOneWidget);
+    expect(AppBoxes.settings.get(SettingsKeys.sfxOffsetMs), 10);
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.remove));
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.remove));
+    await tester.pumpAndSettle();
+    expect(find.text('−10ms'), findsOneWidget);
+    expect(AppBoxes.settings.get(SettingsKeys.sfxOffsetMs), -10);
+
+    // 効果音を使わない演出にすると触れない
+    await tester.ensureVisible(find.text('ブレーキ'));
+    await tester.tap(find.text('ブレーキ'));
+    await tester.pumpAndSettle();
+    final add = tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.add));
+    expect(add.onPressed, isNull);
+  });
 }

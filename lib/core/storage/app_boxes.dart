@@ -45,6 +45,7 @@ class SettingsKeys {
   static const bassSwap = 'bass_swap';
   static const transitionEffect = 'transition_effect';
   static const sfxLevelDb = 'sfx_level_db';
+  static const sfxOffsetMs = 'sfx_offset_ms';
   static const autoMix = 'auto_mix';
   static const volumeNorm = 'volume_norm';
   static const beatMatch = 'beat_match';

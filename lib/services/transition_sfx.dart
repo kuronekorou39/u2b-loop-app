@@ -14,6 +14,9 @@ import '../core/audio/sfx_library.dart';
 ///
 /// `play()` を呼んでから音が出るまでの遅れは機種で違うので、位置が動き出すまでの時間を測って
 /// 次から前倒しする（[startLatencyMs]）。
+///
+/// ライザーは小節数に合わせて速度を変えて鳴らす（[start] の rate）。速度はプレイヤー全体に
+/// かかるので、続けて鳴るインパクトの前に [setRate] で 1 に戻す
 class TransitionSfx {
   TransitionSfx(this._player);
 
@@ -64,6 +67,7 @@ class TransitionSfx {
           await platform.setProperty('gapless-audio', 'yes');
         }
       }
+      await setRate(1);
       await _player.open(Playlist([for (final c in clips) Media(c.uri)]),
           play: false);
       _ready = true;
@@ -81,17 +85,32 @@ class TransitionSfx {
     return true;
   }
 
-  /// 鳴らす。[volume] は曲の音量と同じ 0〜100 の尺度（曲より少し下げた値を渡す）
-  Future<void> start({required double volume}) async {
+  /// 鳴らす。[volume] は曲の音量と同じ 0〜100 の尺度（曲より少し下げた値を渡す）。
+  /// [rate] は再生速度（ライザーを小節数に合わせる。音程は保たれる）
+  Future<void> start({required double volume, double rate = 1}) async {
     if (!_ready) return;
     _ready = false;
     try {
       await _player.setVolume(volume.clamp(0.0, 100.0));
+      await setRate(rate);
       final t0 = DateTime.now();
       await _player.play();
       _measureLatency(t0);
     } catch (e) {
       debugPrint('[TransitionSfx] 効果音の再生に失敗: $e');
+    }
+  }
+
+  double _rate = 1;
+
+  /// 再生速度を変える（同じ値なら何もしない）
+  Future<void> setRate(double rate) async {
+    if (_rate == rate) return;
+    _rate = rate;
+    try {
+      await _player.setRate(rate);
+    } catch (e) {
+      debugPrint('[TransitionSfx] 速度の変更に失敗: $e');
     }
   }
 

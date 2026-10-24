@@ -1,8 +1,11 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/audio/crossfade_curve.dart';
+import '../../core/audio/sfx_library.dart';
+import '../../core/audio/sfx_plan.dart';
 import '../../core/audio/beat_grid.dart';
 import '../../core/theme/app_theme.dart';
 import '../loop/beat_lines.dart';
@@ -65,10 +68,17 @@ class MixView extends StatelessWidget {
     this.inBeats,
     this.inRatio = 1,
     this.beatError,
+    this.sfxCues = const [],
   });
 
   /// 出る曲の時計 1ms あたり入る曲の時計が進む量（[MixPair.inRatio]）
   final double inRatio;
+
+  /// 効果音の予定（出る曲の時計）。ライザーは始まりから切替点へ上がる線、インパクトは切替点の点
+  final List<SfxCue> sfxCues;
+
+  /// 効果音の印の色（拍の線・曲の色と区別がつく橙）
+  static const sfxColor = Colors.orangeAccent;
 
   /// 交差中に測った拍のずれ（実時間 ms）。右上に数字で出す。null なら出さない
   final double? beatError;
@@ -220,6 +230,7 @@ class MixView extends StatelessWidget {
                       outBeats: outBeats,
                       inBeats: inBeats,
                       inRatio: inRatio,
+                      sfxCues: sfxCues,
                     ),
                   ),
                 ),
@@ -340,7 +351,10 @@ class _MixPainter extends CustomPainter {
     required this.outBeats,
     required this.inBeats,
     required this.inRatio,
+    required this.sfxCues,
   });
+
+  final List<SfxCue> sfxCues;
 
   final double inRatio;
 
@@ -523,6 +537,8 @@ class _MixPainter extends CustomPainter {
       }
     }
 
+    _drawSfx(canvas, w: w, laneH: laneH, toX: toX, cutX: cutX);
+
     // 再生位置
     if (nowX >= 0 && nowX <= w) {
       canvas.drawLine(
@@ -532,6 +548,37 @@ class _MixPainter extends CustomPainter {
           ..color = Colors.white
           ..strokeWidth = 2,
       );
+    }
+  }
+
+  /// 効果音の印。ライザー / スピンバックは始まりから切替点へ上がる（下がる）線、
+  /// インパクトは切替点の上の点。どこで鳴るかを実機で確かめるためのもの
+  void _drawSfx(Canvas canvas,
+      {required double w,
+      required double laneH,
+      required double Function(double) toX,
+      required double cutX}) {
+    if (sfxCues.isEmpty) return;
+    final paint = Paint()
+      ..color = MixView.sfxColor.withValues(alpha: 0.85)
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    const top = 4.0;
+    for (final cue in sfxCues) {
+      final x0 = toX(cue.atMs);
+      switch (cue.role) {
+        case SfxRole.impact:
+          if (x0 < -4 || x0 > w + 4) continue;
+          canvas.drawCircle(Offset(x0, top + 2), 3.5, paint);
+        case SfxRole.riser:
+          if (cutX < 0 || x0 > w) continue;
+          canvas.drawLine(Offset(x0, laneH), Offset(cutX, top), paint);
+          // 始まりの足（小節頭に立つ）
+          canvas.drawLine(Offset(x0, laneH - 4), Offset(x0, laneH + 4), paint);
+        case SfxRole.spinback:
+          if (cutX < 0 || x0 > w) continue;
+          canvas.drawLine(Offset(x0, top), Offset(cutX, laneH), paint);
+      }
     }
   }
 
@@ -589,6 +636,7 @@ class _MixPainter extends CustomPainter {
       outBeats != old.outBeats ||
       inRatio != old.inRatio ||
       inBeats != old.inBeats ||
+      !listEquals(sfxCues, old.sfxCues) ||
       start != old.start ||
       cut != old.cut ||
       outWaveform != old.outWaveform ||
