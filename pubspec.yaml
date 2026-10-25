@@ -1,7 +1,7 @@
 name: u2b_loop_app
 description: "YouTube & Local Video AB Loop Player"
 publish_to: 'none'
-version: 1.119.0
+version: 1.119.1
 
 environment:
   sdk: ^3.11.0
@@ -42,7 +42,9 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon-512.png"
+  # 光る図柄だけの icon-512.png を adaptive の前景に（背景色は下）。
+  # 旧 Android・iOS は板が要るので、同じ図柄を #1a1a2e の角丸に載せた icon-512-tile.png
+  image_path: "assets/icon-512-tile.png"
   adaptive_icon_background: "#1a1a2e"
   adaptive_icon_foreground: "assets/icon-512.png"
 
