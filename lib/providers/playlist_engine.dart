@@ -1353,25 +1353,43 @@ class PlaylistEngine {
   Timer? _tempoRamp;
   Player? _tempoRampPlayer;
 
-  /// 次曲に設定すべき速度。合わせない（設定オフ・不明・差が大きい）なら null
+  /// 次曲に設定すべき速度。合わせない（設定オフ・不明・差が大きい）なら null。
+  /// BPM は拍の格子の精密な値（板に出す数字と同じ）。差がどれだけ小さくても寄せる
+  /// （数字まで揃え、交差中の拍合わせが常に効くように）。上限は ±[TrackCompatibility.maxTempoAdjustPercent]
   double? _tempoMatchedRate(PlaylistTrack next, double inBaseRate) {
     if (!recipeFor(next).tempoMatch) return null;
     final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
-    final outBpm = outItem?.bpm;
-    final inBpm = next.item.bpm;
-    if (outBpm == null || inBpm == null) return null;
+    final outGrid = outItem?.beatGrid;
+    final inGrid = next.item.beatGrid;
     // 格子が当てはまっていない曲はテンポも揺れている。寄せても合わないので触らない
-    if (outItem?.beatGrid?.reliable == false || next.item.beatGrid?.reliable == false) {
-      return null;
-    }
+    if (outGrid?.reliable == false || inGrid?.reliable == false) return null;
+    final outBpm = outGrid?.bpm ?? outItem?.bpm;
+    final inBpm = inGrid?.bpm ?? next.item.bpm;
+    if (outBpm == null || inBpm == null) return null;
     final ratio = TrackCompatibility.tempoRatio(
         outBpm * activePlayer.state.rate, inBpm * inBaseRate);
     if (ratio == null) return null;
     if ((ratio - 1).abs() * 100 > TrackCompatibility.maxTempoAdjustPercent) {
       return null;
     }
-    final rate = inBaseRate * ratio;
-    return (rate - inBaseRate).abs() < 0.005 ? null : rate;
+    return inBaseRate * ratio;
+  }
+
+  /// 自動のテンポ合わせが次曲の速度に掛けた分（曲本来の速度からの ±%）。
+  /// フェーダーのつまみの土台（手の微調整はこの上に足す）。交差の前は予定、交差中は
+  /// 決めた値、切り替わった後は鳴っている速度（本来の速度へ戻るランプで 0 へ帰っていく）
+  double autoTempoPercent(MixPair pair) {
+    if (_ref.read(activeSlotProvider) != pair.outSlot) {
+      final base = pair.next.item.speed;
+      return base > 0 ? (activePlayer.state.rate / base - 1) * 100 : 0;
+    }
+    final session = _crossfade;
+    if (session != null) {
+      return (session.inMatchedRate / session.inBaseRate - 1) * 100;
+    }
+    final base = preloadPlayer.state.rate;
+    if (base <= 0) return 0;
+    return ((_tempoMatchedRate(pair.next, base) ?? base) / base - 1) * 100;
   }
 
   void _startTempoRamp(Player player, double from, double to) {

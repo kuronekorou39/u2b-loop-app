@@ -99,6 +99,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('自動のテンポ合わせの位置がつまみの土台: 数字は自動 + 手、吸い付きは自動の位置、溝の端で止まる',
+      (tester) async {
+    double value = 0;
+    await tester.pumpWidget(host(StatefulBuilder(
+      builder: (context, setState) => PitchFader(
+        percent: value,
+        autoPercent: 2.5,
+        maxPercent: 8,
+        height: 140,
+        onChanged: (p) => setState(() => value = p),
+      ),
+    )));
+    // 手の分は 0 でも、数字は自動の +2.5%
+    expect(find.text('+2.5%'), findsOneWidget);
+    final fader = find.byType(CustomPaint).last;
+    // 自動の位置の近くは手の分 0 に吸い付く
+    var g = await tester.startGesture(tester.getCenter(fader));
+    await g.moveBy(const Offset(0, -1));
+    await tester.pump();
+    expect(value, 0);
+    await g.up();
+    await tester.pump();
+    // 上へ 30px ≒ +3.8% 動かすと、数字は 2.5 + 3.8
+    g = await tester.startGesture(tester.getCenter(fader));
+    await g.moveBy(const Offset(0, -30));
+    await tester.pump();
+    expect(value, closeTo(30 / 126 * 16, 0.05));
+    expect(find.text(PitchFader.label(2.5 + value)), findsOneWidget);
+    await g.up();
+    await tester.pump();
+    // 上へ大きく動かしても、つまみ（自動 + 手）は +8 で止まる → 手の分は +5.5 まで
+    g = await tester.startGesture(tester.getCenter(fader));
+    await g.moveBy(const Offset(0, -400));
+    await tester.pump();
+    expect(value, closeTo(5.5, 1e-9));
+    expect(find.text('+8.0%'), findsOneWidget);
+    await g.up();
+  });
+
   test('表示の文字', () {
     expect(PitchFader.label(0), '0');
     expect(PitchFader.label(0.04), '0');

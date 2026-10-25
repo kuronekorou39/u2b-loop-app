@@ -81,7 +81,9 @@ class MixDeck extends StatelessWidget {
   final ({double periodMs, double valueMs, double maxMs, double? errorMs})? jog;
 
   /// 次曲のテンポの微調整（±%）。null なら動かせない
-  final ({double percent, double maxPercent})? tempo;
+  /// フェーダー: 手の微調整 [percent]、自動のテンポ合わせの位置 [autoPercent]（つまみの土台）、
+  /// 動かせる幅 [maxPercent]。null なら曲本来のテンポ（0）を見るだけ
+  final ({double percent, double autoPercent, double maxPercent})? tempo;
 
   final void Function(double valueMs, {required bool touching})? onJog;
   final ValueChanged<double>? onJogEnd;
@@ -170,6 +172,7 @@ class MixDeck extends StatelessWidget {
         child: _column([
           PitchFader(
             percent: tempo?.percent ?? 0,
+            autoPercent: tempo?.autoPercent ?? 0,
             maxPercent: tempo?.maxPercent ?? 8,
             // 溝の下端を円盤の下端に、値を BPM の行に揃える
             height: size,

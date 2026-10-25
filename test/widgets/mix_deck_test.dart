@@ -40,7 +40,7 @@ void main() {
       outBpm: 128,
       inBpm: 127.9,
       jog: (periodMs: 468.75, valueMs: 12, maxMs: 937.5, errorMs: 3),
-      tempo: (percent: 0.3, maxPercent: 8),
+      tempo: (percent: 0.3, autoPercent: 0, maxPercent: 8),
       onJog: (_, {required bool touching}) {},
       onJogEnd: (_) {},
       onTempo: (p) => tempo = p,
@@ -135,7 +135,7 @@ void main() {
       outTurns: 0,
       inTurns: 0,
       jog: (periodMs: 500, valueMs: 0, maxMs: 1000, errorMs: null),
-      tempo: (percent: 0, maxPercent: 8),
+      tempo: (percent: 0, autoPercent: 0, maxPercent: 8),
       onJog: (_, {required bool touching}) {},
       onJogEnd: (_) {},
     )));

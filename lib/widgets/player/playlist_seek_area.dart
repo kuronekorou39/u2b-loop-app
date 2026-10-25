@@ -472,16 +472,17 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
                   maxMs: jogMax,
                   errorMs: engine.jogErrorMs(pair),
                 ),
-          tempo: canTrim
-              ? (
-                  percent: trim,
-                  maxPercent: TrackCompatibility.maxTempoAdjustPercent,
-                )
-              : null,
+          // つまみは自動のテンポ合わせの位置に手の分を足した所。切り替わった後は
+          // 本来の速度へ戻るのを見せるだけ（動かせない）
+          tempo: (
+            percent: trim,
+            autoPercent: engine.autoTempoPercent(pair),
+            maxPercent: TrackCompatibility.maxTempoAdjustPercent,
+          ),
           onJog: setJog,
           onJogEnd: (ms) => setJog(ms, touching: false),
-          onTempo: setTrim,
-          onTempoEnd: setTrim,
+          onTempo: canTrim ? setTrim : null,
+          onTempoEnd: canTrim ? setTrim : null,
           onWider: data.zoom.wider,
           onNarrower: data.zoom.narrower,
           showCurves: data.showCurves,
