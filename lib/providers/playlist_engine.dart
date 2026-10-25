@@ -698,6 +698,10 @@ class PlaylistEngine {
   Timer? _crossfadeMonitor;
   PlaylistTrack? _armedTrack;
 
+  /// 予約中の次曲（プリロード側に載っていて、交差の予約が生きている曲）。無ければ null。
+  /// 再生画面とミニプレイヤーの進行役が入れ替わるとき、先読みを捨てずに引き継ぐために見る
+  PlaylistTrack? get armedTrack => _armedTrack;
+
   /// 予約したときに鳴っていた曲（スワップ時に音量正規化の補正をかけ直すため）
   LoopItem? _armedFrom;
 

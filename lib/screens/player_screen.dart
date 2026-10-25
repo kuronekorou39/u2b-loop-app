@@ -232,13 +232,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final wasPlaying = miniState.wasPlaying;
         ref.read(miniPlayerProvider.notifier).clearRestoreInfo();
         // ミニプレイヤーの進行役から画面が引き継ぐ（予約済みのクロスフェードは使える）
-        ref.read(playlistEngineProvider).endSession(keepCrossfade: true);
+        final engine = ref.read(playlistEngineProvider);
+        engine.endSession(keepCrossfade: true);
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
         _setupPlaylistCallbacks();
         PipBridge.setAutoPiP(
             enabled: true, isPlaylist: _isPlaylist, item: _currentItem);
         _updatePiPPlayState();
-        _startPreloadMonitor();
+        // 進行役が先読みして予約した次曲（✓）があれば、そのまま引き継ぐ。
+        // 捨てて読み直すと ✓ が消え、重ね表示も予約し直すまで前の組（1 手古い帯）になる
+        final ps = ref.read(playlistPlayerProvider);
+        final nextIdx = ps.peekNextTrackIndex();
+        final armed = engine.armedTrack;
+        final keep = _isPlaylist &&
+            armed != null &&
+            nextIdx != null &&
+            ps.tracks[nextIdx].item.id == armed.item.id;
+        if (keep) _preloadedTrackIndex = nextIdx;
+        _startPreloadMonitor(keepPreload: keep);
         // iOS: トランジション中にmpvが自動pauseするため、遷移前の状態に基づいて復元
         if (wasPlaying) {
           ref.read(playerProvider).play();
@@ -1045,9 +1056,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try { ref.read(preloadPlayerProvider).stop(); } catch (_) {}
   }
 
-  void _startPreloadMonitor() {
+  /// [keepPreload] なら、今ある先読みと予約（[_preloadedTrackIndex]）を捨てずに監視だけ始める
+  /// （ミニプレイヤーから戻るとき）
+  void _startPreloadMonitor({bool keepPreload = false}) {
     _preloadCheckTimer?.cancel();
-    _cancelPreload();
+    if (!keepPreload) _cancelPreload();
     _preloadFailCount = 0;
 
     if (!_isPlaylist) return;
@@ -1945,11 +1958,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // プレイリストモード: dispose 後も動く進行役を立てる（画面側のコールバックと置き換わる）。
     // ref.read は dispose 後に使えないので、provider コンテナに生き続けるものをここで渡す
     if (_isPlaylist) {
+      // 先読み済みの次曲（✓）は進行役に引き継ぐ（読み直さない）。読み込み中の分は
+      // 画面と一緒に止まるので、進行役が自分で読みに行く
       _miniTransport = MiniPlayerTransport(
         engine: ref.read(playlistEngineProvider),
         loop: ref.read(loopProvider.notifier),
         playlist: ref.read(playlistPlayerProvider.notifier),
         mini: ref.read(miniPlayerProvider.notifier),
+        preloadedIndex: _preloadedTrackIndex,
       )..start();
     }
   }

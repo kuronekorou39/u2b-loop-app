@@ -18,12 +18,15 @@ import 'pip_bridge.dart';
 /// ここに組み立てるのは「画面が無いときの振る舞い」だけ:
 /// B 点・曲終了で次へ、未準備なら頭からやり直して止めない、通知・PiP のボタン
 class MiniPlayerTransport {
+  /// [preloadedIndex] は再生画面がもう先読みして予約してある次曲の番号。
+  /// 渡されれば読み直さず、その予約をそのまま使う（捨てると同じ曲をもう一度落とすことになる）
   MiniPlayerTransport({
     required this.engine,
     required this.loop,
     required this.playlist,
     required this.mini,
-  });
+    int? preloadedIndex,
+  }) : _preloadedIdx = preloadedIndex;
 
   final PlaylistEngine engine;
   final LoopNotifier loop;
