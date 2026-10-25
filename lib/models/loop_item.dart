@@ -116,6 +116,10 @@ class LoopItem {
   double? endFadeDb;
   double? dropDb;
 
+  /// 音量の流れそのもの（曲頭から [EnergyProfile.curveStepMs] ごとの平均 dB、ピーク比）。
+  /// 次曲の入り口を前曲の出口に合わせて選ぶ（EntryPlanner）のに使う。null = 未計測
+  List<double>? energyDb;
+
   /// 曲全体の RMS（dBFS）。音量正規化が曲の大きさを揃えるのに使う（Loudness）。
   /// 波形を作るときにデコードした PCM から測る。null = 未計測
   double? loudnessDb;
@@ -176,6 +180,7 @@ class LoopItem {
     this.tailDb,
     this.endFadeDb,
     this.dropDb,
+    this.energyDb,
     this.loudnessDb,
     this.firstVerseAMs,
     this.firstVerseBMs,
@@ -338,6 +343,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       firstVerseBMs: fields[43] as int?,
       downbeatMs: (fields[44] as num?)?.toDouble(),
       downbeatConfidence: (fields[45] as num?)?.toDouble(),
+      energyDb: (fields[46] as List?)?.map((v) => (v as num).toDouble()).toList(),
     );
   }
 
@@ -390,6 +396,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       43: obj.firstVerseBMs,
       44: obj.downbeatMs,
       45: obj.downbeatConfidence,
+      46: obj.energyDb,
     });
   }
 }

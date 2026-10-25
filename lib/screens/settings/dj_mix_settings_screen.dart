@@ -23,12 +23,14 @@ class DjMixSettingsScreen extends ConsumerWidget {
         'クロスフェード ${crossfadeLabel(fade)}',
         'おまかせ（曲に合わせて選ぶ）',
         if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
+        if (ref.watch(smartEntryProvider)) '入り口を選ぶ',
       ].join(' · ');
     }
     final parts = <String>[
       'クロスフェード ${crossfadeLabel(fade)}',
       ref.watch(crossfadeCurveProvider).label,
       if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
+      if (ref.watch(smartEntryProvider)) '入り口を選ぶ',
       if (ref.watch(tempoMatchProvider)) 'テンポ合わせ',
       if (ref.watch(beatMatchProvider)) '拍合わせ',
       if (ref.watch(bassSwapProvider)) 'ベーススワップ',
@@ -200,6 +202,16 @@ class DjMixSettingsScreen extends ConsumerWidget {
               value: ref.watch(mixPointAlignProvider),
               onChanged: on
                   ? (v) => ref.read(mixPointAlignProvider.notifier).value = v
+                  : null,
+            ),
+            // 前曲が盛り上がったまま終わるなら、次曲の静かなイントロを飛ばして同じくらい鳴る段落から
+            SettingsSwitchRow(
+              icon: Icons.login,
+              title: '入り口を選ぶ',
+              subtitle: on ? null : needsFade,
+              value: ref.watch(smartEntryProvider),
+              onChanged: on
+                  ? (v) => ref.read(smartEntryProvider.notifier).value = v
                   : null,
             ),
             // 前後の曲の BPM が解析済みのときに次曲の速度を ±8% まで寄せ、交差後に元へ戻す

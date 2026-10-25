@@ -1185,8 +1185,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       {required bool preload}) async {
     final item = track.item;
     final needPoints = item.mixInMs == null && item.mixOutMs == null;
-    // 音量の流れ（おまかせ用）はミックス点より後から入ったので、点があっても無ければ求める
-    final needEnergy = item.headDb == null;
+    // 音量の流れ（おまかせ用）と流れそのもの（入り口を選ぶ用）はミックス点より後から
+    // 入ったので、点があっても無ければ求める
+    final needEnergy = item.headDb == null || item.energyDb == null;
     if (!needPoints && !needEnergy) return;
     final engine = ref.read(playlistEngineProvider);
     final duration = (preload ? engine.preloadPlayer : engine.activePlayer)
@@ -1210,10 +1211,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             mixInMs: points.mixInMs,
           )
         : null;
-    if (points == MixPoints.none && (energy == null || energy.isEmpty)) return;
+    final curve = needEnergy
+        ? EnergyProfile.curve(waveform, duration.inMilliseconds)
+        : null;
+    if (points == MixPoints.none &&
+        (energy == null || energy.isEmpty) &&
+        (curve == null || curve.isEmpty)) {
+      return;
+    }
     await ref
         .read(loopItemsProvider.notifier)
-        .saveMixPoints(item.id, points, energy: energy);
+        .saveMixPoints(item.id, points, energy: energy, energyCurve: curve);
     // Hive の box にあるのと同じインスタンスなので item 自体も更新されている
     debugPrint('[MixPoint] ${item.title}: $points ${energy ?? ''}');
     if (preload && needPoints) await engine.realignPreload(track);

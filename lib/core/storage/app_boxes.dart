@@ -41,6 +41,7 @@ class SettingsKeys {
   static const crossfadeBeats = 'crossfade_beats';
   static const tempoMatch = 'tempo_match';
   static const mixPointAlign = 'mix_point_align';
+  static const smartEntry = 'smart_entry';
   static const crossfadeCurve = 'crossfade_curve';
   static const bassSwap = 'bass_swap';
   static const transitionEffect = 'transition_effect';

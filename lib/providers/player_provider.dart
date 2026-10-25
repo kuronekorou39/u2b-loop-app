@@ -329,6 +329,25 @@ class MixPointAlignNotifier extends StateNotifier<bool> {
   }
 }
 
+/// 次曲の入り口を前曲の出口に合わせて選ぶか（既定オン）。前曲が盛り上がったまま終わるなら
+/// 次曲の静かなイントロを飛ばし、同じくらい鳴っている段落から入れる（EntryPlanner）。
+/// オフなら曲頭（ドロップ合わせがあればそれ）。クロスフェードがオフのときは効かない
+final smartEntryProvider =
+    StateNotifierProvider<SmartEntryNotifier, bool>((ref) => SmartEntryNotifier());
+
+class SmartEntryNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.smartEntry;
+
+  SmartEntryNotifier() : super(true) {
+    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
 /// クロスフェードの音量曲線（つなぎ方）。既定は等パワー
 final crossfadeCurveProvider =
     StateNotifierProvider<CrossfadeCurveNotifier, CrossfadeCurve>(

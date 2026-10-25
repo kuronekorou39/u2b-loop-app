@@ -2,7 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/core/audio/track_compatibility.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 
-LoopItem _item(String id, {double? bpm, String? key}) => LoopItem(
+LoopItem _item(String id,
+        {double? bpm, String? key, double? headDb, double? tailDb}) =>
+    LoopItem(
       id: id,
       title: id,
       uri: 'https://example.com/$id',
@@ -10,6 +12,8 @@ LoopItem _item(String id, {double? bpm, String? key}) => LoopItem(
       videoId: id,
       bpm: bpm,
       musicalKey: key,
+      headDb: headDb,
+      tailDb: tailDb,
     );
 
 void main() {
@@ -45,7 +49,8 @@ void main() {
       final tempoOnly = _item('t', bpm: 121, key: 'F#maj'); // 遠いキー
       final keyOnly = _item('k', bpm: 150, key: 'Amin');
       final sGood = TrackCompatibility.score(a, good);
-      expect(sGood, greaterThan(0.9));
+      // 音量の流れが未計測（中立値 0.35 × 0.2）なので上限は 0.87
+      expect(sGood, greaterThan(0.8));
       expect(sGood, greaterThan(TrackCompatibility.score(a, tempoOnly)));
       expect(sGood, greaterThan(TrackCompatibility.score(a, keyOnly)));
     });
@@ -59,6 +64,22 @@ void main() {
       expect(s, closeTo(TrackCompatibility.unknownScore, 1e-9));
       expect(s, lessThan(TrackCompatibility.score(a, good)));
       expect(s, greaterThan(TrackCompatibility.score(a, bad)));
+    });
+
+    test('音量の流れ: 終わりと頭の dB が近いほど高く、3dB までは満点、未計測は中立値', () {
+      final loudEnd = _item('a', bpm: 120, key: 'Amin', tailDb: -6);
+      final loudHead = _item('l', bpm: 120, key: 'Amin', headDb: -8);
+      final quietHead = _item('q', bpm: 120, key: 'Amin', headDb: -20);
+      final unknown = _item('u', bpm: 120, key: 'Amin');
+      expect(TrackCompatibility.flowScore(loudEnd, loudHead), 1.0);
+      expect(TrackCompatibility.flowScore(loudEnd, quietHead),
+          closeTo(1 - 11 / 12, 1e-9));
+      expect(TrackCompatibility.flowScore(loudEnd, unknown),
+          TrackCompatibility.unknownScore);
+      // テンポ・キーが同じなら、流れがつながる曲が前に来る
+      expect(TrackCompatibility.score(loudEnd, loudHead),
+          greaterThan(TrackCompatibility.score(loudEnd, quietHead)));
+      expect(TrackCompatibility.rank(loudEnd, [quietHead, loudHead]).first.id, 'l');
     });
 
     test('キーは Camelot で2つ離れると部分点、それ以上は0', () {

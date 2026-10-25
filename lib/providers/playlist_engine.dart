@@ -9,6 +9,8 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../core/audio/beat_grid.dart';
 import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
+import '../core/audio/energy_profile.dart';
+import '../core/audio/entry_planner.dart';
 import '../core/audio/loudness.dart';
 import '../core/audio/sfx_plan.dart';
 import '../core/audio/track_compatibility.dart';
@@ -245,12 +247,49 @@ class PlaylistEngine {
     final fade = crossfadeDuration;
     if (fade == Duration.zero) return Duration.zero;
     final leading = Duration(milliseconds: track.item.leadingSilenceMs ?? 0);
+    // 前曲の出口に合わせた入り口（静かなイントロを飛ばして、鳴っている段落の頭を切替点に）
+    final entry = _smartEntryMs(track);
+    if (entry != null) {
+      final aligned = Duration(microseconds: (entry * 1000).round()) - fade;
+      if (aligned > leading) return aligned;
+    }
     final mixIn = track.item.mixInMs;
     if (mixIn != null && _ref.read(mixPointAlignProvider)) {
       final aligned = Duration(milliseconds: mixIn) - fade;
       if (aligned > leading) return aligned;
     }
     return leading;
+  }
+
+  /// 次曲 [next] の入り口（媒体ミリ秒）を、前曲（鳴っている曲）の出口の盛り上がりから選ぶ。
+  /// 曲頭のままでよい・材料が無い（音量の流れが未計測・切断点が決まらない）なら null。
+  /// 出口 = 切断点の手前 1 段落の平均 dB。入り口は次曲の前半の段落（フレーズ）の頭から
+  double? _smartEntryMs(PlaylistTrack next) {
+    if (!_ref.read(smartEntryProvider)) return null;
+    final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    final outCurve = outItem?.energyDb;
+    final inCurve = next.item.energyDb;
+    if (outItem == null ||
+        outCurve == null ||
+        inCurve == null ||
+        outItem.id == next.item.id) {
+      return null;
+    }
+    final cut = _cutPoint()?.cut;
+    if (cut == null) return null;
+    const step = EnergyProfile.curveStepMs;
+    final outGrid = outItem.beatGrid;
+    final exitDb = EntryPlanner.exitDb(outCurve, cut.inMicroseconds / 1000,
+        stepMs: step, grid: outGrid != null && outGrid.reliable ? outGrid : null);
+    final inGrid = next.item.beatGrid;
+    final sections = EntryPlanner.sections(
+      inCurve,
+      stepMs: step,
+      grid: inGrid != null && inGrid.reliable ? inGrid : null,
+      dropMs: next.item.mixInMs?.toDouble(),
+      leadingSilenceMs: next.item.leadingSilenceMs ?? 0,
+    );
+    return EntryPlanner.entryMs(exitDb: exitDb, sections: sections);
   }
 
   /// 交差で入る曲の実際の開始位置: [effectiveStart] に拍合わせのずらし（±半拍）と、

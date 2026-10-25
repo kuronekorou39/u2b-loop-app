@@ -59,9 +59,28 @@ class TrackCompatibility {
     return 0.0;
   }
 
-  /// [a] の後に [b] をつなぐときの総合スコア 0〜1（テンポ 6 : キー 4）
+  /// 音量の流れの差（出る曲の終わりと入る曲の頭の dB 差）がこれ以内なら流れは満点
+  static const flowFreeDb = 3.0;
+
+  /// 音量の流れの差がこれ以上なら流れは 0 点（dB）
+  static const flowZeroDb = 15.0;
+
+  /// 音量の流れの近さ 0〜1: [a] の終わり（tailDb）と [b] の頭（headDb）の差。
+  /// どちらか未計測なら中立値。入り口を選ぶ機能が静かなイントロを飛ばしてくれるので
+  /// 重みは軽めだが、同じくらいの盛り上がりで渡せる曲を少し前に出す
+  static double flowScore(LoopItem a, LoopItem b) {
+    final tail = a.tailDb;
+    final head = b.headDb;
+    if (tail == null || head == null) return unknownScore;
+    final diff = max(0.0, (tail - head).abs() - flowFreeDb);
+    return max(0.0, 1 - diff / (flowZeroDb - flowFreeDb));
+  }
+
+  /// [a] の後に [b] をつなぐときの総合スコア 0〜1（テンポ 5 : キー 3 : 音量の流れ 2）
   static double score(LoopItem a, LoopItem b) =>
-      0.6 * tempoScore(a.bpm, b.bpm) + 0.4 * keyScore(a.musicalKey, b.musicalKey);
+      0.5 * tempoScore(a.bpm, b.bpm) +
+      0.3 * keyScore(a.musicalKey, b.musicalKey) +
+      0.2 * flowScore(a, b);
 
   static bool isAnalyzed(LoopItem item) =>
       item.bpm != null || item.musicalKey != null;

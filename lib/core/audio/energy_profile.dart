@@ -30,6 +30,24 @@ class EnergyProfile {
 
   bool get isEmpty => headDb == null && tailDb == null && endFadeDb == null && dropDb == null;
 
+  /// [curve] の 1 点の長さ（ミリ秒）。3 分の曲で 90 点ほど
+  static const curveStepMs = 2000;
+
+  /// 音量の流れそのもの: 曲頭から [curveStepMs] ごとの平均 dB（ピーク比、無音は −60 dB）。
+  /// 入り口を選ぶ（EntryPlanner）のに使う。[durationMs] の終わりまで、端数の区間も 1 点にする
+  static List<double> curve(List<double> waveform, int durationMs) {
+    final n = waveform.length;
+    if (n < 2 || durationMs <= 0) return const [];
+    final smooth = MixPointDetector.smoothedDb(waveform, durationMs);
+    final msPer = durationMs / n;
+    final points = (durationMs / curveStepMs).ceil();
+    return List<double>.generate(points, (i) {
+      final from = (i * curveStepMs / msPer).round().clamp(0, n - 1);
+      final to = ((i + 1) * curveStepMs / msPer).round().clamp(from + 1, n);
+      return MixPointDetector.mean(smooth, from, to);
+    });
+  }
+
   static EnergyProfile fromWaveform(
     List<double> waveform,
     int durationMs, {
