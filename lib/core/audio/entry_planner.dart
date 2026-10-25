@@ -68,19 +68,24 @@ class EntryPlanner {
     final durationMs = curve.length * stepMs.toDouble();
     final head = leadingSilenceMs.toDouble();
     final phrase = phraseMsFor(grid);
-    if (durationMs <= 0 || head >= durationMs) return const [];
+    // 格子の BPM が壊れていて段落の長さが出ない曲は、段落表なし（曲頭から入れる）
+    if (durationMs <= 0 || head >= durationMs || !phrase.isFinite || phrase <= 0) {
+      return const [];
+    }
     final result = <EntrySection>[
       (ms: head, db: meanDb(curve, head, head + phrase, stepMs: stepMs)),
     ];
     final limit = durationMs * searchFraction;
     final phrases = grid != null && grid.reliable ? grid.phraseGrid(dropMs) : null;
-    // 次の段落の頭（ちょうど頭なら 1 つ先）
-    double next(double ms) {
-      if (phrases == null) return ms + phrase;
-      final toNext = phrases.toNextBeatMs(ms);
-      return ms + (toNext <= 0 ? phrases.periodMs : toNext);
-    }
-    for (var ms = next(head); ms < limit; ms = next(ms)) {
+    // 段落の頭は「曲頭の直前の頭 + k 段落」と番号で数える。位置に「次の頭までの長さ」を
+    // 足し込んでいく形だと、位相が 0.9999… と出た組で足す量が double の刻みより小さくなり、
+    // 前に進まず止まる（v1.119.1 まで: 特定の曲が次曲になると画面が固まった）
+    final period = phrases?.periodMs ?? phrase;
+    final origin = phrases == null ? head : phrases.floorBeatMs(head);
+    for (var k = 1;; k++) {
+      final ms = origin + k * period;
+      if (!(ms < limit)) break;
+      // 曲頭ちょうど（丸めでほぼ曲頭）の頭もここで除かれる
       if (ms - head < minLeadMs) continue;
       result.add((ms: ms, db: meanDb(curve, ms, ms + phrase, stepMs: stepMs)));
     }

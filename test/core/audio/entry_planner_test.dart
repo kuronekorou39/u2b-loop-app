@@ -53,6 +53,23 @@ void main() {
       expect(s[1].ms, closeTo(30720, 0.01));
     });
 
+    test('位相が 0.9999… と出る格子でも止まらず、頭は単調に増える（v1.119.1 まで無限ループ）', () {
+      // 実際に止まった組（乱数で見つけた値）。足し込み式だと 43,408ms で前に進まなくなる
+      const stuck = BeatGrid(
+          bpm: 80.15087283163069, offsetMs: 739.0928496918588, confidence: 0.8);
+      final flat = curve(List.filled(150, -10.0)); // 5 分
+      final s = EntryPlanner.sections(flat,
+          stepMs: step, grid: stuck, dropMs: 67425, leadingSilenceMs: 2370);
+      expect(s.length, greaterThan(3));
+      for (var i = 1; i < s.length; i++) {
+        expect(s[i].ms - s[i - 1].ms, greaterThan(EntryPlanner.minLeadMs - 1));
+      }
+      expect(s.last.ms, lessThan(150000));
+      // 格子の BPM が壊れていても止まらない（段落表なし = 曲頭から）
+      const broken = BeatGrid(bpm: double.nan, offsetMs: 0, confidence: 0.8);
+      expect(EntryPlanner.sections(flat, stepMs: step, grid: broken), isEmpty);
+    });
+
     test('出口は切断点の手前 1 段落の平均', () {
       // 曲末がサビのまま終わる（−6dB）
       final exit = EntryPlanner.exitDb(gradual, 180000, stepMs: step, grid: grid);
