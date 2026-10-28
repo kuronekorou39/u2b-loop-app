@@ -26,9 +26,7 @@ class AppErrors {
     if (e is VideoUnavailableException) {
       return '動画が見つかりません（非公開・削除・限定公開の可能性）';
     }
-    if (e is VideoUnplayableException) {
-      return '再生できない動画です（年齢制限・地域制限・ライブ配信など）';
-    }
+    if (e is VideoUnplayableException) return _unplayable(e.toString());
     if (e is RequestLimitExceededException) {
       return 'YouTube へのアクセスが多すぎます。少し待ってからやり直してください';
     }
@@ -46,5 +44,58 @@ class AppErrors {
     if (text.isEmpty) return '不明なエラー';
     if (text.length > _maxLength) text = '${text.substring(0, _maxLength)}…';
     return text;
+  }
+
+  /// 再生できない理由ごとの文。YouTube が返す理由（英語。表示言語によっては日本語）の
+  /// 決まり文句で見分ける。上から順に見て最初に当たったもの
+  static final _unplayableRules = <(RegExp, String)>[
+    (
+      // 「Sign in to confirm your age」「This video may be inappropriate for some users.」
+      // （内容の警告「…to some viewers」は contentCheckOk で通るのでここには来ない）
+      _r(r'confirm your age|age[- ]restrict|inappropriate for some users|年齢|一部のユーザーに適さない'),
+      '年齢制限のある動画です。YouTube にログインしないと再生できないため、このアプリでは開けません',
+    ),
+    (
+      _r(r'not a bot|ボットでない'),
+      'YouTube にボットと判定されました。少し時間をおいてやり直してください',
+    ),
+    (
+      _r(r'members[- ]only|join this channel|メンバー'),
+      'チャンネルのメンバー限定の動画です',
+    ),
+    (
+      _r(r'country|region|お住まいの国|地域'),
+      'この地域では再生できない動画です（地域制限）',
+    ),
+    (
+      _r(r'private|非公開'),
+      '非公開の動画です',
+    ),
+    (
+      _r(r'live stream|live event|premiere|ライブ|プレミア'),
+      'ライブ配信中・配信前の動画は再生できません',
+    ),
+    (
+      _r(r'removed|terminated|削除'),
+      '削除された動画です',
+    ),
+  ];
+
+  static RegExp _r(String pattern) => RegExp(pattern, caseSensitive: false);
+
+  static String _unplayable(String message) {
+    // youtube_explode_dart は「…Reason: <YouTube の理由>」の形で投げる。
+    // ライブ配信中は理由が無く、本文に「ongoing live stream」とある
+    final match = RegExp(r'Reason:\s*(.*)$', dotAll: true).firstMatch(message);
+    final reason = match?.group(1)?.trim() ?? '';
+    final text = reason.isEmpty ? message : reason;
+    for (final (pattern, label) in _unplayableRules) {
+      if (pattern.hasMatch(text)) return label;
+    }
+    if (reason.isEmpty) return '再生できない動画です';
+    final shown = reason.length > _maxLength
+        ? '${reason.substring(0, _maxLength)}…'
+        : reason;
+    return '再生できない動画です（YouTube: $shown）';
   }
 }

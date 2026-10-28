@@ -26,6 +26,25 @@ void main() {
           contains('購入'));
     });
 
+    test('再生できない理由は YouTube が返す理由から見分ける', () {
+      final id = VideoId('qk0ng1HTM-Y');
+      String of(String reason) => AppErrors.describe(
+          VideoUnplayableException.unplayable(id, reason: reason));
+      // 実際に返ってきた理由（年齢制限の動画）
+      expect(of('Sign in to confirm your age'), contains('年齢制限'));
+      expect(of('この動画は、一部のユーザーに適さない可能性があります。'), contains('年齢制限'));
+      expect(of('The uploader has not made this video available in your country'),
+          contains('地域制限'));
+      expect(of('Join this channel to get access to members-only content like this video'),
+          contains('メンバー限定'));
+      expect(of('Sign in to confirm you’re not a bot'), contains('ボット'));
+      expect(AppErrors.describe(VideoUnplayableException.liveStream(id)),
+          contains('ライブ配信'));
+      // 知らない理由はそのまま添える。理由が無ければ短く
+      expect(of('Something new'), '再生できない動画です（YouTube: Something new）');
+      expect(of(''), '再生できない動画です');
+    });
+
     test('それ以外は型名の前置きを外す', () {
       expect(AppErrors.describe(Exception('再生可能なストリームがありません')),
           '再生可能なストリームがありません');
