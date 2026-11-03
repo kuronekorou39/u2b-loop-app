@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:hive/hive.dart';
 import '../core/audio/beat_grid.dart';
+import '../core/audio/key_sections.dart';
+import '../core/audio/musical_key.dart';
 import '../core/audio/tempo_sections.dart';
 import '../core/utils/time_utils.dart';
 import 'loop_region.dart';
@@ -82,8 +84,8 @@ class LoopItem {
   int? analysisVersion;
 
   /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度、4: 小節頭、
-  /// 5: 曲の範囲、6: テンポの区切り）
-  static const currentAnalysisVersion = 6;
+  /// 5: 曲の範囲、6: テンポの区切り、7: キーの検出を CQT に直して転調も）
+  static const currentAnalysisVersion = 7;
 
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
@@ -110,6 +112,51 @@ class LoopItem {
   List<TempoSection> get tempoSections => tempoSectionData == null
       ? const []
       : TempoSection.unflatten(tempoSectionData!);
+
+  /// キーの区切り（'開始ms:キー' の並び）。転調する曲だけ。null = 一定か未計測。
+  /// [musicalKey] は一番長い区切りのキー
+  List<String>? keySectionData;
+
+  List<KeySection> get keySections => [
+        for (final s in keySectionData ?? const <String>[])
+          if (s.indexOf(':') case final i when i > 0)
+            KeySection(int.tryParse(s.substring(0, i)) ?? 0, s.substring(i + 1)),
+      ];
+
+  static List<String> flattenKeySections(List<KeySection> sections) =>
+      [for (final s in sections) '${s.startMs}:${s.key}'];
+
+  /// 曲の始まりのキー（DJ で次の曲として入るときに比べる）
+  String? get startKey {
+    final s = keySections;
+    return s.length >= 2 ? s.first.key : musicalKey;
+  }
+
+  /// 曲の終わりのキー（DJ で前の曲として出るときに比べる）
+  String? get endKey {
+    final s = keySections;
+    return s.length >= 2 ? s.last.key : musicalKey;
+  }
+
+  /// 一覧のキーの表記。一定なら「Gmin」、転調するなら「A#min → Bmin」（3 つまで並べ、
+  /// それより多ければ最初 → … → 最後）
+  String? get keyLabel {
+    final s = keySections;
+    if (s.length < 2) return musicalKey;
+    final keys = [for (final x in s) x.key];
+    return keys.length <= 3
+        ? keys.join(' → ')
+        : '${keys.first} → … → ${keys.last}';
+  }
+
+  /// キーの区切りの並び（「0:00 A#min → 2:36 Bmin」）。一定なら null
+  String? get keySectionsLabel {
+    final s = keySections;
+    if (s.length < 2) return null;
+    return s
+        .map((x) => '${TimeUtils.formatShortMs(x.startMs)} ${MusicalKey.display(x.key) ?? x.key}')
+        .join(' → ');
+  }
 
   /// テンポの区切りの並び（「0:00 96 → 1:21 148」）。一定なら null
   String? get tempoSectionsLabel {
@@ -214,6 +261,7 @@ class LoopItem {
     this.musicTailMs,
     this.notMusic,
     this.tempoSectionData,
+    this.keySectionData,
     this.mixInMs,
     this.mixOutMs,
     this.beatOffsetMs,
@@ -324,7 +372,7 @@ class LoopItem {
 
   /// 曲名の下などに並べる BPM とキー。表記はどの画面でも同じ
   /// （以前は「BPM 120」と「120 BPM」が画面ごとに混在していた）
-  List<String> get musicInfoParts => [?bpmLabel, ?musicalKey];
+  List<String> get musicInfoParts => [?bpmLabel, ?keyLabel];
 
   /// 区間の一覧を差し替える。旧バージョン互換の [pointAMs]/[pointBMs] は先頭の区間に
   /// 合わせる（区間なしなら 0）。保存前に必ずこれを通す（以前は画面ごとに同じ 4 行が
@@ -407,6 +455,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       notMusic: fields[49] as bool?,
       tempoSectionData:
           (fields[50] as List?)?.map((v) => (v as num).toDouble()).toList(),
+      keySectionData: (fields[51] as List?)?.cast<String>(),
     );
   }
 
@@ -464,6 +513,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       48: obj.musicTailMs,
       49: obj.notMusic,
       50: obj.tempoSectionData,
+      51: obj.keySectionData,
     });
   }
 }

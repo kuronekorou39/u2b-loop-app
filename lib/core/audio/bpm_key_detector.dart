@@ -2,6 +2,9 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'beat_grid.dart';
+import 'cq_chroma.dart';
+import 'fft.dart';
+import 'key_sections.dart';
 import 'music_span_detector.dart';
 import 'tempo_sections.dart';
 import 'musical_key.dart';
@@ -31,6 +34,7 @@ class AudioAnalysisResult {
     this.beatGrid,
     this.span = MusicSpan.whole,
     this.sections = const [],
+    this.keySections = const [],
   });
   final List<BpmCandidate> bpmCandidates;
   final List<KeyCandidate> keyCandidates;
@@ -44,6 +48,9 @@ class AudioAnalysisResult {
 
   /// テンポの区切り（テンポが変わる曲だけ。一定なら空）
   final List<TempoSection> sections;
+
+  /// キーの区切り（転調する曲だけ。一定なら空）。[key] は一番長い区切りのキー
+  final List<KeySection> keySections;
 
   double? get bpm => bpmCandidates.isEmpty ? null : bpmCandidates.first.bpm;
   String? get key => keyCandidates.isEmpty ? null : keyCandidates.first.key;
@@ -152,12 +159,30 @@ class BpmKeyDetector {
         for (final s in sections) identical(s, main) ? TempoSection(s.startMs, b) : s,
       ];
     }
+    // キー: 曲の範囲のクロマ。転調するなら一番長い区切りのキーを代表にする
+    final chroma = CqChroma.frames(musicPart, sampleRate);
+    final keySections =
+        KeySectionDetector.detect(chroma, sampleRate, startMs: span.startMs);
+    var keys = keyFromChroma(CqChroma.sum(chroma));
+    if (keySections.length >= 2) {
+      final endMs = span.startMs + musicPart.length * 1000 ~/ sampleRate;
+      var longest = 0;
+      for (var i = 0; i < keySections.length; i++) {
+        final next = i + 1 < keySections.length ? keySections[i + 1].startMs : endMs;
+        final len = next - keySections[i].startMs;
+        if (len > longest) {
+          longest = len;
+          keys = [KeyCandidate(keySections[i].key, 1)];
+        }
+      }
+    }
     return AudioAnalysisResult(
       bpmCandidates: bpms,
-      keyCandidates: detectKey(musicPart, sampleRate),
+      keyCandidates: keys,
       beatGrid: grid,
       span: span,
       sections: outSections,
+      keySections: keySections,
     );
   }
 
@@ -181,7 +206,7 @@ class BpmKeyDetector {
     const win = 512, hop = 128;
     if (pcm.length < win * 4) return null;
     final nFrames = 1 + (pcm.length - win) ~/ hop;
-    final fft = _Fft(win);
+    final fft = Fft(win);
     final w = _hann(win);
     final nb = win ~/ 2 + 1;
     // 250Hz 以下の bin（キック・ベースの立ち上がり）
@@ -485,7 +510,7 @@ class BpmKeyDetector {
   static List<Float64List> _beatChroma(
       Int16List pcm, int sampleRate, List<double> beats, double periodMs) {
     const win = 2048, hop = 512;
-    final fft = _Fft(win);
+    final fft = Fft(win);
     final w = _hann(win);
     final nb = win ~/ 2 + 1;
     final pc = Int32List(nb);
@@ -544,39 +569,23 @@ class BpmKeyDetector {
     return aa == 0 || bb == 0 ? 1 : ab / sqrt(aa * bb);
   }
 
-  /// 12音階クロマと Krumhansl-Schmuckler プロファイルの相関でキーを求める。
-  /// 戻り値は相関降順で最大3件。短すぎる入力は空。
-  static List<KeyCandidate> detectKey(Int16List pcm, int sampleRate) {
-    const win = 4096, hop = 2048;
-    if (pcm.length < win * 2) return const [];
-    final nFrames = 1 + (pcm.length - win) ~/ hop;
-    final fft = _Fft(win);
-    final w = _hann(win);
-    final nb = win ~/ 2 + 1;
-    final re = Float64List(win), im = Float64List(win);
-    // bin → ピッチクラス（C=0）。55〜2000Hz の外は -1
-    final pc = Int32List(nb);
-    for (var k = 0; k < nb; k++) {
-      final f = k * sampleRate / win;
-      pc[k] = (f >= 55 && f <= 2000)
-          ? ((12 * log(f / 440) / ln2).round() + 9) % 12
-          : -1;
-    }
-    final chroma = Float64List(12);
-    for (var fr = 0; fr < nFrames; fr++) {
-      final base = fr * hop;
-      for (var i = 0; i < win; i++) {
-        re[i] = pcm[base + i] / 32768.0 * w[i];
-        im[i] = 0;
-      }
-      fft.transform(re, im);
-      for (var k = 0; k < nb; k++) {
-        final p = pc[k];
-        if (p < 0) continue;
-        chroma[p] += log(1 + 100 * sqrt(re[k] * re[k] + im[k] * im[k]));
+  /// 12音階クロマ（[CqChroma]）と Krumhansl-Schmuckler プロファイルの相関でキーを求める。
+  /// 戻り値は相関降順で最大3件。短すぎる入力・無音は空。
+  static List<KeyCandidate> detectKey(Int16List pcm, int sampleRate) =>
+      keyFromChroma(CqChroma.sum(CqChroma.frames(pcm, sampleRate)));
+
+  /// クロマ（C 起点 12 要素）と 24 キーの相関（添字 = 主音 + 12 × 短調）。無音なら null
+  static Float64List? keyScores(List<double> chroma) {
+    if (chroma.every((v) => v == 0)) return null;
+    final out = Float64List(24);
+    for (var tonic = 0; tonic < 12; tonic++) {
+      for (final (m, prof) in [(0, _major), (1, _minor)]) {
+        final rolled = List.generate(12, (i) => prof[(i - tonic + 12) % 12]);
+        final r = _pearson(chroma, rolled);
+        out[tonic + 12 * m] = r.isNaN ? -1 : r;
       }
     }
-    return keyFromChroma(chroma);
+    return out;
   }
 
   /// クロマ（C 起点 12 要素）からキー候補を求める
@@ -609,60 +618,4 @@ class BpmKeyDetector {
 
   static Float64List _hann(int n) => Float64List.fromList(
       List.generate(n, (i) => 0.5 - 0.5 * cos(2 * pi * i / (n - 1))));
-}
-
-/// 基数2の反復FFT（in-place）。[n] は2の冪であること
-class _Fft {
-  _Fft(this.n)
-      : _cos = Float64List(n ~/ 2),
-        _sin = Float64List(n ~/ 2),
-        _rev = Uint32List(n) {
-    for (var k = 0; k < n ~/ 2; k++) {
-      _cos[k] = cos(2 * pi * k / n);
-      _sin[k] = sin(2 * pi * k / n);
-    }
-    final bits = (log(n) / ln2).round();
-    for (var i = 0; i < n; i++) {
-      var r = 0;
-      for (var b = 0; b < bits; b++) {
-        if (i & (1 << b) != 0) r |= 1 << (bits - 1 - b);
-      }
-      _rev[i] = r;
-    }
-  }
-  final int n;
-  final Float64List _cos, _sin;
-  final Uint32List _rev;
-
-  void transform(Float64List re, Float64List im) {
-    for (var i = 0; i < n; i++) {
-      final j = _rev[i];
-      if (j > i) {
-        var t = re[i];
-        re[i] = re[j];
-        re[j] = t;
-        t = im[i];
-        im[i] = im[j];
-        im[j] = t;
-      }
-    }
-    for (var size = 2; size <= n; size <<= 1) {
-      final half = size >> 1;
-      final step = n ~/ size;
-      for (var start = 0; start < n; start += size) {
-        for (var k = 0; k < half; k++) {
-          final wr = _cos[k * step];
-          final wi = -_sin[k * step];
-          final a = start + k;
-          final b = a + half;
-          final tr = re[b] * wr - im[b] * wi;
-          final ti = re[b] * wi + im[b] * wr;
-          re[b] = re[a] - tr;
-          im[b] = im[a] - ti;
-          re[a] += tr;
-          im[a] += ti;
-        }
-      }
-    }
-  }
 }

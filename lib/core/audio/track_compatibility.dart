@@ -76,10 +76,11 @@ class TrackCompatibility {
     return max(0.0, 1 - diff / (flowZeroDb - flowFreeDb));
   }
 
-  /// [a] の後に [b] をつなぐときの総合スコア 0〜1（テンポ 5 : キー 3 : 音量の流れ 2）
+  /// [a] の後に [b] をつなぐときの総合スコア 0〜1（テンポ 5 : キー 3 : 音量の流れ 2）。
+  /// キーは [a] の終わりと [b] の始まり（転調する曲は表示のキーと違うことがある）
   static double score(LoopItem a, LoopItem b) =>
       0.5 * tempoScore(a.bpm, b.bpm) +
-      0.3 * keyScore(a.musicalKey, b.musicalKey) +
+      0.3 * keyScore(a.endKey, b.startKey) +
       0.2 * flowScore(a, b);
 
   static bool isAnalyzed(LoopItem item) =>
@@ -134,7 +135,7 @@ class TrackCompatibility {
       parts.add('${other.bpm!.round()} BPM$pct');
     }
     if (other.musicalKey != null) {
-      final ok = MusicalKey.isCompatible(target.musicalKey, other.musicalKey);
+      final ok = MusicalKey.isCompatible(target.endKey, other.startKey);
       parts.add('${MusicalKey.display(other.musicalKey)}${ok ? ' ✓' : ''}');
     }
     return parts.join(' · ');

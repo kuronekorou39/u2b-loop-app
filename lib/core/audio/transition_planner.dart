@@ -97,9 +97,9 @@ class TransitionPlanner {
         out.tailDb! < quietDb &&
         next.headDb! < quietDb;
     final fadesOut = out.endFadeDb != null && out.endFadeDb! <= fadeOutDb;
-    final keyClash = out.musicalKey != null &&
-        next.musicalKey != null &&
-        TrackCompatibility.keyScore(out.musicalKey, next.musicalKey) == 0;
+    final keyClash = out.endKey != null &&
+        next.startKey != null &&
+        TrackCompatibility.keyScore(out.endKey, next.startKey) == 0;
 
     final facts = <String>[
       if (tempoDiff != null) 'テンポ差 ${tempoDiff.round()}%',

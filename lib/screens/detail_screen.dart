@@ -165,7 +165,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 : item.notMusic == true && !analyzed
                     ? '曲ではないと判定。タップで手入力'
                     : '${_tempoKeyText(item.bpm, item.musicalKey, item.tempoSections)}。タップで補正'
-                        '${item.tempoSectionsLabel == null ? '' : '\n${item.tempoSectionsLabel}'}';
+                        '${item.tempoSectionsLabel == null ? '' : '\n${item.tempoSectionsLabel}'}'
+                        '${item.keySectionsLabel == null ? '' : '\n${item.keySectionsLabel}'}';
     Widget row({
       required IconData icon,
       required String title,

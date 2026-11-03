@@ -64,7 +64,7 @@ void main() {
   test('v4 の曲で新たに飛ばす部分が無ければ、手で直した BPM・格子・ミックス点はそのまま', () async {
     await save(const MusicSpanInfo(headMs: 0, tailMs: 0, notMusic: false));
     expect(item().bpm, 60);
-    expect(item().musicalKey, 'Cmaj');
+    expect(item().musicalKey, 'Gmin', reason: 'キーは検出を直したので必ず置き換える');
     expect(item().beatGrid!.bpm, 60);
     expect(item().mixInMs, 20000);
     expect(item().analysisVersion, LoopItem.currentAnalysisVersion);

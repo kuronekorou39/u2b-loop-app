@@ -8,6 +8,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../core/audio/energy_profile.dart';
 import '../core/audio/beat_grid.dart';
 import '../core/audio/mix_point_detector.dart';
+import '../core/audio/key_sections.dart';
 import '../core/audio/music_span_detector.dart';
 import '../core/audio/tempo_sections.dart';
 import '../core/audio/silence_detector.dart';
@@ -82,8 +83,9 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   /// 格子をその倍率で引き直す（拍の頭と小節頭は動かない。拍の線・小節単位の効果音・
   /// 交差の長さが直る）、それ以外へ変えたら格子を捨てる。
   ///
-  /// 版 4・5 で解析済みの曲は、曲の範囲で新たに飛ばす部分が無く、テンポも一定なら
-  /// BPM・キー・格子を据え置く（手で直した BPM やジョグ・フェーダーで保存した拍を消さない）
+  /// 版 4 以上で解析済みの曲は、曲の範囲で新たに飛ばす部分が無く、テンポも一定なら
+  /// BPM・格子を据え置く（手で直した BPM やジョグ・フェーダーで保存した拍を消さない）。
+  /// キーと転調の区切り（[keySections]）は解析し直したら必ず置き換える
   Future<void> saveAnalysis(
     String id, {
     required double? bpm,
@@ -93,6 +95,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     BeatGrid? beatGrid,
     MusicSpanInfo? span,
     List<TempoSection> sections = const [],
+    List<KeySection> keySections = const [],
   }) async {
     final item = _box.get(id);
     if (item == null) return;
@@ -136,8 +139,15 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
                 TempoSection(s.startMs, (s.bpm * bpm / old * 10).round() / 10),
             ]);
     }
-    if (!keepTempo) {
-      item.bpm = bpm;
+    if (!keepTempo) item.bpm = bpm;
+    if (span != null) {
+      // キーは解析し直したら必ず置き換える（v1.122 までの検出は A・A#・B を含むキーに偏っていた）
+      item.musicalKey = musicalKey;
+      item.keySectionData =
+          keySections.length < 2 ? null : LoopItem.flattenKeySections(keySections);
+    } else {
+      // 手動でキーを変えたら転調の区切りは捨てる（どのキーが正しいか分からなくなる）
+      if (musicalKey != item.musicalKey) item.keySectionData = null;
       item.musicalKey = musicalKey;
     }
     if (markAnalyzed) {
