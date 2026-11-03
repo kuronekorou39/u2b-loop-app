@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'beat_grid.dart';
+import 'music_span_detector.dart';
 import 'musical_key.dart';
 
 /// BPM 候補（スコア降順で上位数件）
@@ -27,9 +28,13 @@ class AudioAnalysisResult {
     required this.bpmCandidates,
     required this.keyCandidates,
     this.beatGrid,
+    this.span = MusicSpan.whole,
   });
   final List<BpmCandidate> bpmCandidates;
   final List<KeyCandidate> keyCandidates;
+
+  /// 曲が鳴っている範囲。BPM・キー・拍の格子はこの範囲だけで求めてある
+  final MusicSpan span;
 
   /// 1 位の BPM で求めた拍の格子と小節頭（BPM が無ければ null）
   final BeatGrid? beatGrid;
@@ -52,6 +57,14 @@ class OnsetEnvelope {
   final double frameOffsetMs;
 
   double timeMs(double frame) => (frame + 1) / fps * 1000 + frameOffsetMs;
+
+  /// フレーム [from]〜[to] の部分。時刻は元のまま（[timeMs] が同じ時刻を返す）
+  OnsetEnvelope slice(int from, int to) => OnsetEnvelope(
+        full: Float64List.sublistView(full, from, to),
+        low: Float64List.sublistView(low, from, to),
+        fps: fps,
+        frameOffsetMs: frameOffsetMs + from / fps * 1000,
+      );
 }
 
 /// BPM とキーをモノラル PCM から検出する（純Dart・副作用なし）。
@@ -69,15 +82,33 @@ class BpmKeyDetector {
   static const _major = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
   static const _minor = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
+  /// 曲の範囲（[MusicSpanDetector]）を求め、その中だけで BPM・キー・拍の格子を求める。
+  /// 曲ではないと判定したら BPM・キー・格子は空
   static AudioAnalysisResult analyze(Int16List pcm, int sampleRate) {
-    final env = onsetEnvelope(pcm, sampleRate);
+    final whole = onsetEnvelope(pcm, sampleRate);
+    final span = whole == null ? MusicSpan.whole : MusicSpanDetector.detect(whole);
+    if (!span.isMusic) {
+      return AudioAnalysisResult(
+          bpmCandidates: const [], keyCandidates: const [], span: span);
+    }
+    final from = (span.startMs * sampleRate / 1000).round().clamp(0, pcm.length);
+    final to = span.endMs == null
+        ? pcm.length
+        : (span.endMs! * sampleRate / 1000).round().clamp(from, pcm.length);
+    final untouched = from == 0 && to == pcm.length;
+    final part = untouched ? pcm : Int16List.sublistView(pcm, from, to);
+    final env = untouched ? whole : onsetEnvelope(part, sampleRate);
     final bpms = env == null ? const <BpmCandidate>[] : bpmFromEnvelope(env);
+    // 範囲の頭を 0 として求めたので、動画の時刻に戻す
+    final grid = env == null || bpms.isEmpty
+        ? null
+        : _gridWithDownbeat(part, sampleRate, env, bpms.first.bpm)
+            ?.shiftedBy(from / sampleRate * 1000);
     return AudioAnalysisResult(
       bpmCandidates: bpms,
-      keyCandidates: detectKey(pcm, sampleRate),
-      beatGrid: env == null || bpms.isEmpty
-          ? null
-          : _gridWithDownbeat(pcm, sampleRate, env, bpms.first.bpm),
+      keyCandidates: detectKey(part, sampleRate),
+      beatGrid: grid,
+      span: span,
     );
   }
 
@@ -215,14 +246,8 @@ class BpmKeyDetector {
     final fps = env.fps;
     if (bpm <= 0 || n < fps * 4) return null;
 
-    // 低域を強めた立ち上がり（それぞれ RMS で揃えてから足す）
-    final rmsFull = _rms(env.full), rmsLow = _rms(env.low);
-    if (rmsFull <= 0) return null;
-    final onset = Float64List(n);
-    for (var i = 0; i < n; i++) {
-      onset[i] = env.full[i] / rmsFull +
-          (rmsLow > 0 ? 2 * env.low[i] / rmsLow : 0);
-    }
+    if (_rms(env.full) <= 0) return null;
+    final onset = weightedOnset(env);
 
     double comb(double period, double phase) {
       var s = 0.0;
@@ -274,6 +299,20 @@ class BpmKeyDetector {
         bpm: bestBpm,
         offsetMs: env.timeMs(bestPhase) % period,
         confidence: confidence);
+  }
+
+  /// 低域を強めた立ち上がり（全帯域と低域をそれぞれ RMS で揃え、低域を 2 倍にして足す）。
+  /// 裏拍のハイハットより表拍のキックに寄せる
+  static Float64List weightedOnset(OnsetEnvelope env) {
+    final n = env.full.length;
+    final rmsFull = _rms(env.full), rmsLow = _rms(env.low);
+    final onset = Float64List(n);
+    if (rmsFull <= 0) return onset;
+    for (var i = 0; i < n; i++) {
+      onset[i] = env.full[i] / rmsFull +
+          (rmsLow > 0 ? 2 * env.low[i] / rmsLow : 0);
+    }
+    return onset;
   }
 
   static double _rms(Float64List v) {

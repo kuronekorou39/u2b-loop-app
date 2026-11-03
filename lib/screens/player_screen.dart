@@ -1198,16 +1198,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ? MixPointDetector.fromWaveform(
             waveform,
             duration.inMilliseconds,
-            leadingSilenceMs: item.leadingSilenceMs ?? 0,
-            trailingSilenceMs: item.trailingSilenceMs,
+            leadingSilenceMs: item.introSkipMs,
+            trailingSilenceMs: item.outroSkipMs,
           )
         : MixPoints(mixInMs: item.mixInMs, mixOutMs: item.mixOutMs);
     final energy = needEnergy
         ? EnergyProfile.fromWaveform(
             waveform,
             duration.inMilliseconds,
-            leadingSilenceMs: item.leadingSilenceMs ?? 0,
-            trailingSilenceMs: item.trailingSilenceMs,
+            leadingSilenceMs: item.introSkipMs,
+            trailingSilenceMs: item.outroSkipMs,
             mixInMs: points.mixInMs,
           )
         : null;

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:hive/hive.dart';
 import '../core/audio/beat_grid.dart';
 import 'loop_region.dart';
@@ -77,8 +79,9 @@ class LoopItem {
   /// 境目の前後に旧いアプリで解析した曲を取りこぼす）
   int? analysisVersion;
 
-  /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度、4: 小節頭）
-  static const currentAnalysisVersion = 4;
+  /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度、4: 小節頭、
+  /// 5: 曲の範囲）
+  static const currentAnalysisVersion = 5;
 
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
@@ -86,6 +89,25 @@ class LoopItem {
 
   /// 曲末の無音（ミリ秒）。null = 未計測、または曲が長すぎて曲末まで解析していない
   int? trailingSilenceMs;
+
+  /// 曲が始まるまでの曲でない部分（ミリ秒。トーク・OP の語りなど、拍の無い部分）。
+  /// null = 未計測（v1.119 以前の解析）
+  int? musicHeadMs;
+
+  /// 曲が終わってからの曲でない部分（ミリ秒。ED の語りなど）。
+  /// null = 未計測、または曲末まで解析していない
+  int? musicTailMs;
+
+  /// 曲ではないと判定した（拍のはっきりした部分がほとんど無い）。BPM・キーは出さない
+  bool? notMusic;
+
+  /// 曲頭で飛ばしてよい長さ: 無音と、曲でない部分の長い方
+  int get introSkipMs => max(leadingSilenceMs ?? 0, musicHeadMs ?? 0);
+
+  /// 曲末で飛ばしてよい長さ: 無音と、曲でない部分の長い方。どちらも未計測なら null
+  int? get outroSkipMs => trailingSilenceMs == null && musicTailMs == null
+      ? null
+      : max(trailingSilenceMs ?? 0, musicTailMs ?? 0);
 
   /// ミックスイン点（ミリ秒）: 曲頭側で音量がぐっと上がる点（ドロップ）。
   /// クロスフェードで入るとき、ここが切り替わりに来るよう開始位置をずらす。
@@ -169,6 +191,9 @@ class LoopItem {
     this.analysisVersion,
     this.leadingSilenceMs,
     this.trailingSilenceMs,
+    this.musicHeadMs,
+    this.musicTailMs,
+    this.notMusic,
     this.mixInMs,
     this.mixOutMs,
     this.beatOffsetMs,
@@ -262,7 +287,11 @@ class LoopItem {
   }
 
   /// 表示用の BPM（「120 BPM」）。未解析なら null
-  String? get bpmLabel => bpm == null ? null : '${bpm!.round()} BPM';
+  String? get bpmLabel => bpm != null
+      ? '${bpm!.round()} BPM'
+      : notMusic == true
+          ? 'BPM —'
+          : null;
 
   /// 曲名の下などに並べる BPM とキー。表記はどの画面でも同じ
   /// （以前は「BPM 120」と「120 BPM」が画面ごとに混在していた）
@@ -344,6 +373,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       downbeatMs: (fields[44] as num?)?.toDouble(),
       downbeatConfidence: (fields[45] as num?)?.toDouble(),
       energyDb: (fields[46] as List?)?.map((v) => (v as num).toDouble()).toList(),
+      musicHeadMs: fields[47] as int?,
+      musicTailMs: fields[48] as int?,
+      notMusic: fields[49] as bool?,
     );
   }
 
@@ -397,6 +429,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       44: obj.downbeatMs,
       45: obj.downbeatConfidence,
       46: obj.energyDb,
+      47: obj.musicHeadMs,
+      48: obj.musicTailMs,
+      49: obj.notMusic,
     });
   }
 }

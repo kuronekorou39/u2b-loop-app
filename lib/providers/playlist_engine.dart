@@ -246,7 +246,7 @@ class PlaylistEngine {
     if (startMs != null) return Duration(milliseconds: startMs);
     final fade = crossfadeDuration;
     if (fade == Duration.zero) return Duration.zero;
-    final leading = Duration(milliseconds: track.item.leadingSilenceMs ?? 0);
+    final leading = Duration(milliseconds: track.item.introSkipMs);
     // 前曲の出口に合わせた入り口（静かなイントロを飛ばして、鳴っている段落の頭を切替点に）
     final entry = _smartEntryMs(track);
     if (entry != null) {
@@ -287,7 +287,7 @@ class PlaylistEngine {
       stepMs: step,
       grid: inGrid != null && inGrid.reliable ? inGrid : null,
       dropMs: next.item.mixInMs?.toDouble(),
-      leadingSilenceMs: next.item.leadingSilenceMs ?? 0,
+      leadingSilenceMs: next.item.introSkipMs,
     );
     return EntryPlanner.entryMs(exitDb: exitDb, sections: sections);
   }
@@ -590,7 +590,7 @@ class PlaylistEngine {
     // クロスフェードは曲末の無音を除いた位置の fade 秒前から始まる。
     // それまでに先読みが済むよう、その分だけ早める
     if (fade > Duration.zero && !firstVerse) {
-      final trailingSec = ((item.trailingSilenceMs ?? 0) / 1000).ceil();
+      final trailingSec = ((item.outroSkipMs ?? 0) / 1000).ceil();
       sec = max(sec, fade.inSeconds + trailingSec + 10);
     }
     return Duration(seconds: sec);
@@ -987,7 +987,7 @@ class PlaylistEngine {
             latestMs: (d - _minSilenceCut).inMicroseconds / 1000);
       }
     }
-    final trailing = Duration(milliseconds: item?.trailingSilenceMs ?? 0);
+    final trailing = Duration(milliseconds: item?.outroSkipMs ?? 0);
     if (trailing < _minSilenceCut || trailing >= d) {
       return _snapToGrid(
           item, (cut: d - LoopNotifier.trackEndLead, advancesAtCut: false));

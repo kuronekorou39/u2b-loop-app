@@ -126,6 +126,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           '${AudioAnalysisService.maxAnalyzableMinutes} 分以上の曲は解析しません。タップして手入力できます'));
     } else if (result == null) {
       messenger.showSnackBar(AppSnackBar.error('テンポ/キーを解析できませんでした'));
+    } else if (!result.span.isMusic) {
+      messenger.showSnackBar(AppSnackBar.info(
+          '曲ではないと判定しました（拍が見つかりません）。タップして手入力できます'));
     } else if (result.bpm == null && result.key == null) {
       messenger.showSnackBar(
           AppSnackBar.info('テンポ/キーを検出できませんでした。タップして手入力できます'));
@@ -157,7 +160,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             ? '${AudioAnalysisService.maxAnalyzableMinutes} 分以上の曲は解析しません。タップで手入力'
             : unanalyzed
                 ? 'タップして解析（BPM とキー）'
-                : '${_tempoKeyText(item.bpm, item.musicalKey)}。タップで補正';
+                : item.notMusic == true && !analyzed
+                    ? '曲ではないと判定。タップで手入力'
+                    : '${_tempoKeyText(item.bpm, item.musicalKey)}。タップで補正';
     Widget row({
       required IconData icon,
       required String title,

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import '../core/audio/bpm_key_detector.dart';
+import '../core/audio/music_span_detector.dart';
 import '../core/audio/silence_detector.dart';
 import '../models/loop_item.dart';
 import '../models/video_source.dart';
@@ -26,9 +27,10 @@ class AudioAnalysisService {
   /// これに達した PCM は曲末まで届いていないので、曲末の無音は求めない
   static const maxAnalysisSeconds = 480;
 
-  /// これより長い曲（ミックス音源・配信の録画など）は解析しない。
-  /// 1 曲として BPM / キーを出しても意味がなく、音声の取得にも時間がかかる
-  static const maxAnalyzableMinutes = 10;
+  /// これより長い曲（ミックス音源・配信の録画・アニメの本編など）は解析しない。
+  /// 1 曲として BPM / キーを出しても意味がなく、音声の取得にも時間がかかる。
+  /// PCM の打ち切り（[maxAnalysisSeconds]）と同じ長さなので、解析する曲は曲末まで届く
+  static const maxAnalyzableMinutes = 8;
 
   /// 長すぎて解析しない曲か。長さが不明なら false（解析の前に [ensureDuration] で埋める）
   static bool isTooLong(LoopItem item) =>
@@ -90,9 +92,11 @@ class AudioAnalysisService {
           bpm: result.bpm,
           musicalKey: result.key,
           silence: silence,
-          beatGrid: result.beatGrid);
-      debugPrint('[AudioAnalysis] $itemId: ${result.bpm} BPM ${result.key} '
-          '拍 ${result.beatGrid}');
+          beatGrid: result.beatGrid,
+          span: MusicSpanInfo.of(result.span,
+              lengthMs: pcm.length * 1000 ~/ sampleRate, truncated: truncated));
+      debugPrint('[AudioAnalysis] $itemId: ${result.span} ${result.bpm} BPM '
+          '${result.key} 拍 ${result.beatGrid}');
       return result;
     } catch (e) {
       debugPrint('[AudioAnalysis] 失敗: $e');

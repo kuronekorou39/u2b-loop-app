@@ -23,9 +23,9 @@ LoopItem _item({
 void main() {
   final now = DateTime.now().millisecondsSinceEpoch;
 
-  test('10 分より長い曲は解析しない（長さ不明なら対象）', () {
-    expect(AudioAnalysisService.isTooLong(_item(durationMs: 10 * 60 * 1000 + 1)), isTrue);
-    expect(AudioAnalysisService.isTooLong(_item(durationMs: 10 * 60 * 1000)), isFalse);
+  test('8 分より長い曲は解析しない（長さ不明なら対象）', () {
+    expect(AudioAnalysisService.isTooLong(_item(durationMs: 8 * 60 * 1000 + 1)), isTrue);
+    expect(AudioAnalysisService.isTooLong(_item(durationMs: 8 * 60 * 1000)), isFalse);
     expect(AudioAnalysisService.isTooLong(_item()), isFalse);
 
     expect(AudioAnalysisService.needsAnalysis(_item(durationMs: 60 * 60 * 1000)), isFalse);
