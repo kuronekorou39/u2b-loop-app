@@ -119,38 +119,10 @@ class MusicSpanDetector {
     if (grid != null) {
       final onset = BpmKeyDetector.weightedOnset(env);
       final block = (_blockSec * fps).round(), step = fps.round();
-      final period = 60000 / grid.bpm;
-      // ブロック [i, i + block) の拍の位置の立ち上がりの平均が、ブロック全体の平均から
-      // 標準偏差の何倍上か
-      double lock(int i) {
-        var m = 0.0, s2 = 0.0;
-        for (var k = i; k < i + block; k++) {
-          m += onset[k];
-          s2 += onset[k] * onset[k];
-        }
-        m /= block;
-        final sd = sqrt(max(1e-12, s2 / block - m * m));
-        final fromMs = env.timeMs(i.toDouble()), toMs = env.timeMs((i + block).toDouble());
-        var sum = 0.0, count = 0;
-        for (var b = ((fromMs - grid.offsetMs) / period).ceil();; b++) {
-          final ms = grid.offsetMs + b * period;
-          if (ms >= toMs) break;
-          final f = ((ms - env.frameOffsetMs) / 1000 * fps - 1).floor();
-          // 立ち上がりは格子から 1 フレームほど前後するので近くの最大を取る
-          var best = double.negativeInfinity;
-          for (var d = -1; d <= 2; d++) {
-            final k = f + d;
-            if (k >= i && k < i + block && onset[k] > best) best = onset[k];
-          }
-          if (best.isFinite) {
-            sum += best;
-            count++;
-          }
-        }
-        return count == 0 ? 0 : (sum / count - m) / sd;
-      }
-
-      bool locked(int i) => i >= 0 && i + block <= n && lock(i) >= lockThreshold;
+      bool locked(int i) =>
+          i >= 0 &&
+          i + block <= n &&
+          BpmKeyDetector.gridLock(env, onset, grid, i, i + block) >= lockThreshold;
       final margin = (_windowSec * fps).round();
       // 始まり: 粗い境目の前後で、そこから 3 ブロック続けて拍に乗る最初のブロックの中央
       if (coarseStart > 0) {

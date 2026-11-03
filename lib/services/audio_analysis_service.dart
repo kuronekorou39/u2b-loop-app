@@ -93,10 +93,11 @@ class AudioAnalysisService {
           musicalKey: result.key,
           silence: silence,
           beatGrid: result.beatGrid,
+          sections: result.sections,
           span: MusicSpanInfo.of(result.span,
               lengthMs: pcm.length * 1000 ~/ sampleRate, truncated: truncated));
       debugPrint('[AudioAnalysis] $itemId: ${result.span} ${result.bpm} BPM '
-          '${result.key} 拍 ${result.beatGrid}');
+          '${result.key} 区切り ${result.sections} 拍 ${result.beatGrid}');
       return result;
     } catch (e) {
       debugPrint('[AudioAnalysis] 失敗: $e');

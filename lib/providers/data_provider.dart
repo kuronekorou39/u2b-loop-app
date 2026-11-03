@@ -9,6 +9,7 @@ import '../core/audio/energy_profile.dart';
 import '../core/audio/beat_grid.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/audio/music_span_detector.dart';
+import '../core/audio/tempo_sections.dart';
 import '../core/audio/silence_detector.dart';
 import '../core/constants.dart';
 import '../models/loop_item.dart';
@@ -75,12 +76,13 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   /// テンポ/キーの保存。バックグラウンド解析の完了で一覧の並びが変わらないよう
   /// updatedAt は触らない。[markAnalyzed] が false なら手動補正扱い（analyzedAt 据え置き）。
   /// [silence] を渡したときだけ曲頭・曲末の無音も更新する（手動補正では触らない）。
-  /// [span] は曲の範囲（解析のときだけ）。
+  /// [span] は曲の範囲、[sections] はテンポの区切り（どちらも解析のときだけ）。
+  /// 手動補正では、テンポの区切りをメインの BPM と同じ比で直す。
   /// 拍の格子は解析のときに [beatGrid] で置き換える。手動補正では、BPM が倍/半分なら
   /// 格子をその倍率で引き直す（拍の頭と小節頭は動かない。拍の線・小節単位の効果音・
   /// 交差の長さが直る）、それ以外へ変えたら格子を捨てる。
   ///
-  /// 曲の範囲を入れる前の版（4）で解析済みの曲は、範囲で新たに飛ばす部分が無ければ
+  /// 版 4・5 で解析済みの曲は、曲の範囲で新たに飛ばす部分が無く、テンポも一定なら
   /// BPM・キー・格子を据え置く（手で直した BPM やジョグ・フェーダーで保存した拍を消さない）
   Future<void> saveAnalysis(
     String id, {
@@ -90,6 +92,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     SilenceInfo? silence,
     BeatGrid? beatGrid,
     MusicSpanInfo? span,
+    List<TempoSection> sections = const [],
   }) async {
     final item = _box.get(id);
     if (item == null) return;
@@ -114,7 +117,24 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         item.endFadeDb = null;
         item.dropDb = null;
       }
-      keepTempo = item.analysisVersion == 4 && !span.notMusic && !moved;
+      final version = item.analysisVersion ?? 0;
+      keepTempo = version >= 4 &&
+          version < LoopItem.currentAnalysisVersion &&
+          !span.notMusic &&
+          !moved &&
+          sections.length < 2;
+      item.tempoSectionData =
+          keepTempo || sections.length < 2 ? null : TempoSection.flatten(sections);
+    } else if (!markAnalyzed) {
+      // 手動補正: 区切りもメインの BPM と同じ比で（×2 なら全部 ×2）
+      final old = item.bpm;
+      final secs = item.tempoSections;
+      item.tempoSectionData = bpm == null || old == null || old <= 0 || secs.length < 2
+          ? null
+          : TempoSection.flatten([
+              for (final s in secs)
+                TempoSection(s.startMs, (s.bpm * bpm / old * 10).round() / 10),
+            ]);
     }
     if (!keepTempo) {
       item.bpm = bpm;

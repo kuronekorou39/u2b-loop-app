@@ -6,6 +6,7 @@ import 'package:hive/hive.dart';
 import 'package:u2b_loop_app/core/audio/beat_grid.dart';
 import 'package:u2b_loop_app/core/audio/music_span_detector.dart';
 import 'package:u2b_loop_app/core/audio/silence_detector.dart';
+import 'package:u2b_loop_app/core/audio/tempo_sections.dart';
 import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/providers/data_provider.dart';
@@ -102,5 +103,28 @@ void main() {
       ..trailingSilenceMs = 3000;
     expect(i.introSkipMs, 2000);
     expect(i.outroSkipMs, 15000);
+  });
+  test('テンポが変わる曲は v4 でも解析し直した値にし、区切りを残す', () async {
+    await container.read(loopItemsProvider.notifier).saveAnalysis('x',
+        bpm: 150,
+        musicalKey: 'Gmin',
+        silence: const SilenceInfo(leadingMs: 500, trailingMs: 800),
+        beatGrid: const BeatGrid(bpm: 150, offsetMs: 300, confidence: 0.7),
+        span: const MusicSpanInfo(headMs: 0, tailMs: 0, notMusic: false),
+        sections: const [TempoSection(0, 100), TempoSection(60000, 150)]);
+    expect(item().bpm, 150);
+    expect(item().tempoSections, hasLength(2));
+    expect(item().bpmLabel, '150 BPM（100〜150）');
+  });
+
+  test('手で BPM を ×2 にすると区切りも ×2', () async {
+    final notifier = container.read(loopItemsProvider.notifier);
+    await notifier.saveAnalysis('x',
+        bpm: 75,
+        musicalKey: null,
+        span: const MusicSpanInfo(headMs: 0, tailMs: 0, notMusic: false),
+        sections: const [TempoSection(0, 50), TempoSection(60000, 75)]);
+    await notifier.saveAnalysis('x', bpm: 150, musicalKey: null, markAnalyzed: false);
+    expect(item().tempoSections.map((s) => s.bpm), [100, 150]);
   });
 }

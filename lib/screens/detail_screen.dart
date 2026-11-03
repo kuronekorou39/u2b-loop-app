@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/audio/musical_key.dart';
+import '../core/audio/tempo_sections.dart';
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
@@ -134,13 +135,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           AppSnackBar.info('テンポ/キーを検出できませんでした。タップして手入力できます'));
     } else {
       messenger.showSnackBar(
-          AppSnackBar.success('解析完了: ${_tempoKeyText(result.bpm, result.key)}'));
+          AppSnackBar.success(
+              '解析完了: ${_tempoKeyText(result.bpm, result.key, result.sections)}'));
     }
   }
 
-  String _tempoKeyText(double? bpm, String? key) {
+  String _tempoKeyText(double? bpm, String? key, List<TempoSection> sections) {
     final parts = <String>[
-      if (bpm != null) '${bpm.round()} BPM',
+      if (bpm != null) LoopItem.formatBpm(bpm, sections),
       if (key != null) MusicalKey.display(key)!,
     ];
     return parts.isEmpty ? '検出できず（タップで入力）' : parts.join(' · ');
@@ -162,7 +164,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 ? 'タップして解析（BPM とキー）'
                 : item.notMusic == true && !analyzed
                     ? '曲ではないと判定。タップで手入力'
-                    : '${_tempoKeyText(item.bpm, item.musicalKey)}。タップで補正';
+                    : '${_tempoKeyText(item.bpm, item.musicalKey, item.tempoSections)}。タップで補正'
+                        '${item.tempoSectionsLabel == null ? '' : '\n${item.tempoSectionsLabel}'}';
     Widget row({
       required IconData icon,
       required String title,

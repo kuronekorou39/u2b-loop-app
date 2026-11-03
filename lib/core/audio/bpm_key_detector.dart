@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'beat_grid.dart';
 import 'music_span_detector.dart';
+import 'tempo_sections.dart';
 import 'musical_key.dart';
 
 /// BPM 候補（スコア降順で上位数件）
@@ -29,6 +30,7 @@ class AudioAnalysisResult {
     required this.keyCandidates,
     this.beatGrid,
     this.span = MusicSpan.whole,
+    this.sections = const [],
   });
   final List<BpmCandidate> bpmCandidates;
   final List<KeyCandidate> keyCandidates;
@@ -36,8 +38,12 @@ class AudioAnalysisResult {
   /// 曲が鳴っている範囲。BPM・キー・拍の格子はこの範囲だけで求めてある
   final MusicSpan span;
 
-  /// 1 位の BPM で求めた拍の格子と小節頭（BPM が無ければ null）
+  /// 1 位の BPM で求めた拍の格子と小節頭（BPM が無ければ null）。
+  /// テンポが変わる曲では一番長い区切りで求めたもの
   final BeatGrid? beatGrid;
+
+  /// テンポの区切り（テンポが変わる曲だけ。一定なら空）
+  final List<TempoSection> sections;
 
   double? get bpm => bpmCandidates.isEmpty ? null : bpmCandidates.first.bpm;
   String? get key => keyCandidates.isEmpty ? null : keyCandidates.first.key;
@@ -57,6 +63,10 @@ class OnsetEnvelope {
   final double frameOffsetMs;
 
   double timeMs(double frame) => (frame + 1) / fps * 1000 + frameOffsetMs;
+
+  /// 時刻 [ms] のフレーム（[timeMs] の逆。0〜長さに収める）
+  int frameAt(double ms) =>
+      ((ms - frameOffsetMs) / 1000 * fps - 1).round().clamp(0, full.length);
 
   /// フレーム [from]〜[to] の部分。時刻は元のまま（[timeMs] が同じ時刻を返す）
   OnsetEnvelope slice(int from, int to) => OnsetEnvelope(
@@ -83,7 +93,8 @@ class BpmKeyDetector {
   static const _minor = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
   /// 曲の範囲（[MusicSpanDetector]）を求め、その中だけで BPM・キー・拍の格子を求める。
-  /// 曲ではないと判定したら BPM・キー・格子は空
+  /// 曲ではないと判定したら BPM・キー・格子は空。
+  /// テンポが変わる曲（[TempoSectionDetector]）は、BPM・拍の格子を一番長い区切りだけで求める
   static AudioAnalysisResult analyze(Int16List pcm, int sampleRate) {
     final whole = onsetEnvelope(pcm, sampleRate);
     final span = whole == null ? MusicSpan.whole : MusicSpanDetector.detect(whole);
@@ -91,24 +102,62 @@ class BpmKeyDetector {
       return AudioAnalysisResult(
           bpmCandidates: const [], keyCandidates: const [], span: span);
     }
-    final from = (span.startMs * sampleRate / 1000).round().clamp(0, pcm.length);
-    final to = span.endMs == null
-        ? pcm.length
-        : (span.endMs! * sampleRate / 1000).round().clamp(from, pcm.length);
-    final untouched = from == 0 && to == pcm.length;
-    final part = untouched ? pcm : Int16List.sublistView(pcm, from, to);
+    int sample(int ms) => (ms * sampleRate / 1000).round().clamp(0, pcm.length);
+    final from = sample(span.startMs);
+    final to = span.endMs == null ? pcm.length : max(from, sample(span.endMs!));
+    final musicPart = Int16List.sublistView(pcm, from, to);
+
+    final sections = whole == null
+        ? const <TempoSection>[]
+        : TempoSectionDetector.detect(
+            whole.slice(whole.frameAt(span.startMs.toDouble()),
+                span.endMs == null ? whole.full.length : whole.frameAt(span.endMs!.toDouble())),
+            startMs: span.startMs);
+
+    // BPM と格子を求める部分: テンポが一定なら曲の範囲、変わるなら一番長い区切り
+    var tempoFrom = from, tempoTo = to;
+    TempoSection? main;
+    if (sections.length >= 2) {
+      var longest = -1;
+      for (var i = 0; i < sections.length; i++) {
+        final a = sample(sections[i].startMs);
+        final b = i + 1 < sections.length ? sample(sections[i + 1].startMs) : to;
+        if (b - a > longest) {
+          longest = b - a;
+          tempoFrom = a;
+          tempoTo = b;
+          main = sections[i];
+        }
+      }
+    }
+    final untouched = tempoFrom == 0 && tempoTo == pcm.length;
+    final part = untouched ? pcm : Int16List.sublistView(pcm, tempoFrom, tempoTo);
     final env = untouched ? whole : onsetEnvelope(part, sampleRate);
-    final bpms = env == null ? const <BpmCandidate>[] : bpmFromEnvelope(env);
-    // 範囲の頭を 0 として求めたので、動画の時刻に戻す
+    var bpms = env == null
+        ? const <BpmCandidate>[]
+        : main != null
+            ? [BpmCandidate(main.bpm, 1)]
+            : bpmFromEnvelope(env);
+    // 部分の頭を 0 として求めたので、動画の時刻に戻す
     final grid = env == null || bpms.isEmpty
         ? null
         : _gridWithDownbeat(part, sampleRate, env, bpms.first.bpm)
-            ?.shiftedBy(from / sampleRate * 1000);
+            ?.shiftedBy(tempoFrom / sampleRate * 1000);
+    // 一番長い区切りのテンポは、その区切りだけで引き直した格子の値に揃える（表示の範囲とずれない）
+    var outSections = sections;
+    if (main != null && grid != null) {
+      final b = (grid.bpm * 10).round() / 10;
+      bpms = [BpmCandidate(b, 1)];
+      outSections = [
+        for (final s in sections) identical(s, main) ? TempoSection(s.startMs, b) : s,
+      ];
+    }
     return AudioAnalysisResult(
       bpmCandidates: bpms,
-      keyCandidates: detectKey(part, sampleRate),
+      keyCandidates: detectKey(musicPart, sampleRate),
       beatGrid: grid,
       span: span,
+      sections: outSections,
     );
   }
 
@@ -196,8 +245,10 @@ class BpmKeyDetector {
     return det;
   }
 
-  /// 立ち上がりの自己相関からテンポ候補を求める
-  static List<BpmCandidate> bpmFromEnvelope(OnsetEnvelope env) {
+  /// テンポごとの当てはまり: 55〜220 BPM に相当するラグの正規化自己相関 × テンポ事前分布。
+  /// 並びはラグの昇順（BPM の降順）で、どの入力でも同じ fps なら同じ BPM の並びになる。
+  /// 無音なら null
+  static ({Float64List bpms, Float64List score})? tempogram(OnsetEnvelope env) {
     final det = env.full;
     final fps = env.fps;
     final n = det.length;
@@ -208,7 +259,7 @@ class BpmKeyDetector {
     for (var i = 0; i < n; i++) {
       ac0 += det[i] * det[i];
     }
-    if (ac0 <= 0) return const [];
+    if (ac0 <= 0) return null;
     final count = lagMax - lagMin + 1;
     final score = Float64List(count);
     final bpms = Float64List(count);
@@ -223,6 +274,15 @@ class BpmKeyDetector {
       score[lag - lagMin] = s / ac0 * exp(-0.5 * lg * lg);
       bpms[lag - lagMin] = bpm;
     }
+    return (bpms: bpms, score: score);
+  }
+
+  /// 立ち上がりの自己相関からテンポ候補を求める
+  static List<BpmCandidate> bpmFromEnvelope(OnsetEnvelope env) {
+    final tg = tempogram(env);
+    if (tg == null) return const [];
+    final (:bpms, :score) = tg;
+    final count = score.length;
     final peaks = <int>[];
     for (var i = 1; i < count - 1; i++) {
       if (score[i] >= score[i - 1] && score[i] >= score[i + 1]) peaks.add(i);
@@ -313,6 +373,42 @@ class BpmKeyDetector {
           (rmsLow > 0 ? 2 * env.low[i] / rmsLow : 0);
     }
     return onset;
+  }
+
+  /// フレーム [from]〜[to] で、[grid] の拍の位置に立ち上がりが乗っている度合い:
+  /// 拍の位置の立ち上がり（[weightedOnset]）の平均が、区間全体の平均から標準偏差の何倍上か。
+  /// テンポが分かっていれば 4 秒ほどの短い区間でも判定がぶれない（トーク 0.3〜1.2、曲 1.5〜4）
+  static double gridLock(
+      OnsetEnvelope env, Float64List onset, BeatGrid grid, int from, int to) {
+    final fps = env.fps;
+    final len = to - from;
+    if (len <= 0) return 0;
+    var m = 0.0, s2 = 0.0;
+    for (var k = from; k < to; k++) {
+      m += onset[k];
+      s2 += onset[k] * onset[k];
+    }
+    m /= len;
+    final sd = sqrt(max(1e-12, s2 / len - m * m));
+    final period = grid.periodMs;
+    final fromMs = env.timeMs(from.toDouble()), toMs = env.timeMs(to.toDouble());
+    var sum = 0.0, count = 0;
+    for (var b = ((fromMs - grid.offsetMs) / period).ceil();; b++) {
+      final ms = grid.offsetMs + b * period;
+      if (ms >= toMs) break;
+      final f = ((ms - env.frameOffsetMs) / 1000 * fps - 1).floor();
+      // 立ち上がりは格子から 1 フレームほど前後するので近くの最大を取る
+      var best = double.negativeInfinity;
+      for (var d = -1; d <= 2; d++) {
+        final k = f + d;
+        if (k >= from && k < to && onset[k] > best) best = onset[k];
+      }
+      if (best.isFinite) {
+        sum += best;
+        count++;
+      }
+    }
+    return count == 0 ? 0 : (sum / count - m) / sd;
   }
 
   static double _rms(Float64List v) {

@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:hive/hive.dart';
 import '../core/audio/beat_grid.dart';
+import '../core/audio/tempo_sections.dart';
+import '../core/utils/time_utils.dart';
 import 'loop_region.dart';
 
 /// [LoopItem.sourceType] に入る値。
@@ -80,8 +82,8 @@ class LoopItem {
   int? analysisVersion;
 
   /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度、4: 小節頭、
-  /// 5: 曲の範囲）
-  static const currentAnalysisVersion = 5;
+  /// 5: 曲の範囲、6: テンポの区切り）
+  static const currentAnalysisVersion = 6;
 
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
@@ -100,6 +102,23 @@ class LoopItem {
 
   /// 曲ではないと判定した（拍のはっきりした部分がほとんど無い）。BPM・キーは出さない
   bool? notMusic;
+
+  /// テンポの区切り（[TempoSection.flatten] の形）。テンポが変わる曲だけ。null = 一定か未計測。
+  /// [bpm] は一番長い区切りのテンポ
+  List<double>? tempoSectionData;
+
+  List<TempoSection> get tempoSections => tempoSectionData == null
+      ? const []
+      : TempoSection.unflatten(tempoSectionData!);
+
+  /// テンポの区切りの並び（「0:00 96 → 1:21 148」）。一定なら null
+  String? get tempoSectionsLabel {
+    final s = tempoSections;
+    if (s.length < 2) return null;
+    return s
+        .map((x) => '${TimeUtils.formatShortMs(x.startMs)} ${x.bpm.round()}')
+        .join(' → ');
+  }
 
   /// 曲頭で飛ばしてよい長さ: 無音と、曲でない部分の長い方
   int get introSkipMs => max(leadingSilenceMs ?? 0, musicHeadMs ?? 0);
@@ -194,6 +213,7 @@ class LoopItem {
     this.musicHeadMs,
     this.musicTailMs,
     this.notMusic,
+    this.tempoSectionData,
     this.mixInMs,
     this.mixOutMs,
     this.beatOffsetMs,
@@ -288,10 +308,19 @@ class LoopItem {
 
   /// 表示用の BPM（「120 BPM」）。未解析なら null
   String? get bpmLabel => bpm != null
-      ? '${bpm!.round()} BPM'
+      ? formatBpm(bpm!, tempoSections)
       : notMusic == true
           ? 'BPM —'
           : null;
+
+  /// 「120 BPM」。テンポが変わる曲は「150 BPM（100〜150）」（メインの値 + 区切りの最小〜最大）
+  static String formatBpm(double bpm, List<TempoSection> sections) {
+    final main = '${bpm.round()} BPM';
+    if (sections.length < 2) return main;
+    final values = [for (final s in sections) s.bpm.round()];
+    final lo = values.reduce(min), hi = values.reduce(max);
+    return lo == hi ? main : '$main（$lo〜$hi）';
+  }
 
   /// 曲名の下などに並べる BPM とキー。表記はどの画面でも同じ
   /// （以前は「BPM 120」と「120 BPM」が画面ごとに混在していた）
@@ -376,6 +405,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       musicHeadMs: fields[47] as int?,
       musicTailMs: fields[48] as int?,
       notMusic: fields[49] as bool?,
+      tempoSectionData:
+          (fields[50] as List?)?.map((v) => (v as num).toDouble()).toList(),
     );
   }
 
@@ -432,6 +463,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       47: obj.musicHeadMs,
       48: obj.musicTailMs,
       49: obj.notMusic,
+      50: obj.tempoSectionData,
     });
   }
 }
