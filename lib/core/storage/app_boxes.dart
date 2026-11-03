@@ -57,6 +57,7 @@ class SettingsKeys {
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
   static const glassBlur = 'glass_blur';
+  static const tagThumbs = 'tag_thumbs';
   static const hqAudio = 'hq_audio';
   static const exportQuality = 'export_quality';
   // 保存シート（SaveFlow）の前回の選択

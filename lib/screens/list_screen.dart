@@ -375,11 +375,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   },
                 ),
               ),
-              if (allTags.isNotEmpty) ...[
-                const SizedBox(width: AppSpacing.md),
-                TagFilterButton(
-                    tags: allTags, onClosed: _searchFocusNode.unfocus),
-              ],
               const SizedBox(width: AppSpacing.md),
               PopupMenuButton<ItemSortMode>(
                 tooltip: '並び替え',
@@ -410,7 +405,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
             ],
           ),
         ),
-        if (filterTagIds.isNotEmpty) SelectedTagBar(tags: allTags),
+        // タグがあるあいだは常に出す（選ぶたびに一覧が下がらないように）
+        if (allTags.isNotEmpty)
+          SelectedTagBar(tags: allTags, onClosed: _searchFocusNode.unfocus),
         Expanded(
           child: items.isEmpty
               ? EmptyHint(

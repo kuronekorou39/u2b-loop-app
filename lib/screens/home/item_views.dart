@@ -88,7 +88,11 @@ class ItemCollectionView extends StatelessWidget {
         mainAxisSpacing: compact ? AppSpacing.sm : AppSpacing.md + 2,
       ),
       itemCount: items.length,
-      itemBuilder: (context, i) => _buildCard(context, items[i], compact: compact),
+      itemBuilder: (context, i) => SelectionDim(
+        selecting: selecting,
+        selected: selectedIds.contains(items[i].id),
+        child: _buildCard(context, items[i], compact: compact),
+      ),
     );
   }
 
@@ -248,8 +252,11 @@ class ItemCollectionView extends StatelessWidget {
       child: ListView.builder(
         padding: HomeListSurface.listPadding,
         itemCount: items.length,
-        itemBuilder: (context, i) =>
-            _buildTile(context, items[i], titleLines: titleLines),
+        itemBuilder: (context, i) => SelectionDim(
+          selecting: selecting,
+          selected: selectedIds.contains(items[i].id),
+          child: _buildTile(context, items[i], titleLines: titleLines),
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import '../core/theme/app_theme.dart';
+import 'loop_item.dart';
 
 /// タグのプリセットカラー（index 0 = デフォルト青緑）
 const tagPresetColors = [
@@ -23,7 +24,32 @@ class Tag {
   /// null = まだ決まっていない（v1.101.1 までのタグ。読み込むときに名前順で振る）
   int? order;
 
-  Tag({required this.id, required this.name, this.colorIndex = 0, this.order});
+  /// タグ一覧に出すサムネの曲（ユーザーが選んだもの）。null = 自動（[thumbItemOf]）
+  String? thumbItemId;
+
+  /// サムネにする曲: 選んだ曲（まだこのタグが付いていてサムネがあれば）、
+  /// 無ければこのタグの曲でサムネのあるもののうち一番よく再生した曲（同じなら新しい方）
+  LoopItem? thumbItemOf(Iterable<LoopItem> items) {
+    LoopItem? best;
+    for (final item in items) {
+      if (!item.tagIds.contains(id) || item.thumbnailPath == null) continue;
+      if (item.id == thumbItemId) return item;
+      if (best == null ||
+          item.playCount > best.playCount ||
+          (item.playCount == best.playCount && item.createdAt.isAfter(best.createdAt))) {
+        best = item;
+      }
+    }
+    return best;
+  }
+
+  Tag({
+    required this.id,
+    required this.name,
+    this.colorIndex = 0,
+    this.order,
+    this.thumbItemId,
+  });
 
   /// 一覧の並び: 並び順、決まっていなければ後ろに名前順
   static int compare(Tag a, Tag b) {
@@ -52,6 +78,7 @@ class TagAdapter extends TypeAdapter<Tag> {
       name: fields[1] as String,
       colorIndex: fields[2] as int? ?? 0,
       order: fields[3] as int?,
+      thumbItemId: fields[4] as String?,
     );
   }
 
@@ -62,6 +89,7 @@ class TagAdapter extends TypeAdapter<Tag> {
       1: obj.name,
       2: obj.colorIndex,
       3: obj.order,
+      4: obj.thumbItemId,
     });
   }
 }

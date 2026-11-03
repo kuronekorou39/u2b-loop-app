@@ -107,6 +107,12 @@ class _AdvancedSettingsScreenState
                   value: ref.watch(glassBlurProvider),
                   onChanged: (v) => ref.read(glassBlurProvider.notifier).value = v,
                 ),
+                SettingsSwitchRow(
+                  icon: Icons.image_outlined,
+                  title: 'タグのサムネ',
+                  value: ref.watch(tagThumbsProvider),
+                  onChanged: (v) => ref.read(tagThumbsProvider.notifier).value = v,
+                ),
               ],
             ),
             SettingsGroup(

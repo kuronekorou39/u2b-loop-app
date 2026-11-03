@@ -42,3 +42,29 @@ class SelectionTrailing extends StatelessWidget {
     );
   }
 }
+
+/// 複数選択中、選んでいないものを少し暗くする（どれを選んでいるか一目で分かるように）。
+/// 透明度を変えるだけなので大きさ・位置は動かない
+class SelectionDim extends StatelessWidget {
+  const SelectionDim({
+    super.key,
+    required this.selecting,
+    required this.selected,
+    required this.child,
+  });
+
+  final bool selecting;
+  final bool selected;
+  final Widget child;
+
+  static const dimOpacity = 0.45;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: selecting && !selected ? dimOpacity : 1,
+      duration: const Duration(milliseconds: 150),
+      child: child,
+    );
+  }
+}

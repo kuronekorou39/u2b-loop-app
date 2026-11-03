@@ -8,58 +8,15 @@ import '../../providers/data_provider.dart';
 import '../../widgets/glass_panel.dart';
 import '../../widgets/tag_chip.dart';
 
-/// ホームの検索行にあるタグ絞り込みのボタン（件数バッジ付き）。
-/// タップで 3 状態（含む / 除外 / なし）のシートを開く。結果は [tagFilterProvider] へ
-class TagFilterButton extends ConsumerWidget {
-  const TagFilterButton({super.key, required this.tags, this.onClosed});
-
-  final List<Tag> tags;
-
-  /// シートを閉じたあと（検索欄のフォーカスを外すなど）
-  final VoidCallback? onClosed;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(tagFilterProvider);
-    final active = filter.isNotEmpty;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        GlassPill(
-          active: active,
-          tooltip: 'タグフィルター',
-          padding: const EdgeInsets.all(10),
-          child: Icon(Icons.filter_alt_outlined,
-              size: AppIconSizes.md,
-              color: active ? AppTheme.accentGreen : null),
-          onTap: () => showModalBottomSheet<void>(
-            context: context,
-            showDragHandle: true,
-            builder: (_) => _TagFilterSheet(tags: tags, initial: filter),
-          ).then((_) => onClosed?.call()),
-        ),
-        if (active)
-          Positioned(
-            right: -2,
-            top: -2,
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              decoration: const BoxDecoration(
-                color: AppTheme.accentGreen,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '${filter.length}',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall!
-                    .copyWith(color: Colors.black),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
+/// タグ絞り込みのシート（3 状態: 含む / 除外 / なし）を開く。結果は [tagFilterProvider] へ。
+/// [onClosed] はシートを閉じたあと（検索欄のフォーカスを外すなど）
+Future<void> showTagFilterSheet(BuildContext context, WidgetRef ref, List<Tag> tags,
+    {VoidCallback? onClosed}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => _TagFilterSheet(tags: tags, initial: ref.read(tagFilterProvider)),
+  ).then((_) => onClosed?.call());
 }
 
 class _TagFilterSheet extends ConsumerStatefulWidget {
@@ -133,47 +90,48 @@ class _TagFilterSheetState extends ConsumerState<_TagFilterSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 見出し・凡例・クリアは 1 行。クリアは隠すだけで場所を残す（選んでも下の一覧がずれない）
           Padding(
             padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.md),
+                AppSpacing.xl, 0, AppSpacing.md, AppSpacing.sm),
             child: Row(
               children: [
                 Text('タグフィルター', style: textTheme.titleMedium),
-                const Spacer(),
-                if (_selected.isNotEmpty)
-                  TextButton(
+                const SizedBox(width: AppSpacing.lg),
+                Expanded(
+                  child: Wrap(
+                    spacing: AppSpacing.md,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _legend(Icons.check_circle, AppTheme.accentGreen, '含む'),
+                      _legend(Icons.remove_circle, AppTheme.accentRed, '除外'),
+                      _legend(Icons.radio_button_unchecked,
+                          AppTheme.muted(context), 'なし'),
+                    ],
+                  ),
+                ),
+                Visibility(
+                  visible: _selected.isNotEmpty,
+                  maintainSize: true,
+                  maintainAnimation: true,
+                  maintainState: true,
+                  child: TextButton(
                     onPressed: () {
                       ref.read(tagFilterProvider.notifier).state = {};
                       Navigator.pop(context);
                     },
                     child: Text('クリア', style: textTheme.bodyMedium),
                   ),
+                ),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-            child: Row(
-              children: [
-                const Icon(Icons.check_circle,
-                    color: AppTheme.accentGreen, size: AppIconSizes.xs),
-                Text(' 含む', style: textTheme.labelSmall),
-                const SizedBox(width: AppSpacing.lg),
-                const Icon(Icons.remove_circle,
-                    color: AppTheme.accentRed, size: AppIconSizes.xs),
-                Text(' 除外', style: textTheme.labelSmall),
-                const SizedBox(width: AppSpacing.lg),
-                Icon(Icons.radio_button_unchecked,
-                    color: AppTheme.muted(context), size: AppIconSizes.xs),
-                Text(' なし', style: textTheme.labelSmall),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
           const Divider(height: 1),
           Flexible(
             child: ListView(
               shrinkWrap: true,
+              // 一番下までスクロールしても、最後の行が画面の下端（フッター）に付かないように
+              padding: const EdgeInsets.only(bottom: AppSpacing.xxl),
               children: [
                 _tile(
                   id: ItemFilter.untaggedId,
@@ -185,22 +143,39 @@ class _TagFilterSheetState extends ConsumerState<_TagFilterSheet> {
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
         ],
       ),
     );
   }
+
+  Widget _legend(IconData icon, Color color, String label) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: AppIconSizes.xs),
+          const SizedBox(width: 2),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      );
 }
 
-/// 絞り込み中のタグ（× で外す）と「クリア」の 1 行
+/// タグ絞り込みの 1 行: 頭の絞り込みボタン（シートを開く）、絞り込み中のタグ（× で外す）、「クリア」。
+/// タグを選んでも選ばなくても同じ高さで出す（選ぶたびに一覧が下がらないように）
 class SelectedTagBar extends ConsumerWidget {
-  const SelectedTagBar({super.key, required this.tags});
+  const SelectedTagBar({super.key, required this.tags, this.onClosed});
 
   final List<Tag> tags;
+
+  /// シートを閉じたあと
+  final VoidCallback? onClosed;
+
+  static const height = 40.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filter = ref.watch(tagFilterProvider);
+    final active = filter.isNotEmpty;
+    final textTheme = Theme.of(context).textTheme;
+    void open() => showTagFilterSheet(context, ref, tags, onClosed: onClosed);
 
     Widget chip(Tag tag, bool include) => Padding(
           padding: const EdgeInsets.only(right: AppSpacing.sm),
@@ -213,15 +188,37 @@ class SelectedTagBar extends ConsumerWidget {
         );
 
     return SizedBox(
-      height: 36,
+      height: height,
       child: Row(
         children: [
           Expanded(
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding:
-                  const EdgeInsets.fromLTRB(AppSpacing.lg, 6, AppSpacing.sm, 6),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg, AppSpacing.xs, AppSpacing.sm, AppSpacing.xs),
               children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.sm),
+                  child: GlassPill(
+                    active: active,
+                    tooltip: 'タグフィルター',
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                    onTap: open,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.filter_alt_outlined,
+                            size: AppIconSizes.s,
+                            color: active ? AppTheme.accentGreen : null),
+                        if (!active) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Text('タグで絞り込み', style: textTheme.labelMedium),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 if (filter.containsKey(ItemFilter.untaggedId))
                   chip(Tag(id: ItemFilter.untaggedId, name: '未分類'),
                       filter[ItemFilter.untaggedId]!),
@@ -230,17 +227,21 @@ class SelectedTagBar extends ConsumerWidget {
               ],
             ),
           ),
-          TextButton(
-            onPressed: () => ref.read(tagFilterProvider.notifier).state = {},
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          Visibility(
+            visible: active,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: TextButton(
+              onPressed: () => ref.read(tagFilterProvider.notifier).state = {},
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              ),
+              child: Text('クリア',
+                  style: textTheme.labelSmall!
+                      .copyWith(color: AppTheme.accentGreen)),
             ),
-            child: Text('クリア',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall!
-                    .copyWith(color: AppTheme.accentGreen)),
           ),
         ],
       ),

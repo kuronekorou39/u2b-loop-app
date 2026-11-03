@@ -25,6 +25,7 @@ import '../widgets/glass_scaffold.dart';
 import '../widgets/glass_surface.dart';
 import '../widgets/item_thumbnail.dart';
 import '../widgets/tag_chip.dart';
+import '../widgets/thumb_picker_sheet.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
 import 'playlist_item_picker_screen.dart';
@@ -188,68 +189,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   }
 
   void _selectThumbnail(Playlist pl, List<LoopItem> items) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('サムネイル選択',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            const Divider(height: 1),
-            if (pl.thumbnailItemId != null)
-              ListTile(
-                leading: const Icon(Icons.restart_alt),
-                title: const Text('デフォルトに戻す（1曲目）'),
-                onTap: () {
-                  ref
-                      .read(playlistsProvider.notifier)
-                      .setThumbnailItem(pl.id, null);
-                  Navigator.pop(ctx);
-                },
-              ),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: items.length,
-                itemBuilder: (_, i) {
-                  final item = items[i];
-                  final isCurrent =
-                      item.id == pl.effectiveThumbnailItemId;
-                  return ListTile(
-                    leading: ClipRRect(
-                      borderRadius: AppRadius.borderXs,
-                      child: SizedBox(
-                        width: 48,
-                        height: 36,
-                        child: ItemThumbnail(item: item, iconSize: AppIconSizes.sm),
-                      ),
-                    ),
-                    title: Text(item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium),
-                    trailing: isCurrent
-                        ? const Icon(Icons.check,
-                            color: Colors.green, size: AppIconSizes.md)
-                        : null,
-                    onTap: () {
-                      ref
-                          .read(playlistsProvider.notifier)
-                          .setThumbnailItem(pl.id, item.id);
-                      Navigator.pop(ctx);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+    ThumbPickerSheet.show(
+      context,
+      items: items,
+      currentId: pl.effectiveThumbnailItemId,
+      custom: pl.thumbnailItemId != null,
+      resetLabel: 'デフォルトに戻す（1曲目）',
+      onPick: (id) =>
+          ref.read(playlistsProvider.notifier).setThumbnailItem(pl.id, id),
     );
   }
 

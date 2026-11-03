@@ -758,6 +758,16 @@ class TagsNotifier extends StateNotifier<List<Tag>> {
     }
   }
 
+  /// タグ一覧のサムネにする曲。null で自動に戻す
+  Future<void> setThumb(String id, String? itemId) async {
+    final tag = _box.get(id);
+    if (tag != null) {
+      tag.thumbItemId = itemId;
+      await _box.put(id, tag);
+      _refresh();
+    }
+  }
+
   Future<void> delete(String id) async {
     await _box.delete(id);
     _refresh();

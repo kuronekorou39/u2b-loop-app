@@ -118,7 +118,10 @@ class PlaylistTab extends ConsumerWidget {
           final pl = playlists[i];
           final count = countOf(pl);
           final selected = selectedIds.contains(pl.id);
-          return ListTile(
+          return SelectionDim(
+            selecting: selecting,
+            selected: selected,
+            child: ListTile(
             selected: selected,
             leading: ClipRRect(
               borderRadius: AppRadius.borderMd,
@@ -154,6 +157,7 @@ class PlaylistTab extends ConsumerWidget {
             ),
             onTap: () => tap(pl),
             onLongPress: () => onLongPress?.call(pl),
+          ),
           );
         },
       ),
@@ -186,7 +190,10 @@ class PlaylistTab extends ConsumerWidget {
         final pl = playlists[i];
         final count = countOf(pl);
         final selected = selectedIds.contains(pl.id);
-        return GlassSurface(
+        return SelectionDim(
+          selecting: selecting,
+          selected: selected,
+          child: GlassSurface(
           radius: 16,
           padding: const EdgeInsets.all(AppSpacing.md),
           tint: selected ? AppTheme.accentGreen.withValues(alpha: 0.15) : null,
@@ -256,6 +263,7 @@ class PlaylistTab extends ConsumerWidget {
               Text('$count 曲', style: textTheme.labelSmall),
             ],
           ),
+        ),
         );
       },
     );

@@ -6,12 +6,16 @@ import '../../core/storage/app_boxes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_sheets.dart';
+import '../../models/loop_item.dart';
 import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
+import '../../providers/glass_provider.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_surface.dart';
+import '../../widgets/item_thumbnail.dart';
 import '../../widgets/selection_mark.dart';
 import '../../widgets/tag_chip.dart';
+import '../../widgets/thumb_picker_sheet.dart';
 import 'home_parts.dart';
 
 /// タグ一覧の表示: リスト / 2列 / 4列（4 列は並べ替え向けに小さく）
@@ -171,6 +175,9 @@ class TagManagerTab extends ConsumerWidget {
 
     int countOf(Tag tag) =>
         allItems.where((item) => item.tagIds.contains(tag.id)).length;
+    // サムネを出すなら曲を返す（出さないなら常に null。出すがサムネが無い曲なら null）
+    final showThumbs = ref.watch(tagThumbsProvider);
+    LoopItem? thumbOf(Tag tag) => showThumbs ? tag.thumbItemOf(allItems) : null;
 
     void tap(Tag tag) {
       if (selecting) {
@@ -188,6 +195,8 @@ class TagManagerTab extends ConsumerWidget {
             child: _TagGrid(
               tags: tags,
               small: viewMode == TagViewMode.grid4,
+              showThumbs: showThumbs,
+              thumbOf: thumbOf,
               selecting: selecting,
               selectedIds: selectedIds,
               countOf: countOf,
@@ -211,11 +220,16 @@ class TagManagerTab extends ConsumerWidget {
         itemBuilder: (context, i) {
           final tag = tags[i];
           final selected = selectedIds.contains(tag.id);
-          return ListTile(
+          return SelectionDim(
             key: ValueKey(tag.id),
+            selecting: selecting,
+            selected: selected,
+            child: ListTile(
             selected: selected,
             // 色の丸は選択中も出したまま（選択の印は右端）
-            leading: _TagDot(tag: tag),
+            leading: showThumbs
+                ? _TagThumb(tag: tag, item: thumbOf(tag), size: 48)
+                : _TagDot(tag: tag),
             title: Text(tag.name, style: textTheme.bodyLarge),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -231,7 +245,7 @@ class TagManagerTab extends ConsumerWidget {
                       IconButton(
                         icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
                         tooltip: 'メニュー',
-                        onPressed: () => _showMenu(context, ref, tag),
+                        onPressed: () => _showMenu(context, ref, tag, allItems),
                       ),
                       ReorderableDragStartListener(
                         index: i,
@@ -250,17 +264,36 @@ class TagManagerTab extends ConsumerWidget {
             ),
             onTap: () => tap(tag),
             onLongPress: () => onLongPress?.call(tag),
+          ),
           );
         },
       ),
     );
   }
 
-  void _showMenu(BuildContext context, WidgetRef ref, Tag tag) {
+  void _showMenu(
+      BuildContext context, WidgetRef ref, Tag tag, List<LoopItem> allItems) {
+    final withThumb = [
+      for (final item in allItems)
+        if (item.tagIds.contains(tag.id) && item.thumbnailPath != null) item,
+    ];
     AppSheets.actions(
       context,
       title: tag.name,
       actions: [
+        if (ref.read(tagThumbsProvider) && withThumb.isNotEmpty)
+          SheetAction(
+            icon: Icons.image_outlined,
+            label: 'サムネを選ぶ',
+            onTap: () => ThumbPickerSheet.show(
+              context,
+              items: withThumb,
+              currentId: tag.thumbItemOf(allItems)?.id,
+              custom: tag.thumbItemId != null,
+              resetLabel: '自動に戻す（よく再生する曲）',
+              onPick: (id) => ref.read(tagsProvider.notifier).setThumb(tag.id, id),
+            ),
+          ),
         SheetAction(
           icon: Icons.edit,
           label: '名前を変更',
@@ -368,6 +401,53 @@ class _TagOrderHintState extends State<_TagOrderHint> {
   }
 }
 
+/// タグのサムネ（正方形）。右下にタグの色の丸。サムネが無ければ薄い色の面にラベルのアイコン
+class _TagThumb extends StatelessWidget {
+  const _TagThumb({required this.tag, required this.item, required this.size});
+
+  final Tag tag;
+  final LoopItem? item;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = size * 0.32;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: AppRadius.borderMd,
+              child: item != null
+                  ? ItemThumbnail(item: item!)
+                  : ColoredBox(
+                      color: tag.color.withValues(alpha: 0.25),
+                      child: Icon(Icons.label, size: AppIconSizes.md, color: tag.color),
+                    ),
+            ),
+          ),
+          if (item != null)
+            Positioned(
+              right: 2,
+              bottom: 2,
+              child: Container(
+                width: dot,
+                height: dot,
+                decoration: BoxDecoration(
+                  color: tag.color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// タグの色の丸（中にラベルのアイコン）
 class _TagDot extends StatelessWidget {
   const _TagDot({required this.tag});
@@ -394,6 +474,8 @@ class _TagGrid extends StatefulWidget {
   const _TagGrid({
     required this.tags,
     required this.small,
+    required this.showThumbs,
+    required this.thumbOf,
     required this.selecting,
     required this.selectedIds,
     required this.countOf,
@@ -406,6 +488,10 @@ class _TagGrid extends StatefulWidget {
 
   /// 4 列（名前と曲数だけの小さなチップ）
   final bool small;
+
+  /// サムネを出すか（設定）と、タグのサムネの曲（無ければ null）
+  final bool showThumbs;
+  final LoopItem? Function(Tag) thumbOf;
   final bool selecting;
   final Set<String> selectedIds;
   final int Function(Tag) countOf;
@@ -499,59 +585,93 @@ class _TagGridState extends State<_TagGrid> {
     );
   }
 
-  /// 色つきのチップ（名前・曲数）。2 列は色の丸 + 薄い色、4 列はタグの色で塗る。
+  /// 色つきのチップ（名前・曲数）。2 列も 4 列もタグの色を薄く敷いたガラス面。
+  /// 2 列は左に色の丸（サムネを出すならサムネ）。4 列は左端の色の帯で、サムネがあれば
+  /// 背景に暗くして敷く（文字は白）。
   /// 選択中は緑の枠とチェックを上に重ねるだけ（中身の大きさ・位置は変えない）
   Widget _chip(BuildContext context, Tag tag) {
     final textTheme = Theme.of(context).textTheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final selected = widget.selectedIds.contains(tag.id);
     final small = widget.small;
-    // 4 列: タグの色の面に、明るさで白/黒の文字
-    final fill = tag.color.withValues(alpha: dark ? 0.55 : 0.45);
-    final onFill = Color.alphaBlend(
-                    fill, dark ? AppTheme.darkBackground : Colors.white)
-                .computeLuminance() >
-            0.45
-        ? Colors.black87
-        : Colors.white;
-    final nameColor = small ? onFill : null;
-    final countColor =
-        small ? onFill.withValues(alpha: 0.75) : AppTheme.muted(context);
+    final radius = small ? 10.0 : 14.0;
+    final thumb = widget.thumbOf(tag);
+    // 4 列でサムネを背景に敷いたときは暗い膜の上なので白文字
+    final onImage = small && thumb != null;
+    final nameColor = onImage ? Colors.white : null;
+    final countColor = onImage ? Colors.white70 : AppTheme.muted(context);
 
-    final surface = GlassSurface(
-      radius: small ? 10 : 14,
-      padding: EdgeInsets.symmetric(
-          horizontal: small ? AppSpacing.sm : AppSpacing.md,
-          vertical: small ? AppSpacing.xs : AppSpacing.sm),
-      tint: small ? fill : tag.color.withValues(alpha: 0.12),
-      onTap: () => widget.onTap(tag),
-      child: Row(
-        children: [
-          if (!small) ...[
-            _TagDot(tag: tag),
-            const SizedBox(width: AppSpacing.md),
-          ],
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(tag.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: (small ? textTheme.labelSmall : textTheme.labelMedium)
-                        ?.copyWith(fontWeight: FontWeight.w600, color: nameColor)),
-                Text('${widget.countOf(tag)} 曲',
-                    maxLines: 1,
-                    style: textTheme.labelSmall?.copyWith(color: countColor)),
-              ],
-            ),
-          ),
-        ],
-      ),
+    final text = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(tag.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: (small ? textTheme.labelSmall : textTheme.labelMedium)
+                ?.copyWith(fontWeight: FontWeight.w600, color: nameColor)),
+        Text('${widget.countOf(tag)} 曲',
+            maxLines: 1,
+            style: textTheme.labelSmall?.copyWith(color: countColor)),
+      ],
     );
+
+    final Widget surface;
+    if (small) {
+      surface = GlassSurface(
+        radius: radius,
+        padding: EdgeInsets.zero,
+        tint: tag.color.withValues(alpha: 0.12),
+        onTap: () => widget.onTap(tag),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumb != null) ...[
+                ItemThumbnail(item: thumb),
+                // 文字が読めるように暗くする（動画に重ねる一覧と同じく、読めることが優先）
+                const ColoredBox(color: Color(0x99000000)),
+              ],
+              Row(
+                children: [
+                  Container(width: 4, color: tag.color),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                      child: Align(alignment: Alignment.centerLeft, child: text),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      surface = GlassSurface(
+        radius: radius,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        tint: tag.color.withValues(alpha: 0.12),
+        onTap: () => widget.onTap(tag),
+        child: Row(
+          children: [
+            if (widget.showThumbs)
+              _TagThumb(tag: tag, item: thumb, size: 40)
+            else
+              _TagDot(tag: tag),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: text),
+          ],
+        ),
+      );
+    }
     if (!widget.selecting) return surface;
-    return Stack(
+    return SelectionDim(
+      selecting: true,
+      selected: selected,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         surface,
@@ -559,7 +679,7 @@ class _TagGridState extends State<_TagGrid> {
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(small ? 10 : 14),
+                borderRadius: BorderRadius.circular(radius),
                 color: selected
                     ? AppTheme.accentGreen.withValues(alpha: 0.18)
                     : null,
@@ -579,11 +699,12 @@ class _TagGridState extends State<_TagGrid> {
               size: AppIconSizes.s,
               color: selected
                   ? AppTheme.accentGreen
-                  : (small ? countColor : AppTheme.muted(context)),
+                  : (onImage ? Colors.white70 : AppTheme.muted(context)),
             ),
           ),
         ),
       ],
+    ),
     );
   }
 }
