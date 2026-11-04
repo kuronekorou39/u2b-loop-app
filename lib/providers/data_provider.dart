@@ -294,14 +294,18 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   /// ミックス点（波形から求めたドロップ / アウトロ）の保存。
   /// 再生中にバックグラウンドで決まるので updatedAt は触らない。変化が無ければ書かない
   Future<void> saveMixPoints(String id, MixPoints points,
-      {EnergyProfile? energy, List<double>? energyCurve}) async {
+      {EnergyProfile? energy, List<double>? energyCurve, bool? fromBass}) async {
     final item = _box.get(id);
     if (item == null) return;
     final samePoints = item.mixInMs == points.mixInMs && item.mixOutMs == points.mixOutMs;
     final hasCurve = energyCurve != null && energyCurve.isNotEmpty;
-    if (samePoints && (energy == null || energy.isEmpty) && !hasCurve) return;
+    final sameSource = fromBass == null || item.mixPointsFromBass == fromBass;
+    if (samePoints && sameSource && (energy == null || energy.isEmpty) && !hasCurve) {
+      return;
+    }
     item.mixInMs = points.mixInMs;
     item.mixOutMs = points.mixOutMs;
+    if (fromBass != null) item.mixPointsFromBass = fromBass;
     if (energy != null && !energy.isEmpty) {
       item.headDb = energy.headDb;
       item.tailDb = energy.tailDb;

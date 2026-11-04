@@ -140,6 +140,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // Preload state
   int? _preloadedTrackIndex;
+
+  StreamSubscription<String>? _bandsSub;
+
+  /// 帯域の波形が保存された: プレイリストの鳴っている曲か次の曲なら、ミックス点を探し直す
+  void _onBandsSaved(String itemId) {
+    if (!mounted || !_isPlaylist) return;
+    final ps = ref.read(playlistPlayerProvider);
+    final current = ps.currentTrack;
+    final next = _preloadedTrackIndex == null ||
+            _preloadedTrackIndex! >= ps.tracks.length
+        ? null
+        : ps.tracks[_preloadedTrackIndex!];
+    for (final (track, preload) in [(current, false), (next, true)]) {
+      if (track == null || track.item.id != itemId) continue;
+      final waveform = _waveformCache[itemId] ??
+          (preload ? null : ref.read(waveformDataProvider));
+      if (waveform == null || waveform.isEmpty) continue;
+      unawaited(_updateMixPoints(track, waveform, preload: preload));
+    }
+  }
   int? _pendingJumpIndex; // 手動選択時: 次の自動遷移でjumpToするインデックス
   Duration? _pendingReplaySeek; // ミックスビューで前曲に戻って聴き直す位置
   bool _isPreloading = false;
@@ -199,6 +219,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     playerScreenActive = true;
+    // 帯域の波形はデコードの少しあとで保存される。鳴っている曲・次の曲のができたら、
+    // 低音でミックス点を探し直す
+    _bandsSub = WaveformCache.bandsChanged.listen(_onBandsSaved);
 
     // 画面表示中のネイティブからの呼び出し（PiP・通知のボタン、出力先、ヘッドホン抜き）
     PipBridge.listen(PipHandlers(
@@ -342,6 +365,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _bandsSub?.cancel();
     playerScreenActive = false;
     _progress.dispose();
     _overlayHideTimer?.cancel();
@@ -1195,7 +1219,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _updateMixPoints(PlaylistTrack track, List<double> waveform,
       {required bool preload}) async {
     final item = track.item;
-    final needPoints = item.mixInMs == null && item.mixOutMs == null;
+    // 帯域の波形があれば低音で探す。全体の音量で探した曲は、帯域ができたら探し直す
+    final bands = await WaveformCache.loadBands(item.id);
+    final needPoints = (item.mixInMs == null && item.mixOutMs == null) ||
+        (bands != null && item.mixPointsFromBass != true);
     // 音量の流れ（おまかせ用）と流れそのもの（入り口を選ぶ用）はミックス点より後から
     // 入ったので、点があっても無ければ求める
     final needEnergy = item.headDb == null || item.energyDb == null;
@@ -1205,14 +1232,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         .state
         .duration;
     if (duration <= Duration.zero) return;
-    final points = needPoints
-        ? MixPointDetector.fromWaveform(
-            waveform,
-            duration.inMilliseconds,
+    MixPoints points;
+    if (needPoints) {
+      points = MixPointDetector.fromWaveform(
+        waveform,
+        duration.inMilliseconds,
+        leadingSilenceMs: item.introSkipMs,
+        trailingSilenceMs: item.outroSkipMs,
+      );
+      if (bands != null) {
+        points = MixPointDetector.withBass(bands, duration.inMilliseconds,
+            fallback: points,
             leadingSilenceMs: item.introSkipMs,
-            trailingSilenceMs: item.outroSkipMs,
-          )
-        : MixPoints(mixInMs: item.mixInMs, mixOutMs: item.mixOutMs);
+            trailingSilenceMs: item.outroSkipMs);
+      }
+    } else {
+      points = MixPoints(mixInMs: item.mixInMs, mixOutMs: item.mixOutMs);
+    }
     final energy = needEnergy
         ? EnergyProfile.fromWaveform(
             waveform,
@@ -1232,7 +1268,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     await ref
         .read(loopItemsProvider.notifier)
-        .saveMixPoints(item.id, points, energy: energy, energyCurve: curve);
+        .saveMixPoints(item.id, points,
+            energy: energy,
+            energyCurve: curve,
+            fromBass: needPoints ? bands != null : null);
     // Hive の box にあるのと同じインスタンスなので item 自体も更新されている
     debugPrint('[MixPoint] ${item.title}: $points ${energy ?? ''}');
     if (preload && needPoints) await engine.realignPreload(track);

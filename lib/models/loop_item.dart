@@ -247,6 +247,10 @@ class LoopItem {
   /// 出ていく曲はここで切る。null = 未計測または無し
   int? mixOutMs;
 
+  /// ミックス点を帯域の波形の低音で探したか（v1.135.0）。全体の音量で探した曲は、
+  /// 帯域の波形ができたら探し直す
+  bool? mixPointsFromBass;
+
   /// 拍の格子: 最初の拍の位置（ミリ秒）と精密な BPM。拍合わせに使う。
   /// [bpm] は表示・手動補正用の 0.1 刻みで、こちらは解析結果そのまま。
   /// null = 未計測（v1.85 以前の解析）または BPM が取れなかった
@@ -328,6 +332,7 @@ class LoopItem {
     this.sectionGridData,
     this.unplayableReason,
     this.noSteadyBeat,
+    this.mixPointsFromBass,
     this.mixInMs,
     this.mixOutMs,
     this.beatOffsetMs,
@@ -528,6 +533,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
           (fields[52] as List?)?.map((v) => (v as num).toDouble()).toList(),
       unplayableReason: fields[53] as String?,
       noSteadyBeat: fields[54] as bool?,
+      mixPointsFromBass: fields[55] as bool?,
     );
   }
 
@@ -589,6 +595,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       52: obj.sectionGridData,
       53: obj.unplayableReason,
       54: obj.noSteadyBeat,
+      55: obj.mixPointsFromBass,
     });
   }
 }

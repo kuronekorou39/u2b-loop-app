@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/core/audio/mix_point_detector.dart';
+import 'package:u2b_loop_app/core/audio/wave_bands.dart';
 
 /// 合成した包絡でミックス点の検出を確かめる。
 /// 4 分の曲を 4000 点（60ms/点）で表す
@@ -82,5 +85,41 @@ void main() {
     expect(MixPointDetector.fromWaveform(const [], durationMs), MixPoints.none);
     expect(MixPointDetector.fromWaveform(List.filled(10, 1.0), durationMs), MixPoints.none);
     expect(MixPointDetector.fromWaveform(List.filled(4000, 1.0), 0), MixPoints.none);
+  });
+
+  group('低音で探す（帯域の波形）', () {
+    // 3 分。中音はずっと同じ大きさ、低音は 14 秒で入り、2:40 で抜ける（50ms ごと）
+    WaveBands bands() {
+      const n = 180 * 20;
+      final low = Uint8List(n), mid = Uint8List(n), high = Uint8List(n);
+      for (var i = 0; i < n; i++) {
+        final t = i * 50;
+        low[i] = t >= 14000 && t < 160000 ? 255 : 38;
+        mid[i] = 180;
+        high[i] = 120;
+      }
+      return WaveBands(stepMs: 50, low: low, mid: mid, high: high);
+    }
+
+    test('全体の音量では見えないベースの入り・抜けを見つける', () {
+      final flat = List<double>.filled(4000, 0.7);
+      final full = MixPointDetector.fromWaveform(flat, 180000);
+      expect(full.mixInMs, isNull, reason: '全体の音量は平らなので見つからない');
+      final p = MixPointDetector.withBass(bands(), 180000, fallback: full);
+      expect(p.mixInMs, closeTo(14000, 600));
+      expect(p.mixOutMs, closeTo(160000, 600));
+    });
+
+    test('低音で見つからない方は全体の音量の結果を使う。帯域が途中までなら使わない', () {
+      const fallback = MixPoints(mixInMs: 30000, mixOutMs: 150000);
+      final silentBass = WaveBands(
+          stepMs: 50,
+          low: Uint8List(3600)..fillRange(0, 3600, 200),
+          mid: Uint8List(3600),
+          high: Uint8List(3600));
+      expect(MixPointDetector.withBass(silentBass, 180000, fallback: fallback), fallback);
+      // 8 分を超えて打ち切られた帯域（曲は 10 分）
+      expect(MixPointDetector.withBass(bands(), 600000, fallback: fallback), fallback);
+    });
   });
 }

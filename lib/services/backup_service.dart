@@ -146,6 +146,7 @@ class BackupService {
         'sectionGrids': item.sectionGridData,
         'unplayableReason': item.unplayableReason,
         'noSteadyBeat': item.noSteadyBeat,
+        'mixPointsFromBass': item.mixPointsFromBass,
         'mixInMs': item.mixInMs,
         'mixOutMs': item.mixOutMs,
         'beatOffsetMs': item.beatOffsetMs,
@@ -201,6 +202,7 @@ class BackupService {
         keySectionData: (j['keySections'] as List?)?.cast<String>(),
         unplayableReason: j['unplayableReason'] as String?,
         noSteadyBeat: j['noSteadyBeat'] as bool?,
+        mixPointsFromBass: j['mixPointsFromBass'] as bool?,
         sectionGridData: (j['sectionGrids'] as List?)
             ?.map((v) => (v as num).toDouble())
             .toList(),

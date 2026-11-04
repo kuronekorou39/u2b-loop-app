@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'wave_bands.dart';
+
 /// 曲の「ミックスイン点」と「ミックスアウト点」（ミリ秒）。
 /// - [mixInMs]: 曲頭側で音量がぐっと上がる最初の点（ドロップ）。次曲として入るとき、
 ///   ここが切り替わりの瞬間に来るように開始位置をずらす
@@ -150,6 +152,31 @@ class MixPointDetector {
     return MixPoints(
       mixInMs: mixIn == null ? null : (mixIn * msPer).round(),
       mixOutMs: mixOut == null ? null : (mixOut * msPer).round(),
+    );
+  }
+
+  /// 帯域の波形の低音で探す（ベース・キックが入る所 = ドロップ、抜ける所 = アウトロ）。
+  /// 全体の音量では、中音が鳴り続けるイントロのあとでベースとドラムが入る曲の立ち上がりが
+  /// 見えなかった（2026-11: Back in Time は 2〜13 秒の低音が 10〜20%、14 秒で 100%、
+  /// 中音は 60〜80% のまま）。低音で見つからなかった方は [fallback]（全体の音量）を使う。
+  /// 帯域が曲の終わりまで無い（8 分を超えて打ち切られた）なら [fallback] のまま
+  static MixPoints withBass(
+    WaveBands bands,
+    int durationMs, {
+    required MixPoints fallback,
+    int leadingSilenceMs = 0,
+    int? trailingSilenceMs,
+  }) {
+    if (bands.durationMs < durationMs - 2000) return fallback;
+    final bass = fromWaveform(
+      [for (final v in bands.low) v / 255.0],
+      bands.durationMs,
+      leadingSilenceMs: leadingSilenceMs,
+      trailingSilenceMs: trailingSilenceMs,
+    );
+    return MixPoints(
+      mixInMs: bass.mixInMs ?? fallback.mixInMs,
+      mixOutMs: bass.mixOutMs ?? fallback.mixOutMs,
     );
   }
 
