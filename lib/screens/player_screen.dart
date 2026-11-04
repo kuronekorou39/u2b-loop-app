@@ -82,6 +82,13 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? playlistName;
   final String? playlistId;
 
+  /// 単体再生で最初に選ぶ区間（null なら 1 つ目）
+  final int? initialRegionIndex;
+
+  /// 単体再生を AB 編集の状態で開く（詳細の「AB 設定」。区間が無ければ 1 つ作る）。
+  /// v1.126.0 で AB 設定専用の画面をこれに統合した
+  final bool startEditing;
+
   const PlayerScreen({
     super.key,
     required this.item,
@@ -91,6 +98,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.disabledItemIds,
     this.playlistName,
     this.playlistId,
+    this.initialRegionIndex,
+    this.startEditing = false,
   });
 
   @override
@@ -103,7 +112,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _loading = true;
   String? _loadError;
 
-  /// 読み込みの進捗・曲を開く手順・波形は AB 設定画面と同じ部品。
+  /// 読み込みの進捗・曲を開く手順・波形は共通の部品。
   /// プレイリストの遷移（プリロード側）だけは PlaylistEngine.prepare
   final _progress = LoadProgress();
   late final _loader =
@@ -125,7 +134,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _panelOpen = false;
   final _trackListController = ScrollController();
 
-  /// AB 編集中。微調整の刻みは loopProvider の adjustStep（AB 設定画面と同じ値）
+  /// AB 編集中。微調整の刻みは loopProvider の adjustStep
   bool _editMode = false;
   int? _preloadingTargetIndex;
 
@@ -1367,7 +1376,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // --- Loading ---
 
-  /// 曲を開く（手順は PlayerLoader、AB 設定画面と同じ）。
+  /// 曲を開く（手順は PlayerLoader）。
   /// オフライン保存があればそれを優先し、YouTube の波形用音声は裏で先読みする
   Future<void> _loadItem() async {
     _cancelFade();
@@ -1498,9 +1507,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _setupRegions(LoopItem item) {
     final regions = item.effectiveRegions;
     if (regions.isNotEmpty) {
-      setState(() => _activeRegionIdx = 0);
-      _loadRegion(regions[0]);
+      final i = (widget.initialRegionIndex ?? 0).clamp(0, regions.length - 1);
+      setState(() => _activeRegionIdx = i);
+      _loadRegion(regions[i]);
+      if (widget.startEditing) {
+        final a = regions[i].pointAMs;
+        if (a != null) ref.read(playerProvider).seek(Duration(milliseconds: a));
+        _beginSingleEdit();
+      }
+    } else if (widget.startEditing) {
+      _addRegion();
     }
+  }
+
+  /// 単体再生の AB 編集を始めたとき（区間を選び直したとき）の A/B。「元に戻す」で戻す先
+  (Duration?, Duration?)? _singleEditStart;
+
+  /// 単体再生の AB 編集に入る（今の A/B を「元に戻す」の戻り先として覚える）
+  void _beginSingleEdit() {
+    final loop = ref.read(loopProvider);
+    _singleEditStart = (loop.pointA, loop.pointB);
+    setState(() => _editMode = true);
+  }
+
+  /// 編集を始めたときの A/B に戻す（保存はしない。「保存して終了」で残る）
+  void _revertSingleEdit() {
+    final start = _singleEditStart;
+    if (start == null) return;
+    final notifier = ref.read(loopProvider.notifier);
+    notifier.setPointA(start.$1);
+    notifier.setPointB(start.$2);
   }
 
   void _loadRegion(LoopRegion region) {
@@ -1522,6 +1558,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _syncRegionFromLoop(); // 切替前に保存
     setState(() => _activeRegionIdx = index);
     _loadRegion(regions[index]);
+    if (_editMode) _beginSingleEdit();
     // Seek to region start
     if (regions[index].pointAMs != null) {
       ref
@@ -1544,7 +1581,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   static const _maxRegions = AppLimits.maxRegions;
 
-  /// 区間一覧の編集ルール（AB 設定画面と同じ）。状態は item の regions 本体と
+  /// 区間一覧の編集ルール（RegionEditController）。状態は item の regions 本体と
   /// _activeRegionIdx で、操作のたびにこれを作って使う。
   /// その場で書き換えるので、表示用のコピー（effectiveRegions）ではなく本体リストを取る
   RegionEditController get _regionEditor => RegionEditController(
@@ -1573,11 +1610,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final region = editor.add(positionMs: position.inMilliseconds);
     if (region == null) return;
 
-    setState(() {
-      _activeRegionIdx = editor.selected;
-      _editMode = true;
-    });
+    setState(() => _activeRegionIdx = editor.selected);
     _loadRegion(region);
+    _beginSingleEdit();
     _saveRegions();
   }
 
@@ -1632,6 +1667,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           onTap: () => _renameRegion(index),
         ),
         SheetAction(
+          icon: Icons.clear,
+          label: 'A・B をクリア',
+          onTap: () => _clearRegionPoints(index),
+        ),
+        SheetAction(
           icon: Icons.delete_outline,
           label: '削除',
           destructive: true,
@@ -1639,6 +1679,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ),
       ],
     );
+  }
+
+  /// 区間の A・B を未設定に戻す（区間そのものは残す）
+  Future<void> _clearRegionPoints(int index) async {
+    final regions = _currentItem.effectiveRegions;
+    if (index < 0 || index >= regions.length) return;
+    final ok = await AppDialogs.confirm(context,
+        title: 'A・B をクリア',
+        message: '「${regions[index].name}」の A・B を未設定に戻しますか？',
+        confirmLabel: 'クリア',
+        destructive: true);
+    if (!ok || !mounted) return;
+    if (index == _activeRegionIdx) {
+      ref.read(loopProvider.notifier).reset();
+      _syncRegionFromLoop();
+    } else {
+      final region = _currentItem.ensureRegions()[index];
+      region.pointAMs = null;
+      region.pointBMs = null;
+    }
+    setState(() {});
+    _saveRegions();
   }
 
   /// 編集モード終了時にAB値を保存
@@ -1712,7 +1774,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (source != null) _generateWaveform(source, _currentItem);
   }
 
-  /// 波形を作って provider に流し（手順は WaveformLoader、AB 設定画面と同じ）、
+  /// 波形を作って provider に流し（手順は WaveformLoader）、
   /// できたら 1 番だけモードの切断点・ミックス点・音量正規化を更新する。
   /// [item] は開いたときの曲（先読みが終わる頃には次の曲に進んでいることがある）
   Future<void> _generateWaveform(VideoSource source, LoopItem item) async {
@@ -1874,6 +1936,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       canPop: !_isFullscreen,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) {
+          // 単体再生で AB を編集中に戻ったら、「保存して終了」と同じく残す
+          if (_editMode && !_isPlaylist) _finishEdit();
           _activateMiniPlayer();
         } else if (_isFullscreen) {
           _exitFullscreen();
@@ -2058,7 +2122,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 編集は全画面の外で（横レイアウトに AB 編集の板が出る）
       onEdit: () {
         _exitFullscreen();
-        setState(() => _editMode = true);
+        _beginSingleEdit();
       },
       onExport: ({required fullTrack}) => _showExportDialog(fullTrack: fullTrack),
       onSelectAll: _clearRegion,
@@ -2328,8 +2392,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         editing: _editMode,
         canEdit: activeRegion != null,
         onToggleRegions: () => _setPanelOpen(!panelOpen),
-        onEdit: () => setState(() => _editMode = true),
+        onEdit: _beginSingleEdit,
         onFinishEdit: _finishEdit,
+        // 編集を始めたときから A/B を動かしていれば「元に戻す」
+        onRevert: _singleEditStart != null &&
+                (_singleEditStart!.$1 != loop.pointA ||
+                    _singleEditStart!.$2 != loop.pointB)
+            ? _revertSingleEdit
+            : null,
         onMore: _showSingleMoreSheet,
         onSetA: hasSource
             ? () => notifier.setPointA(ref.read(playerProvider).state.position)

@@ -31,12 +31,11 @@ class SinglePlayerBar extends ConsumerWidget {
     this.onSetA,
     this.onSetB,
     this.editBlock,
-    this.editorMode = false,
+    this.onRevert,
   });
 
-  /// AB 編集画面（専用エディタ）用。常に編集ブロックを出し、保存は AppBar 側なので
-  /// ピルは「区間 ▴」「今を A」「今を B」「速度」
-  final bool editorMode;
+  /// 編集中の「元に戻す」（編集を始めたときの A/B へ）。動かしていなければ null で無効
+  final VoidCallback? onRevert;
 
   /// 編集中のピル「今を A」「今を B」。動画未ロード時は null で無効化
   final VoidCallback? onSetA;
@@ -114,17 +113,7 @@ class SinglePlayerBar extends ConsumerWidget {
     );
 
     final List<Widget> pills;
-    if (editorMode) {
-      pills = [
-        regionsPill,
-        const Spacer(),
-        SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
-        const SizedBox(width: AppSpacing.md),
-        SetPointPill(label: 'B', color: AppTheme.pointBColor, onTap: onSetB),
-        const SizedBox(width: AppSpacing.md),
-        speedPill,
-      ];
-    } else if (editing) {
+    if (editing) {
       pills = [
         GlassPill(
           onTap: onFinishEdit,
@@ -141,6 +130,16 @@ class SinglePlayerBar extends ConsumerWidget {
                       .copyWith(color: AppTheme.accentGreen)),
             ],
           ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        // 押せないときも場所は残す（動かした瞬間にピルが現れて並びがずれないように）
+        GlassPill(
+          onTap: onRevert,
+          tooltip: '元に戻す（編集を始めたときの A・B）',
+          padding: const EdgeInsets.all(9),
+          child: Icon(Icons.undo,
+              size: AppIconSizes.md,
+              color: onRevert == null ? theme.disabledColor : null),
         ),
         const Spacer(),
         SetPointPill(label: 'A', color: AppTheme.pointAColor, onTap: onSetA),
@@ -175,7 +174,7 @@ class SinglePlayerBar extends ConsumerWidget {
     return PlayerGlassBar(
       seekbar: seekbar,
       compact: compact,
-      extra: editing || editorMode ? editBlock : null,
+      extra: editing ? editBlock : null,
       transport: [
         // 先頭へ（ループ中は A へ）
         TransportIconButton(

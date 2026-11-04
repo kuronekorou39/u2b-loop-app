@@ -212,7 +212,7 @@ class WaveformService {
     return smoothed;
   }
 
-  // --- 音声DL + 波形生成（PlayerScreen/EditorScreen共通） ---
+  // --- 音声DL + 波形生成（PlayerScreen） ---
 
   static const _tempPrefix = 'u2b_waveform_';
 

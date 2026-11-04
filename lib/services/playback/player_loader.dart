@@ -33,7 +33,7 @@ class LoadAborted implements Exception {
   String toString() => 'LoadAborted';
 }
 
-/// 再生画面と AB 設定画面で同じ手順で曲を開く。
+/// 再生画面で曲を開く手順。
 ///
 /// 進捗を進めながら
 /// 1. オフライン保存があればそのファイル / YouTube はマニフェストを解決 / ローカルはそのまま

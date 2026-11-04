@@ -13,7 +13,7 @@ import '../audio_analysis_service.dart';
 import '../waveform_service.dart';
 import 'hq_audio.dart';
 
-/// 再生画面と AB 設定画面で同じ手順で波形を用意する。
+/// 再生画面で波形を用意する手順。
 ///
 /// - YouTube をネットから開いたときは [prefetchThenGenerate] で音声を裏で先読みし、
 ///   済んだら生成（再生のロードを待たせない）。波形が保存済みで解析も不要なら DL しない

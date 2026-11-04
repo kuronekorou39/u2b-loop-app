@@ -29,7 +29,6 @@ import '../widgets/loop/region_time_dialog.dart';
 import '../widgets/similar_tracks_sheet.dart';
 import '../widgets/tag_chip.dart';
 import '../widgets/tempo_key_sheet.dart';
-import 'editor_screen.dart';
 import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
@@ -244,10 +243,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Future<void> _openAbEditor(LoopItem item, {int regionIndex = 0}) async {
     if (_hasChanges(item)) await _saveOnly(item);
     if (!mounted) return;
+    // AB 設定は単体再生の編集モード（v1.126.0 で専用画面を統合）
     Navigator.of(context).push(
       MaterialPageRoute(
-          builder: (_) =>
-              EditorScreen(item: item, initialRegionIndex: regionIndex)),
+          builder: (_) => PlayerScreen(
+              item: item, initialRegionIndex: regionIndex, startEditing: true)),
     );
   }
 
@@ -767,7 +767,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final ok = await AppDialogs.confirmDelete(context,
         message: '区間「${regions[index].name}」を削除しますか？');
     if (!ok || !mounted) return;
-    // 最後の 1 つも消せる（区間なし = 全体を再生。再生画面・AB 設定画面と同じ）
+    // 最後の 1 つも消せる（区間なし = 全体を再生。再生画面と同じ）
     regions.removeAt(index);
     item.setRegions(regions);
     await ref.read(loopItemsProvider.notifier).update(item);
@@ -814,7 +814,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   /// AB 区間の一覧（ガラス面）。行のタップでメニュー（名前・時間・書き出し・削除）、
-  /// 見出しの「編集」で AB 設定画面へ
+  /// 見出しの「編集」で単体再生を AB 編集の状態で開く
   Widget _buildRegionsSection(LoopItem item, List<dynamic> regions) {
     final textTheme = Theme.of(context).textTheme;
     final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);

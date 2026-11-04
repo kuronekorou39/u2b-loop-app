@@ -4,7 +4,7 @@ import '../../core/theme/app_theme.dart';
 
 /// 横レイアウトで AppBar の代わりに動画の上へ出す 1 行:
 /// 戻る・小さな題（プレイリスト名 / 「AB 設定」）・右側の操作。
-/// 縦の AppBar と同じ操作を [actions] に渡す（再生画面と AB 設定画面で共用）
+/// 縦の AppBar と同じ操作を [actions] に渡す
 class PlayerWideTopBar extends StatelessWidget {
   const PlayerWideTopBar({
     super.key,
