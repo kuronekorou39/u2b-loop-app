@@ -29,8 +29,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _versionTapCount = 0;
 
-  void _toast(SnackBar bar) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  void _toast(AppToastMessage bar) {
+    if (mounted) AppToast.instance.show(bar);
   }
 
   void _push(Widget page) {

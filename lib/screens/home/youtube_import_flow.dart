@@ -28,8 +28,8 @@ class YouTubeImportFlow {
 
   bool get _mounted => context.mounted;
 
-  void _snack(SnackBar bar) {
-    if (_mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  void _snack(AppToastMessage bar) {
+    if (_mounted) AppToast.instance.show(bar);
   }
 
   // --- 追加ダイアログ ---

@@ -144,7 +144,7 @@ class BulkAnalysisNotifier extends StateNotifier<BulkAnalysisState?> {
         '$skipped 曲は ${AudioAnalysisService.maxAnalyzableMinutes} 分以上なので省略',
       if (!cancelled && failed > 0) '$failed 曲は取得できず',
     ];
-    appMessengerKey.currentState?.showSnackBar(AppSnackBar.success(
+    AppToast.instance.show(AppSnackBar.success(
       '$done 曲を解析しました${notes.isEmpty ? '' : '（${notes.join('、')}）'}',
     ));
   }

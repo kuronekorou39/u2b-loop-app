@@ -41,8 +41,8 @@ class HqAudioLogDialog extends StatelessWidget {
         TextButton(
           onPressed: () {
             Clipboard.setData(ClipboardData(text: HqAudio.recentLog.join('\n')));
-            ScaffoldMessenger.of(context)
-                .showSnackBar(AppSnackBar.success('ログをコピーしました'));
+            AppToast.instance
+                .show(AppSnackBar.success('ログをコピーしました'));
           },
           child: const Text('コピー'),
         ),

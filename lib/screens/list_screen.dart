@@ -117,7 +117,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       return;
     }
     if (item.isFetching) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.info('データ取得中です...'),
       );
       return;

@@ -33,7 +33,6 @@ class App extends ConsumerWidget {
     final showPerfOverlay = ref.watch(perfOverlayProvider);
     return MaterialApp(
       navigatorKey: appNavigatorKey,
-      scaffoldMessengerKey: appMessengerKey,
       title: 'U2B Loop',
       theme: isDark ? AppTheme.dark : AppTheme.light,
       home: const _Home(),
@@ -88,6 +87,13 @@ class App extends ConsumerWidget {
               right: 0,
               bottom: 0,
               child: MiniPlayerBar(),
+            ),
+            // 通知はどの画面でもミニプレイヤーのすぐ上（キーボードが出ていればその上）
+            AppToastHost(
+              bottom: (mq.viewInsets.bottom > mq.viewPadding.bottom
+                      ? mq.viewInsets.bottom
+                      : mq.viewPadding.bottom) +
+                  extra,
             ),
           ],
         );

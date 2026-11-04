@@ -169,7 +169,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   double _baseVolume = 100.0;
 
   bool _trackLoading = false;
-  bool _loadingSnackShowing = false;
+  /// 読み込み中に操作したときの通知（出ている間は出し直さない）
+  AppToastMessage? _loadingToast;
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -600,7 +601,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _loadingTimeoutTimer = Timer(const Duration(seconds: 30), () {
       if (!mounted) return;
       _cancelLoadingState();
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.info('読込タイムアウト。操作可能です。'),
       );
     });
@@ -617,12 +618,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _guardManualOp() {
     if (_trackLoading || _isPreloading) {
-      if (!_loadingSnackShowing) {
-        _loadingSnackShowing = true;
-        ScaffoldMessenger.of(context).showSnackBar(
-          AppSnackBar.action('読込中...（タップでキャンセル）',
-              label: 'キャンセル', onPressed: _cancelLoadingState),
-        ).closed.then((_) => _loadingSnackShowing = false);
+      // 同じ通知が出ている間は出し直さない
+      if (!identical(AppToast.instance.current.value, _loadingToast)) {
+        _loadingToast = AppSnackBar.action('読込中...（タップでキャンセル）',
+            label: 'キャンセル', onPressed: _cancelLoadingState);
+        AppToast.instance.show(_loadingToast!);
       }
       return true;
     }
@@ -1720,7 +1720,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } catch (e) {
       debugPrint('enterPiP failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.instance.show(
           AppSnackBar.info('PiPに入れませんでした'),
         );
       }
@@ -1878,7 +1878,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.success('「${track.item.title}」を削除しました'),
       );
     }
@@ -2586,7 +2586,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final stillCurrent =
         ref.read(playlistPlayerProvider).currentTrack?.item.id == id;
     if (stillCurrent) _startFadeOutMonitor(b);
-    ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.action(
+    AppToast.instance.show(AppSnackBar.action(
       'この曲の1番として覚えました',
       label: '取り消し',
       onPressed: () async {
@@ -2604,7 +2604,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final track = ref.read(playlistPlayerProvider).currentTrack;
     if (track == null) return;
     if (track.hasRegion) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
           AppSnackBar.info('区間を選んだ曲は、その区間を流します（1番は使いません）'));
       return;
     }
@@ -2635,8 +2635,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         } else {
           _toggleFirstVerseMode();
         }
-        ScaffoldMessenger.of(context)
-            .showSnackBar(AppSnackBar.success('この曲の1番として覚えました'));
+        AppToast.instance
+            .show(AppSnackBar.success('この曲の1番として覚えました'));
       case FirstVerseReset():
         await _resetFirstVerse();
       case null:
@@ -2658,8 +2658,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         .saveFirstVerse(track.item.id);
     if (!mounted) return;
     _applyFirstVerseCut(track);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(AppSnackBar.success('1番を自動に戻しました'));
+    AppToast.instance
+        .show(AppSnackBar.success('1番を自動に戻しました'));
   }
 
   /// 現在のAB区間をLoopItemのリージョンとして保存

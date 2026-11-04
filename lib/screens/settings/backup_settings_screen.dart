@@ -26,8 +26,8 @@ class BackupSettingsScreen extends ConsumerStatefulWidget {
 class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
   bool _busy = false;
 
-  void _toast(SnackBar bar) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  void _toast(AppToastMessage bar) {
+    if (mounted) AppToast.instance.show(bar);
   }
 
   Future<void> _exportData() async {

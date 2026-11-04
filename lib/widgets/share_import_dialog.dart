@@ -117,7 +117,7 @@ class _ShareImportDialog extends StatelessWidget {
     ref.invalidate(tagsProvider);
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.success(
             '「${data.name}」をインポートしました（${itemIds.length}曲）'),
       );

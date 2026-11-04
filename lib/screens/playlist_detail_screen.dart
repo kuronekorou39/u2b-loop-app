@@ -34,7 +34,7 @@ import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
 
-enum _PlaylistMenu { saveAll, analyze, sortByCompatibility }
+enum _PlaylistMenu { share, saveAll, analyze, sortByCompatibility, delete }
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   final String playlistId;
@@ -47,6 +47,10 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
+  /// 編集モード: 並べ替え（右の ≡）と外す（⊖・スワイプ。確認なし、通知の「元に戻す」で戻せる）。
+  /// ふだんは並べ替え・スワイプを出さない（意図せず順番を変えたり外したりしないように）。
+  /// 変更はその場で保存するので「保存」は無い
+  bool _editing = false;
   void _renamePlaylist(Playlist pl) async {
     final newName = await AppDialogs.prompt(context,
         title: 'プレイリスト名変更',
@@ -68,8 +72,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     }
   }
 
-  void _toast(SnackBar bar) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  void _toast(AppToastMessage bar) {
+    if (mounted) AppToast.instance.show(bar);
   }
 
   /// 未解析の曲を 1 曲ずつ順に解析する。裏で動かし、進み具合は曲一覧の上に出す
@@ -108,7 +112,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         items.where((i) => i.videoId != null && i.videoId!.isNotEmpty).toList();
 
     if (youtubeItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.info('YouTube動画がありません'),
       );
       return;
@@ -122,7 +126,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
     const maxShareLength = 9500;
     if (url.length > maxShareLength) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.error(
             '共有データが大きすぎます（${youtubeItems.length}曲/${url.length}文字）。目安150曲以下に減らしてください。'),
       );
@@ -148,7 +152,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           label: 'URL をコピー',
           onTap: () {
             Clipboard.setData(ClipboardData(text: url));
-            ScaffoldMessenger.of(context).showSnackBar(
+            AppToast.instance.show(
               AppSnackBar.success('URL をコピーしました'),
             );
           },
@@ -212,9 +216,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             ?.title ??
         '曲';
     ref.read(playlistsProvider.notifier).removeItem(pl.id, itemId);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(AppSnackBar.action(
+    AppToast.instance
+      ..hide()
+      ..show(AppSnackBar.action(
         '「$title」をプレイリストから外しました',
         label: '元に戻す',
         onPressed: () {
@@ -265,7 +269,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             ref
                 .read(playlistsProvider.notifier)
                 .toggleItemEnabled(pl.id, item.id);
-            ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.success(
+            AppToast.instance.show(AppSnackBar.success(
                 disabled ? '「${item.title}」を再生に含めます' : '「${item.title}」をスキップします'));
           },
         ),
@@ -273,11 +277,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           icon: Icons.playlist_remove,
           label: 'プレイリストから外す',
           destructive: true,
-          onTap: () async {
-            final ok = await AppDialogs.confirmDelete(context,
-                message: '「${item.title}」をプレイリストから削除しますか？');
-            if (ok && mounted) _removeItem(pl, item.id);
-          },
+          // 確認は出さない（通知の「元に戻す」で戻せる）
+          onTap: () => _removeItem(pl, item.id),
         ),
       ],
     );
@@ -312,7 +313,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             ref
                 .read(playlistsProvider.notifier)
                 .addItems(pl.id, ids, regions: regions);
-            ScaffoldMessenger.of(context).showSnackBar(
+            AppToast.instance.show(
               AppSnackBar.success('${ids.length}件を追加しました'),
             );
           },
@@ -358,7 +359,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             .length ??
         before;
     final added = after - before;
-    ScaffoldMessenger.of(context).showSnackBar(AppSnackBar.success(
+    AppToast.instance.show(AppSnackBar.success(
         result.tagIds.isEmpty
             ? 'タグでの自動追加をやめました'
             : added > 0
@@ -399,35 +400,55 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ? null
         : ref.watch(thumbToneProvider(thumbPath)).valueOrNull;
 
-    return GlassScaffold(
+    return PopScope(
+      // 編集モード中の「戻る」は編集を終えるだけ（画面は閉じない）
+      canPop: !_editing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _editing) setState(() => _editing = false);
+      },
+      child: GlassScaffold(
       // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
       tone: tone,
       title: Text('プレイリスト', style: textTheme.titleMedium),
       actions: [
-          if (items.isNotEmpty)
+          // 編集モードは「完了」だけ（同じ場所に「編集」と入れ替わる）
+          if (_editing)
+            TextButton.icon(
+              onPressed: () => setState(() => _editing = false),
+              icon: const Icon(Icons.check, size: AppIconSizes.sm),
+              label: const Text('完了'),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.accentGreen),
+            )
+          else if (items.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.share_outlined),
-              tooltip: '共有',
-              onPressed: () => _sharePlaylist(pl, items),
+              icon: const Icon(Icons.edit_note),
+              tooltip: '編集（並べ替え・外す）',
+              onPressed: () => setState(() => _editing = true),
             ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            tooltip: '削除',
-            onPressed: () => _deletePlaylist(pl),
-          ),
-          if (items.isNotEmpty)
+          if (!_editing)
             PopupMenuButton<_PlaylistMenu>(
               tooltip: 'その他',
               onSelected: (m) => switch (m) {
+                _PlaylistMenu.share => _sharePlaylist(pl, items),
                 _PlaylistMenu.saveAll => _saveAll(pl, items),
                 _PlaylistMenu.analyze => _analyzeUnanalyzed(pl, items),
                 _PlaylistMenu.sortByCompatibility =>
                   _sortByCompatibility(pl, items),
+                _PlaylistMenu.delete => _deletePlaylist(pl),
               },
               itemBuilder: (_) {
                 final unanalyzed = AudioAnalysisService.unanalyzed(items).length;
                 final bulk = ref.read(bulkAnalysisProvider);
                 return [
+                  if (items.isNotEmpty) ...[
+                  const PopupMenuItem(
+                    value: _PlaylistMenu.share,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.share_outlined),
+                      title: Text('共有'),
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: _PlaylistMenu.saveAll,
                     child: ListTile(
@@ -459,6 +480,17 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       leading: Icon(Icons.join_inner),
                       title: Text('相性順に並べ替え'),
                       subtitle: Text('テンポとキーが近い曲が続くように'),
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  ],
+                  const PopupMenuItem(
+                    value: _PlaylistMenu.delete,
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.delete_outline, color: Colors.redAccent),
+                      title: Text('プレイリストを削除',
+                          style: TextStyle(color: Colors.redAccent)),
                     ),
                   ),
                 ];
@@ -653,6 +685,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: ReorderableListView.builder(
+              // 並べ替えは編集モードの ≡ だけ（長押しで動き出さないように）
+              buildDefaultDragHandles: false,
               padding: const EdgeInsets.only(top: 4, bottom: 80),
               itemCount: items.length,
               // items は実体のないID（孤児）を除いた表示用リストなので、
@@ -672,7 +706,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 final isDisabled = pl.disabledItemIds.contains(item.id);
                 return Dismissible(
                   key: ValueKey('${pl.id}_${item.id}_$i'),
-                  direction: DismissDirection.endToStart,
+                  // スワイプで外すのは編集モードだけ（確認なし。通知の「元に戻す」で戻せる）
+                  direction: _editing
+                      ? DismissDirection.endToStart
+                      : DismissDirection.none,
                   background: Container(
                     alignment: Alignment.centerRight,
                     padding: const EdgeInsets.only(right: 16),
@@ -680,8 +717,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     child:
                         const Icon(Icons.delete_outline, color: Colors.white),
                   ),
-                  confirmDismiss: (_) => AppDialogs.confirmDelete(context,
-                      message: '「${item.title}」をプレイリストから削除しますか？'),
                   onDismissed: (_) => _removeItem(pl, item.id),
                   child: Opacity(
                     opacity: isDisabled || item.isUnplayable ? 0.4 : 1.0,
@@ -733,22 +768,40 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         ),
                       ),
                       subtitle: _buildSubtitle(item, itemTags, pl),
+                      // ふだんは ⋮、編集モードは ⊖（外す）と ≡（並べ替え）。≡ の場所はふだんも
+                      // 空けておく（モードを切り替えても曲名の幅が変わらないように）
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.more_vert,
-                                size: AppIconSizes.md),
-                            tooltip: 'メニュー',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => _showItemMenu(pl, item, i),
-                          ),
-                          ReorderableDragStartListener(
-                            index: i,
-                            child: Padding(
-                              padding: const EdgeInsets.all(AppSpacing.md),
-                              child: Icon(Icons.drag_handle,
-                                  color: AppTheme.muted(context)),
+                          if (_editing)
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline,
+                                  size: AppIconSizes.md, color: Colors.redAccent),
+                              tooltip: 'プレイリストから外す',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _removeItem(pl, item.id),
+                            )
+                          else
+                            IconButton(
+                              icon: const Icon(Icons.more_vert,
+                                  size: AppIconSizes.md),
+                              tooltip: 'メニュー',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _showItemMenu(pl, item, i),
+                            ),
+                          Visibility(
+                            visible: _editing,
+                            maintainSize: true,
+                            maintainAnimation: true,
+                            maintainState: true,
+                            child: ReorderableDragStartListener(
+                              index: i,
+                              enabled: _editing,
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppSpacing.md),
+                                child: Icon(Icons.drag_handle,
+                                    color: AppTheme.muted(context)),
+                              ),
                             ),
                           ),
                         ],
@@ -760,7 +813,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                   DetailScreen(itemId: item.id)),
                         );
                       },
-                      onLongPress: () => _showItemMenu(pl, item, i),
+                      onLongPress:
+                          _editing ? null : () => _showItemMenu(pl, item, i),
                     ),
                   ),
                 );
@@ -780,6 +834,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               tooltip: '曲を追加',
               onPressed: () => _showAddDialog(pl),
             ),
+    ),
     );
   }
 

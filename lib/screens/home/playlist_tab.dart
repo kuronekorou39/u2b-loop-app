@@ -73,7 +73,7 @@ class PlaylistTab extends ConsumerWidget {
       await ref.read(playlistsProvider.notifier).duplicate(pl.id);
     }
     if (context.mounted && playlists.length > 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
           AppSnackBar.success('${playlists.length} 件を複製しました'));
     }
   }

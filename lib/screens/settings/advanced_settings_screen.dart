@@ -24,8 +24,8 @@ class _AdvancedSettingsScreenState
     extends ConsumerState<AdvancedSettingsScreen> {
   bool _busy = false;
 
-  void _toast(SnackBar bar) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  void _toast(AppToastMessage bar) {
+    if (mounted) AppToast.instance.show(bar);
   }
 
   // ─── 危険な操作 ───

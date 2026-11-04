@@ -37,10 +37,10 @@ Future<void> runItemExportFlow(
   required ExportChoice choice,
   required String title,
 }) async {
-  final messenger = ScaffoldMessenger.of(context);
+  final messenger = AppToast.instance;
   void status(String text) {
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(AppSnackBar.progress(text));
+    messenger.hide();
+    messenger.show(AppSnackBar.progress(text));
   }
 
   final input = await ExportSource.prepare(
@@ -51,9 +51,9 @@ Future<void> runItemExportFlow(
     hqAudio: choice.hqAudio,
     onStatus: status,
   );
-  messenger.hideCurrentSnackBar();
+  messenger.hide();
   if (input.note != null) {
-    messenger.showSnackBar(AppSnackBar.info(input.note!));
+    messenger.show(AppSnackBar.info(input.note!));
     // 読める間だけ見せてから書き出しの進捗に切り替える
     await Future.delayed(const Duration(seconds: 2));
   }
@@ -91,17 +91,17 @@ Future<void> runExportFlow(
   final end = max(startMs, endMs);
 
   // メッセンジャは画面pop後も有効なアプリ単位の参照。await跨ぎでも安全。
-  final messenger = ScaffoldMessenger.of(context);
+  final messenger = AppToast.instance;
 
   if (end - start <= 0) {
-    messenger.showSnackBar(
+    messenger.show(
       AppSnackBar.info('書き出す区間の長さがありません'),
     );
     return;
   }
 
-  messenger.hideCurrentSnackBar();
-  messenger.showSnackBar(
+  messenger.hide();
+  messenger.show(
     AppSnackBar.progress('書き出し中...'),
   );
 
@@ -114,10 +114,10 @@ Future<void> runExportFlow(
     title: title,
   );
 
-  messenger.hideCurrentSnackBar();
+  messenger.hide();
 
   if (!result.success) {
-    messenger.showSnackBar(
+    messenger.show(
       AppSnackBar.error('書き出し失敗: ${result.error}',
           duration: const Duration(seconds: 8)),
     );
@@ -128,7 +128,7 @@ Future<void> runExportFlow(
   if (result.savedToGallery) {
     final loc = result.outputPath;
     final head = format == ExportFormat.audioOnly ? '保存しました' : 'フォトに保存しました';
-    messenger.showSnackBar(
+    messenger.show(
       AppSnackBar.success(loc != null ? '$head\n$loc' : head,
           duration: const Duration(seconds: 4)),
     );
@@ -145,7 +145,7 @@ Future<void> runExportFlow(
       subject: safeTitle,
     );
   } catch (e) {
-    messenger.showSnackBar(
+    messenger.show(
       AppSnackBar.error('共有に失敗しました: ${AppErrors.describe(e)}'),
     );
   }

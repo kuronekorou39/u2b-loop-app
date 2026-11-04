@@ -24,8 +24,8 @@ class StorageSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _StorageSettingsScreenState extends ConsumerState<StorageSettingsScreen> {
-  void _toast(SnackBar bar) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(bar);
+  void _toast(AppToastMessage bar) {
+    if (mounted) AppToast.instance.show(bar);
   }
 
   Future<void> _pickCacheLimit() async {

@@ -517,7 +517,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
                   if (trim != 0) await engine.saveTempo(pair, trim);
                   clear();
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.instance.show(
                       AppSnackBar.success('この曲の拍を直しました'));
                 },
         ),

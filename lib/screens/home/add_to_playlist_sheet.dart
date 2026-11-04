@@ -24,7 +24,7 @@ Future<void> showAddItemsToPlaylistSheet(
     await ref.read(playlistsProvider.notifier).addItems(pl.id, itemIds);
     onAdded?.call();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.success('${itemIds.length}件を「${pl.name}」に追加しました'),
       );
     }

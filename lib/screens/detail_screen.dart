@@ -143,7 +143,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Future<void> _analyze(LoopItem item) async {
     // まとめて解析がちょうどこの曲を解析中なら、終わるのを待ってもらう（二重に落とさない）
     if (ref.read(bulkAnalysisProvider)?.currentId == item.id) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
           AppSnackBar.info('まとめて解析でこの曲を解析中です'));
       return;
     }
@@ -155,23 +155,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
     if (!mounted) return;
     setState(() => _analyzing = false);
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = AppToast.instance;
     if (result == null && AudioAnalysisService.isTooLong(item)) {
-      messenger.showSnackBar(AppSnackBar.info(
+      messenger.show(AppSnackBar.info(
           '${AudioAnalysisService.maxAnalyzableMinutes} 分以上の曲は解析しません。タップして手入力できます'));
     } else if (result == null) {
-      messenger.showSnackBar(AppSnackBar.error('テンポ/キーを解析できませんでした'));
+      messenger.show(AppSnackBar.error('テンポ/キーを解析できませんでした'));
     } else if (result.span.isMusic && !result.span.steadyBeat) {
-      messenger.showSnackBar(AppSnackBar.success(
+      messenger.show(AppSnackBar.success(
           '解析完了: テンポ不定（一定の拍がない曲）${result.key == null ? '' : ' · ${MusicalKey.display(result.key)}'}'));
     } else if (!result.span.isMusic) {
-      messenger.showSnackBar(AppSnackBar.info(
+      messenger.show(AppSnackBar.info(
           '曲ではないと判定しました（拍が見つかりません）。タップして手入力できます'));
     } else if (result.bpm == null && result.key == null) {
-      messenger.showSnackBar(
+      messenger.show(
           AppSnackBar.info('テンポ/キーを検出できませんでした。タップして手入力できます'));
     } else {
-      messenger.showSnackBar(
+      messenger.show(
           AppSnackBar.success(
               '解析完了: ${_tempoKeyText(result.bpm, result.key, result.sections)}'));
     }
@@ -295,7 +295,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final copy =
         await ref.read(loopItemsProvider.notifier).duplicate(item);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.success('複製しました'),
       );
       Navigator.of(context).pushReplacement(
@@ -326,7 +326,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             enabled: !pl.itemIds.contains(item.id),
             onTap: () {
               ref.read(playlistsProvider.notifier).addItems(pl.id, [item.id]);
-              ScaffoldMessenger.of(context).showSnackBar(
+              AppToast.instance.show(
                 AppSnackBar.success('「${pl.name}」に追加しました'),
               );
             },
@@ -345,7 +345,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final pl = Playlist(id: IdGenerator.next(), name: name, itemIds: [item.id]);
     await ref.read(playlistsProvider.notifier).add(pl);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.instance.show(
       AppSnackBar.success('「$name」を作って追加しました'),
     );
   }
@@ -378,7 +378,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (!ok || !mounted) return;
     await ref.read(loopItemsProvider.notifier).clearCache(item.id);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.success('オフラインデータを削除しました'),
       );
     }
@@ -398,7 +398,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   void _copyUrl(String url) {
     Clipboard.setData(ClipboardData(text: url));
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.instance.show(
       AppSnackBar.success('URLをコピーしました'),
     );
   }
@@ -747,7 +747,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (index >= regions.length) return;
     final region = regions[index];
     if (!region.hasA || !region.hasB) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.instance.show(
         AppSnackBar.info('A・B両方の地点を設定してください'),
       );
       return;
@@ -824,9 +824,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// タグを外す。見えない長押しではなく × で外し、「元に戻す」を出す
   void _removeTag(LoopItem item, Tag tag) {
     ref.read(loopItemsProvider.notifier).removeTagFromItems([item.id], tag.id);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(AppSnackBar.action(
+    AppToast.instance
+      ..hide()
+      ..show(AppSnackBar.action(
         'タグ「${tag.name}」を外しました',
         label: '元に戻す',
         onPressed: () => ref

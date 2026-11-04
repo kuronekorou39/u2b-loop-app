@@ -102,7 +102,7 @@ class SaveFlow {
       await _runOffline(context, ref, item, choice);
       return;
     }
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = AppToast.instance;
     final format = choice.exportChoice.format;
     String? input;
     try {
@@ -111,20 +111,20 @@ class SaveFlow {
         format,
         playingUri: playingUri,
         onStatus: (s) {
-          messenger.hideCurrentSnackBar();
-          messenger.showSnackBar(AppSnackBar.progress(s));
+          messenger.hide();
+          messenger.show(AppSnackBar.progress(s));
         },
       );
     } catch (e) {
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
+      messenger.hide();
+      messenger.show(
         AppSnackBar.error('動画の取得に失敗しました: ${AppErrors.describe(e)}'),
       );
       return;
     }
-    messenger.hideCurrentSnackBar();
+    messenger.hide();
     if (input == null) {
-      messenger.showSnackBar(AppSnackBar.info('書き出せる動画ソースがありません'));
+      messenger.show(AppSnackBar.info('書き出せる動画ソースがありません'));
       return;
     }
     if (!context.mounted) return;
@@ -176,9 +176,7 @@ class SaveFlow {
     SaveChoice choice,
   ) async {
     if (!canSaveOffline(item)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(AppSnackBar.info('アプリ内に保存できるのは YouTube の曲だけです'));
+      AppToast.instance.show(AppSnackBar.info('アプリ内に保存できるのは YouTube の曲だけです'));
       return;
     }
     final progress = _BulkProgress(total: 1)..label = item.title;
@@ -192,18 +190,18 @@ class SaveFlow {
     await dialog;
     progress.dispose();
     if (!context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = AppToast.instance;
     if (result.success) {
       final mb = (result.sizeBytes / 1024 / 1024).toStringAsFixed(1);
       final subMsg = result.subtitlePath != null ? '・字幕付き' : '';
-      messenger.showSnackBar(
+      messenger.show(
         AppSnackBar.success(
           'アプリ内に保存しました（${result.resolution ?? ''} ${mb}MB$subMsg）',
           duration: const Duration(seconds: 4),
         ),
       );
     } else if (!result.cancelled) {
-      messenger.showSnackBar(AppSnackBar.error('保存失敗: ${result.error}'));
+      messenger.show(AppSnackBar.error('保存失敗: ${result.error}'));
     }
   }
 
@@ -296,9 +294,9 @@ class SaveFlow {
     final targets = choice.target == SaveTarget.offline
         ? items.where((i) => canSaveOffline(i) && !i.isCached).toList()
         : items;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = AppToast.instance;
     if (targets.isEmpty) {
-      messenger.showSnackBar(AppSnackBar.info('保存する曲がありません（すべて保存済み）'));
+      messenger.show(AppSnackBar.info('保存する曲がありません（すべて保存済み）'));
       return;
     }
     final progress = _BulkProgress(total: targets.length);
@@ -328,7 +326,7 @@ class SaveFlow {
     progress.dispose();
     final head = cancelled ? 'やめました。' : '';
     final verb = choice.target == SaveTarget.offline ? '保存' : '書き出し';
-    messenger.showSnackBar(
+    messenger.show(
       failed.isEmpty
           ? AppSnackBar.success('$head$done 曲を$verbしました')
           : AppSnackBar.error(
