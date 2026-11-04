@@ -46,7 +46,10 @@ class AudioAnalysisService {
       !isTooLong(item) &&
       (item.analyzedAt == null ||
           item.leadingSilenceMs == null ||
-          (item.analysisVersion ?? 0) < LoopItem.currentAnalysisVersion ||
+          (item.analysisVersion ?? 0) <
+              (item.notMusic == true
+                  ? LoopItem.currentAnalysisVersion
+                  : LoopItem.minAnalysisVersion) ||
           // テンポの区切りがあるのに区切りごとの格子が無い（v1.123 までの解析）
           (item.tempoSections.length >= 2 && item.sectionGridData == null));
 

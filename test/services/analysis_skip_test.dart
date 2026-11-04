@@ -49,7 +49,7 @@ void main() {
         AudioAnalysisService.needsAnalysis(_item(
             analyzedAt: now,
             leadingSilenceMs: 0,
-            analysisVersion: LoopItem.currentAnalysisVersion - 1)),
+            analysisVersion: LoopItem.minAnalysisVersion - 1)),
         isTrue);
     expect(
         AudioAnalysisService.needsAnalysis(_item(
@@ -74,6 +74,20 @@ void main() {
     item.sectionGridData = [100, 0, 0.5, -1, -1, 150, 0, 0.5, -1, -1];
     expect(AudioAnalysisService.needsAnalysis(item), isFalse);
   });
+
+  test('曲ではないと判定した曲だけは、拍のない曲を見分ける版（9）で解析し直す', () {
+    _LoopItemWith item({bool? notMusic, required int version}) => _LoopItemWith(_item(
+        analyzedAt: now, leadingSilenceMs: 0, analysisVersion: version)
+      ..notMusic = notMusic);
+    expect(AudioAnalysisService.needsAnalysis(item(version: 8).i), isFalse);
+    expect(AudioAnalysisService.needsAnalysis(item(version: 8, notMusic: true).i), isTrue);
+    expect(AudioAnalysisService.needsAnalysis(item(version: 9, notMusic: true).i), isFalse);
+  });
+}
+
+class _LoopItemWith {
+  _LoopItemWith(this.i);
+  final LoopItem i;
 }
 
 /// sinkFor は受け口を返すだけで items には触れない

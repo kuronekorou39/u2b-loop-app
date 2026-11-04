@@ -34,6 +34,28 @@ Int16List _talk(double seconds, {int seed = 1}) {
   return y;
 }
 
+/// 拍の無い和音（C の長三和音を伸ばす。音量と音程がゆっくり不規則に揺れ、少しノイズ。
+/// 正弦波だけだと FFT の区切りと干渉して拍のような周期が出る）
+Int16List _pad(double seconds) {
+  final n = (_sr * seconds).round();
+  final y = Int16List(n);
+  final rng = Random(7);
+  var amp = 0.7, drift = 0.0;
+  final phases = [0.0, 0.0, 0.0, 0.0];
+  const freqs = [130.81, 164.81, 196.0, 261.63];
+  for (var i = 0; i < n; i++) {
+    amp = (amp + (rng.nextDouble() - 0.5) * 0.0005).clamp(0.4, 1.0);
+    drift = (drift + (rng.nextDouble() - 0.5) * 0.00002).clamp(-0.003, 0.003);
+    var v = 0.0;
+    for (var k = 0; k < freqs.length; k++) {
+      phases[k] += 2 * pi * freqs[k] * (1 + drift) / _sr;
+      v += sin(phases[k]);
+    }
+    y[i] = ((v / 4 * amp + 0.02 * (rng.nextDouble() * 2 - 1)) * 12000).round();
+  }
+  return y;
+}
+
 Int16List _concat(List<Int16List> parts) {
   final out = Int16List(parts.fold(0, (n, p) => n + p.length));
   var o = 0;
@@ -100,5 +122,16 @@ void main() {
     expect(info.tailMs, 20000);
     expect(MusicSpanInfo.of(span, lengthMs: 110000, truncated: true).tailMs, isNull);
     expect(MusicSpanInfo.of(MusicSpan.notMusic, lengthMs: 1, truncated: false).notMusic, isTrue);
+  });
+
+  test('拍がなくても和音があれば曲（キーだけ）。トークは曲ではないまま', () {
+    final r = BpmKeyDetector.analyze(_pad(60), _sr);
+    expect(r.span.isMusic, isTrue);
+    expect(r.span.steadyBeat, isFalse, reason: '${r.span} bpm=${r.bpm}');
+    expect(r.bpm, isNull);
+    expect(r.beatGrid, isNull);
+    expect(r.key, 'Cmaj');
+    expect(BpmKeyDetector.analyze(_talk(60), _sr).span.isMusic, isFalse);
+    expect(MusicSpanInfo.of(r.span, lengthMs: 60000, truncated: false).noSteadyBeat, isTrue);
   });
 }

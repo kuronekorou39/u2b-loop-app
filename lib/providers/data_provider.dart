@@ -110,6 +110,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       item.musicHeadMs = span.headMs;
       item.musicTailMs = span.tailMs;
       item.notMusic = span.notMusic ? true : null;
+      item.noSteadyBeat = span.noSteadyBeat ? true : null;
       // 飛ばす部分が 1 秒以上変わったら、波形から求めたミックス点と音量の流れを取り直す
       final moved = (item.introSkipMs - oldIntro).abs() >= 1000 ||
           ((item.outroSkipMs ?? 0) - oldOutro).abs() >= 1000;
@@ -125,6 +126,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       keepTempo = version >= 4 &&
           version < LoopItem.currentAnalysisVersion &&
           !span.notMusic &&
+          !span.noSteadyBeat &&
           !moved &&
           sections.length < 2;
       item.tempoSectionData =

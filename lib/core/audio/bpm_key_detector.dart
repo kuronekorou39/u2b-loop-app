@@ -110,11 +110,31 @@ class BpmKeyDetector {
   static AudioAnalysisResult analyze(Int16List pcm, int sampleRate) {
     final whole = onsetEnvelope(pcm, sampleRate);
     final span = whole == null ? MusicSpan.whole : MusicSpanDetector.detect(whole);
-    if (!span.isMusic) {
-      return AudioAnalysisResult(
-          bpmCandidates: const [], keyCandidates: const [], span: span);
-    }
     int sample(int ms) => (ms * sampleRate / 1000).round().clamp(0, pcm.length);
+    if (!span.isMusic) {
+      // 拍がはっきりしなくても、和音があれば曲（テンポを揺らすバラードなど）。キーだけ出す
+      final chroma = CqChroma.frames(pcm, sampleRate);
+      final tonal = MusicSpanDetector.tonalSpan(chroma, sampleRate);
+      if (!tonal.isMusic) {
+        return AudioAnalysisResult(
+            bpmCandidates: const [], keyCandidates: const [], span: span);
+      }
+      final from = sample(tonal.startMs);
+      final to = tonal.endMs == null ? pcm.length : max(from, sample(tonal.endMs!));
+      final fps = sampleRate / CqChroma.hop;
+      final part = chroma.sublist(
+          min(chroma.length, (from / CqChroma.hop).floor()),
+          min(chroma.length, (to / CqChroma.hop).ceil()));
+      final keySections =
+          KeySectionDetector.detect(part, sampleRate, startMs: tonal.startMs);
+      return AudioAnalysisResult(
+        bpmCandidates: const [],
+        keyCandidates: _mainKey(keySections, CqChroma.sum(part),
+            endMs: tonal.startMs + (part.length * 1000 / fps).round()),
+        span: tonal,
+        keySections: keySections,
+      );
+    }
     final from = sample(span.startMs);
     final to = span.endMs == null ? pcm.length : max(from, sample(span.endMs!));
     final musicPart = Int16List.sublistView(pcm, from, to);
@@ -178,19 +198,8 @@ class BpmKeyDetector {
     final chroma = CqChroma.frames(musicPart, sampleRate);
     final keySections =
         KeySectionDetector.detect(chroma, sampleRate, startMs: span.startMs);
-    var keys = keyFromChroma(CqChroma.sum(chroma));
-    if (keySections.length >= 2) {
-      final endMs = span.startMs + musicPart.length * 1000 ~/ sampleRate;
-      var longest = 0;
-      for (var i = 0; i < keySections.length; i++) {
-        final next = i + 1 < keySections.length ? keySections[i + 1].startMs : endMs;
-        final len = next - keySections[i].startMs;
-        if (len > longest) {
-          longest = len;
-          keys = [KeyCandidate(keySections[i].key, 1)];
-        }
-      }
-    }
+    final keys = _mainKey(keySections, CqChroma.sum(chroma),
+        endMs: span.startMs + musicPart.length * 1000 ~/ sampleRate);
     return AudioAnalysisResult(
       bpmCandidates: bpms,
       keyCandidates: keys,
@@ -200,6 +209,23 @@ class BpmKeyDetector {
       keySections: keySections,
       sectionGrids: sectionGrids,
     );
+  }
+
+  /// 曲のキーの候補: 転調するなら一番長い区切りのキー、しなければ [chroma] 全体から
+  static List<KeyCandidate> _mainKey(List<KeySection> sections, Float64List chroma,
+      {required int endMs}) {
+    if (sections.length < 2) return keyFromChroma(chroma);
+    var longest = 0;
+    var keys = const <KeyCandidate>[];
+    for (var i = 0; i < sections.length; i++) {
+      final next = i + 1 < sections.length ? sections[i + 1].startMs : endMs;
+      final len = next - sections[i].startMs;
+      if (len > longest) {
+        longest = len;
+        keys = [KeyCandidate(sections[i].key, 1)];
+      }
+    }
+    return keys;
   }
 
   /// サンプル [from]〜[to] の区切りの格子（動画の時刻）。短すぎれば null

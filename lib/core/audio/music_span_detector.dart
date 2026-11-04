@@ -1,6 +1,9 @@
 import 'dart:math';
 
+import 'dart:typed_data';
+
 import 'bpm_key_detector.dart';
+import 'cq_chroma.dart';
 
 /// 動画の中で曲が鳴っている範囲。
 ///
@@ -12,6 +15,7 @@ class MusicSpan {
     required this.isMusic,
     required this.startMs,
     required this.endMs,
+    this.steadyBeat = true,
   });
 
   /// 範囲が分からない（短すぎる）ときの「全体が曲」
@@ -29,13 +33,24 @@ class MusicSpan {
   /// 曲の終わり（動画の頭からのミリ秒）。null = 解析した終わりまで曲
   final int? endMs;
 
+  /// 一定の拍がある曲か。false = 拍ははっきりしないが和音のある曲（テンポを揺らして歌う
+  /// バラードなど）。BPM・拍の格子は出さず、キーだけ出す
+  final bool steadyBeat;
+
   @override
-  String toString() => isMusic ? '曲 ${startMs}ms〜${endMs ?? '終わり'}' : '曲ではない';
+  String toString() => !isMusic
+      ? '曲ではない'
+      : '曲${steadyBeat ? '' : '（拍なし）'} ${startMs}ms〜${endMs ?? '終わり'}';
 }
 
 /// 保存する形の曲の範囲（無音と同じく、頭から・お尻から何ミリ秒が曲でないか）
 class MusicSpanInfo {
-  const MusicSpanInfo({required this.headMs, required this.tailMs, required this.notMusic});
+  const MusicSpanInfo({
+    required this.headMs,
+    required this.tailMs,
+    required this.notMusic,
+    this.noSteadyBeat = false,
+  });
 
   /// [lengthMs] は解析した PCM の長さ。[truncated] なら曲末まで届いていないので
   /// お尻は分からない（null）
@@ -46,12 +61,16 @@ class MusicSpanInfo {
       headMs: span.startMs,
       tailMs: truncated ? null : (end == null ? 0 : max(0, lengthMs - end)),
       notMusic: false,
+      noSteadyBeat: !span.steadyBeat,
     );
   }
 
   final int headMs;
   final int? tailMs;
   final bool notMusic;
+
+  /// 拍ははっきりしないが和音のある曲（[MusicSpan.steadyBeat] が false）
+  final bool noSteadyBeat;
 }
 
 /// 曲の範囲を立ち上がりの時系列から求める（純Dart・副作用なし）。
@@ -64,6 +83,50 @@ class MusicSpanInfo {
 ///    短いブロックでも判定がぶれない（同じ測定でトーク 0.3〜1.2、曲 1.5〜4）。境目の誤差は 1〜3 秒
 class MusicSpanDetector {
   MusicSpanDetector._();
+
+  /// 和音のはっきりさ（16 秒窓のクロマと 24 キーの相関の最大）がこれ以上なら和音がある。
+  /// 2026-11 の測定: 読み上げのトーク 0.22〜0.37、ふつうの曲 0.67〜0.88、
+  /// テンポを揺らすバラード（When I Think About The Future）0.81
+  static const tonalThreshold = 0.5;
+
+  static const _tonalWindowSec = 16.0;
+  static const _tonalHopSec = 8.0;
+
+  /// 拍がはっきりしないとき（[detect] が曲ではないと判定したとき）に、和音で曲の範囲を探す。
+  /// [frames] は動画全体の [CqChroma.frames]。和音のある窓が 2 つ続く最初から最後までを
+  /// 「拍のない曲」とし（8 秒単位）、ほとんど無ければ曲ではない
+  static MusicSpan tonalSpan(List<Float64List> frames, int sampleRate) {
+    final fps = sampleRate / CqChroma.hop;
+    final win = (_tonalWindowSec * fps).round(), hop = (_tonalHopSec * fps).round();
+    final tonal = <bool>[];
+    for (var a = 0; a + win <= frames.length; a += hop) {
+      final s = BpmKeyDetector.keyScores(CqChroma.sum(frames, a, a + win));
+      tonal.add(s != null && s.reduce(max) >= tonalThreshold);
+    }
+    var first = -1, last = -1, count = 0;
+    for (var i = 0; i + 1 < tonal.length; i++) {
+      if (tonal[i] && tonal[i + 1]) {
+        if (first < 0) first = i;
+        last = i + 1;
+      }
+    }
+    if (first < 0) return MusicSpan.notMusic;
+    for (var i = first; i <= last; i++) {
+      if (tonal[i]) count++;
+    }
+    final startFrame = first * hop, endFrame = min(frames.length, last * hop + win);
+    if ((endFrame - startFrame) / fps < _minMusicSec ||
+        count / (last - first + 1) < _minBeatRatio) {
+      return MusicSpan.notMusic;
+    }
+    int ms(int frame) => (frame * 1000 / fps).round();
+    return MusicSpan(
+      isMusic: true,
+      startMs: ms(startFrame),
+      endMs: endFrame >= frames.length ? null : ms(endFrame),
+      steadyBeat: false,
+    );
+  }
 
   static const _windowSec = 8.0;
   static const _hopSec = 4.0;

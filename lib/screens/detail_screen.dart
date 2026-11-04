@@ -161,6 +161,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           '${AudioAnalysisService.maxAnalyzableMinutes} 分以上の曲は解析しません。タップして手入力できます'));
     } else if (result == null) {
       messenger.showSnackBar(AppSnackBar.error('テンポ/キーを解析できませんでした'));
+    } else if (result.span.isMusic && !result.span.steadyBeat) {
+      messenger.showSnackBar(AppSnackBar.success(
+          '解析完了: テンポ不定（一定の拍がない曲）${result.key == null ? '' : ' · ${MusicalKey.display(result.key)}'}'));
     } else if (!result.span.isMusic) {
       messenger.showSnackBar(AppSnackBar.info(
           '曲ではないと判定しました（拍が見つかりません）。タップして手入力できます'));
@@ -174,9 +177,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
   }
 
-  String _tempoKeyText(double? bpm, String? key, List<TempoSection> sections) {
+  String _tempoKeyText(double? bpm, String? key, List<TempoSection> sections,
+      {bool noSteadyBeat = false}) {
     final parts = <String>[
-      if (bpm != null) LoopItem.formatBpm(bpm, sections),
+      if (bpm != null) LoopItem.formatBpm(bpm, sections) else if (noSteadyBeat) 'テンポ不定',
       if (key != null) MusicalKey.display(key)!,
     ];
     return parts.isEmpty ? '検出できず（タップで入力）' : parts.join(' · ');
@@ -198,7 +202,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 ? 'タップして解析（BPM とキー）'
                 : item.notMusic == true && !analyzed
                     ? '曲ではないと判定。タップで手入力'
-                    : '${_tempoKeyText(item.bpm, item.musicalKey, item.tempoSections)}。タップで補正'
+                    : '${_tempoKeyText(item.bpm, item.musicalKey, item.tempoSections, noSteadyBeat: item.noSteadyBeat == true)}。タップで補正'
                         '${item.tempoSectionsLabel == null ? '' : '\n${item.tempoSectionsLabel}'}'
                         '${item.keySectionsLabel == null ? '' : '\n${item.keySectionsLabel}'}';
     Widget row({

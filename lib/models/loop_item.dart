@@ -85,8 +85,12 @@ class LoopItem {
 
   /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度、4: 小節頭、
   /// 5: 曲の範囲、6: テンポの区切り、7: キーの検出を CQT に直して転調も、
-  /// 8: テンポの 2:3 の取り違えを区切りにしない）
-  static const currentAnalysisVersion = 8;
+  /// 8: テンポの 2:3 の取り違えを区切りにしない、9: 拍のない曲（和音で判定）にキー）
+  static const currentAnalysisVersion = 9;
+
+  /// これより古い解析は解析し直す。曲ではないと判定した曲だけは [currentAnalysisVersion]
+  /// （9 で拍のないバラードを曲と見分けるようになった。ほかの曲は 8 のままでよい）
+  static const minAnalysisVersion = 8;
 
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）
@@ -103,8 +107,11 @@ class LoopItem {
   /// null = 未計測、または曲末まで解析していない
   int? musicTailMs;
 
-  /// 曲ではないと判定した（拍のはっきりした部分がほとんど無い）。BPM・キーは出さない
+  /// 曲ではないと判定した（拍も和音もはっきりした部分がほとんど無い）。BPM・キーは出さない
   bool? notMusic;
+
+  /// 一定の拍が無い曲（テンポを揺らして歌うバラードなど。和音で曲と判定）。BPM は「テンポ不定」
+  bool? noSteadyBeat;
 
   /// テンポの区切り（[TempoSection.flatten] の形）。テンポが変わる曲だけ。null = 一定か未計測。
   /// [bpm] は一番長い区切りのテンポ
@@ -320,6 +327,7 @@ class LoopItem {
     this.keySectionData,
     this.sectionGridData,
     this.unplayableReason,
+    this.noSteadyBeat,
     this.mixInMs,
     this.mixOutMs,
     this.beatOffsetMs,
@@ -417,7 +425,9 @@ class LoopItem {
       ? formatBpm(bpm!, tempoSections)
       : notMusic == true
           ? 'BPM —'
-          : null;
+          : noSteadyBeat == true
+              ? 'テンポ不定'
+              : null;
 
   /// 「120 BPM」。テンポが変わる曲は「150 BPM（100〜150）」（メインの値 + 区切りの最小〜最大）
   static String formatBpm(double bpm, List<TempoSection> sections) {
@@ -517,6 +527,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       sectionGridData:
           (fields[52] as List?)?.map((v) => (v as num).toDouble()).toList(),
       unplayableReason: fields[53] as String?,
+      noSteadyBeat: fields[54] as bool?,
     );
   }
 
@@ -577,6 +588,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       51: obj.keySectionData,
       52: obj.sectionGridData,
       53: obj.unplayableReason,
+      54: obj.noSteadyBeat,
     });
   }
 }
