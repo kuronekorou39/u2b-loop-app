@@ -63,8 +63,13 @@ class WaveformLoader {
       source.uri.startsWith('/') ||
       _prefetchedAudioPath != null;
 
-  /// 波形を作って provider に流す。戻り値は成功した波形（失敗・空は null）
+  /// 何回目の [generate] か。古い呼び出しが後から終わっても表示を上書きしないように
+  int _generation = 0;
+
+  /// 波形を作って provider に流す。戻り値は成功した波形（失敗・空・中止は null）
   Future<List<double>?> generate(VideoSource source, LoopItem item) async {
+    final gen = ++_generation;
+    bool current() => isMounted() && gen == _generation;
     final data = _ref.read(waveformDataProvider.notifier);
     final error = _ref.read(waveformErrorProvider.notifier);
     final loading = _ref.read(waveformLoadingProvider.notifier);
@@ -95,18 +100,21 @@ class WaveformLoader {
         needLoudness: _needLoudness(item),
         cacheKey: item.id,
       );
-      if (!isMounted()) return null;
+      if (!current()) return null;
       if (waveform == null || waveform.isEmpty) {
         error.state = failedMessage;
         return null;
       }
       data.state = waveform;
       return waveform;
+    } on WaveformCancelled {
+      // 新しい波形を頼んだので中止された（表示はそちらが決める）
+      return null;
     } catch (e) {
-      if (isMounted()) error.state = AppErrors.describe(e);
+      if (current()) error.state = AppErrors.describe(e);
       return null;
     } finally {
-      if (isMounted()) loading.state = false;
+      if (current()) loading.state = false;
     }
   }
 

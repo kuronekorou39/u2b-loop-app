@@ -23,7 +23,22 @@ typedef PcmCallback = void Function(Int16List pcm, int sampleRate);
 /// 曲全体の RMS（dBFS）。MediaCodec でデコードしたときだけ分かる（[Loudness.measureDb]）
 typedef LoudnessCallback = void Function(double loudnessDb);
 
+/// ネイティブのデコードが中止された（新しい波形を頼んだ・画面を離れた）。失敗ではないので、
+/// 代わりの粗い波形（ファイルの大きさから推測）に切り替えたり保存したりしない
+class WaveformCancelled implements Exception {
+  const WaveformCancelled();
+  @override
+  String toString() => '波形の取得を中止しました';
+}
+
 class WaveformService {
+  /// ネイティブのデコードは同時に 1 つ（新しく頼むと前のは中止される）。次の曲の先読みが
+  /// 再生中の曲のデコードを中止させないよう、ここで 1 つずつ順に頼む。
+  /// 止めたいときは [cancel]（今のデコードを中止。待っている側は [WaveformCancelled]）
+  static Future<void> _queue = Future.value();
+
+  /// ネイティブのデコードを待つ上限
+  static const extractTimeout = Duration(minutes: 3);
 
   /// 前回の抽出をキャンセル（ネイティブ側の MediaExtractor を解放）
   Future<void> cancel() async {
@@ -42,10 +57,21 @@ class WaveformService {
     LoudnessCallback? onLoudness,
   }) async {
     final withPcm = onPcm != null;
-    final raw = await NativeChannels.waveform.invokeMethod<dynamic>(
-      'extractAmplitudes',
-      {'url': url, 'withPcm': withPcm},
-    );
+    final previous = _queue;
+    final done = Completer<void>();
+    _queue = done.future;
+    dynamic raw;
+    try {
+      await previous;
+      // 返事が来ないまま待ち続けない（長い曲のデコードでも 1 分かからない）
+      raw = await NativeChannels.waveform.invokeMethod<dynamic>(
+        'extractAmplitudes',
+        {'url': url, 'withPcm': withPcm},
+      ).timeout(extractTimeout);
+    } finally {
+      done.complete();
+    }
+    if (raw is Map && raw['cancelled'] == true) throw const WaveformCancelled();
 
     List<dynamic>? result;
     if (raw is Map) {
@@ -93,6 +119,8 @@ class WaveformService {
       final result = await generateFromUrl(path, targetSamples,
           onPcm: onPcm, onLoudness: onLoudness);
       if (result != null) return result;
+    } on WaveformCancelled {
+      rethrow; // 中止は失敗ではない（粗い波形に切り替えない）
     } catch (_) {
       // MediaCodecが失敗したらフォールバックへ
     }

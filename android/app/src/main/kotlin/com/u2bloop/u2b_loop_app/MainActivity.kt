@@ -234,16 +234,23 @@ class MainActivity : FlutterActivity() {
                                     )
                                 }
                             } catch (e: CancellationException) {
+                                // 中止されたジョブの中では withContext も中止されて返事が届かず、
+                                // Dart 側が永遠に待っていた（「波形を読込中」のまま）。
+                                // NonCancellable で必ず「中止した」と返す
                                 Log.d(TAG, "Extraction cancelled")
-                                withContext(Dispatchers.Main) {
-                                    result.success(
-                                        if (withPcm) emptyMap<String, Any?>() else intArrayOf()
-                                    )
+                                withContext(NonCancellable + Dispatchers.Main) {
+                                    result.success(mapOf("cancelled" to true))
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Extraction error: ${e.message}")
-                                withContext(Dispatchers.Main) {
-                                    result.error("EXTRACT_ERROR", e.message ?: "Unknown error", null)
+                                // 中止で MediaExtractor を解放したときもデコード中の例外でここに来る
+                                val cancelled = !isActive
+                                Log.e(TAG, "Extraction error (cancelled=$cancelled): ${e.message}")
+                                withContext(NonCancellable + Dispatchers.Main) {
+                                    if (cancelled) {
+                                        result.success(mapOf("cancelled" to true))
+                                    } else {
+                                        result.error("EXTRACT_ERROR", e.message ?: "Unknown error", null)
+                                    }
                                 }
                             }
                         }
