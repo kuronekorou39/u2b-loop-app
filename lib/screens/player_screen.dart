@@ -700,6 +700,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 重ね表示の次曲の波形。手元に無ければ保存済みの波形を読みに行く（1 曲につき 1 回）
   final _mixWaveformLoads = <String>{};
   List<double>? _mixWaveformFor(LoopItem item) {
+    // 長い動画は波形を出さない（以前作った波形が残っていても位置がずれている）
+    if (WaveformService.tooLongForWaveform(durationMs: item.durationMs)) return null;
     final cached = _waveformCache[item.id];
     if (cached != null) return cached;
     if (_mixWaveformLoads.add(item.id)) {
@@ -1244,6 +1246,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final service = WaveformService();
       // プリロード側のプレイヤーは準備済みなので長さが分かる（0 なら不明として扱われる）
       final preloadDuration = ref.read(preloadPlayerProvider).state.duration;
+      // 長い動画は波形を作らない
+      if (WaveformService.tooLongForWaveform(
+          durationMs: item.durationMs, playerDuration: preloadDuration)) {
+        return;
+      }
       // 解析と、帯域の波形（色の濃淡）がまだ無ければその分も PCM を受け取る
       final onPcm = await WaveformCache.pcmSinkWithBands(
           item.id,

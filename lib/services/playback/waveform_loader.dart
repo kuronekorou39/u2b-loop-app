@@ -39,6 +39,11 @@ class WaveformLoader {
   /// 波形が保存済み（かつ解析不要）なら DL せずにすぐ [generate]
   void prefetchThenGenerate(
       LoopItem item, StreamManifest manifest, VoidCallback generate) {
+    // 長い動画は波形を作らない（音声も落とさない）
+    if (WaveformService.tooLongForWaveform(
+        durationMs: item.durationMs, manifest: manifest)) {
+      return;
+    }
     WaveformService.canSkipAudioFetch(item, needLoudness: _needLoudness(item))
         .then((skip) async {
       if (!isMounted()) return;
@@ -75,6 +80,13 @@ class WaveformLoader {
     final loading = _ref.read(waveformLoadingProvider.notifier);
     data.state = null;
     error.state = null;
+    // 長い動画は波形を作らない（細いシークバーだけ。読込中もエラーも出さない）
+    if (WaveformService.tooLongForWaveform(
+        durationMs: item.durationMs,
+        playerDuration: _ref.read(playerProvider).state.duration)) {
+      loading.state = false;
+      return null;
+    }
     loading.state = true;
     try {
       final service = WaveformService();

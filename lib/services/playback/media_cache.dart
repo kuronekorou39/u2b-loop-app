@@ -14,7 +14,8 @@ import '../ranged_downloader.dart';
 ///   ストリーム URL の失効（数時間）で途中から再生できなくなる経路も消える
 /// - 消えてよい使い捨て。オフライン保存（CacheService、消えない置き場）とは別物で、
 ///   オフライン保存があればそちらが常に優先される
-/// - 合計が上限（[limitBytes]、設定で変更）を超えたら古い順に消す
+/// - 合計が上限（[limitBytes]、設定で変更）を超えたら古い順に消す。既定は無制限
+///   （v1.134.0。一度再生した曲はオフラインでも開けるように）
 /// - **長い曲（[maxDuration] 超）は残さない**。1 曲で上限の多くを使い、他の曲を押し出すため。
 ///   繰り返し聴く長い曲はオフライン保存すればよい。
 ///   ただし高音質の音声は再生に要るので落とし、`.long` 印を付けて最新 [keepLongFiles] 件だけ残す
@@ -32,9 +33,10 @@ class MediaCache {
   /// 長い曲の高音質の音声を残す件数（2 枚のプレイヤーの分）
   static const keepLongFiles = 2;
 
-  /// 上限の選択肢（MB）と既定
-  static const limitOptionsMb = [500, 1024, 2048, 4096];
-  static const defaultLimitMb = 1024;
+  /// 上限の選択肢（MB。[unlimitedMb] は無制限）と既定
+  static const unlimitedMb = 0;
+  static const limitOptionsMb = [500, 1024, 2048, 4096, unlimitedMb];
+  static const defaultLimitMb = unlimitedMb;
 
   /// 再生開始から映像を落とし始めるまで
   static const videoDelay = Duration(seconds: 5);
@@ -54,7 +56,10 @@ class MediaCache {
   static set limitMb(int mb) =>
       AppBoxes.settings.put(SettingsKeys.mediaCacheLimitMb, mb);
 
-  static int get limitBytes => limitMb * 1024 * 1024;
+  static bool get unlimited => limitMb == unlimitedMb;
+
+  /// 上限（バイト）。無制限なら消さない大きさ
+  static int get limitBytes => unlimited ? 1 << 62 : limitMb * 1024 * 1024;
 
   /// サイズとビットレートからの長さの見積もり（manifest には長さが無い）
   static Duration estimateDuration(int bytes, int bitsPerSecond) =>

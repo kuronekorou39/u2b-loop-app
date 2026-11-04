@@ -65,8 +65,11 @@ class _StorageSettingsScreenState extends ConsumerState<StorageSettingsScreen> {
     _toast(AppSnackBar.success('自動キャッシュを空にしました'));
   }
 
-  static String _mbLabel(int mb) =>
-      mb >= 1024 ? '${(mb / 1024).toStringAsFixed(mb % 1024 == 0 ? 0 : 1)} GB' : '$mb MB';
+  static String _mbLabel(int mb) => mb == MediaCache.unlimitedMb
+      ? '無制限'
+      : mb >= 1024
+          ? '${(mb / 1024).toStringAsFixed(mb % 1024 == 0 ? 0 : 1)} GB'
+          : '$mb MB';
 
   Future<void> _clearWaveformCache() async {
     final ok = await AppDialogs.confirm(
@@ -138,7 +141,9 @@ class _StorageSettingsScreenState extends ConsumerState<StorageSettingsScreen> {
             SettingsRow(
               icon: Icons.data_usage,
               title: '上限',
-              subtitle: '${_mbLabel(MediaCache.limitMb)}。超えたら古い順に消します',
+              subtitle: MediaCache.unlimited
+                  ? '無制限。一度再生した曲はオフラインでも開けます'
+                  : '${_mbLabel(MediaCache.limitMb)}。超えたら古い順に消します',
               onTap: _pickCacheLimit,
             ),
           ],

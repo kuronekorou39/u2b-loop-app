@@ -416,6 +416,30 @@ class WaveformService {
   }
 
   /// 波形がキャッシュ済みで、解析も曲の大きさの計測も不要なら true（音声 DL を省ける）
+  /// これより長い動画は波形を作らない（細いシークバーだけ）。波形のために音声を丸ごと
+  /// デコードするのが重く、ネイティブのデコードは 30〜40 分で打ち切られるので、
+  /// それを全体に引き伸ばすと位置もずれていた（v1.134.0）
+  static const maxWaveformDuration = Duration(minutes: 30);
+
+  /// 波形を作らない長さか。長さは分かるものから: 保存した長さ → プレイヤーの長さ →
+  /// マニフェストの音声の大きさとビットレートからの見積もり。どれも分からなければ false
+  static bool tooLongForWaveform({
+    int? durationMs,
+    Duration? playerDuration,
+    StreamManifest? manifest,
+  }) {
+    Duration? d;
+    if (durationMs != null && durationMs > 0) {
+      d = Duration(milliseconds: durationMs);
+    } else if (playerDuration != null && playerDuration > Duration.zero) {
+      d = playerDuration;
+    } else if (manifest != null && manifest.audioOnly.isNotEmpty) {
+      final a = manifest.audioOnly.first;
+      d = MediaCache.estimateDuration(a.size.totalBytes, a.bitrate.bitsPerSecond);
+    }
+    return d != null && d > maxWaveformDuration;
+  }
+
   static Future<bool> canSkipAudioFetch(LoopItem item,
           {bool needLoudness = false}) async =>
       !AudioAnalysisService.needsAnalysis(item) &&

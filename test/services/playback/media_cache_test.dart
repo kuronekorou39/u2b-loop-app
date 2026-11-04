@@ -47,4 +47,12 @@ void main() {
     expect(HqAudio.labelFor('/c/media_cache/abc.140.128k.long.mp4'), 'AAC 128kbps');
     expect(HqAudio.isManagedPath('/data/cache/media_cache/abc.v18.mp4'), isTrue);
   });
+
+  test('上限の既定は無制限（何も消さない。長い曲の印付きの数だけは守る）', () {
+    expect(MediaCache.defaultLimitMb, MediaCache.unlimitedMb);
+    final out = MediaCache.pickEvictions([
+      for (var i = 0; i < 50; i++) e('s$i.v18.mp4', 500 * mb, i),
+    ], 1 << 62);
+    expect(out, isEmpty);
+  });
 }
