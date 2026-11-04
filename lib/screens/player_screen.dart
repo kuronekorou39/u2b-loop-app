@@ -1244,9 +1244,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final service = WaveformService();
       // プリロード側のプレイヤーは準備済みなので長さが分かる（0 なら不明として扱われる）
       final preloadDuration = ref.read(preloadPlayerProvider).state.duration;
-      final onPcm = AudioAnalysisService.sinkFor(
-          ref.read(loopItemsProvider.notifier), item,
-          duration: preloadDuration == Duration.zero ? null : preloadDuration);
+      // 解析と、帯域の波形（色の濃淡）がまだ無ければその分も PCM を受け取る
+      final onPcm = await WaveformCache.pcmSinkWithBands(
+          item.id,
+          AudioAnalysisService.sinkFor(ref.read(loopItemsProvider.notifier), item,
+              duration: preloadDuration == Duration.zero ? null : preloadDuration));
       List<double>? waveform;
 
       // 保存済みの波形があれば音声 DL ごと省く（解析が必要なときは作り直す）

@@ -11,6 +11,7 @@ import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
 import '../../providers/playlist_player_provider.dart';
+import '../../services/waveform_cache.dart';
 import '../loop/loop_seekbar.dart';
 import 'jog_wheel.dart';
 import 'mix_deck.dart';
@@ -347,6 +348,10 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     // 帯。またぐ線の濃さは組が進む演出（MixLanesAdvance）が決める
     Widget band(double linesOpacity) => MixView(
       outWaveform: outWaveform,
+      outBands: outItem == null
+          ? null
+          : ref.watch(waveBandsProvider(outItem.id)).valueOrNull,
+      inBands: ref.watch(waveBandsProvider(inItem.id)).valueOrNull,
       outDuration: pair.outDuration,
       outTitle: outItem == null ? '' : widget.titleFor(outItem),
       inWaveform: inWaveform,

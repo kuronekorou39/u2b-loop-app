@@ -9,6 +9,8 @@ import '../../core/audio/sfx_plan.dart';
 import '../../core/audio/beat_grid.dart';
 import '../../core/theme/app_theme.dart';
 import '../loop/beat_lines.dart';
+import '../../core/audio/wave_bands.dart';
+import '../loop/band_bars.dart';
 
 /// 重ね表示の窓（見えている範囲。旧曲の時計）
 class MixWindow {
@@ -49,9 +51,11 @@ class MixView extends StatelessWidget {
   const MixView({
     super.key,
     required this.outWaveform,
+    this.outBands,
     required this.outDuration,
     required this.outTitle,
     required this.inWaveform,
+    this.inBands,
     required this.inDuration,
     required this.inStart,
     required this.inTitle,
@@ -114,6 +118,10 @@ class MixView extends StatelessWidget {
 
   /// 旧曲（上段）
   final List<double>? outWaveform;
+
+  /// 帯域の波形（前の曲は赤、次の曲は青の濃淡で描く）。無ければ 1 色
+  final WaveBands? outBands;
+  final WaveBands? inBands;
   final Duration outDuration;
   final String outTitle;
 
@@ -225,6 +233,8 @@ class MixView extends StatelessWidget {
                   child: CustomPaint(
                     painter: _MixPainter(
                       outWaveform: outWaveform,
+                      outBands: outBands,
+                      inBands: inBands,
                       outDuration: outDuration,
                       inWaveform: inWaveform,
                       inDuration: inDuration,
@@ -349,6 +359,8 @@ class _LaneLabel extends StatelessWidget {
 class _MixPainter extends CustomPainter {
   _MixPainter({
     required this.outWaveform,
+    this.outBands,
+    this.inBands,
     required this.outDuration,
     required this.inWaveform,
     required this.inDuration,
@@ -377,6 +389,8 @@ class _MixPainter extends CustomPainter {
   final bool bassSwap;
   final BeatLineSource? outBeats;
   final BeatLineSource? inBeats;
+  final WaveBands? outBands;
+  final WaveBands? inBands;
   final List<double>? outWaveform;
   final Duration outDuration;
   final List<double>? inWaveform;
@@ -424,6 +438,8 @@ class _MixPainter extends CustomPainter {
       w: w,
       toT: toT,
       waveform: outWaveform,
+      bands: outBands,
+      palette: BandPalette.red,
       durationMs: outDuration.inMilliseconds,
       // 旧曲の時計そのまま。切り替わり後は止まっている
       toTrackMs: (t) => t > cut.inMilliseconds ? null : t,
@@ -437,6 +453,8 @@ class _MixPainter extends CustomPainter {
       w: w,
       toT: toT,
       waveform: inWaveform,
+      bands: inBands,
+      palette: BandPalette.blue,
       durationMs: inDuration.inMilliseconds,
       // 次曲は交差開始で inStart から鳴り始める（速度の比 inRatio で進む）
       toTrackMs: (t) => t < start.inMilliseconds
@@ -641,6 +659,8 @@ class _MixPainter extends CustomPainter {
     required double w,
     required double Function(double x) toT,
     required List<double>? waveform,
+    WaveBands? bands,
+    required BandPalette palette,
     required int durationMs,
     required double? Function(double t) toTrackMs,
     required double playedUntilMs,
@@ -650,11 +670,25 @@ class _MixPainter extends CustomPainter {
     final midY = top + laneH / 2;
     final maxBarH = laneH * 0.44;
     final n = waveform.length;
+    // 帯域の波形があれば曲の色の濃淡で（まだ鳴っていない側は暗く）
     for (var x = 0.0; x < w; x += _barStep) {
       final t = toT(x);
       final trackMs = toTrackMs(t);
       if (trackMs == null || trackMs < 0 || trackMs >= durationMs) continue;
       final nextMs = toTrackMs(toT(x + _barStep)) ?? trackMs;
+      final v = bands?.maxIn(trackMs, nextMs);
+      if (v != null) {
+        BandBars.paint(canvas,
+            centerX: x + _barStep / 2,
+            width: _barStep * 0.7,
+            midY: midY,
+            maxHalfHeight: maxBarH,
+            bands: v,
+            palette: palette,
+            opacity: 0.9,
+            dim: t > playedUntilMs);
+        continue;
+      }
       final idx0 = (trackMs / durationMs * n).floor().clamp(0, n - 1);
       final idx1 = (nextMs / durationMs * n).ceil().clamp(idx0 + 1, n);
       var peak = 0.0;
@@ -693,6 +727,8 @@ class _MixPainter extends CustomPainter {
       start != old.start ||
       cut != old.cut ||
       outWaveform != old.outWaveform ||
+      outBands != old.outBands ||
+      inBands != old.inBands ||
       inWaveform != old.inWaveform ||
       inDuration != old.inDuration ||
       outDuration != old.outDuration;

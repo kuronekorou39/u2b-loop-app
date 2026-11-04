@@ -5,13 +5,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/audio/beat_map.dart';
+import '../../core/audio/wave_bands.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/loop_item.dart';
 import '../../models/loop_state.dart';
 import '../../core/utils/time_utils.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../services/waveform_cache.dart';
 import '../glass_panel.dart';
+import 'band_bars.dart';
 import 'beat_lines.dart';
 
 enum _DragTarget { position, pointA, pointB }
@@ -53,7 +56,8 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   final double? zoomLevel;
   final ValueChanged<double>? onZoomChanged;
 
-  /// 拍の線とテンポ・キーの変わり目を描く曲（単体再生の波形は拡大して見る。
+  /// 拍の線とテンポ・キーの変わり目を描く曲。帯域の波形（色の濃淡）もこの曲のものを使う
+  /// （単体再生の波形は拡大して見る。
   /// bar モード〔プレイリスト〕は拡大できないので、詰まれば 4 小節・8 小節ごとに間引く）
   final LoopItem? beatItem;
 
@@ -239,6 +243,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
         ref.watch(barLike ? playlistBeatLinesProvider : showBeatLinesProvider);
     final beats = showBeats ? BeatMap.segmentsOf(beatItem) : const <BeatSegment>[];
     final markers = beatItem == null ? const <SectionMarker>[] : BeatMap.markersOf(beatItem);
+    // 帯域の波形（色の濃淡）。まだ無い曲は 1 色のまま
+    final bands =
+        beatItem == null ? null : ref.watch(waveBandsProvider(beatItem.id)).valueOrNull;
 
     if (widget.compact && widget.onToggleCompact == null) {
       return _buildCompactMode(context, position, duration, loop, hasSource);
@@ -250,7 +257,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
           markers: showBeats ? markers : const [],
           viewStart: viewStart,
           viewEnd: viewEnd,
-          isZoomed: isZoomed);
+          isZoomed: isZoomed,
+          bands: bands);
     }
 
     return Padding(
@@ -397,6 +405,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             viewEnd: viewEnd,
                             beats: beats,
                             markers: markers,
+                            bands: bands,
                           ),
                         ),
                         ..._waveformStatusOverlays(
@@ -616,6 +625,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     double viewStart = 0,
     double viewEnd = 1,
     bool isZoomed = false,
+    WaveBands? bands,
   }) {
     final compact = widget.compact;
     final brightness = Theme.of(context).brightness;
@@ -663,6 +673,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                               beats: beats,
                               markers: markers,
                               thinOutBeats: true,
+                              bands: bands,
                             )
                           : _CompactSeekbarPainter(
                               position: position,
@@ -932,7 +943,11 @@ class _WaveformSeekbarPainter extends CustomPainter {
     this.beats = const [],
     this.markers = const [],
     this.thinOutBeats = false,
+    this.bands,
   });
+
+  /// 帯域の波形（色の濃淡で描く）。無ければ 1 色
+  final WaveBands? bands;
 
   /// 拡大できない波形: 詰まれば 4 小節・8 小節ごとに間引いて線を出す
   final bool thinOutBeats;
@@ -969,7 +984,11 @@ class _WaveformSeekbarPainter extends CustomPainter {
 
     // Waveform or minimal track
     if (waveform != null && waveform!.isNotEmpty) {
-      _drawWaveform(canvas, size, posX, isDark);
+      if (bands != null) {
+        _drawBands(canvas, size, posX, isDark, totalMs);
+      } else {
+        _drawWaveform(canvas, size, posX, isDark);
+      }
     } else {
       _drawMinimalTrack(canvas, size, posX, isDark);
     }
@@ -1068,6 +1087,45 @@ class _WaveformSeekbarPainter extends CustomPainter {
       }
     }
 
+  }
+
+  /// 帯域の棒の間隔（px）。サンプルと同じ粗さで、描く数も抑える（1 本で 3 色）
+  static const _bandStep = 3.0;
+
+  /// 帯域の波形: 3px ごとの棒を色の濃淡で（濃い = 低音、明るい = 中音、白に近い = 高音）。
+  /// 求めていない部分（打ち切られた長い曲の後半）は 1 色の棒。まだ鳴っていない側は暗く
+  void _drawBands(Canvas canvas, Size size, double posX, bool isDark, int totalMs) {
+    final b = bands!;
+    final data = waveform!;
+    final vpWidth = viewEnd - viewStart;
+    final midY = size.height / 2;
+    final maxBarH = size.height * 0.42;
+    double msAt(double x) => (viewStart + x / size.width * vpWidth) * totalMs;
+    for (var x = 0.0; x < size.width; x += _bandStep) {
+      final t0 = msAt(x), t1 = msAt(x + _bandStep);
+      final v = b.maxIn(t0, t1);
+      final cx = x + _bandStep / 2;
+      if (v != null) {
+        BandBars.paint(canvas,
+            centerX: cx,
+            width: _bandStep * 0.8,
+            midY: midY,
+            maxHalfHeight: maxBarH,
+            bands: v,
+            palette: BandPalette.green,
+            opacity: 0.9,
+            dim: cx > posX);
+      } else {
+        final i = (t0 / totalMs * data.length).floor().clamp(0, data.length - 1);
+        canvas.drawRect(
+          Rect.fromCenter(
+              center: Offset(cx, midY),
+              width: _bandStep * 0.8,
+              height: max(data[i] * maxBarH, 1.0) * 2),
+          Paint()..color = AppTheme.accentGreen.withValues(alpha: 0.5),
+        );
+      }
+    }
   }
 
   void _drawWaveform(
@@ -1247,7 +1305,8 @@ class _WaveformSeekbarPainter extends CustomPainter {
       old.viewEnd != viewEnd ||
       !listEquals(old.mixRanges, mixRanges) ||
       !listEquals(old.beats, beats) ||
-      !listEquals(old.markers, markers);
+      !listEquals(old.markers, markers) ||
+      old.bands != bands;
 }
 
 // =============================================================================

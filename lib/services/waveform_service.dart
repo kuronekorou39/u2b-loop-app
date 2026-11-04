@@ -316,6 +316,10 @@ class WaveformService {
     bool needLoudness = false,
     String? cacheKey,
   }) async {
+    // 帯域の波形（色の濃淡）がまだ無ければ、PCM を取り出して一緒に作る
+    if (cacheKey != null) {
+      onPcm = await WaveformCache.pcmSinkWithBands(cacheKey, onPcm);
+    }
     if (cacheKey != null &&
         onPcm == null &&
         !needLoudness &&
