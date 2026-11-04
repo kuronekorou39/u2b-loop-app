@@ -84,8 +84,9 @@ class LoopItem {
   int? analysisVersion;
 
   /// 解析に入れるものを増やしたら上げる（1: 無音、2: 拍の格子、3: 格子の信頼度、4: 小節頭、
-  /// 5: 曲の範囲、6: テンポの区切り、7: キーの検出を CQT に直して転調も）
-  static const currentAnalysisVersion = 7;
+  /// 5: 曲の範囲、6: テンポの区切り、7: キーの検出を CQT に直して転調も、
+  /// 8: テンポの 2:3 の取り違えを区切りにしない）
+  static const currentAnalysisVersion = 8;
 
   /// 曲頭の無音（ミリ秒）。クロスフェードで無音同士を重ねないために使う。
   /// null = 未計測（v1.72 以前の解析結果。再解析で埋まる）

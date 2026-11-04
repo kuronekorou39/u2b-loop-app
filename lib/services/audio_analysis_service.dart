@@ -86,6 +86,12 @@ class AudioAnalysisService {
     if (!_inFlight.add(itemId)) return null;
     try {
       final truncated = pcm.length >= maxAnalysisSeconds * sampleRate;
+      // PCM が上限いっぱい = 8 分を超える動画。開いた直後はプレイヤーが長さをまだ知らず
+      // [sinkFor] の長さの確認をすり抜けることがあるので、ここでも止める（長い動画は解析しない）
+      if (truncated) {
+        debugPrint('[AudioAnalysis] $itemId: $maxAnalyzableMinutes 分を超えるので解析しない');
+        return null;
+      }
       final (result, silence) = await Isolate.run(() => (
             BpmKeyDetector.analyze(pcm, sampleRate),
             SilenceDetector.detect(pcm, sampleRate, truncated: truncated),

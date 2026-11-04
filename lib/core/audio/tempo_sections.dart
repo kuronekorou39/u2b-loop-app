@@ -94,6 +94,39 @@ class TempoSectionDetector {
       return v[v.length ~/ 2];
     }
 
+    // 窓 t でテンポ [tempo]（倍/半分も含む）がどれくらい当てはまるか（その窓の 1 位を 1 とした比）。
+    // 拍のはっきりしない窓は 0
+    int nearestBin(double tempo) {
+      var best = 0;
+      for (var j = 1; j < k; j++) {
+        if ((bpms[j] - tempo).abs() < (bpms[best] - tempo).abs()) best = j;
+      }
+      return best;
+    }
+
+    double rel(int t, double tempo) {
+      final g = grams[t];
+      if (g == null) return 0;
+      final mx = g.score.reduce(max);
+      if (mx < MusicSpanDetector.beatScoreThreshold) return 0;
+      var best = 0.0;
+      for (final f in const [0.5, 1.0, 2.0]) {
+        final x = tempo * f;
+        if (x < bpms.last || x > bpms.first) continue;
+        best = max(best, g.score[nearestBin(x)]);
+      }
+      return best / mx;
+    }
+
+    // 区切り [r] の窓の平均
+    double support(_Run r, double tempo) {
+      var sum = 0.0;
+      for (var t = r.from; t < r.to; t++) {
+        sum += rel(t, tempo);
+      }
+      return r.length == 0 ? 0 : sum / r.length;
+    }
+
     double mainOf(List<_Run> runs) {
       final longest = runs.reduce((a, b) => b.length > a.length ? b : a);
       final v = [for (var t = longest.from; t < longest.to; t++) bpms[path[t]]]..sort();
@@ -115,6 +148,26 @@ class TempoSectionDetector {
           changed = true;
           break;
         }
+      }
+      if (changed) continue;
+      // 隣と 2:3 の関係で、どちらの区切りにも相手のテンポが十分あるなら取り違え（3 つずつ
+      // まとまる刻みの歌で 1.5 拍周期が強く出る）。曲全体で強い方のテンポで 1 つにする
+      for (var i = 0; i + 1 < sections.length; i++) {
+        final a = sections[i], b = sections[i + 1];
+        if (!isMisreadThreeTwo(a.bpm, b.bpm,
+            otherInFirst: support(a, b.bpm), otherInSecond: support(b, a.bpm))) {
+          continue;
+        }
+        final both = _Run(a.from, b.to);
+        final winner = support(both, a.bpm) >= support(both, b.bpm) ? a.bpm : b.bpm;
+        final bin = nearestBin(winner);
+        for (var t = both.from; t < both.to; t++) {
+          path[t] = bin;
+        }
+        a.to = b.to;
+        sections.removeAt(i + 1);
+        changed = true;
+        break;
       }
       if (changed) continue;
       // 一番短い区切りが短すぎれば、テンポの近い方の隣に混ぜる
@@ -178,6 +231,29 @@ class TempoSectionDetector {
   }
 
   static double _round1(double v) => (v * 10).round() / 10;
+
+  /// 2:3 の取り違えとみなす、相手のテンポの当てはまり（区切りの窓の平均。1 位を 1 とした比）。
+  /// 2026-11 の測定: 取り違え（Hazbin Guarantee 101 → 151）は両側とも 0.53〜0.57、
+  /// 本当の変化（98 → 148、110 → 148）は少なくとも片側が 0.04〜0.08
+  static const _ambiguousSupport = 0.35;
+
+  /// 隣り合う区切りのテンポ [first] → [second] が、本当の変化でなく 2:3 の取り違えか。
+  /// [otherInFirst] は前の区切りでの後のテンポの当てはまり、[otherInSecond] はその逆
+  /// （区切りの窓の平均。1 位を 1 とした比）。両方の区切りに相手のテンポが十分あれば取り違え
+  static bool isMisreadThreeTwo(double first, double second,
+          {required double otherInFirst, required double otherInSecond}) =>
+      _threeTwo(first, second) &&
+      otherInFirst >= _ambiguousSupport &&
+      otherInSecond >= _ambiguousSupport;
+
+  /// 倍/半分を除いて 3:2（または 4:3 = 2:3 の倍）の関係か
+  static bool _threeTwo(double a, double b) {
+    var o = (log(a / b) / ln2).abs();
+    o -= o.floor();
+    const r32 = 0.584962500721156; // log2(1.5)
+    const r43 = 0.415037499278844; // log2(4/3)
+    return (o - r32).abs() < _driftOctaves || (o - r43).abs() < _driftOctaves;
+  }
 
   static double _octaves(double a, double b) => (log(a / b) / ln2).abs();
 

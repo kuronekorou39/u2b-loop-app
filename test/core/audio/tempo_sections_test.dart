@@ -87,4 +87,26 @@ void main() {
     expect(item.bpmLabel, '150 BPM（100〜150）');
     expect(item.tempoSectionsLabel, '0:00 100 → 1:21 150');
   });
+
+  test('2:3 の取り違えの見分け（2026-11 に実際の曲で測った値）', () {
+    // Hazbin Guarantee: 序盤が 101（151 の 2/3）と出た。両方の区切りに相手のテンポが 0.5 以上
+    expect(
+        TempoSectionDetector.isMisreadThreeTwo(101.3, 152,
+            otherInFirst: 0.56, otherInSecond: 0.53),
+        isTrue);
+    // 本当に 98 → 148 に変わる曲: 前の区切りには 148 がほとんど無い
+    expect(
+        TempoSectionDetector.isMisreadThreeTwo(97.5, 147.7,
+            otherInFirst: 0.08, otherInSecond: 0.63),
+        isFalse);
+    // 2:3 の関係でなければ見ない（倍/半分を挟んだ 2:3 = 4:3 は見る）
+    expect(
+        TempoSectionDetector.isMisreadThreeTwo(120, 150,
+            otherInFirst: 0.9, otherInSecond: 0.9),
+        isFalse);
+    expect(
+        TempoSectionDetector.isMisreadThreeTwo(76, 101,
+            otherInFirst: 0.9, otherInSecond: 0.9),
+        isTrue);
+  });
 }
