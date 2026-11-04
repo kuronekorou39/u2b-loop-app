@@ -45,7 +45,8 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// 重ね表示の時刻行と同じ場所に出て、どちらの表示でも同じ所で押せる
   final Widget? timeRowLeading;
 
-  /// 拍の線とテンポ・キーの変わり目を描く曲（単体再生の波形。拡大表示のときだけ描く）
+  /// 拍の線とテンポ・キーの変わり目を描く曲（単体再生の波形は拡大して見る。
+  /// bar モード〔プレイリスト〕は拡大できないので、詰まれば 4 小節・8 小節ごとに間引く）
   final LoopItem? beatItem;
 
   const LoopSeekbar({
@@ -210,9 +211,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     // 開閉ボタンの無い compact（横画面の 1 行）だけ時刻を左右に置く。
     // 開閉できる compact は、開いたときと同じく時刻を下の行に出す（左右に置くと
     // バーが短くなる）
-    // 拍の線と変わり目（設定「拍の線」がオンのとき。曲が変わったら描き直す）
+    // 拍の線と変わり目（設定がオンのとき。曲が変わったら描き直す）。
+    // bar モード（プレイリスト）は別の設定（拡大できないので間引いて出す）
     final beatItem = widget.beatItem;
-    final showBeats = beatItem != null && ref.watch(showBeatLinesProvider);
+    final barLike = widget.bar || widget.compact;
+    final showBeats = beatItem != null &&
+        ref.watch(barLike ? playlistBeatLinesProvider : showBeatLinesProvider);
     final beats = showBeats ? BeatMap.segmentsOf(beatItem) : const <BeatSegment>[];
     final markers = beatItem == null ? const <SectionMarker>[] : BeatMap.markersOf(beatItem);
 
@@ -221,7 +225,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     }
     if (widget.bar || widget.compact) {
       return _buildBarMode(context, position, duration, loop, hasSource,
-          waveform, waveformLoading, waveformError);
+          waveform, waveformLoading, waveformError,
+          beats: beats, markers: showBeats ? markers : const []);
     }
 
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -621,8 +626,10 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     bool hasSource,
     List<double>? waveform,
     bool waveformLoading,
-    String? waveformError,
-  ) {
+    String? waveformError, {
+    List<BeatSegment> beats = const [],
+    List<SectionMarker> markers = const [],
+  }) {
     final compact = widget.compact;
     final brightness = Theme.of(context).brightness;
 
@@ -661,6 +668,9 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                               viewStart: 0,
                               viewEnd: 1,
                               mixRanges: widget.mixRanges,
+                              beats: beats,
+                              markers: markers,
+                              thinOutBeats: true,
                             )
                           : _CompactSeekbarPainter(
                               position: position,
@@ -917,7 +927,11 @@ class _WaveformSeekbarPainter extends CustomPainter {
     this.mixRanges = const [],
     this.beats = const [],
     this.markers = const [],
+    this.thinOutBeats = false,
   });
+
+  /// 拡大できない波形: 詰まれば 4 小節・8 小節ごとに間引いて線を出す
+  final bool thinOutBeats;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -996,6 +1010,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
           bottom: size.height,
           color: isDark ? Colors.white : Colors.black,
           strong: true,
+          thinOut: thinOutBeats,
         );
       }
     }

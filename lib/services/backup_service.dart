@@ -144,6 +144,7 @@ class BackupService {
         'tempoSections': item.tempoSectionData,
         'keySections': item.keySectionData,
         'sectionGrids': item.sectionGridData,
+        'unplayableReason': item.unplayableReason,
         'mixInMs': item.mixInMs,
         'mixOutMs': item.mixOutMs,
         'beatOffsetMs': item.beatOffsetMs,
@@ -197,6 +198,7 @@ class BackupService {
         musicTailMs: j['musicTailMs'] as int?,
         notMusic: j['notMusic'] as bool?,
         keySectionData: (j['keySections'] as List?)?.cast<String>(),
+        unplayableReason: j['unplayableReason'] as String?,
         sectionGridData: (j['sectionGrids'] as List?)
             ?.map((v) => (v as num).toDouble())
             .toList(),

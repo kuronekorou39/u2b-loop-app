@@ -388,12 +388,12 @@ class BeatMatchNotifier extends StateNotifier<bool> {
 /// 重ね表示（交差の 2 段の波形）に拍の線と拍のずれを出すか（既定オン）。1 拍目は濃く。
 /// 単体の波形には出さない（細くて見えない・v1.108.1）
 final showBeatLinesProvider = StateNotifierProvider<ShowBeatLinesNotifier, bool>(
-    (ref) => ShowBeatLinesNotifier());
+    (ref) => ShowBeatLinesNotifier(SettingsKeys.showBeatLines));
 
 class ShowBeatLinesNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.showBeatLines;
+  final String _key;
 
-  ShowBeatLinesNotifier() : super(true) {
+  ShowBeatLinesNotifier(this._key) : super(true) {
     state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
   }
 
@@ -402,6 +402,11 @@ class ShowBeatLinesNotifier extends StateNotifier<bool> {
     AppBoxes.settings.put(_key, v);
   }
 }
+
+/// プレイリストの波形（拡大できない）に拍の線を出すか（既定オン）。詰まるので小節頭、
+/// それでも詰まれば 4 小節・8 小節ごとに間引く。テンポ・キーの変わり目の印も一緒に
+final playlistBeatLinesProvider = StateNotifierProvider<ShowBeatLinesNotifier, bool>(
+    (ref) => ShowBeatLinesNotifier(SettingsKeys.playlistBeatLines));
 
 /// 重ね表示に音量曲線（つなぎ方の 2 本の線）を出すか（既定オン）。デッキの板で切り替え。
 /// 切替点の線と効果音の印は消さない（どこで切り替わるかは分かるように）

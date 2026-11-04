@@ -10,6 +10,7 @@ import '../../core/utils/id_generator.dart';
 import '../../models/loop_item.dart';
 import '../../models/playlist.dart';
 import '../../providers/data_provider.dart';
+import '../../widgets/now_playing_mark.dart';
 import '../../widgets/selection_mark.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_controls.dart';
@@ -128,7 +129,13 @@ class PlaylistTab extends ConsumerWidget {
               child: SizedBox(
                 width: 56,
                 height: 56,
-                child: _Thumb(item: thumbOf(pl)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _Thumb(item: thumbOf(pl)),
+                    NowPlayingMark(playlistId: pl.id, size: 18),
+                  ],
+                ),
               ),
             ),
             title: Text(pl.name),
@@ -210,6 +217,7 @@ class PlaylistTab extends ConsumerWidget {
                     fit: StackFit.expand,
                     children: [
                       _Thumb(item: thumbOf(pl)),
+                      NowPlayingMark(playlistId: pl.id, size: 20),
                       if (!selecting && count > 0)
                         Positioned(
                           right: 4,

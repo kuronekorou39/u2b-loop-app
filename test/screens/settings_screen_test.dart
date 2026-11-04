@@ -156,6 +156,9 @@ void main() {
 
     // 演出の既定はフィルタースイープ
     expect(find.text('フィルタースイープ'), findsOneWidget);
+    // 行が増えてページが長くなったので、見えるところまで送ってから押す
+    await tester.ensureVisible(find.text('切り替えの演出'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('切り替えの演出'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('ブレーキ'));
@@ -163,6 +166,9 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'brake');
 
     // クロスフェードをオフにすると触れなくなる
+    // 演出を選ぶために下へ送ったので、上端の行まで戻す
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 3000));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('クロスフェード'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('オフ'));

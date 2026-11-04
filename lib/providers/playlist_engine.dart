@@ -19,6 +19,7 @@ import '../core/audio/transition_planner.dart';
 import '../models/loop_item.dart';
 import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
+import '../services/playback/unplayable_watch.dart';
 import '../services/audio_filters.dart';
 import '../services/cache_service.dart';
 import '../services/deck_tricks.dart';
@@ -152,7 +153,12 @@ class PlaylistEngine {
       var local = await MediaCache.existingVideo(videoId);
       if (local == null) {
         final ytService = _ref.read(youtubeServiceProvider);
-        manifest = await ytService.getManifestWithFallback(videoId);
+        // 年齢制限などで開けない曲は残して、このプレイリストでは飛ばす
+        manifest = await UnplayableWatch.fetch<StreamManifest>(
+            _ref.read(loopItemsProvider.notifier),
+            _ref.read(playlistPlayerProvider.notifier),
+            item,
+            () => ytService.getManifestWithFallback(videoId));
         if (stale()) return null;
       }
       if (HqAudio.enabled) {

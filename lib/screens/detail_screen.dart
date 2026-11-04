@@ -96,6 +96,41 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       cancelLabel: '戻る',
       destructive: true);
 
+  /// 再生できない理由と「もう一度試す」（理由を消して開き直す。開けなければまた残る）
+  Widget _buildUnplayableNotice(LoopItem item) {
+    final textTheme = Theme.of(context).textTheme;
+    return GlassSurface(
+      tint: Colors.orange.withValues(alpha: 0.12),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl, AppSpacing.lg, AppSpacing.lg, AppSpacing.lg),
+      child: Row(
+        children: [
+          const Icon(Icons.block, color: Colors.orange, size: AppIconSizes.md),
+          const SizedBox(width: AppSpacing.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('再生できない動画（プレイリストでは飛ばします）',
+                    style: textTheme.titleSmall?.copyWith(color: Colors.orange)),
+                const SizedBox(height: AppSpacing.xs),
+                Text(item.unplayableReason!, style: textTheme.bodySmall),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          TextButton(
+            onPressed: () async {
+              await ref.read(loopItemsProvider.notifier).setUnplayable(item.id, null);
+              if (mounted) _openPlayer(item);
+            },
+            child: const Text('もう一度試す'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _openPlayer(LoopItem item) async {
     if (_hasChanges(item)) await _saveOnly(item);
     if (!mounted) return;
@@ -564,6 +599,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.xl),
+
+                  // 再生できないと分かっている曲（年齢制限など）。通信の失敗のこともあるので試し直せる
+                  if (item.isUnplayable) ...[
+                    _buildUnplayableNotice(item),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
 
                   // AB 区間
                   _buildRegionsSection(item, regions),

@@ -6,9 +6,11 @@ import '../../core/audio/track_compatibility.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../models/loop_item.dart';
+import '../../providers/data_provider.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
+import '../../providers/playlist_player_provider.dart';
 import '../loop/loop_seekbar.dart';
 import 'jog_wheel.dart';
 import 'mix_deck.dart';
@@ -277,7 +279,17 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         onRetryWaveform: widget.onRetryWaveform,
         mixRanges: mixRanges,
         timeRowLeading: _deckButton(),
+        beatItem: _currentItem(),
       );
+
+  /// 鳴っている曲（保存された最新。解析が終わったら線が出るように）
+  LoopItem? _currentItem() {
+    final track = ref.watch(playlistPlayerProvider).currentTrack;
+    if (track == null) return null;
+    return ref.watch(loopItemsProvider
+            .select((l) => l.where((i) => i.id == track.item.id).firstOrNull)) ??
+        track.item;
+  }
 
   Widget _mix(MixPair pair, Duration now, MixWindow window,
       {required bool swapped, required Duration position}) {

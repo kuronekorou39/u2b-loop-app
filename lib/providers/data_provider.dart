@@ -193,6 +193,16 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
+  /// 再生できない理由を残す（null で消す）。再生中などに裏で決まるので updatedAt は触らない。
+  /// 変わらなければ書かない
+  Future<void> setUnplayable(String id, String? reason) async {
+    final item = _box.get(id);
+    if (item == null || item.unplayableReason == reason) return;
+    item.unplayableReason = reason;
+    await _box.put(id, item);
+    _refresh();
+  }
+
   /// テンポ/キーの手直し（詳細のテンポ/キーのシート）。区切りの無い曲は [saveAnalysis] の手動補正と同じ。
   /// [tempo] / [keys] は区切りごとの値（位置は変えず値だけ直したもの、2 つ以上）。
   /// テンポは一番長い区切りの値が曲の BPM になる。拍の格子は区切りごとに、倍/半分なら

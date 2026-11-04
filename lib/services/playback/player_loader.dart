@@ -7,12 +7,15 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../core/audio/audio_quality.dart';
 import '../../models/loop_item.dart';
 import '../../models/video_source.dart';
+import '../../providers/data_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/playlist_player_provider.dart';
 import '../audio_filters.dart';
 import '../cache_service.dart';
 import '../youtube_service.dart';
 import 'hq_audio.dart';
 import 'media_cache.dart';
+import 'unplayable_watch.dart';
 import 'load_progress.dart';
 
 /// 開いたメディア。[manifest] は YouTube をネットから開いたときだけ
@@ -119,9 +122,11 @@ class PlayerLoader {
           progress.step(0.40, 'キャッシュから読み込み中...');
         } else {
           progress.step(0.15, 'ストリーム情報を解析中...');
-          manifest = await _ref
-              .read(youtubeServiceProvider)
-              .getManifestWithFallback(videoId);
+          manifest = await UnplayableWatch.fetch<StreamManifest>(
+              _ref.read(loopItemsProvider.notifier),
+              _ref.read(playlistPlayerProvider.notifier),
+              item,
+              () => _ref.read(youtubeServiceProvider).getManifestWithFallback(videoId));
           await _yieldFrame();
           _checkMounted();
           // 再生が落ち着いてから裏で映像を残す（次回から通信なし）

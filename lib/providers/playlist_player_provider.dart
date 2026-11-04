@@ -165,10 +165,11 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
 
-      // 無効化されたアイテムはスキップ
+      // 無効化されたアイテムと、再生できないと分かっている曲はスキップ
       if (disabledItemIds != null && disabledItemIds.contains(item.id)) {
         continue;
       }
+      if (item.isUnplayable) continue;
 
       final regions = item.effectiveRegions;
       final selectedIds = regionSelections?[item.id];
@@ -315,6 +316,18 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
       playOrder: newOrder,
       currentOrderIndex: newOrderIndex,
     );
+  }
+
+  /// 再生できないと分かった曲のトラックを全部飛ばす（再生中に分かったとき）
+  void skipItem(String itemId) {
+    var changed = false;
+    for (final t in state.tracks) {
+      if (t.item.id == itemId && t.enabled) {
+        t.enabled = false;
+        changed = true;
+      }
+    }
+    if (changed) state = state.copyWith(tracks: List.from(state.tracks));
   }
 
   /// トラックの有効/無効切り替え

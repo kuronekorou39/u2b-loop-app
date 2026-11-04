@@ -159,6 +159,12 @@ class LoopItem {
         .join(' → ');
   }
 
+  /// 再生できない理由（年齢制限・削除など、時間をおいても直らないもの。AppErrors.permanentReason）。
+  /// 再生・先読み・解析で分かったら残し、プレイリストでは飛ばす。開けたら消す。null = 問題なし
+  String? unplayableReason;
+
+  bool get isUnplayable => unplayableReason != null;
+
   /// テンポの区切りごとの拍の格子（[tempoSections] と同じ並び、1 つにつき
   /// [bpm, offsetMs, confidence, downbeatMs, downbeatConfidence] の 5 つ。小節頭が無ければ −1、
   /// 格子が無ければ bpm が 0）。null = テンポが一定か未計測
@@ -313,6 +319,7 @@ class LoopItem {
     this.tempoSectionData,
     this.keySectionData,
     this.sectionGridData,
+    this.unplayableReason,
     this.mixInMs,
     this.mixOutMs,
     this.beatOffsetMs,
@@ -509,6 +516,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       keySectionData: (fields[51] as List?)?.cast<String>(),
       sectionGridData:
           (fields[52] as List?)?.map((v) => (v as num).toDouble()).toList(),
+      unplayableReason: fields[53] as String?,
     );
   }
 
@@ -568,6 +576,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       50: obj.tempoSectionData,
       51: obj.keySectionData,
       52: obj.sectionGridData,
+      53: obj.unplayableReason,
     });
   }
 }

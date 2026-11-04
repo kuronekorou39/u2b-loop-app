@@ -220,4 +220,24 @@ void main() {
       expect(n.currentState.currentTrackIndex, isNull);
     });
   });
+
+  group('再生できない曲', () {
+    test('分かっている曲はプレイリストに入れない', () {
+      final n = PlaylistPlayerNotifier()
+        ..loadPlaylist([
+          _item('a')..unplayableReason = '年齢制限',
+          _item('b'),
+        ]);
+      expect(n.currentState.trackCount, 1);
+      expect(n.currentState.currentTrack!.item.id, 'b');
+    });
+
+    test('再生中に分かったら、その曲のトラックを全部飛ばす', () {
+      final n = PlaylistPlayerNotifier()
+        ..loadPlaylist([_item('a'), _itemWithRegions('b'), _item('c')]);
+      expect(n.currentState.peekNextTrackIndex(), 1);
+      n.skipItem('b');
+      expect(n.currentState.peekNextTrackIndex(), 3);
+    });
+  });
 }

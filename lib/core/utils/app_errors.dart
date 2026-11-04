@@ -46,6 +46,24 @@ class AppErrors {
     return text;
   }
 
+  /// 時間をおいても直らない「再生できない」理由なら、その文（曲に残してプレイリストで飛ばす）。
+  /// 通信エラー・ボット判定・ライブ配信中など一時的なものは null
+  static String? permanentReason(Object e) {
+    if (e is VideoRequiresPurchaseException) return describe(e);
+    if (e is VideoUnavailableException) return describe(e);
+    if (e is VideoUnplayableException) {
+      final label = _unplayable(e.toString());
+      return _temporaryLabels.contains(label) ? null : label;
+    }
+    return null;
+  }
+
+  /// 再生できない理由のうち、時間をおけば直ることがあるもの
+  static final _temporaryLabels = {
+    _unplayableRules[1].$2, // ボット判定
+    _unplayableRules[5].$2, // ライブ配信中・配信前
+  };
+
   /// 再生できない理由ごとの文。YouTube が返す理由（英語。表示言語によっては日本語）の
   /// 決まり文句で見分ける。上から順に見て最初に当たったもの
   static final _unplayableRules = <(RegExp, String)>[

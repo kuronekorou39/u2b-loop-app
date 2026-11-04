@@ -25,6 +25,7 @@ import '../widgets/glass_scaffold.dart';
 import '../widgets/glass_surface.dart';
 import '../widgets/item_thumbnail.dart';
 import '../widgets/tag_chip.dart';
+import '../widgets/now_playing_mark.dart';
 import '../widgets/thumb_picker_sheet.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
@@ -683,7 +684,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       message: '「${item.title}」をプレイリストから削除しますか？'),
                   onDismissed: (_) => _removeItem(pl, item.id),
                   child: Opacity(
-                    opacity: isDisabled ? 0.4 : 1.0,
+                    opacity: isDisabled || item.isUnplayable ? 0.4 : 1.0,
                     child: ListTile(
                       leading: GestureDetector(
                         onTap: () => ref
@@ -696,7 +697,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                               child: SizedBox(
                                 width: 64,
                                 height: 36,
-                                child: ItemThumbnail(item: item, iconSize: AppIconSizes.sm),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    ItemThumbnail(item: item, iconSize: AppIconSizes.sm),
+                                    NowPlayingMark(itemId: item.id, size: 14),
+                                  ],
+                                ),
                               ),
                             ),
                             if (isDisabled)
@@ -786,6 +793,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
   Widget? _buildSubtitle(LoopItem item, List<Tag> itemTags, Playlist pl) {
     final parts = <String>[];
+    if (item.isUnplayable) parts.add('再生できないので飛ばします');
 
     // 区間選択情報（「全体」も1区間としてカウント）
     if (_hasItemRegions(item)) {

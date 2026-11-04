@@ -250,6 +250,14 @@ class DjMixSettingsScreen extends ConsumerWidget {
               onChanged: (v) =>
                   ref.read(showBeatLinesProvider.notifier).value = v,
             ),
+            // プレイリストの波形（拡大できない）にも小節頭・4 小節ごとの線と変わり目の印
+            SettingsSwitchRow(
+              icon: Icons.view_column_outlined,
+              title: 'プレイリストの波形に拍の線',
+              value: ref.watch(playlistBeatLinesProvider),
+              onChanged: (v) =>
+                  ref.read(playlistBeatLinesProvider.notifier).value = v,
+            ),
             // 音量曲線（つなぎ方の 2 本の線）。デッキの板からも切り替えられる
             SettingsSwitchRow(
               icon: Icons.ssid_chart,

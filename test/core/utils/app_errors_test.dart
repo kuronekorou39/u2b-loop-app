@@ -72,4 +72,18 @@ void main() {
       expect(none.musicInfoParts, isEmpty);
     });
   });
+
+  test('ずっと再生できない理由だけを曲に残す（一時的なものは残さない）', () {
+    final id = VideoId('qk0ng1HTM-Y');
+    String? of(String reason) => AppErrors.permanentReason(
+        VideoUnplayableException.unplayable(id, reason: reason));
+    expect(of('Sign in to confirm your age'), contains('年齢制限'));
+    expect(of('Join this channel to get access to members-only content'), contains('メンバー限定'));
+    expect(of('Something new'), contains('再生できない'));
+    // 一時的: ボット判定・ライブ配信中・通信
+    expect(of('Sign in to confirm you’re not a bot'), isNull);
+    expect(AppErrors.permanentReason(VideoUnplayableException.liveStream(id)), isNull);
+    expect(AppErrors.permanentReason(const SocketException('x')), isNull);
+    expect(AppErrors.permanentReason(TimeoutException('x')), isNull);
+  });
 }

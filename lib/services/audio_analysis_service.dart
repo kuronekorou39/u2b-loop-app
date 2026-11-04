@@ -11,6 +11,7 @@ import '../models/loop_item.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
 import 'waveform_service.dart';
+import 'playback/unplayable_watch.dart';
 import 'youtube_service.dart';
 
 /// テンポ/キー解析の入口。
@@ -150,6 +151,8 @@ class AudioAnalysisService {
       );
     } catch (e) {
       debugPrint('[AudioAnalysis] 音声取得失敗: $e');
+      // 年齢制限などで開けない曲なら残す（プレイリストで飛ばす）
+      await UnplayableWatch.note(items, null, item, e);
     }
     if (!completer.isCompleted) completer.complete(null);
     return completer.future;

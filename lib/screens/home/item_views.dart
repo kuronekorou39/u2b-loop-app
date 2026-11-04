@@ -4,6 +4,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/time_utils.dart';
 import '../../models/loop_item.dart';
 import '../../models/tag.dart';
+import '../../widgets/now_playing_mark.dart';
 import '../../widgets/selection_mark.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/item_thumbnail.dart';
@@ -113,6 +114,20 @@ class ItemCollectionView extends StatelessWidget {
                 item: item,
                 heroTag: 'thumb_${item.id}',
                 iconSize: compact ? AppIconSizes.s : null),
+            NowPlayingMark(itemId: item.id, size: compact ? 14 : 20),
+            // 再生できない曲（年齢制限など）
+            if (item.isUnplayable)
+              Positioned(
+                top: 3,
+                right: 3,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                      color: Colors.black54, shape: BoxShape.circle),
+                  child: Icon(Icons.block,
+                      size: compact ? 12 : 16, color: Colors.orange),
+                ),
+              ),
             // 字幕バッジ
             if (item.hasSubtitles == true)
               Positioned(
@@ -276,6 +291,7 @@ class ItemCollectionView extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   ItemThumbnail(item: item, heroTag: 'thumb_${item.id}'),
+                  NowPlayingMark(itemId: item.id, size: 14),
                   if (item.isFetching)
                     Container(
                       color: Colors.black54,
@@ -365,6 +381,12 @@ class ItemCollectionView extends StatelessWidget {
     }
     if (item.hasError) {
       return Text('取得失敗（タップで操作）',
+          style: textTheme.labelSmall?.copyWith(color: Colors.orange.shade300));
+    }
+    if (item.isUnplayable) {
+      return Text('再生できない（${item.unplayableReason}）',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: textTheme.labelSmall?.copyWith(color: Colors.orange.shade300));
     }
 
