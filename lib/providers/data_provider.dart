@@ -96,6 +96,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     MusicSpanInfo? span,
     List<TempoSection> sections = const [],
     List<KeySection> keySections = const [],
+    List<BeatGrid?> sectionGrids = const [],
   }) async {
     final item = _box.get(id);
     if (item == null) return;
@@ -128,6 +129,9 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           sections.length < 2;
       item.tempoSectionData =
           keepTempo || sections.length < 2 ? null : TempoSection.flatten(sections);
+      item.sectionGridData = item.tempoSectionData == null || sectionGrids.length != sections.length
+          ? null
+          : LoopItem.flattenGrids(sectionGrids);
     } else if (!markAnalyzed) {
       // 手動補正: 区切りもメインの BPM と同じ比で（×2 なら全部 ×2）
       final old = item.bpm;
@@ -137,6 +141,15 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           : TempoSection.flatten([
               for (final s in secs)
                 TempoSection(s.startMs, (s.bpm * bpm / old * 10).round() / 10),
+            ]);
+      // 区切りごとの格子: 倍/半分なら同じ倍率で引き直し、それ以外は捨てる（線がずれるより出さない）
+      final octaves = bpm == null || old == null || old <= 0 ? null : _octavesOf(bpm / old);
+      final grids = item.sectionGrids;
+      item.sectionGridData = item.tempoSectionData == null || octaves == null || grids.isEmpty
+          ? null
+          : LoopItem.flattenGrids([
+              for (final g in grids)
+                g?.withBpm(g.bpm * pow(2, octaves), anchorMs: g.barAnchorMs(null)),
             ]);
     }
     if (!keepTempo) item.bpm = bpm;

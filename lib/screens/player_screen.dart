@@ -2317,6 +2317,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               setState(() => _compactSeekbar = !_compactSeekbar),
           allowMarkerDrag: _editMode,
           onRetryWaveform: _retryWaveform,
+          // 保存された最新の曲（開いたあとに裏で解析が終わっても線が出るように）
+          beatItem: ref.watch(loopItemsProvider
+                  .select((l) => l.where((i) => i.id == item.id).firstOrNull)) ??
+              item,
         ),
         regionsOpen: panelOpen,
         loop: loop,

@@ -4,12 +4,15 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/audio/beat_map.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/loop_item.dart';
 import '../../models/loop_state.dart';
 import '../../core/utils/time_utils.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../glass_panel.dart';
+import 'beat_lines.dart';
 
 enum _DragTarget { position, pointA, pointB }
 
@@ -42,6 +45,9 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// 重ね表示の時刻行と同じ場所に出て、どちらの表示でも同じ所で押せる
   final Widget? timeRowLeading;
 
+  /// 拍の線とテンポ・キーの変わり目を描く曲（単体再生の波形。拡大表示のときだけ描く）
+  final LoopItem? beatItem;
+
   const LoopSeekbar({
     super.key,
     this.compact = false,
@@ -53,6 +59,7 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.mixRanges = const [],
     this.above,
     this.timeRowLeading,
+    this.beatItem,
   });
 
   @override
@@ -203,6 +210,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     // 開閉ボタンの無い compact（横画面の 1 行）だけ時刻を左右に置く。
     // 開閉できる compact は、開いたときと同じく時刻を下の行に出す（左右に置くと
     // バーが短くなる）
+    // 拍の線と変わり目（設定「拍の線」がオンのとき。曲が変わったら描き直す）
+    final beatItem = widget.beatItem;
+    final showBeats = beatItem != null && ref.watch(showBeatLinesProvider);
+    final beats = showBeats ? BeatMap.segmentsOf(beatItem) : const <BeatSegment>[];
+    final markers = beatItem == null ? const <SectionMarker>[] : BeatMap.markersOf(beatItem);
+
     if (widget.compact && widget.onToggleCompact == null) {
       return _buildCompactMode(context, position, duration, loop, hasSource);
     }
@@ -356,6 +369,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                             brightness: Theme.of(context).brightness,
                             viewStart: viewStart,
                             viewEnd: viewEnd,
+                            beats: beats,
+                            markers: markers,
                           ),
                         ),
                         ..._waveformStatusOverlays(
@@ -886,6 +901,8 @@ class _WaveformSeekbarPainter extends CustomPainter {
   final double viewStart;
   final double viewEnd;
   final List<MixRange> mixRanges;
+  final List<BeatSegment> beats;
+  final List<SectionMarker> markers;
 
   _WaveformSeekbarPainter({
     required this.position,
@@ -898,6 +915,8 @@ class _WaveformSeekbarPainter extends CustomPainter {
     required this.viewStart,
     required this.viewEnd,
     this.mixRanges = const [],
+    this.beats = const [],
+    this.markers = const [],
   });
 
   @override
@@ -956,6 +975,36 @@ class _WaveformSeekbarPainter extends CustomPainter {
         canvas.drawLine(Offset(clipAX, size.height),
             Offset(clipBX, size.height), borderPaint);
       }
+    }
+
+    // 拍の線（区切りごとの格子。見えている範囲だけ）
+    if (beats.isNotEmpty) {
+      final viewStartMs = viewStart * totalMs, viewEndMs = viewEnd * totalMs;
+      double msToX(double ms) => ((ms / totalMs) - viewStart) / vpWidth * size.width;
+      for (final seg in beats) {
+        final from = max(seg.fromMs, viewStartMs);
+        final to = min(seg.toMs, viewEndMs);
+        if (to <= from) continue;
+        BeatLines.paint(
+          canvas,
+          grid: seg.grid,
+          anchorMs: seg.anchorMs,
+          startMs: from,
+          endMs: to,
+          toX: msToX,
+          top: 0,
+          bottom: size.height,
+          color: isDark ? Colors.white : Colors.black,
+          strong: true,
+        );
+      }
+    }
+
+    // テンポ・キーの変わり目: 点線と下端の札（テンポは緑、キーは紫。近ければ上下に並べる）
+    for (final m in markers) {
+      final x = ((m.ms / totalMs) - viewStart) / vpWidth * size.width;
+      if (x < -40 || x > size.width + 40) continue;
+      _drawSectionMarker(canvas, size, x, m);
     }
 
     // 交差の範囲（薄く塗る。線は引かない）
@@ -1091,6 +1140,38 @@ class _WaveformSeekbarPainter extends CustomPainter {
     }
   }
 
+  void _drawSectionMarker(Canvas canvas, Size size, double x, SectionMarker m) {
+    final color = m.isKey ? AppTheme.mixLineColor : AppTheme.accentGreen;
+    final dash = Paint()
+      ..color = color.withValues(alpha: 0.9)
+      ..strokeWidth = 1.5;
+    for (var y = 0.0; y < size.height; y += 6) {
+      canvas.drawLine(Offset(x, y), Offset(x, min(size.height, y + 3)), dash);
+    }
+    final tp = TextPainter(
+      text: TextSpan(
+        text: m.label,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final w = tp.width + 8, h = tp.height + 2;
+    // テンポは下端、キーはその上の段（同じ位置で両方変わっても重ならない）
+    final y = size.height - h - 2 - (m.isKey ? h + 2 : 0);
+    final left = (x + 2).clamp(0.0, max(0.0, size.width - w));
+    final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left.toDouble(), y, w, h), const Radius.circular(5));
+    canvas.drawRRect(rect, Paint()..color = Colors.black.withValues(alpha: 0.55));
+    canvas.drawRRect(
+      rect,
+      Paint()
+        ..color = color.withValues(alpha: 0.7)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    tp.paint(canvas, Offset(left.toDouble() + 4, y + 1));
+  }
+
   void _drawMarkerLine(
     Canvas canvas,
     Size size,
@@ -1145,7 +1226,9 @@ class _WaveformSeekbarPainter extends CustomPainter {
       old.waveform != waveform ||
       old.viewStart != viewStart ||
       old.viewEnd != viewEnd ||
-      !listEquals(old.mixRanges, mixRanges);
+      !listEquals(old.mixRanges, mixRanges) ||
+      !listEquals(old.beats, beats) ||
+      !listEquals(old.markers, markers);
 }
 
 // =============================================================================

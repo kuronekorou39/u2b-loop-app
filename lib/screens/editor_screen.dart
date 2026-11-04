@@ -588,7 +588,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 )
               : null,
       controller: SinglePlayerBar(
-        seekbar: const LoopSeekbar(),
+        seekbar: LoopSeekbar(
+          beatItem: ref.watch(loopItemsProvider
+                  .select((l) => l.where((i) => i.id == _item.id).firstOrNull)) ??
+              _item,
+        ),
         regionsOpen: _panelOpen,
         loop: loop,
         onToggleLoop: loopNotifier.toggleEnabled,

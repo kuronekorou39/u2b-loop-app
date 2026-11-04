@@ -66,6 +66,10 @@ void main() {
     expect(r.bpm, closeTo(150, 1.5));
     expect(r.beatGrid!.bpm, closeTo(150, 1.5));
     expect(r.sections[1].bpm, r.bpm, reason: '表示の範囲とメインの値が揃う');
+    // 区切りごとの格子: 1 つ目は 120、2 つ目（一番長い）は曲の格子と同じ
+    expect(r.sectionGrids, hasLength(2));
+    expect(r.sectionGrids[0]!.bpm, closeTo(120, 1.5));
+    expect(identical(r.sectionGrids[1], r.beatGrid), isTrue);
   });
 
   test('保存の形は往復する', () {

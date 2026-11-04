@@ -158,6 +158,55 @@ class LoopItem {
         .join(' → ');
   }
 
+  /// テンポの区切りごとの拍の格子（[tempoSections] と同じ並び、1 つにつき
+  /// [bpm, offsetMs, confidence, downbeatMs, downbeatConfidence] の 5 つ。小節頭が無ければ −1、
+  /// 格子が無ければ bpm が 0）。null = テンポが一定か未計測
+  List<double>? sectionGridData;
+
+  static const _gridFields = 5;
+
+  static List<double> flattenGrids(List<BeatGrid?> grids) => [
+        for (final g in grids)
+          ...g == null
+              ? const [0.0, 0.0, 0.0, -1.0, -1.0]
+              : [g.bpm, g.offsetMs, g.confidence, g.downbeatMs ?? -1, g.downbeatConfidence ?? -1],
+      ];
+
+  List<BeatGrid?> get sectionGrids {
+    final d = sectionGridData;
+    if (d == null) return const [];
+    return [
+      for (var i = 0; i + _gridFields <= d.length; i += _gridFields)
+        d[i] <= 0
+            ? null
+            : BeatGrid(
+                bpm: d[i],
+                offsetMs: d[i + 1],
+                confidence: d[i + 2],
+                downbeatMs: d[i + 3] < 0 ? null : d[i + 3],
+                downbeatConfidence: d[i + 4] < 0 ? null : d[i + 4],
+              ),
+    ];
+  }
+
+  /// 一番長いテンポの区切りの番号（その区切りの格子は [beatGrid]。ジョグ・フェーダーで直した値）。
+  /// 区切りが無ければ null
+  int? get mainTempoSectionIndex {
+    final s = tempoSections;
+    if (s.length < 2) return null;
+    final end = durationMs == null ? null : durationMs! - (musicTailMs ?? 0);
+    var best = 0, bestLen = -1;
+    for (var i = 0; i < s.length; i++) {
+      final next = i + 1 < s.length ? s[i + 1].startMs : (end ?? s[i].startMs);
+      final len = next - s[i].startMs;
+      if (len > bestLen) {
+        bestLen = len;
+        best = i;
+      }
+    }
+    return best;
+  }
+
   /// テンポの区切りの並び（「0:00 96 → 1:21 148」）。一定なら null
   String? get tempoSectionsLabel {
     final s = tempoSections;
@@ -262,6 +311,7 @@ class LoopItem {
     this.notMusic,
     this.tempoSectionData,
     this.keySectionData,
+    this.sectionGridData,
     this.mixInMs,
     this.mixOutMs,
     this.beatOffsetMs,
@@ -456,6 +506,8 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       tempoSectionData:
           (fields[50] as List?)?.map((v) => (v as num).toDouble()).toList(),
       keySectionData: (fields[51] as List?)?.cast<String>(),
+      sectionGridData:
+          (fields[52] as List?)?.map((v) => (v as num).toDouble()).toList(),
     );
   }
 
@@ -514,6 +566,7 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       49: obj.notMusic,
       50: obj.tempoSectionData,
       51: obj.keySectionData,
+      52: obj.sectionGridData,
     });
   }
 }

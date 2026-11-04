@@ -45,7 +45,9 @@ class AudioAnalysisService {
       !isTooLong(item) &&
       (item.analyzedAt == null ||
           item.leadingSilenceMs == null ||
-          (item.analysisVersion ?? 0) < LoopItem.currentAnalysisVersion);
+          (item.analysisVersion ?? 0) < LoopItem.currentAnalysisVersion ||
+          // テンポの区切りがあるのに区切りごとの格子が無い（v1.123 までの解析）
+          (item.tempoSections.length >= 2 && item.sectionGridData == null));
 
   /// 解析が必要なアイテムなら、PCM を受け取って解析→保存するコールバックを返す。
   /// 解析済み・解析中・長すぎる曲なら null（波形生成側は PCM を取り出さない）。
@@ -95,6 +97,7 @@ class AudioAnalysisService {
           beatGrid: result.beatGrid,
           sections: result.sections,
           keySections: result.keySections,
+          sectionGrids: result.sectionGrids,
           span: MusicSpanInfo.of(result.span,
               lengthMs: pcm.length * 1000 ~/ sampleRate, truncated: truncated));
       debugPrint('[AudioAnalysis] $itemId: ${result.span} ${result.bpm} BPM '

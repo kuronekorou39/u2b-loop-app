@@ -35,6 +35,7 @@ class AudioAnalysisResult {
     this.span = MusicSpan.whole,
     this.sections = const [],
     this.keySections = const [],
+    this.sectionGrids = const [],
   });
   final List<BpmCandidate> bpmCandidates;
   final List<KeyCandidate> keyCandidates;
@@ -51,6 +52,10 @@ class AudioAnalysisResult {
 
   /// キーの区切り（転調する曲だけ。一定なら空）。[key] は一番長い区切りのキー
   final List<KeySection> keySections;
+
+  /// テンポの区切りごとの拍の格子（[sections] と同じ並び。求められなければ null）。
+  /// 一番長い区切りは [beatGrid] と同じもの。テンポが一定なら空
+  final List<BeatGrid?> sectionGrids;
 
   double? get bpm => bpmCandidates.isEmpty ? null : bpmCandidates.first.bpm;
   String? get key => keyCandidates.isEmpty ? null : keyCandidates.first.key;
@@ -159,6 +164,16 @@ class BpmKeyDetector {
         for (final s in sections) identical(s, main) ? TempoSection(s.startMs, b) : s,
       ];
     }
+    // ほかの区切りも、その区切りだけで格子（と小節頭）を求める（波形の拍の線を区切りごとに引く）
+    final sectionGrids = <BeatGrid?>[
+      for (var i = 0; i < sections.length; i++)
+        if (identical(sections[i], main))
+          grid
+        else
+          _sectionGrid(pcm, sampleRate, sample(sections[i].startMs),
+              i + 1 < sections.length ? sample(sections[i + 1].startMs) : to,
+              sections[i].bpm),
+    ];
     // キー: 曲の範囲のクロマ。転調するなら一番長い区切りのキーを代表にする
     final chroma = CqChroma.frames(musicPart, sampleRate);
     final keySections =
@@ -183,7 +198,19 @@ class BpmKeyDetector {
       span: span,
       sections: outSections,
       keySections: keySections,
+      sectionGrids: sectionGrids,
     );
+  }
+
+  /// サンプル [from]〜[to] の区切りの格子（動画の時刻）。短すぎれば null
+  static BeatGrid? _sectionGrid(
+      Int16List pcm, int sampleRate, int from, int to, double bpm) {
+    if (to <= from) return null;
+    final part = Int16List.sublistView(pcm, from, to);
+    final env = onsetEnvelope(part, sampleRate);
+    if (env == null) return null;
+    return _gridWithDownbeat(part, sampleRate, env, bpm)
+        ?.shiftedBy(from / sampleRate * 1000);
   }
 
   /// 拍の格子に小節頭を載せたもの

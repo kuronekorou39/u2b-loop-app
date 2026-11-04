@@ -63,6 +63,17 @@ void main() {
     expect(AudioAnalysisService.sinkFor(_FakeItems(), _item(durationMs: 11 * 60 * 1000)), isNull);
     expect(AudioAnalysisService.sinkFor(_FakeItems(), _item(), duration: const Duration(minutes: 3)), isNotNull);
   });
+
+  test('テンポの区切りがあるのに区切りごとの格子が無ければ解析し直す', () {
+    final item = _item(
+        analyzedAt: now,
+        leadingSilenceMs: 0,
+        analysisVersion: LoopItem.currentAnalysisVersion)
+      ..tempoSectionData = [0, 100, 60000, 150];
+    expect(AudioAnalysisService.needsAnalysis(item), isTrue);
+    item.sectionGridData = [100, 0, 0.5, -1, -1, 150, 0, 0.5, -1, -1];
+    expect(AudioAnalysisService.needsAnalysis(item), isFalse);
+  });
 }
 
 /// sinkFor は受け口を返すだけで items には触れない

@@ -29,17 +29,21 @@ class BeatLines {
     required Color color,
     bool numbers = false,
     bool numbersAtBottom = false,
+    bool strong = false,
   }) {
     final beatPx = (toX(startMs + grid.periodMs) - toX(startMs)).abs();
     final barPx = beatPx * BeatGrid.beatsPerBar;
-    if (barPx < _minGapPx) return;
-    final allBeats = beatPx >= _minGapPx;
+    // 濃い版は線を太くする分、詰まって潰れないよう間を広めに取る
+    final minGap = strong ? _minGapPx * 1.6 : _minGapPx;
+    if (barPx < minGap) return;
+    final allBeats = beatPx >= minGap;
     final showNumbers = numbers && beatPx >= _numberGapPx;
+    // 濃い版（単体再生の波形）: v1.108 で「細くて見えない」と言われたので小節頭は太く濃く
     final barPaint = Paint()
-      ..color = color.withValues(alpha: 0.55)
-      ..strokeWidth = 1.2;
+      ..color = color.withValues(alpha: strong ? 0.8 : 0.55)
+      ..strokeWidth = strong ? 2.0 : 1.2;
     final beatPaint = Paint()
-      ..color = color.withValues(alpha: 0.18)
+      ..color = color.withValues(alpha: strong ? 0.35 : 0.18)
       ..strokeWidth = 1;
     for (final b
         in grid.beatsBetween(startMs, endMs, anchorMs: anchorMs)) {
