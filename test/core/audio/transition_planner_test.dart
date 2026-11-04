@@ -162,4 +162,38 @@ void main() {
         item(bpm: 128, key: 'Cmaj'), item(bpm: 128, key: 'Gmaj'));
     expect(ok.beats, 16);
   });
+
+  group('ガチ', () {
+    test('なじませるつなぎは 32 拍（1 フレーズ）、盛り上げはライザー＋インパクト', () {
+      final blend = TransitionPlanner.plan(item(bpm: 126), item(bpm: 128), pro: true);
+      expect(blend.name, 'ブレンド');
+      expect(blend.beats, 32);
+      final up = TransitionPlanner.plan(item(bpm: 120), item(bpm: 126), pro: true);
+      expect(up.name, '盛り上げ');
+      expect(up.effect, TransitionEffect.riserImpact);
+    });
+
+    test('テンポ差が大きければブレーキで切り替え', () {
+      final r = TransitionPlanner.plan(item(bpm: 100), item(bpm: 140), pro: true);
+      expect(r.effect, TransitionEffect.brake);
+      expect(r.beats, 4);
+    });
+
+    test('前の曲の終わりと次の曲の始まりの両方で中音が強ければ 8 拍に縮める', () {
+      final r = TransitionPlanner.plan(item(bpm: 126), item(bpm: 128),
+          pro: true, outTailMid: 0.75, inHeadMid: 0.7);
+      expect(r.beats, TransitionPlanner.vocalClashMaxBeats);
+      expect(r.reason, contains('歌が重なりそう'));
+      final one = TransitionPlanner.plan(item(bpm: 126), item(bpm: 128),
+          pro: true, outTailMid: 0.75, inHeadMid: 0.3);
+      expect(one.beats, 32, reason: '片方だけなら縮めない');
+    });
+
+    test('普通（ガチでない）は今までと同じ', () {
+      final r = TransitionPlanner.plan(item(bpm: 126), item(bpm: 128),
+          outTailMid: 0.9, inHeadMid: 0.9);
+      expect(r.beats, 16);
+      expect(r.reason, isNot(contains('歌')));
+    });
+  });
 }

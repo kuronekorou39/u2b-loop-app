@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/audio/dj_level.dart';
+
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/transition_effect.dart';
 import '../../core/theme/app_theme.dart';
@@ -47,6 +49,19 @@ class DjMixSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 控えめ・普通・ガチ。どれとも一致しなければどれも選ばれていない（カスタム）
+            _SectionLabel(
+              icon: Icons.tune,
+              label:
+                  'つなぎ方のレベル${ref.watch(djLevelProvider) == null ? '（カスタム）' : ''}',
+            ),
+            _Chips<DjLevel?>(
+              values: DjLevel.values,
+              selected: ref.watch(djLevelProvider),
+              label: (l) => l!.label,
+              onSelected: (l) => applyDjLevel(ref, l!),
+            ),
+            const Divider(),
             const _SectionLabel(
               icon: Icons.multitrack_audio,
               label: 'クロスフェード',

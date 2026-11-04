@@ -4,6 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
+import '../core/audio/dj_level.dart';
 import '../core/audio/transition_effect.dart';
 import '../models/video_source.dart';
 import '../services/audio_filters.dart';
@@ -608,3 +609,61 @@ class VolumeNormNotifier extends StateNotifier<bool> {
 
 /// 現在のオーディオ出力デバイス（speaker/headphones/bluetooth）
 final audioDeviceProvider = StateProvider<String>((ref) => 'speaker');
+
+/// ガチ（おまかせに派手な演出・フレーズ単位の長いつなぎ・歌のぶつかり回避を足す）。既定オフ
+final djProProvider = StateNotifierProvider<DjProNotifier, bool>((ref) => DjProNotifier());
+
+class DjProNotifier extends StateNotifier<bool> {
+  static const _key = SettingsKeys.djPro;
+
+  DjProNotifier() : super(false) {
+    state = AppBoxes.settings.get(_key, defaultValue: false) as bool;
+  }
+
+  set value(bool v) {
+    state = v;
+    AppBoxes.settings.put(_key, v);
+  }
+}
+
+/// 今の DJ のつなぎ方の段階（個々の設定から決まる。どれとも一致しなければ null = カスタム）
+final djLevelProvider = Provider<DjLevel?>((ref) => DjLevel.of(DjSettings(
+      autoMix: ref.watch(autoMixProvider),
+      pro: ref.watch(djProProvider),
+      curve: ref.watch(crossfadeCurveProvider),
+      effect: ref.watch(transitionEffectProvider),
+      bassSwap: ref.watch(bassSwapProvider),
+      tempoMatch: ref.watch(tempoMatchProvider),
+      beatMatch: ref.watch(beatMatchProvider),
+      smartEntry: ref.watch(smartEntryProvider),
+      mixPointAlign: ref.watch(mixPointAlignProvider),
+    )));
+
+/// 段階を選ぶ: 個々の設定をまとめて変える。クロスフェードがオフならオンにする
+/// （控えめは 8 拍。普通・ガチは長さをおまかせが決めるので、今の値のまま）
+void applyDjLevel(WidgetRef ref, DjLevel level) {
+  final fade = ref.read(crossfadeProvider.notifier);
+  switch (level) {
+    case DjLevel.gentle:
+      fade.value = DjLevel.gentleBeats;
+      ref.read(autoMixProvider.notifier).value = false;
+      ref.read(djProProvider.notifier).value = false;
+      ref.read(crossfadeCurveProvider.notifier).value = CrossfadeCurve.equalPower;
+      ref.read(transitionEffectProvider.notifier).value = TransitionEffect.none;
+      ref.read(bassSwapProvider.notifier).value = false;
+      ref.read(tempoMatchProvider.notifier).value = false;
+      ref.read(beatMatchProvider.notifier).value = false;
+      ref.read(smartEntryProvider.notifier).value = false;
+      ref.read(mixPointAlignProvider.notifier).value = false;
+    case DjLevel.normal:
+    case DjLevel.pro:
+      if (ref.read(crossfadeProvider) == 0) fade.value = CrossfadeNotifier.migratedBeats;
+      ref.read(autoMixProvider.notifier).value = true;
+      ref.read(djProProvider.notifier).value = level == DjLevel.pro;
+      ref.read(bassSwapProvider.notifier).value = true;
+      ref.read(tempoMatchProvider.notifier).value = true;
+      ref.read(beatMatchProvider.notifier).value = true;
+      ref.read(smartEntryProvider.notifier).value = true;
+      ref.read(mixPointAlignProvider.notifier).value = true;
+  }
+}

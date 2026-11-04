@@ -47,7 +47,7 @@ void main() {
   });
 
   Future<void> pumpPage(WidgetTester tester, Widget page) async {
-    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.physicalSize = const Size(1080, 2700);
     tester.view.devicePixelRatio = 2.5;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(ProviderScope(

@@ -82,7 +82,20 @@ class TransitionPlanner {
   /// キーが合わない 2 曲を長く重ねると濁るので、この拍数までに縮める
   static const keyClashMaxBeats = 8;
 
-  static TransitionRecipe plan(LoopItem out, LoopItem next) {
+  /// ガチ: なじませるつなぎの長さ（拍。32 拍 = 8 小節 = 1 フレーズ）
+  static const proLongBeats = 32;
+
+  /// ガチ: 歌が重なりそうとみなす中音の平均（前の曲の終わりと次の曲の始まりの両方）。
+  /// 中音にはギターなども入るので目安。**実曲で見て調整する値**
+  static const vocalMid = 0.6;
+
+  /// ガチ: 歌が重なりそうなら、重ねる長さをここまで縮める
+  static const vocalClashMaxBeats = 8;
+
+  /// [pro] はガチ。[outTailMid] / [inHeadMid] は前の曲の終わり・次の曲の始まりの
+  /// 中音の平均（帯域の波形から。無ければ null で歌のぶつかりは見ない）
+  static TransitionRecipe plan(LoopItem out, LoopItem next,
+      {bool pro = false, double? outTailMid, double? inHeadMid}) {
     final tempoDiff = TrackCompatibility.tempoDiffPercent(out.bpm, next.bpm);
     final ratio = TrackCompatibility.tempoRatio(out.bpm, next.bpm);
     // 入る曲が出る曲よりどれだけ速いか（%、倍/半は折り畳む）
@@ -118,11 +131,14 @@ class TransitionPlanner {
       recipe = _make('標準', 8, CrossfadeCurve.equalPower,
           bass: true, effect: TransitionEffect.filterSweep, match: false);
     } else if (tempoDiff > tempoLimitPercent) {
-      recipe = _make('短く切り替え', 4, CrossfadeCurve.equalPower,
-          bass: false, effect: TransitionEffect.impact, match: false);
+      // ガチはテンポが合わないのを逆手に、前の曲をブレーキで止めて切り替える
+      recipe = _make(pro ? 'ブレーキで切り替え' : '短く切り替え', 4, CrossfadeCurve.equalPower,
+          bass: false,
+          effect: pro ? TransitionEffect.brake : TransitionEffect.impact,
+          match: false);
     } else if (fadesOut) {
       facts.add('フェードアウト');
-      recipe = _make('フェードアウトに重ねる', 16, CrossfadeCurve.nextFirst,
+      recipe = _make('フェードアウトに重ねる', pro ? proLongBeats : 16, CrossfadeCurve.nextFirst,
           bass: true, effect: TransitionEffect.none, match: true);
     } else if (drop != null && drop >= strongDropDb) {
       facts.add('ドロップ +${drop.round()}dB');
@@ -131,14 +147,26 @@ class TransitionPlanner {
     } else if ((faster ?? 0) >= fasterPercent || (energy ?? 0) >= energyStepDb) {
       facts.add(_energyFact(faster, energy, up: true));
       recipe = _make('盛り上げ', 8, CrossfadeCurve.nextFirst,
-          bass: true, effect: TransitionEffect.riser, match: true);
+          bass: true,
+          effect: pro ? TransitionEffect.riserImpact : TransitionEffect.riser,
+          match: true);
     } else if ((faster ?? 0) <= -fasterPercent || (energy ?? 0) <= -energyStepDb) {
       facts.add(_energyFact(faster, energy, up: false));
       recipe = _make('落ち着かせ', 16, CrossfadeCurve.equalPower,
           bass: true, effect: TransitionEffect.filterSweep, match: true);
     } else {
-      recipe = _make('ブレンド', 16, CrossfadeCurve.nextFirst,
+      recipe = _make('ブレンド', pro ? proLongBeats : 16, CrossfadeCurve.nextFirst,
           bass: true, effect: TransitionEffect.filterSweep, match: true);
+    }
+    // ガチ: 前の曲の終わりと次の曲の始まりで、どちらも中音（声）が強ければ短く重ねる
+    if (pro &&
+        outTailMid != null &&
+        inHeadMid != null &&
+        outTailMid >= vocalMid &&
+        inHeadMid >= vocalMid &&
+        recipe.beats > vocalClashMaxBeats) {
+      facts.add('歌が重なりそうで短め');
+      recipe = recipe.copyWith(beats: vocalClashMaxBeats);
     }
     if (keyClash && recipe.beats > keyClashMaxBeats) {
       facts.add('キー不一致で短め');

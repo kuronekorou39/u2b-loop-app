@@ -47,6 +47,18 @@ class WaveBands {
     return (low: l / 255, mid: m / 255, high: h / 255);
   }
 
+  /// [startMs]〜[endMs] の中音の平均（0〜1）。範囲が無ければ null
+  double? meanMid(double startMs, double endMs) {
+    final i0 = max(0, (startMs / stepMs).floor());
+    final i1 = min(length, (endMs / stepMs).ceil());
+    if (i1 <= i0) return null;
+    var s = 0;
+    for (var i = i0; i < i1; i++) {
+      s += mid[i];
+    }
+    return s / (i1 - i0) / 255;
+  }
+
   /// PCM から求める（重いので isolate で呼ぶこと）。短すぎれば null
   static WaveBands? fromPcm(Int16List pcm, int sampleRate, {int stepMs = defaultStepMs}) {
     final hop = max(1, (sampleRate * stepMs / 1000).round());

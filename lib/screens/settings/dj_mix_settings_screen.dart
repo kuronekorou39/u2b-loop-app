@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/audio/crossfade_curve.dart';
+import '../../core/audio/dj_level.dart';
 import '../../core/audio/transition_effect.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/player/first_verse_sheet.dart';
@@ -14,12 +15,17 @@ class DjMixSettingsScreen extends ConsumerWidget {
 
   static String crossfadeLabel(int beats) => beats == 0 ? 'オフ' : '$beats拍';
 
+  /// 段階の表示（どれとも一致しなければ「カスタム」）
+  static String levelLabel(DjLevel? level) => level?.label ?? 'カスタム';
+
   /// 設定トップの説明文に出す要約
   static String summary(WidgetRef ref) {
     final fade = ref.watch(crossfadeProvider);
     if (fade == 0) return 'クロスフェード オフ';
+    final level = levelLabel(ref.watch(djLevelProvider));
     if (ref.watch(autoMixProvider)) {
       return [
+        level,
         'クロスフェード ${crossfadeLabel(fade)}',
         'おまかせ（曲に合わせて選ぶ）',
         if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
@@ -27,6 +33,7 @@ class DjMixSettingsScreen extends ConsumerWidget {
       ].join(' · ');
     }
     final parts = <String>[
+      level,
       'クロスフェード ${crossfadeLabel(fade)}',
       ref.watch(crossfadeCurveProvider).label,
       if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
@@ -62,6 +69,30 @@ class DjMixSettingsScreen extends ConsumerWidget {
       ),
     );
     if (picked != null) ref.read(crossfadeProvider.notifier).value = picked;
+  }
+
+  Future<void> _pickLevel(BuildContext context, WidgetRef ref) async {
+    final current = ref.read(djLevelProvider);
+    final picked = await showDialog<DjLevel>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('つなぎ方のレベル'),
+        children: [
+          RadioGroup<DjLevel?>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(ctx, v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final l in DjLevel.values)
+                  RadioListTile<DjLevel?>(value: l, title: Text(l.label)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) applyDjLevel(ref, picked);
   }
 
   Future<void> _pickCurve(BuildContext context, WidgetRef ref) async {
@@ -159,6 +190,14 @@ class DjMixSettingsScreen extends ConsumerWidget {
       children: [
         SettingsGroup(
           children: [
+            // 控えめ・普通・ガチ。選ぶと下の個々の設定がまとめて変わる（変えるとカスタム）
+            SettingsRow(
+              icon: Icons.tune,
+              title: 'つなぎ方のレベル',
+              trailing: Text(levelLabel(ref.watch(djLevelProvider)),
+                  style: Theme.of(context).textTheme.bodyMedium),
+              onTap: () => _pickLevel(context, ref),
+            ),
             // プレイリストで次曲がプリロード済みのとき、B点/終端の手前から重ねて鳴らす
             SettingsRow(
               icon: Icons.multitrack_audio,

@@ -48,6 +48,7 @@ class SettingsKeys {
   static const sfxLevelDb = 'sfx_level_db';
   static const sfxOffsetMs = 'sfx_offset_ms';
   static const autoMix = 'auto_mix';
+  static const djPro = 'dj_pro';
   static const volumeNorm = 'volume_norm';
   static const beatMatch = 'beat_match';
   static const showBeatLines = 'show_beat_lines';

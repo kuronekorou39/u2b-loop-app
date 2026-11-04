@@ -34,6 +34,16 @@ class WaveformCache {
 
   static final _bandsChanged = StreamController<String>.broadcast();
 
+  /// 読んだ帯域の波形（同期で見たいところ用。おまかせのつなぎ方選び）
+  static final _bandsMemo = <String, WaveBands>{};
+
+  /// 読み込み済みなら帯域の波形（無ければ null。裏で読み始める）
+  static WaveBands? cachedBands(String itemId) {
+    final b = _bandsMemo[itemId];
+    if (b == null) unawaited(loadBands(itemId));
+    return b;
+  }
+
   /// 帯域の波形を保存した曲の ID
   static Stream<String> get bandsChanged => _bandsChanged.stream;
 
@@ -58,7 +68,9 @@ class WaveformCache {
     try {
       final f = await _bandsFile(itemId);
       if (!await f.exists()) return null;
-      return WaveBands.decode(await f.readAsBytes());
+      final b = WaveBands.decode(await f.readAsBytes());
+      if (b != null) _bandsMemo[itemId] = b;
+      return b;
     } catch (e) {
       debugPrint('[WaveformCache] 帯域の読込失敗: $e');
       return null;
@@ -71,6 +83,7 @@ class WaveformCache {
       final bands = await Isolate.run(() => WaveBands.fromPcm(pcm, sampleRate));
       if (bands == null) return;
       await (await _bandsFile(itemId)).writeAsBytes(bands.encode(), flush: true);
+      _bandsMemo[itemId] = bands;
       _bandsChanged.add(itemId);
     } catch (e) {
       debugPrint('[WaveformCache] 帯域の保存失敗: $e');

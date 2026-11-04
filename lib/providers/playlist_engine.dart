@@ -19,6 +19,7 @@ import '../core/audio/transition_planner.dart';
 import '../models/loop_item.dart';
 import '../models/playlist_mode.dart';
 import '../models/playlist_track.dart';
+import '../services/waveform_cache.dart';
 import '../services/playback/unplayable_watch.dart';
 import '../services/audio_filters.dart';
 import '../services/cache_service.dart';
@@ -832,7 +833,11 @@ class PlaylistEngine {
     final manualBeats = _ref.read(crossfadeProvider);
     final current = _ref.read(playlistPlayerProvider).currentTrack?.item;
     if (manualBeats > 0 && current != null && _ref.read(autoMixProvider)) {
-      return TransitionPlanner.plan(current, next.item);
+      final pro = _ref.read(djProProvider);
+      return TransitionPlanner.plan(current, next.item,
+          pro: pro,
+          outTailMid: pro ? _tailMid(current) : null,
+          inHeadMid: pro ? _headMid(next.item) : null);
     }
     return TransitionRecipe(
       beats: manualBeats,
@@ -842,6 +847,26 @@ class PlaylistEngine {
       beatMatch: _ref.read(beatMatchProvider),
       tempoMatch: _ref.read(tempoMatchProvider),
     );
+  }
+
+  /// ガチの歌のぶつかり判定で見る長さ（曲の終わり・始まりから）
+  static const _vocalWindowMs = 30000.0;
+
+  /// 前の曲の終わり（曲でない部分・無音を除いた最後の 30 秒）の中音の平均
+  double? _tailMid(LoopItem item) {
+    final bands = WaveformCache.cachedBands(item.id);
+    final d = item.durationMs;
+    if (bands == null || d == null) return null;
+    final end = (d - (item.outroSkipMs ?? 0)).toDouble();
+    return bands.meanMid(end - _vocalWindowMs, end);
+  }
+
+  /// 次の曲の始まり（曲でない部分・無音を除いた最初の 30 秒）の中音の平均
+  double? _headMid(LoopItem item) {
+    final bands = WaveformCache.cachedBands(item.id);
+    if (bands == null) return null;
+    final start = item.introSkipMs.toDouble();
+    return bands.meanMid(start, start + _vocalWindowMs);
   }
 
   /// クロスフェードの長さ。設定は拍数（DJ は小節で数える）なので、出る曲の
