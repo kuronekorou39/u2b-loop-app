@@ -97,6 +97,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   /// 帯に描く範囲の余白。「−」「＋」で段を変える。曲が変わっても持ち越す
   Duration _margin = MixView.defaultMargin;
 
+  /// ふつうの波形の倍率（単体再生のズームと同じ。1 = 曲全体）
+  double _waveZoom = 1.0;
+
   /// デッキの板を出しているか（時刻行の左のボタン。既定は出さない）。
   /// 出している間は出す範囲の外でも重ね表示を続ける
   bool _wheelsOpen = false;
@@ -278,26 +281,20 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         allowMarkerDrag: false,
         onRetryWaveform: widget.onRetryWaveform,
         mixRanges: mixRanges,
-        timeRowLeading: _zoomStepper(),
         timeRowTrailing: _deckButton(),
+        // 波形の倍率（単体再生のズームと同じ）。重ね表示から戻っても保つので、ここで持つ
+        zoomLevel: _waveZoom,
+        onZoomChanged: (v) => setState(() => _waveZoom = v),
         beatItem: _currentItem(),
       );
 
-  /// 重ね表示の範囲の倍率（時刻行の左の枠）。「−」で広く、「＋」で狭く。
-  /// ふつうの波形でも、重ね表示に切り替わる範囲（紫の塗り）がこれで変わる
-  Widget _zoomStepper() {
-    final wider = MixView.wider(_margin);
-    final narrower = MixView.narrower(_margin);
-    return ZoomStepper(
-      label: '${MixView.zoomOf(_margin)}x',
-      highlight: _margin != MixView.defaultMargin,
-      onMinus: wider == null ? null : () => setState(() => _margin = wider),
-      onPlus: narrower == null ? null : () => setState(() => _margin = narrower),
-      minusTooltip: '範囲を広げる',
-      plusTooltip: '範囲を狭める',
-    );
-  }
-
+  /// 重ね表示の間の時刻行の左の枠: 波形の倍率を薄く出したまま（押せない）。
+  /// ふつうの波形に戻ると同じ倍率で続く（行の並びは動かさない）
+  Widget _zoomPlaceholder() => ZoomStepper(
+        label: ZoomStepper.labelOf(_waveZoom),
+        onMinus: null,
+        onPlus: null,
+      );
   /// 鳴っている曲（保存された最新。解析が終わったら線が出るように）
   LoopItem? _currentItem() {
     final track = ref.watch(playlistPlayerProvider).currentTrack;
@@ -431,12 +428,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       child: Column(
         children: [
           lanes,
-          // 左の枠に倍率（−/＋）、右の枠にデッキ。ふつうの表示と同じ場所
+          // 左の枠に波形の倍率（重ね表示の間は押せない）、右の枠にデッキ。ふつうの表示と同じ場所。
+          // 重ね表示の範囲の −/＋ はデッキの板の中
           SeekTimeRow(
             position: inPosition,
             duration: pair.inDuration,
             onToggleCompact: widget.onToggleCompact,
-            leading: _zoomStepper(),
+            leading: _zoomPlaceholder(),
             trailing: _deckButton(),
           ),
         ],
@@ -512,6 +510,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
           onJogEnd: (ms) => setJog(ms, touching: false),
           onTempo: canTrim ? setTrim : null,
           onTempoEnd: canTrim ? setTrim : null,
+          onWider: data.zoom.wider,
+          onNarrower: data.zoom.narrower,
           showCurves: data.showCurves,
           onShowCurves: (v) =>
               ref.read(showMixCurvesProvider.notifier).value = v,

@@ -54,23 +54,28 @@ void main() {
 
   List<String> ids() => AppBoxes.playlists.get('p')!.itemIds;
 
-  testWidgets('ふだんは並べ替えの ≡ も外す ⊖ も見えない', (tester) async {
+  testWidgets('ふだんは ⋮ だけ（≡ も ⊖ も無く、右に余白を取らない）', (tester) async {
     await pump(tester);
-    expect(find.byIcon(Icons.drag_handle).hitTestable(), findsNothing);
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
     expect(find.byTooltip('プレイリストから外す'), findsNothing);
     expect(find.byTooltip('メニュー'), findsNWidgets(3));
   });
 
-  testWidgets('編集モードでは確認なしで外し、「元に戻す」で戻る。曲名の幅は変わらない', (tester) async {
+  testWidgets('編集モード: ⋮ が ⊖ に、≡ は左端。⊖ は確認なしでアニメーションのあと外し、「元に戻す」で戻る',
+      (tester) async {
     await pump(tester);
-    final before = tester.getRect(find.text('曲 b'));
     await tester.tap(find.byTooltip('編集（並べ替え・外す）'));
     await tester.pumpAndSettle();
     expect(find.text('完了'), findsOneWidget);
-    expect(tester.getRect(find.text('曲 b')).width, before.width);
-    expect(find.byIcon(Icons.drag_handle).hitTestable(), findsNWidgets(3));
+    expect(find.byTooltip('メニュー'), findsNothing);
+    // ≡ は行の左端（サムネより左）
+    final handle = tester.getCenter(find.byIcon(Icons.drag_handle).first);
+    expect(handle.dx, lessThan(tester.getCenter(find.text('曲 a')).dx));
+    expect(handle.dx, lessThan(200));
 
     await tester.tap(find.byTooltip('プレイリストから外す').at(1));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(ids(), ['a', 'b', 'c'], reason: '抜けるアニメーションの間はまだ外さない');
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing, reason: '確認は出さない');
     expect(ids(), ['a', 'c']);
@@ -85,6 +90,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('完了'), findsNothing);
     expect(find.byType(PlaylistDetailScreen), findsOneWidget);
+  });
+
+  testWidgets('編集モードは行の長押しで持ち上げて並べ替えられる（ふだんは長押しでメニュー）', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byTooltip('編集（並べ替え・外す）'));
+    await tester.pumpAndSettle();
+    final from = tester.getCenter(find.text('曲 a'));
+    final to = tester.getCenter(find.text('曲 c'));
+    final g = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 600));
+    for (var k = 1; k <= 10; k++) {
+      await g.moveTo(Offset(from.dx, from.dy + (to.dy + 40 - from.dy) * k / 10));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(ids().last, 'a');
   });
 
   testWidgets('共有と削除はメニューの中', (tester) async {

@@ -48,6 +48,11 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// 時刻行の右の枠に出すもの（プレイリストのデッキの開閉ボタン、bar モード）
   final Widget? timeRowTrailing;
 
+  /// 波形の倍率を外で持つとき（プレイリスト: 重ね表示に切り替わって戻っても保つ）。
+  /// bar モードでも渡せば拡大でき、時刻行の左の枠に −/＋ が出る（単体再生と同じ）
+  final double? zoomLevel;
+  final ValueChanged<double>? onZoomChanged;
+
   /// 拍の線とテンポ・キーの変わり目を描く曲（単体再生の波形は拡大して見る。
   /// bar モード〔プレイリスト〕は拡大できないので、詰まれば 4 小節・8 小節ごとに間引く）
   final LoopItem? beatItem;
@@ -65,6 +70,8 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.timeRowLeading,
     this.timeRowTrailing,
     this.beatItem,
+    this.zoomLevel,
+    this.onZoomChanged,
   });
 
   @override
@@ -82,8 +89,17 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
   static const _maxRetries = 3;
   String? _lastSourceUri; // トラック切替検知用（リトライ回数のリセット）
 
-  // Zoom / pan
-  double _zoomLevel = 1.0;
+  // Zoom / pan（倍率は外で持つこともある: [LoopSeekbar.zoomLevel]）
+  double _ownZoom = 1.0;
+  double get _zoomLevel => widget.zoomLevel ?? _ownZoom;
+  set _zoomLevel(double v) {
+    final onZoom = widget.onZoomChanged;
+    if (onZoom != null) {
+      onZoom(v);
+    } else {
+      _ownZoom = v;
+    }
+  }
   double _panOffset = 0.5;
   bool _autoFollow = true;
   double _lastDragX = 0;
@@ -230,7 +246,11 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     if (widget.bar || widget.compact) {
       return _buildBarMode(context, position, duration, loop, hasSource,
           waveform, waveformLoading, waveformError,
-          beats: beats, markers: showBeats ? markers : const []);
+          beats: beats,
+          markers: showBeats ? markers : const [],
+          viewStart: viewStart,
+          viewEnd: viewEnd,
+          isZoomed: isZoomed);
     }
 
     return Padding(
@@ -475,7 +495,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
 
   /// ズームの − / 倍率 / ＋（時刻行の左の枠。枠で囲まず、桁が変わっても幅は同じ）
   Widget _buildZoomControls(BuildContext context, bool isZoomed) => ZoomStepper(
-        label: '${_zoomLevel.toStringAsFixed(_zoomLevel >= 10 ? 0 : 1)}x',
+        label: ZoomStepper.labelOf(_zoomLevel),
         highlight: isZoomed,
         onMinus: isZoomed ? _zoomOut : null,
         onPlus: _zoomLevel < 128.0 ? _zoomIn : null,
@@ -593,9 +613,14 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
     String? waveformError, {
     List<BeatSegment> beats = const [],
     List<SectionMarker> markers = const [],
+    double viewStart = 0,
+    double viewEnd = 1,
+    bool isZoomed = false,
   }) {
     final compact = widget.compact;
     final brightness = Theme.of(context).brightness;
+    // 波形の倍率を外で持っているとき（プレイリスト）だけ拡大する。細いバーはいつも曲全体
+    final zoomable = widget.onZoomChanged != null;
 
     /// タップ・横ドラッグでシークできる面。[waveformPainter] なら波形、でなければ細いバー
     Widget seekSurface({required bool waveformPainter, required double height}) =>
@@ -605,9 +630,12 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;
+              // 拡大した波形は見えている範囲、細いバーは曲全体
+              final vs = waveformPainter && zoomable ? viewStart : 0.0;
+              final ve = waveformPainter && zoomable ? viewEnd : 1.0;
               void seekTo(double x) {
                 if (duration.inMilliseconds == 0) return;
-                final norm = (x / width).clamp(0.0, 1.0);
+                final norm = (vs + (x / width) * (ve - vs)).clamp(0.0, 1.0);
                 ref.read(playerProvider).seek(Duration(
                     milliseconds: (norm * duration.inMilliseconds).round()));
               }
@@ -629,8 +657,8 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                               loopEnabled: loop.enabled,
                               waveform: waveform,
                               brightness: brightness,
-                              viewStart: 0,
-                              viewEnd: 1,
+                              viewStart: vs,
+                              viewEnd: ve,
                               mixRanges: widget.mixRanges,
                               beats: beats,
                               markers: markers,
@@ -677,7 +705,18 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             duration: duration,
             compact: compact,
             onToggleCompact: widget.onToggleCompact,
-            leading: widget.timeRowLeading,
+            // 倍率を外で持っていれば左の枠に −/＋（波形を閉じている間は押せない）
+            leading: widget.timeRowLeading ??
+                (zoomable
+                    ? ZoomStepper(
+                        label: ZoomStepper.labelOf(_zoomLevel),
+                        highlight: isZoomed,
+                        onMinus: !compact && isZoomed ? _zoomOut : null,
+                        onPlus: !compact && _zoomLevel < 128.0 ? _zoomIn : null,
+                        minusTooltip: 'ズームアウト',
+                        plusTooltip: 'ズームイン',
+                      )
+                    : null),
             trailing: widget.timeRowTrailing,
           ),
         ],
@@ -1549,6 +1588,9 @@ class ZoomStepper extends StatelessWidget {
   static const _buttonWidth = 26.0;
   static const _labelWidth = 36.0;
   static const width = _buttonWidth * 2 + _labelWidth;
+
+  /// 倍率の表示（「1.0x」「16x」）
+  static String labelOf(double zoom) => '${zoom.toStringAsFixed(zoom >= 10 ? 0 : 1)}x';
 
   @override
   Widget build(BuildContext context) {

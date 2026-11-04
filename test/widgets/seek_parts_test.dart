@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/widgets/loop/loop_seekbar.dart';
-import 'package:u2b_loop_app/widgets/player/mix_view.dart';
 import 'package:u2b_loop_app/widgets/player/playlist_seek_area.dart';
 
 /// 重ね表示が組む部品: 細い棒 1 本・時刻行・出す範囲の余白
@@ -84,12 +83,6 @@ void main() {
     expect(await widthOf('128x'), one);
     expect(await widthOf('32x'), one);
     expect(one, ZoomStepper.width);
-  });
-
-  test('重ね表示の範囲の倍率: 64 秒が 1x、1 段狭いごとに 2 倍、余白 0 で 32x', () {
-    expect(MixView.zoomOf(const Duration(seconds: 64)), 1);
-    expect(MixView.zoomOf(const Duration(seconds: 4)), 16);
-    expect(MixView.zoomOf(Duration.zero), 32);
   });
 
   group('triggerMarginFor（重ね表示を出す範囲の余白）', () {

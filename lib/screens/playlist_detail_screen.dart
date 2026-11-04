@@ -51,6 +51,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   /// ふだんは並べ替え・スワイプを出さない（意図せず順番を変えたり外したりしないように）。
   /// 変更はその場で保存するので「保存」は無い
   bool _editing = false;
+
+  /// 削除ボタンで外している途中の曲（横に抜けて縮むアニメーションのあとで外す）
+  final _removing = <String>{};
+
+  /// 削除ボタン: スワイプで外したときと同じく、横に抜けて縮んでから外す
+  void _removeWithAnimation(String itemId) {
+    if (_removing.contains(itemId)) return;
+    setState(() => _removing.add(itemId));
+  }
   void _renamePlaylist(Playlist pl) async {
     final newName = await AppDialogs.prompt(context,
         title: 'プレイリスト名変更',
@@ -718,10 +727,36 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         const Icon(Icons.delete_outline, color: Colors.white),
                   ),
                   onDismissed: (_) => _removeItem(pl, item.id),
-                  child: Opacity(
+                  child: _SlideAway(
+                    active: _removing.contains(item.id),
+                    onDone: () {
+                      _removing.remove(item.id);
+                      _removeItem(pl, item.id);
+                    },
+                    // 編集モードは行の長押しでも持ち上げて並べ替えられる
+                    child: ReorderableDelayedDragStartListener(
+                      index: i,
+                      enabled: _editing,
+                      child: Opacity(
                     opacity: isDisabled || item.isUnplayable ? 0.4 : 1.0,
                     child: ListTile(
-                      leading: GestureDetector(
+                      // 編集モードは左端につまみ（≡）
+                      leading: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_editing)
+                            ReorderableDragStartListener(
+                              index: i,
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                    right: AppSpacing.md,
+                                    top: AppSpacing.sm,
+                                    bottom: AppSpacing.sm),
+                                child: Icon(Icons.drag_handle,
+                                    color: AppTheme.muted(context)),
+                              ),
+                            ),
+                          GestureDetector(
                         onTap: () => ref
                             .read(playlistsProvider.notifier)
                             .toggleItemEnabled(pl.id, item.id),
@@ -756,6 +791,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           ],
                         ),
                       ),
+                        ],
+                      ),
                       // 同じサウンドトラックの曲などはサムネで見分けにくいので 2 行まで
                       title: Text(
                         item.title,
@@ -768,44 +805,23 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         ),
                       ),
                       subtitle: _buildSubtitle(item, itemTags, pl),
-                      // ふだんは ⋮、編集モードは ⊖（外す）と ≡（並べ替え）。≡ の場所はふだんも
-                      // 空けておく（モードを切り替えても曲名の幅が変わらないように）
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_editing)
-                            IconButton(
+                      // ふだんは ⋮、編集モードは同じ場所が ⊖（外す）。右に余白は取らない
+                      // （曲名を広く出す）
+                      trailing: _editing
+                          ? IconButton(
                               icon: const Icon(Icons.remove_circle_outline,
                                   size: AppIconSizes.md, color: Colors.redAccent),
                               tooltip: 'プレイリストから外す',
                               visualDensity: VisualDensity.compact,
-                              onPressed: () => _removeItem(pl, item.id),
+                              onPressed: () => _removeWithAnimation(item.id),
                             )
-                          else
-                            IconButton(
+                          : IconButton(
                               icon: const Icon(Icons.more_vert,
                                   size: AppIconSizes.md),
                               tooltip: 'メニュー',
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _showItemMenu(pl, item, i),
                             ),
-                          Visibility(
-                            visible: _editing,
-                            maintainSize: true,
-                            maintainAnimation: true,
-                            maintainState: true,
-                            child: ReorderableDragStartListener(
-                              index: i,
-                              enabled: _editing,
-                              child: Padding(
-                                padding: const EdgeInsets.all(AppSpacing.md),
-                                child: Icon(Icons.drag_handle,
-                                    color: AppTheme.muted(context)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
@@ -815,6 +831,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       },
                       onLongPress:
                           _editing ? null : () => _showItemMenu(pl, item, i),
+                    ),
+                  ),
                     ),
                   ),
                 );
@@ -1064,6 +1082,69 @@ class _BulkAnalysisCard extends ConsumerWidget {
                 : () => ref.read(bulkAnalysisProvider.notifier).stop(),
             child: Text(s.stopping ? 'この曲で止めます' : '中止'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 削除ボタンで外す行: スワイプで外したとき（Dismissible）と同じく、赤い面の上を左へ抜け、
+/// 縮んでから [onDone]（そこで実際に外す）。[active] になったら始める
+class _SlideAway extends StatefulWidget {
+  const _SlideAway({required this.active, required this.onDone, required this.child});
+
+  final bool active;
+  final VoidCallback onDone;
+  final Widget child;
+
+  @override
+  State<_SlideAway> createState() => _SlideAwayState();
+}
+
+class _SlideAwayState extends State<_SlideAway> with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
+  );
+  // 前半で横に抜け、後半で縮む
+  late final _slide = Tween(begin: Offset.zero, end: const Offset(-1, 0)).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0, 0.55, curve: Curves.easeIn)));
+  late final _size = Tween(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0.55, 1, curve: Curves.easeOut)));
+
+  @override
+  void didUpdateWidget(_SlideAway old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active) {
+      _controller.forward().then((_) {
+        if (mounted) widget.onDone();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active && !_controller.isAnimating) return widget.child;
+    return SizeTransition(
+      sizeFactor: _size,
+      alignment: Alignment.topCenter,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 16),
+              color: Colors.red,
+              child: const Icon(Icons.delete_outline, color: Colors.white),
+            ),
+          ),
+          SlideTransition(position: _slide, child: widget.child),
         ],
       ),
     );

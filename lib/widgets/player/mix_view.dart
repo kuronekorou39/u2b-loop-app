@@ -164,10 +164,6 @@ class MixView extends StatelessWidget {
     return i >= margins.length - 1 ? null : margins[i + 1];
   }
 
-  /// 余白の段を倍率で表す（一番広い 64 秒が 1x、1 段狭くなるごとに 2 倍、余白 0 で 32x）。
-  /// 単体再生のズームと同じく「−」で広く（縮小）、「＋」で狭く（拡大）
-  static int zoomOf(Duration margin) => 1 << (margins.length - 1 - _marginIndex(margin));
-
   static int _marginIndex(Duration margin) {
     for (var i = 0; i < margins.length; i++) {
       if (margins[i] >= margin) return i;
