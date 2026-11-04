@@ -193,6 +193,83 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
+  /// テンポ/キーの手直し（詳細のテンポ/キーのシート）。区切りの無い曲は [saveAnalysis] の手動補正と同じ。
+  /// [tempo] / [keys] は区切りごとの値（位置は変えず値だけ直したもの、2 つ以上）。
+  /// テンポは一番長い区切りの値が曲の BPM になる。拍の格子は区切りごとに、倍/半分なら
+  /// その倍率で引き直し、変えていなければそのまま、それ以外の値にしたら捨てる（線がずれるより出さない）。
+  /// キーは一番長い区切りのキーが曲のキーになる
+  Future<void> editTempoKey(
+    String id, {
+    required double? bpm,
+    required String? key,
+    List<TempoSection>? tempo,
+    List<KeySection>? keys,
+  }) async {
+    var item = _box.get(id);
+    if (item == null) return;
+    final hasTempo = tempo != null && tempo.length >= 2;
+    final hasKeys = keys != null && keys.length >= 2;
+    if (!hasTempo && !hasKeys) {
+      return saveAnalysis(id, bpm: bpm, musicalKey: key, markAnalyzed: false);
+    }
+
+    BeatGrid? regrid(BeatGrid? g, double oldBpm, double newBpm, {double? anchor}) {
+      if (g == null || oldBpm <= 0) return null;
+      if ((newBpm - oldBpm).abs() < 0.05) return g;
+      final octaves = _octavesOf(newBpm / oldBpm);
+      if (octaves == null) return null;
+      return g.withBpm(g.bpm * pow(2, octaves), anchorMs: g.barAnchorMs(anchor));
+    }
+
+    if (hasTempo) {
+      final old = item.tempoSections;
+      final grids = item.sectionGrids;
+      final mainIdx = item.mainTempoSectionIndex ?? 0;
+      item.tempoSectionData = TempoSection.flatten(tempo);
+      if (grids.length == tempo.length && old.length == tempo.length) {
+        item.sectionGridData = LoopItem.flattenGrids([
+          for (var i = 0; i < tempo.length; i++)
+            regrid(grids[i], old[i].bpm, tempo[i].bpm),
+        ]);
+      } else {
+        item.sectionGridData = null;
+      }
+      final oldMain = item.bpm;
+      final newMain = tempo[mainIdx.clamp(0, tempo.length - 1)].bpm;
+      final g = regrid(item.beatGrid, oldMain ?? 0, newMain,
+          anchor: item.mixInMs?.toDouble());
+      item.bpm = newMain;
+      item.beatBpm = g?.bpm;
+      item.beatOffsetMs = g?.offsetMs;
+      item.downbeatMs = g?.downbeatMs;
+      if (g == null) item.downbeatConfidence = null;
+    } else {
+      // テンポは区切りが無い: 1 つの BPM として手動補正（格子の扱いも同じ。キーはこの後で）
+      await saveAnalysis(id, bpm: bpm, musicalKey: item.musicalKey, markAnalyzed: false);
+      item = _box.get(id) ?? item;
+    }
+
+    if (hasKeys) {
+      item.keySectionData = LoopItem.flattenKeySections(keys);
+      // 一番長い区切りのキーを曲のキーに
+      final end = item.durationMs == null ? null : item.durationMs! - (item.musicTailMs ?? 0);
+      var best = 0, bestLen = -1;
+      for (var i = 0; i < keys.length; i++) {
+        final next = i + 1 < keys.length ? keys[i + 1].startMs : (end ?? keys[i].startMs);
+        if (next - keys[i].startMs > bestLen) {
+          bestLen = next - keys[i].startMs;
+          best = i;
+        }
+      }
+      item.musicalKey = keys[best].key;
+    } else {
+      if (key != item.musicalKey) item.keySectionData = null;
+      item.musicalKey = key;
+    }
+    await _box.put(id, item);
+    _refresh();
+  }
+
   /// 倍率が 2 の冪（…1/2, 1, 2, 4…）に 2% 以内で近ければその冪（…−1, 0, 1, 2…）、
   /// 近くなければ null
   static int? _octavesOf(double ratio) {
