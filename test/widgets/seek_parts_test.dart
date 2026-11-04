@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/widgets/loop/loop_seekbar.dart';
+import 'package:u2b_loop_app/widgets/player/mix_view.dart';
 import 'package:u2b_loop_app/widgets/player/playlist_seek_area.dart';
 
 /// 重ね表示が組む部品: 細い棒 1 本・時刻行・出す範囲の余白
@@ -35,29 +36,60 @@ void main() {
   });
 
   group('SeekTimeRow', () {
-    testWidgets('時刻は両端、開閉ボタンは真ん中（左の枠に円盤の開閉。右の枠は幅だけ空ける）',
-        (tester) async {
+    testWidgets('時刻は両端、開閉ボタンは真ん中（左の枠に倍率、右の枠にデッキ）', (tester) async {
       var toggled = 0;
       await tester.pumpWidget(host(SeekTimeRow(
         position: const Duration(seconds: 65),
         duration: const Duration(minutes: 3),
         onToggleCompact: () => toggled++,
-        leading: const Icon(Icons.album, key: Key('wheels')),
+        leading: ZoomStepper(label: '4x', onMinus: () {}, onPlus: () {}),
+        trailing: const Icon(Icons.album, key: Key('wheels')),
       )));
       expect(find.text('1:05.000'), findsOneWidget);
       expect(find.text('3:00.000'), findsOneWidget);
       final rowCenter = tester.getCenter(find.byType(SeekTimeRow));
       final toggle = find.widgetWithIcon(IconButton, Icons.unfold_less);
       expect(tester.getCenter(toggle).dx, closeTo(rowCenter.dx, 1));
-      // 左の枠に円盤の開閉（開閉ボタンのすぐ左）
+      // 右の枠にデッキ（開閉ボタンのすぐ右）
       final wheels = tester.getCenter(find.byKey(const Key('wheels')));
-      expect(wheels.dx, lessThan(rowCenter.dx));
-      expect(wheels.dx, greaterThan(rowCenter.dx - SeekTimeRow.sideWidth - 18));
-      // 「−」「＋」はデッキの板へ移した（ここには無い）
-      expect(find.byIcon(Icons.remove), findsNothing);
+      expect(wheels.dx, greaterThan(rowCenter.dx));
+      expect(wheels.dx, lessThan(rowCenter.dx + SeekTimeRow.sideWidth + 18));
+      // 左の枠に倍率
+      expect(tester.getCenter(find.text('4x')).dx, lessThan(rowCenter.dx));
       await tester.tap(toggle);
       expect(toggled, 1);
     });
+
+    testWidgets('右の枠が空でも開閉ボタンは真ん中（単体再生で追従が出ていないとき）', (tester) async {
+      await tester.pumpWidget(host(SeekTimeRow(
+        position: Duration.zero,
+        duration: const Duration(minutes: 3),
+        onToggleCompact: () {},
+        leading: ZoomStepper(label: '1.0x', onMinus: null, onPlus: () {}),
+      )));
+      final rowCenter = tester.getCenter(find.byType(SeekTimeRow));
+      final toggle = find.widgetWithIcon(IconButton, Icons.unfold_less);
+      expect(tester.getCenter(toggle).dx, closeTo(rowCenter.dx, 1));
+    });
+  });
+
+  testWidgets('倍率の欄は桁が変わっても幅が同じ', (tester) async {
+    Future<double> widthOf(String label) async {
+      await tester.pumpWidget(host(Center(
+          child: ZoomStepper(label: label, onMinus: () {}, onPlus: () {}))));
+      return tester.getSize(find.byType(ZoomStepper)).width;
+    }
+
+    final one = await widthOf('1.0x');
+    expect(await widthOf('128x'), one);
+    expect(await widthOf('32x'), one);
+    expect(one, ZoomStepper.width);
+  });
+
+  test('重ね表示の範囲の倍率: 64 秒が 1x、1 段狭いごとに 2 倍、余白 0 で 32x', () {
+    expect(MixView.zoomOf(const Duration(seconds: 64)), 1);
+    expect(MixView.zoomOf(const Duration(seconds: 4)), 16);
+    expect(MixView.zoomOf(Duration.zero), 32);
   });
 
   group('triggerMarginFor（重ね表示を出す範囲の余白）', () {

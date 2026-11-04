@@ -241,10 +241,12 @@ class MixDeck extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          group([
-            button(Icons.remove, '範囲を広げる', onWider),
-            button(Icons.add, '範囲を狭める', onNarrower),
-          ]),
+          // 範囲の −/＋ は v1.131.0 で時刻行の左へ移した（渡されたときだけ）
+          if (onWider != null || onNarrower != null)
+            group([
+              button(Icons.remove, '範囲を広げる', onWider),
+              button(Icons.add, '範囲を狭める', onNarrower),
+            ]),
           group([
             button(Icons.push_pin_outlined, '合わせた分をこの曲に保存', onSave,
                 color: AppTheme.accentGreen),

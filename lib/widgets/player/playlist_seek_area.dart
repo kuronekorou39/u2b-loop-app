@@ -221,7 +221,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     return _seekbar(mixRanges: ranges);
   }
 
-  /// デッキの開閉ボタン。ふつうの表示でも重ね表示でも時刻行の左の同じ場所
+  /// デッキの開閉ボタン。ふつうの表示でも重ね表示でも時刻行の右の同じ場所
   Widget _deckButton() => IconButton(
         icon: Icon(_wheelsOpen ? Icons.album : Icons.album_outlined,
             size: AppIconSizes.sm),
@@ -278,9 +278,25 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         allowMarkerDrag: false,
         onRetryWaveform: widget.onRetryWaveform,
         mixRanges: mixRanges,
-        timeRowLeading: _deckButton(),
+        timeRowLeading: _zoomStepper(),
+        timeRowTrailing: _deckButton(),
         beatItem: _currentItem(),
       );
+
+  /// 重ね表示の範囲の倍率（時刻行の左の枠）。「−」で広く、「＋」で狭く。
+  /// ふつうの波形でも、重ね表示に切り替わる範囲（紫の塗り）がこれで変わる
+  Widget _zoomStepper() {
+    final wider = MixView.wider(_margin);
+    final narrower = MixView.narrower(_margin);
+    return ZoomStepper(
+      label: '${MixView.zoomOf(_margin)}x',
+      highlight: _margin != MixView.defaultMargin,
+      onMinus: wider == null ? null : () => setState(() => _margin = wider),
+      onPlus: narrower == null ? null : () => setState(() => _margin = narrower),
+      minusTooltip: '範囲を広げる',
+      plusTooltip: '範囲を狭める',
+    );
+  }
 
   /// 鳴っている曲（保存された最新。解析が終わったら線が出るように）
   LoopItem? _currentItem() {
@@ -415,12 +431,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       child: Column(
         children: [
           lanes,
-          // 「−」「＋」はデッキの板の中（時刻行の右の枠は幅だけ残して空ける）
+          // 左の枠に倍率（−/＋）、右の枠にデッキ。ふつうの表示と同じ場所
           SeekTimeRow(
             position: inPosition,
             duration: pair.inDuration,
             onToggleCompact: widget.onToggleCompact,
-            leading: _deckButton(),
+            leading: _zoomStepper(),
+            trailing: _deckButton(),
           ),
         ],
       ),
@@ -495,8 +512,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
           onJogEnd: (ms) => setJog(ms, touching: false),
           onTempo: canTrim ? setTrim : null,
           onTempoEnd: canTrim ? setTrim : null,
-          onWider: data.zoom.wider,
-          onNarrower: data.zoom.narrower,
           showCurves: data.showCurves,
           onShowCurves: (v) =>
               ref.read(showMixCurvesProvider.notifier).value = v,

@@ -45,6 +45,9 @@ class LoopSeekbar extends ConsumerStatefulWidget {
   /// 重ね表示の時刻行と同じ場所に出て、どちらの表示でも同じ所で押せる
   final Widget? timeRowLeading;
 
+  /// 時刻行の右の枠に出すもの（プレイリストのデッキの開閉ボタン、bar モード）
+  final Widget? timeRowTrailing;
+
   /// 拍の線とテンポ・キーの変わり目を描く曲（単体再生の波形は拡大して見る。
   /// bar モード〔プレイリスト〕は拡大できないので、詰まれば 4 小節・8 小節ごとに間引く）
   final LoopItem? beatItem;
@@ -60,6 +63,7 @@ class LoopSeekbar extends ConsumerStatefulWidget {
     this.mixRanges = const [],
     this.above,
     this.timeRowLeading,
+    this.timeRowTrailing,
     this.beatItem,
   });
 
@@ -229,9 +233,6 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
           beats: beats, markers: showBeats ? markers : const []);
     }
 
-    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontFeatures: const [FontFeature('tnum')],
-        );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Column(
@@ -440,35 +441,19 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
                 ),
               ),
 
-          // --- 時刻（左右）+ ズームと開閉（中央）の行 ---
-          // 時刻は端に置き、ズームと開閉ボタンは左右の幅に関係なく真ん中に置く
-          // （開閉ボタンを終了時刻の右に置くと、そのぶん終了時刻が内側にずれて見える）
+          // --- 時刻（左右）+ 倍率・開閉・追従（中央）の行 ---
+          // 開閉ボタンは左右同じ幅の枠に挟んで真ん中に（以前は倍率の分だけ右にずれていた）。
+          // 倍率は左の枠、追従は右の枠（プレイリストの時刻行と同じ作り）
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-            child: SizedBox(
-              height: 36,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Row(
-                    children: [
-                      Text(TimeUtils.format(position), style: labelStyle),
-                      const Spacer(),
-                      Text(TimeUtils.format(duration), style: labelStyle),
-                    ],
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (hasSource) _buildZoomControls(context, isZoomed),
-                      if (widget.onToggleCompact != null) ...[
-                        if (hasSource) const SizedBox(width: AppSpacing.sm),
-                        _toggleButton(Icons.unfold_less, 'コンパクト表示'),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
+            child: SeekTimeRow(
+              position: position,
+              duration: duration,
+              onToggleCompact: widget.onToggleCompact,
+              leading: hasSource ? _buildZoomControls(context, isZoomed) : null,
+              trailing: hasSource && isZoomed && !_autoFollow
+                  ? _followButton(context)
+                  : null,
             ),
           ),
         ],
@@ -488,49 +473,28 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
         tooltip: tooltip,
       );
 
-  /// ズームの − / 倍率 / ＋（ズーム中に追従を切ったら「追従」）。
-  /// 板の上のピルと同じ見た目（以前は角丸四角の IconButton で浮いていた）
-  Widget _buildZoomControls(BuildContext context, bool isZoomed) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final dim = scheme.onSurface.withValues(alpha: 0.3);
-    Widget pill(IconData icon, String tooltip, VoidCallback? onTap) => GlassPill(
-          onTap: onTap,
-          tooltip: tooltip,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Icon(icon,
-              size: AppIconSizes.s, color: onTap == null ? dim : null),
-        );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        pill(Icons.remove, 'ズームアウト', isZoomed ? _zoomOut : null),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          child: Text(
-            '${_zoomLevel.toStringAsFixed(_zoomLevel >= 10 ? 0 : 1)}x',
-            style: textTheme.labelSmall?.copyWith(
-              color: isZoomed ? AppTheme.accentGreen : null,
-              fontFeatures: const [FontFeature('tnum')],
-            ),
-          ),
-        ),
-        pill(Icons.add, 'ズームイン', _zoomLevel < 128.0 ? _zoomIn : null),
-        if (isZoomed && !_autoFollow) ...[
-          const SizedBox(width: AppSpacing.sm),
-          GlassPill(
-            onTap: () => setState(() => _autoFollow = true),
-            active: true,
-            tooltip: '再生位置に追従する',
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Text('追従',
-                style: textTheme.labelSmall
-                    ?.copyWith(color: AppTheme.accentGreen)),
-          ),
-        ],
-      ],
-    );
-  }
+  /// ズームの − / 倍率 / ＋（時刻行の左の枠。枠で囲まず、桁が変わっても幅は同じ）
+  Widget _buildZoomControls(BuildContext context, bool isZoomed) => ZoomStepper(
+        label: '${_zoomLevel.toStringAsFixed(_zoomLevel >= 10 ? 0 : 1)}x',
+        highlight: isZoomed,
+        onMinus: isZoomed ? _zoomOut : null,
+        onPlus: _zoomLevel < 128.0 ? _zoomIn : null,
+        minusTooltip: 'ズームアウト',
+        plusTooltip: 'ズームイン',
+      );
+
+  /// ズーム中に追従を切ったら「追従」（時刻行の右の枠）
+  Widget _followButton(BuildContext context) => GlassPill(
+        onTap: () => setState(() => _autoFollow = true),
+        active: true,
+        tooltip: '再生位置に追従する',
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Text('追従',
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: AppTheme.accentGreen)),
+      );
 
   /// 波形の「読込中」「エラー + リトライ」の帯（波形の下端に重ねる）
   List<Widget> _waveformStatusOverlays(
@@ -714,6 +678,7 @@ class _LoopSeekbarState extends ConsumerState<LoopSeekbar> {
             compact: compact,
             onToggleCompact: widget.onToggleCompact,
             leading: widget.timeRowLeading,
+            trailing: widget.timeRowTrailing,
           ),
         ],
       ),
@@ -1485,23 +1450,30 @@ class SeekTimeRow extends StatelessWidget {
     this.compact = false,
     this.onToggleCompact,
     this.leading,
+    this.trailing,
   });
 
   final Duration position;
   final Duration duration;
   final bool compact;
   final VoidCallback? onToggleCompact;
+
+  /// 開閉ボタンの左の枠（倍率の −/＋。枠の右に寄せる）
   final Widget? leading;
 
-  /// 開閉ボタンの両脇の枠の幅
-  static const sideWidth = 64.0;
+  /// 開閉ボタンの右の枠（プレイリストのデッキ、単体再生の「追従」。枠の左に寄せる）
+  final Widget? trailing;
+
+  /// 開閉ボタンの両脇の枠の幅。左右同じなので開閉ボタンはいつも真ん中
+  /// （倍率の −/＋ が収まる幅 = [ZoomStepper.width]）
+  static const sideWidth = ZoomStepper.width;
 
   @override
   Widget build(BuildContext context) {
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
           fontFeatures: const [FontFeature('tnum')],
         );
-    final sides = leading != null;
+    final sides = leading != null || trailing != null;
     return SizedBox(
       height: 32,
       child: Stack(
@@ -1523,8 +1495,7 @@ class SeekTimeRow extends StatelessWidget {
                     width: sideWidth,
                     child: leading == null
                         ? null
-                        : Align(
-                            alignment: Alignment.centerRight, child: leading),
+                        : Align(alignment: Alignment.centerRight, child: leading),
                   ),
                 if (onToggleCompact != null)
                   IconButton(
@@ -1537,9 +1508,84 @@ class SeekTimeRow extends StatelessWidget {
                     visualDensity: VisualDensity.compact,
                     tooltip: compact ? '波形表示' : 'コンパクト表示',
                   ),
-                if (sides) const SizedBox(width: sideWidth),
+                if (sides)
+                  SizedBox(
+                    width: sideWidth,
+                    child: trailing == null
+                        ? null
+                        : Align(alignment: Alignment.centerLeft, child: trailing),
+                  ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 倍率の「−」「数字」「＋」。枠で囲まず、数字の欄は幅を決めてあるので桁が変わっても
+/// 全体の幅は変わらない（単体再生のズームとプレイリストの重ね表示の範囲で同じ見た目）
+class ZoomStepper extends StatelessWidget {
+  const ZoomStepper({
+    super.key,
+    required this.label,
+    required this.onMinus,
+    required this.onPlus,
+    this.highlight = false,
+    this.minusTooltip = '縮小',
+    this.plusTooltip = '拡大',
+  });
+
+  /// 倍率の表示（「1.0x」「16x」など）
+  final String label;
+  final VoidCallback? onMinus;
+  final VoidCallback? onPlus;
+
+  /// 拡大しているとき（数字を緑に）
+  final bool highlight;
+  final String minusTooltip;
+  final String plusTooltip;
+
+  static const _buttonWidth = 26.0;
+  static const _labelWidth = 36.0;
+  static const width = _buttonWidth * 2 + _labelWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    // IconButton は Material 3 の最小サイズ（40px）が効いて枠からはみ出すので、大きさを決めて置く
+    Widget button(IconData icon, String tooltip, VoidCallback? onTap) => SizedBox(
+          width: _buttonWidth,
+          height: 36,
+          child: IconButton(
+            icon: Icon(icon, size: AppIconSizes.s),
+            tooltip: tooltip,
+            onPressed: onTap,
+            style: IconButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(_buttonWidth, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        );
+    return SizedBox(
+      width: width,
+      child: Row(
+        children: [
+          button(Icons.remove, minusTooltip, onMinus),
+          SizedBox(
+            width: _labelWidth,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              style: textTheme.labelSmall?.copyWith(
+                color: highlight ? AppTheme.accentGreen : null,
+                fontFeatures: const [FontFeature('tnum')],
+              ),
+            ),
+          ),
+          button(Icons.add, plusTooltip, onPlus),
         ],
       ),
     );
