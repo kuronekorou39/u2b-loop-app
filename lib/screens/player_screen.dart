@@ -20,7 +20,6 @@ import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
-import '../models/playlist_mode.dart' as pl;
 import '../models/playlist_track.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
@@ -33,6 +32,7 @@ import '../services/save_flow.dart';
 import '../services/playback/load_progress.dart';
 import '../services/playback/mini_player_transport.dart';
 import '../services/playback/pip_bridge.dart';
+import '../services/playback/playlist_transport.dart';
 import '../services/playback/player_loader.dart';
 import '../services/playback/subtitle_loader.dart';
 import '../services/playback/waveform_loader.dart';
@@ -107,7 +107,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver
+    implements TransportHost {
 
   bool _loading = true;
   String? _loadError;
@@ -136,10 +137,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// AB 編集中。微調整の刻みは loopProvider の adjustStep
   bool _editMode = false;
-  int? _preloadingTargetIndex;
-
-  // Preload state
-  int? _preloadedTrackIndex;
 
   StreamSubscription<String>? _bandsSub;
 
@@ -148,10 +145,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!mounted || !_isPlaylist) return;
     final ps = ref.read(playlistPlayerProvider);
     final current = ps.currentTrack;
-    final next = _preloadedTrackIndex == null ||
-            _preloadedTrackIndex! >= ps.tracks.length
+    final preloaded = _transport.preloadedIndex;
+    final next = preloaded == null || preloaded >= ps.tracks.length
         ? null
-        : ps.tracks[_preloadedTrackIndex!];
+        : ps.tracks[preloaded];
     for (final (track, preload) in [(current, false), (next, true)]) {
       if (track == null || track.item.id != itemId) continue;
       final waveform = _waveformCache[itemId] ??
@@ -160,37 +157,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       unawaited(_updateMixPoints(track, waveform, preload: preload));
     }
   }
-  int? _pendingJumpIndex; // 手動選択時: 次の自動遷移でjumpToするインデックス
-  Duration? _pendingReplaySeek; // ミックスビューで前曲に戻って聴き直す位置
-  bool _isPreloading = false;
-  Timer? _preloadCheckTimer;
-  int _preloadGeneration = 0; // レース条件防止用の世代カウンタ
-  int _preloadFailCount = 0; // プリロード連続失敗カウンタ
-  DateTime? _lastPreloadFailTime;
 
-  // Playlist error control
-  int _consecutiveLoadErrors = 0;
-  DateTime? _lastAdvanceTime;
-  bool _advanceRetryScheduled = false; // 遅延リトライの多重予約防止
-  DateTime? _lastTrackEndReplayAt; // onTrackEnd未準備時の再生やり直しの連続発火抑制
-  static const _maxConsecutiveErrors = 3;
-  Timer? _loadingTimeoutTimer;
-  static const _minAdvanceInterval = Duration(seconds: 3);
-
-  // First verse fade
-  Timer? _fadeTimer;     // フェードアウト監視 + 実行用
-  Timer? _fadeInTimer;   // フェードイン用（監視タイマーと独立）
-  bool _isFading = false;
-  bool _pendingFadeIn = false;
-
-  /// 音量正規化の結果（正規化OFFなら100。[_applyVolumeNorm]）。
-  /// フェードイン/アウトはこの値を上限にする。100固定にすると
-  /// フェード完了時に正規化した音量が上書きされてしまう。
-  double _baseVolume = 100.0;
-
-  bool _trackLoading = false;
-  /// 読み込み中に操作したときの通知（出ている間は出し直さない）
-  AppToastMessage? _loadingToast;
+  /// プレイリストの進行（先読み・自動遷移・手動の前後と選曲・1 番だけモードのフェード）
+  late final _transport = PlaylistTransportController(
+    deck: EngineTransportDeck(ref),
+    host: this,
+    isPlaylist: _isPlaylist,
+  );
 
   // Waveform cache: itemId → waveform data
   final Map<String, List<double>> _waveformCache = {};
@@ -236,9 +209,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             _wasPlayingBeforePause = player.state.playing;
             _updatePiPPlayState();
           case PipAction.next:
-            if (_isPlaylist) _manualNext();
+            if (_isPlaylist) _transport.manualNext();
           case PipAction.prev:
-            if (_isPlaylist) _manualPrev();
+            if (_isPlaylist) _transport.manualPrev();
         }
       },
       onAudioDeviceChanged: (device) =>
@@ -268,7 +241,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final engine = ref.read(playlistEngineProvider);
         engine.endSession(keepCrossfade: true);
         ref.read(loopProvider.notifier).setCurrentItem(_currentItem.id);
-        _setupPlaylistCallbacks();
+        _transport.setupCallbacks();
         PipBridge.setAutoPiP(
             enabled: true, isPlaylist: _isPlaylist, item: _currentItem);
         _updatePiPPlayState();
@@ -281,8 +254,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             armed != null &&
             nextIdx != null &&
             ps.tracks[nextIdx].item.id == armed.item.id;
-        if (keep) _preloadedTrackIndex = nextIdx;
-        _startPreloadMonitor(keepPreload: keep);
+        if (keep) _transport.adoptPreloaded(nextIdx);
+        _transport.startPreloadMonitor(keepPreload: keep);
         // iOS: トランジション中にmpvが自動pauseするため、遷移前の状態に基づいて復元
         if (wasPlaying) {
           ref.read(playerProvider).play();
@@ -369,9 +342,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     playerScreenActive = false;
     _progress.dispose();
     _overlayHideTimer?.cancel();
-    _loadingTimeoutTimer?.cancel();
     _trackListController.dispose();
-    _cancelFade();
+    _transport.dispose();
     // 全画面モード解除（バックジェスチャ等で全画面のまま離脱しても向きを戻す）
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -381,7 +353,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         DeviceOrientation.landscapeRight,
       ]);
     }
-    _preloadCheckTimer?.cancel();
 
     // ミニプレイヤー有効時は再生状態を温存
     final miniActive = ref.read(miniPlayerProvider).active;
@@ -459,267 +430,71 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // =====================================================================
-  // プレイリスト再生制御（統一設計）
-  //
-  // 思想:
-  // - 再生が止まることは最悪の事態。どんな状態でも再生を継続する。
-  // - プリロードは最適化であって必須ではない。
-  // - 全てのトラック遷移は共通の後処理（_afterTrackSwitch）を通す。
-  // - ユーザー操作は _trackLoading で排他制御。自動遷移はブロックしない。
+  // プレイリスト再生制御は PlaylistTransportController（services/playback/playlist_transport.dart）。
+  // ここには画面にしか無いもの（映像・波形・字幕・区間）の受け口だけを置く
   // =====================================================================
 
-  /// 現在のプリロード状況で次トラックへ進めるかを判定する
-  /// （判定ロジックはミニプレイヤー側と共通の PlaylistEngine に置いてある）
-  AdvanceReadiness _readiness() => ref.read(playlistEngineProvider).readiness(
-        preloadedIndex: _preloadedTrackIndex,
-        pendingJumpIndex: _pendingJumpIndex,
-      );
+  @override
+  bool get initialLoading => _loading;
 
-  /// コールバック設定（PlayerScreen表示中 + ミニプレイヤー中 共通）
-  void _setupPlaylistCallbacks() {
-    final loopNotifier = ref.read(loopProvider.notifier);
-    if (!_isPlaylist) {
-      loopNotifier.onBPointReached = null;
-      loopNotifier.onTrackEnd = null;
+  @override
+  void refresh() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void reloadCurrent() => _loadItem();
+
+  @override
+  void loadTrackRegion(PlaylistTrack track) => _loadTrackRegion(track);
+
+  @override
+  void showSource(PlaylistTrack track, {String? openedUri}) {
+    final item = track.item;
+    ref.read(videoSourceProvider.notifier).state = VideoSource(
+      type: item.isYouTube ? VideoSourceType.youtube : VideoSourceType.local,
+      uri: openedUri ?? item.uri,
+      title: item.title,
+      videoId: item.videoId,
+      thumbnailUrl: item.thumbnailUrl,
+    );
+  }
+
+  /// 手元の波形（一覧からは消さない。前曲に戻ったとき、重ね表示で次曲の波形として使う）。
+  /// 無ければ作る
+  @override
+  void showWaveform(PlaylistTrack track) {
+    final item = track.item;
+    final cachedWaveform = _waveformCache[item.id];
+    ref.read(waveformErrorProvider.notifier).state = null;
+    if (cachedWaveform != null) {
+      ref.read(waveformDataProvider.notifier).state = cachedWaveform;
+      ref.read(waveformLoadingProvider.notifier).state = false;
       return;
     }
-
-    loopNotifier.onBPointReached = () {
-      if (ref.read(playlistPlayerProvider).repeatMode == pl.RepeatMode.single) {
-        return false;
-      }
-      // 遷移可否の判定はミニプレイヤー側と共通（PlaylistEngine）
-      final readiness = _readiness();
-      if (readiness == AdvanceReadiness.sameItem ||
-          readiness == AdvanceReadiness.preloaded) {
-        _autoAdvance();
-        return true;
-      }
-      if (readiness == AdvanceReadiness.none) {
-        // リピートなしで最後の曲: ループせずにそこで止める
-        _finishPlaylist();
-        return true;
-      }
-      // 未準備 → ABループ継続、プリロード確保
-      if (!_isPreloading) _preloadNextTrack();
-      return false;
-    };
-
-    loopNotifier.onTrackEnd = () {
-      final readiness = _readiness();
-      if (readiness == AdvanceReadiness.none) return;
-
-      if (readiness == AdvanceReadiness.sameItem ||
-          readiness == AdvanceReadiness.preloaded) {
-        _autoAdvance();
-      } else {
-        // 未準備 → 先頭に戻して再生継続。タイマーとcompletedの二重発火や
-        // 極短トラックでの連続やり直しでフリーズしないよう1秒間は抑制。
-        final now = DateTime.now();
-        if (_lastTrackEndReplayAt == null ||
-            now.difference(_lastTrackEndReplayAt!) >
-                const Duration(seconds: 1)) {
-          _lastTrackEndReplayAt = now;
-          try {
-            ref.read(playerProvider)
-              ..seek(Duration.zero)
-              ..play();
-          } catch (_) {}
-        }
-        if (!_isPreloading) _preloadNextTrack();
-      }
-    };
+    ref.read(waveformDataProvider.notifier).state = null;
+    final source = ref.read(videoSourceProvider);
+    if (source != null) _generateWaveform(source, item);
   }
 
-  // ----- 自動遷移（B点到達 / 曲終了） -----
-
-  /// プレイリストの終わり（リピートなしで最後の曲の B 点）。
-  /// 1 番だけモードの曲末フェードは戻して、次に再生を押したとき無音にならないように
-  void _finishPlaylist() {
-    _cancelFade();
-    try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
-    ref.read(playlistEngineProvider).pauseAtPlaylistEnd();
+  @override
+  void endLoading() {
+    if (mounted) setState(() => _loading = false);
   }
 
-  void _autoAdvance() {
-    if (_consecutiveLoadErrors >= _maxConsecutiveErrors) return;
+  /// 字幕（プレイリスト曲切替時）: キャッシュSRT優先、無ければネット取得
+  @override
+  void onTrackSwitched(PlaylistTrack track) => _subtitles.loadFor(track.item);
 
-    // 高速遷移の抑制。リトライ予約は1本だけにする
-    // （onTrackEndとB点到達が続けて発火すると、予約が積み上がって二重スキップになる）
-    final now = DateTime.now();
-    final sinceLast =
-        _lastAdvanceTime == null ? null : now.difference(_lastAdvanceTime!);
-    if (sinceLast != null && sinceLast < _minAdvanceInterval) {
-      if (!_advanceRetryScheduled) {
-        _advanceRetryScheduled = true;
-        Future.delayed(_minAdvanceInterval - sinceLast, () {
-          _advanceRetryScheduled = false;
-          if (mounted) _autoAdvance();
-        });
-      }
-      return;
-    }
-    _lastAdvanceTime = now;
-
-    final crossfading = ref.read(playlistEngineProvider).isCrossfading;
-    final shouldFadeIn = ref.read(playlistPlayerProvider).firstVerseMode &&
-        _isFading &&
-        !crossfading;
-    _cancelFade();
-    // 交差中は旧プレイヤーの音量を戻さない（stop 直前に一瞬大きく鳴ってしまう）
-    if (!crossfading) {
-      try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
-    }
-
-    final plState = ref.read(playlistPlayerProvider);
-    final oldTrack = plState.currentTrack;
-    final notifier = ref.read(playlistPlayerProvider.notifier);
-
-    // 手動選択のキューがある場合はjumpTo、なければnext()
-    final pendingJump = _pendingJumpIndex;
-    _pendingJumpIndex = null;
-
-    final nextIdx = pendingJump ?? plState.peekNextTrackIndex();
-    final isPreloaded = _preloadedTrackIndex != null && nextIdx == _preloadedTrackIndex;
-
-    bool changed;
-    if (pendingJump != null) {
-      notifier.jumpTo(pendingJump);
-      changed = true;
-    } else {
-      changed = notifier.next();
-    }
-    if (!changed) {
-      // 単曲リピート → 先頭にシーク
-      final track = ref.read(playlistPlayerProvider).currentTrack;
-      if (track != null) {
-        ref.read(playerProvider).seek(Duration(milliseconds: track.startMs ?? 0));
-      }
-      return;
-    }
-
-    final newTrack = ref.read(playlistPlayerProvider).currentTrack;
-    if (newTrack == null) return;
-
-    if (oldTrack != null && newTrack.isSameItem(oldTrack)) {
-      _loadTrackRegion(newTrack);
-      _afterTrackSwitch(newTrack, shouldFadeIn: shouldFadeIn);
-    } else if (isPreloaded) {
-      _swapToPreloaded(newTrack);
-      _loadTrackRegion(newTrack);
-      _afterTrackSwitch(newTrack, shouldFadeIn: shouldFadeIn);
-    } else {
-      // 未プリロード → フルリロード（自動遷移なのでローディング画面OK）
-      _cancelPreload();
-      _preloadCheckTimer?.cancel();
-      _pendingFadeIn = shouldFadeIn;
-      _loadItem();
-    }
+  @override
+  void onPreloaded(PlaylistTrack track, Object? manifest,
+      {required bool Function() stillCurrent}) {
+    if (_waveformCache.containsKey(track.item.id)) return;
+    _preloadWaveform(track, manifest as StreamManifest?, stillCurrent);
   }
 
-  // ----- 手動操作: 次曲 / 前曲 / トラック選択 -----
-
-  /// 手動操作の共通ガード。ロード中なら拒否してtrue返却。
-  void _startLoadingTimeout() {
-    _loadingTimeoutTimer?.cancel();
-    _loadingTimeoutTimer = Timer(const Duration(seconds: 30), () {
-      if (!mounted) return;
-      _cancelLoadingState();
-      AppToast.instance.show(
-        AppSnackBar.info('読込タイムアウト。操作可能です。'),
-      );
-    });
-  }
-
-  void _cancelLoadingState() {
-    _loadingTimeoutTimer?.cancel();
-    _cancelPreload();
-    setState(() {
-      _trackLoading = false;
-      _preloadingTargetIndex = null;
-    });
-  }
-
-  bool _guardManualOp() {
-    if (_trackLoading || _isPreloading) {
-      // 同じ通知が出ている間は出し直さない
-      if (!identical(AppToast.instance.current.value, _loadingToast)) {
-        _loadingToast = AppSnackBar.action('読込中...（タップでキャンセル）',
-            label: 'キャンセル', onPressed: _cancelLoadingState);
-        AppToast.instance.show(_loadingToast!);
-      }
-      return true;
-    }
-    return false;
-  }
-
-  /// 手動: 次のトラックへ
-  Future<void> _manualNext() async {
-    if (_guardManualOp()) return;
-    ref.read(playlistEngineProvider).releaseParked();
-    final ps = ref.read(playlistPlayerProvider);
-    if (!ps.hasNext) return;
-
-    final readiness = _readiness();
-    if (readiness == AdvanceReadiness.none) return;
-    if (readiness == AdvanceReadiness.sameItem ||
-        readiness == AdvanceReadiness.preloaded) {
-      // 即遷移可能
-      _autoAdvance();
-      return;
-    }
-
-    // プリロード待ち（スピナー表示、ローディング画面なし）
-    final startTrackIdx = ps.currentTrackIndex;
-    setState(() => _trackLoading = true);
-    _startLoadingTimeout();
-    if (!_isPreloading) _preloadNextTrack();
-    for (var i = 0; i < 300 && _preloadedTrackIndex == null && mounted; i++) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      // 自動遷移(onBPointReached)が先に実行された場合はキャンセル
-      if (ref.read(playlistPlayerProvider).currentTrackIndex != startTrackIdx) {
-        _loadingTimeoutTimer?.cancel();
-        if (mounted) setState(() => _trackLoading = false);
-        return;
-      }
-    }
-    _loadingTimeoutTimer?.cancel();
-    if (mounted) setState(() => _trackLoading = false);
-    // 自動遷移がまだ実行されていない場合のみ進む
-    if (_preloadedTrackIndex != null && mounted &&
-        ref.read(playlistPlayerProvider).currentTrackIndex == startTrackIdx) {
-      _autoAdvance();
-    }
-  }
-
-  /// 手動: 前のトラックへ
-  /// _manualNext と対称な構造: peekしてから判断し、状態変更はロード完了後
-  Future<void> _manualPrev() async {
-    if (_guardManualOp()) return;
-    ref.read(playlistEngineProvider).releaseParked();
-    final ps = ref.read(playlistPlayerProvider);
-    if (!ps.hasPrev) return;
-
-    final prevIdx = ps.peekPrevTrackIndex();
-    if (prevIdx == null) return;
-    final prevTrack = ps.tracks[prevIdx];
-    final current = ps.currentTrack;
-    final sameItem = current != null && prevTrack.isSameItem(current);
-
-    if (sameItem) {
-      // 同一アイテム → prev()で即移動+シーク（即座に完了）
-      ref.read(playlistPlayerProvider.notifier).prev();
-      final track = ref.read(playlistPlayerProvider).currentTrack;
-      if (track == null) return;
-      _cancelFade();
-      _loadTrackRegion(track);
-      _afterTrackSwitch(track);
-      return;
-    }
-
-    // 異なるアイテム → 直接ロード（ロード完了後にprev()で状態変更）
-    await _directLoadTrack(prevTrack, prevIdx);
-  }
+  @override
+  double normalizedVolume(LoopItem item) => _normalizedVolume(item);
 
   /// 重ね表示の次曲の波形。手元に無ければ保存済みの波形を読みに行く（1 曲につき 1 回）
   final _mixWaveformLoads = <String>{};
@@ -738,193 +513,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return null;
   }
 
-  /// ミックスビューで切り替わった後、前曲側（切替点より前）をタップしたとき。
-  /// 前の曲に戻ってその位置から再生し、切り替わりをもう一度聴けるようにする
-  /// （さっきまで鳴っていた曲を次曲として予約し直すので、クロスフェードが繰り返される。
-  ///   交差の中に戻ったときは、エンジンが次曲をその分だけ進めた位置から重ねる）。
-  void _replayPreviousFrom(Duration oldPos) {
-    final ps = ref.read(playlistPlayerProvider);
-    if (!ps.hasPrev || _trackLoading || _isPreloading) return;
-    final pos = oldPos < Duration.zero ? Duration.zero : oldPos;
-    final prevIdx = ps.peekPrevTrackIndex();
-    final nextIdx = ps.currentTrackIndex;
-    final engine = ref.read(playlistEngineProvider);
-    // 前曲のプレイヤーがまだ生きている（パーク中）なら、開き直さずに戻る
-    if (prevIdx != null &&
-        nextIdx != null &&
-        engine.parkedItemId == ps.tracks[prevIdx].item.id &&
-        engine.stepBackToParked(pos)) {
-      _afterStepBack(prevIdx, nextIdx);
-      return;
-    }
-    // パークが切れていた（重ね表示が消えた後など）→ 開き直してでも戻る
-    _pendingReplaySeek = pos;
-    _manualPrev();
-  }
-
-  /// パークした前曲に戻れたときの後始末（開き直しなし）。
-  /// プレイリストを前曲に戻し、さっきまで鳴っていた曲を「プリロード済みの次曲」として
-  /// 登録し直してクロスフェードを予約する（そのまま進めばもう一度つながる）
-  void _afterStepBack(int prevIdx, int nextIdx) {
-    final notifier = ref.read(playlistPlayerProvider.notifier);
-    notifier.jumpTo(prevIdx);
-    final ps = ref.read(playlistPlayerProvider);
-    final track = ps.currentTrack;
-    if (track == null) return;
-    final item = track.item;
-    _cancelFade();
-    // 映像・波形・区間・コールバックを前曲に戻す
-    final openedUri =
-        ref.read(playerProvider).state.playlist.medias.firstOrNull?.uri;
-    ref.read(videoSourceProvider.notifier).state = VideoSource(
-      type: item.isYouTube ? VideoSourceType.youtube : VideoSourceType.local,
-      uri: openedUri ?? item.uri,
-      title: item.title,
-      videoId: item.videoId,
-      thumbnailUrl: item.thumbnailUrl,
-    );
-    ref.read(waveformDataProvider.notifier).state = _waveformCache[item.id];
-    ref.read(waveformErrorProvider.notifier).state = null;
-    ref.read(waveformLoadingProvider.notifier).state = false;
-    _loadTrackRegion(track);
-    _setupPlaylistCallbacks();
-    ref.read(loopProvider.notifier).setCurrentItem(item.id);
-    _baseVolume = _normalizedVolume(item);
-    try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
-    _subtitles.loadFor(item);
-    // さっきまでの曲はプリロード側に載ったまま。次曲として予約し直す
-    _preloadGeneration++;
-    _isPreloading = false;
-    _preloadingTargetIndex = null;
-    _preloadedTrackIndex = nextIdx;
-    ref.read(playlistEngineProvider).armCrossfade(ps.tracks[nextIdx]);
-    if (mounted) setState(() {});
-  }
-
-  /// 手動: トラック選択（パネルからタップ）
-  Future<void> _selectTrack(int trackIndex) async {
-    // 最初の曲を開いている最中は一覧は見られるが選べない（同じプレイヤーを取り合うため）
-    if (_loading) return;
-    if (_guardManualOp()) return;
-    final ps = ref.read(playlistPlayerProvider);
-    if (trackIndex == ps.currentTrackIndex) return;
-    ref.read(playlistEngineProvider).releaseParked();
-
-    final targetTrack = ps.tracks[trackIndex];
-    final current = ps.currentTrack;
-
-    // プリロード済み → 即スワップ
-    if (_preloadedTrackIndex == trackIndex) {
-      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
-      final track = ref.read(playlistPlayerProvider).currentTrack!;
-      _swapToPreloaded(track);
-      _loadTrackRegion(track);
-      _afterTrackSwitch(track);
-      return;
-    }
-
-    // 同一アイテム → シークのみ（即座に完了）
-    if (current != null && targetTrack.isSameItem(current)) {
-      ref.read(playlistPlayerProvider.notifier).jumpTo(trackIndex);
-      final track = ref.read(playlistPlayerProvider).currentTrack!;
-      _loadTrackRegion(track);
-      _afterTrackSwitch(track);
-      return;
-    }
-
-    // 異なるアイテム → 次曲としてプリロード（自動遷移時にスワップ再生）
-    _cancelPreload();
-    _pendingJumpIndex = trackIndex;
-    _preloadNextTrack(trackIndex);
-  }
-
-  // ----- 共通: 直接ロード（前曲 / トラック選択で使用） -----
-
-  Future<void> _directLoadTrack(PlaylistTrack track, [int? jumpToIndex]) async {
-    _cancelFade();
-    _cancelPreload();
-    _startLoadingTimeout();
-    setState(() {
-      _trackLoading = true;
-      _preloadingTargetIndex = jumpToIndex ?? ref.read(playlistPlayerProvider).currentTrackIndex;
-    });
-
-    try {
-      final item = track.item;
-      final player = ref.read(playerProvider);
-
-      // 開く手順（オフライン優先・メタデータ待ち・高音質の音声・速度）は
-      // プリロードやミニプレイヤーの前曲と同じ PlaylistEngine.prepare を通す
-      await ref
-          .read(playlistEngineProvider)
-          .prepare(player, track, isStale: () => !mounted)
-          .timeout(const Duration(seconds: 60));
-      if (!mounted) return;
-      ref.read(videoSourceProvider.notifier).state = VideoSource(
-        type: item.isYouTube
-            ? VideoSourceType.youtube
-            : VideoSourceType.local,
-        uri: item.uri,
-        title: item.title,
-        videoId: item.videoId,
-        thumbnailUrl: item.thumbnailUrl,
-      );
-
-      if (jumpToIndex != null) {
-        ref.read(playlistPlayerProvider.notifier).jumpTo(jumpToIndex);
-      }
-      _loadTrackRegion(ref.read(playlistPlayerProvider).currentTrack ?? track);
-      ref.read(playerProvider).play();
-      _afterTrackSwitch(ref.read(playlistPlayerProvider).currentTrack ?? track);
-    } catch (_) {
-      // 失敗は無視（次のタップで再試行される）
-    } finally {
-      // ロードが終わったらタイムアウト監視も止める
-      // （残すと30秒後に _cancelLoadingState が走り、次曲プリロードを誤って破棄する）
-      _loadingTimeoutTimer?.cancel();
-      if (mounted) {
-        setState(() {
-          _trackLoading = false;
-          _preloadingTargetIndex = null;
-        });
-      }
-    }
-  }
-
-  // ----- 共通: トラック切替後の後処理 -----
-
-  void _afterTrackSwitch(PlaylistTrack track, {bool shouldFadeIn = false}) {
-    _preloadedTrackIndex = null;
-    _pendingJumpIndex = null;
-    _setupPlaylistCallbacks();
-    ref.read(loopProvider.notifier).setCurrentItem(track.item.id);
-    _startPreloadMonitor();
-    // 新しい曲の大きさに合わせた音量を上限にする（下で setVolume / フェードインに使う）
-    _baseVolume = _normalizedVolume(track.item);
-    if (shouldFadeIn) {
-      _startFadeIn();
-    } else {
-      // スワップ後のボリュームストリーム同期
-      // （旧プレイヤーのフェードアウト値が残らないよう新プレイヤーに明示設定）
-      try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
-    }
-    // ミックスビューから前曲に戻って聴き直す指定があれば、その位置へ
-    final replay = _pendingReplaySeek;
-    _pendingReplaySeek = null;
-    if (replay != null) {
-      try { ref.read(playerProvider).seek(replay); } catch (_) {}
-    }
-    _consecutiveLoadErrors = 0;
-    // 字幕（プレイリスト曲切替時）: キャッシュSRT優先、無ければネット取得
-    _subtitles.loadFor(track.item);
-    // 2秒後に次曲プリロード開始（再生を安定させてから）
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
-        _preloadNextTrack();
-      }
-    });
-  }
-
   void _loadTrackRegion(PlaylistTrack track) {
     // 曲が変わったら前の曲の AB 編集は閉じる（1 番を直していたら覚える）
     if (_editMode) _rememberFirstVerse();
@@ -938,7 +526,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (track.startMs != null) {
       ref.read(playerProvider).seek(Duration(milliseconds: track.startMs!));
     }
-    _setupPlaylistCallbacks();
+    _transport.setupCallbacks();
     if (mounted) setState(() {});
   }
 
@@ -947,9 +535,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// AB設定済みの区間トラックには適用しない（_loadTrackRegionで分岐済み）
   void _applyFirstVerseCut(PlaylistTrack track, [int retryCount = 0]) {
     // フェードアウト監視のみキャンセル（フェードインは中断しない）
-    _fadeTimer?.cancel();
-    _fadeTimer = null;
-    _isFading = false;
+    _transport.cancelFadeOut();
     final plState = ref.read(playlistPlayerProvider);
     if (!plState.firstVerseMode) return;
 
@@ -981,7 +567,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           !ref.read(playlistEngineProvider).isCrossfading) {
         player.seek(a);
       }
-      _startFadeOutMonitor(saved.firstVerseBMs!);
+      _transport.startFadeOutMonitor(saved.firstVerseBMs!);
       return;
     }
 
@@ -1001,219 +587,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       notifier.setPointA(Duration.zero);
       notifier.setPointB(Duration(milliseconds: cutMs));
       if (!ref.read(loopProvider).enabled) notifier.toggleEnabled();
-      _startFadeOutMonitor(cutMs);
-    }
-  }
-
-  /// B点の3秒前からフェードアウトを開始する監視。
-  /// ABループでA点に戻った場合も自動的にリセットして次パスで再フェードする。
-  void _startFadeOutMonitor(int cutMs) {
-    _cancelFade();
-    // クロスフェードが有効なら PlaylistEngine 側が旧曲を下げるので、二重にかけない
-    if (ref.read(crossfadeProvider) > 0) return;
-    final fadeStartMs = cutMs - 3000;
-    if (fadeStartMs <= 0) return;
-
-    var fadeStep = 0;
-    const fadeSteps = 15; // 200ms × 15 = 3秒
-
-    _fadeTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
-      if (!mounted) {
-        _cancelFade();
-        return;
-      }
-      final posMs =
-          ref.read(playerProvider).state.position.inMilliseconds;
-
-      if (posMs < fadeStartMs) {
-        // フェードゾーン外（A点にシークされた等）→ 状態リセット
-        if (_isFading) {
-          _isFading = false;
-          fadeStep = 0;
-          try { ref.read(playerProvider).setVolume(_baseVolume); } catch (_) {}
-        }
-        return;
-      }
-
-      // フェードゾーン内
-      if (!_isFading) {
-        _isFading = true;
-        fadeStep = 0;
-      }
-      fadeStep++;
-      if (fadeStep <= fadeSteps) {
-        final volume = (1.0 - fadeStep / fadeSteps).clamp(0.0, 1.0);
-        try {
-          ref.read(playerProvider).setVolume(volume * _baseVolume);
-        } catch (_) {}
-      }
-    });
-  }
-
-  /// フェードイン（次曲開始時に呼ぶ）
-  /// フェードアウト監視タイマー(_fadeTimer)とは独立して動作する。
-  void _startFadeIn() {
-    _fadeInTimer?.cancel();
-    const steps = 5; // 200ms × 5 = 1秒
-    var step = 0;
-    ref.read(playerProvider).setVolume(0);
-    _fadeInTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
-      step++;
-      final volume = (step / steps).clamp(0.0, 1.0);
-      try {
-        ref.read(playerProvider).setVolume(volume * _baseVolume);
-      } catch (_) {}
-      if (step >= steps) {
-        _fadeInTimer?.cancel();
-        _fadeInTimer = null;
-      }
-    });
-  }
-
-  void _cancelFade() {
-    _fadeTimer?.cancel();
-    _fadeTimer = null;
-    _fadeInTimer?.cancel();
-    _fadeInTimer = null;
-    _isFading = false;
-  }
-
-  // --- Preload ---
-
-  void _cancelPreload() {
-    ref.read(playlistEngineProvider).disarmCrossfade();
-    _preloadGeneration++;
-    _preloadedTrackIndex = null;
-    _preloadingTargetIndex = null;
-    _isPreloading = false;
-    // プリロードプレイヤーの実行中の操作を確実に中断
-    // （パーク中の前曲は別のスロットにいるので止まらない）
-    try { ref.read(preloadPlayerProvider).stop(); } catch (_) {}
-  }
-
-  /// [keepPreload] なら、今ある先読みと予約（[_preloadedTrackIndex]）を捨てずに監視だけ始める
-  /// （ミニプレイヤーから戻るとき）
-  void _startPreloadMonitor({bool keepPreload = false}) {
-    _preloadCheckTimer?.cancel();
-    if (!keepPreload) _cancelPreload();
-    _preloadFailCount = 0;
-
-    if (!_isPlaylist) return;
-
-    _preloadCheckTimer = Timer.periodic(
-      const Duration(seconds: 2),
-      (_) => _checkPreload(),
-    );
-  }
-
-  void _checkPreload() {
-    if (!mounted || !_isPlaylist || _loading) return;
-    if (_isPreloading || _preloadedTrackIndex != null) return;
-
-    // 連続失敗時はバックオフ（失敗数 × 10秒）、上限5回で停止
-    if (_preloadFailCount > 0) {
-      if (_preloadFailCount >= 5) return;
-      final backoff = Duration(seconds: _preloadFailCount * 10);
-      if (_lastPreloadFailTime != null &&
-          DateTime.now().difference(_lastPreloadFailTime!) < backoff) {
-        return;
-      }
-    }
-
-    final player = ref.read(playerProvider);
-    final position = player.state.position;
-    final duration = player.state.duration;
-
-    if (duration <= Duration.zero) return;
-
-    // 1番だけモードではB点を終了地点として使う
-    final loop = ref.read(loopProvider);
-    final plState = ref.read(playlistPlayerProvider);
-    final isFirstVerse =
-        plState.firstVerseMode && loop.enabled && loop.hasB;
-    final engine = ref.read(playlistEngineProvider);
-    var endPoint = isFirstVerse ? loop.pointB! : duration;
-    // アウトロ点・選んだ出口で早めに切るなら、そこから逆算する（曲末からだと交差に間に合わない）
-    final cut = isFirstVerse ? null : engine.plannedCut();
-    if (cut != null && cut > Duration.zero && cut < endPoint) endPoint = cut;
-
-    // 先読みを始める残り時間の式はエンジンと共通
-    final lead = PlaylistEngine.preloadLead(
-      item: _currentItem,
-      endPoint: endPoint,
-      firstVerse: isFirstVerse,
-      fade: engine.crossfadeDuration,
-    );
-    if (endPoint - position <= lead) {
-      _preloadNextTrack();
-    }
-  }
-
-  Future<void> _preloadNextTrack([int? overrideIndex]) async {
-    if (_isPreloading) return;
-    _isPreloading = true;
-    final gen = ++_preloadGeneration; // この世代のプリロード
-
-    bool isStale() => !mounted || gen != _preloadGeneration;
-
-    try {
-      final plState = ref.read(playlistPlayerProvider);
-      final int? nextIdx;
-      if (overrideIndex != null) {
-        nextIdx = overrideIndex;
-        _preloadedTrackIndex = null;
-      } else {
-        nextIdx = plState.peekNextTrackIndex();
-      }
-      if (nextIdx == null) {
-        _isPreloading = false;
-        return;
-      }
-
-      _preloadingTargetIndex = nextIdx;
-      if (mounted) setState(() {});
-
-      final nextTrack = plState.tracks[nextIdx];
-
-      // Same item → seek only at advance time, no preload needed
-      final currentTrack = plState.currentTrack;
-      if (currentTrack != null && nextTrack.isSameItem(currentTrack)) {
-        _isPreloading = false;
-        return;
-      }
-
-      // ロード機構（キャッシュ優先・メタデータ待ち・シーク・速度設定）は
-      // PlaylistEngine に集約してあり、ミニプレイヤー側と同じ実装を通る。
-      // manifest は波形の先行生成に再利用する（キャッシュ再生時はnull）。
-      final manifest = await ref
-          .read(playlistEngineProvider)
-          .prepare(ref.read(preloadPlayerProvider), nextTrack,
-              isStale: isStale, downloadFirst: true);
-
-      if (isStale()) return;
-      _preloadedTrackIndex = nextIdx;
-      _preloadFailCount = 0;
-      ref.read(playlistEngineProvider).armCrossfade(nextTrack);
-      if (mounted) setState(() {});
-
-      // --- 波形の先行読み込み（並行） ---
-      final itemId = nextTrack.item.id;
-      if (!_waveformCache.containsKey(itemId)) {
-        _preloadWaveform(nextTrack, manifest, gen);
-      }
-    } catch (e) {
-      debugPrint('[Preload] 失敗: $e');
-      if (gen == _preloadGeneration) {
-        _preloadedTrackIndex = null;
-        _preloadFailCount++;
-        _lastPreloadFailTime = DateTime.now();
-      }
-    } finally {
-      if (gen == _preloadGeneration) {
-        _isPreloading = false;
-        _preloadingTargetIndex = null;
-      }
-      if (mounted) setState(() {});
+      _transport.startFadeOutMonitor(cutMs);
     }
   }
 
@@ -1282,8 +656,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 波形を先行生成してキャッシュに保存（fire-and-forget）
-  Future<void> _preloadWaveform(
-      PlaylistTrack track, StreamManifest? manifest, int gen) async {
+  Future<void> _preloadWaveform(PlaylistTrack track, StreamManifest? manifest,
+      bool Function() stillCurrent) async {
     try {
       final item = track.item;
       final service = WaveformService();
@@ -1307,7 +681,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (saved != null && saved.isNotEmpty) {
         // 波形は曲のものなので、世代が変わっても残す（重ね表示が使う）
         _waveformCache[item.id] = saved;
-        if (gen == _preloadGeneration) {
+        if (stillCurrent()) {
           await _updateMixPoints(track, saved, preload: true);
         }
         if (onPcm == null || WaveformService.decodeTried(item.id)) return;
@@ -1350,7 +724,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             try { await sink.flush().timeout(const Duration(seconds: 2)); } catch (_) {}
             try { await sink.close().timeout(const Duration(seconds: 2)); } catch (_) {}
           }
-          if (gen != _preloadGeneration) {
+          if (!stillCurrent()) {
             try { await tempFile.delete(); } catch (_) {}
             return;
           }
@@ -1368,7 +742,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (waveform != null && waveform.isNotEmpty) {
         await WaveformCache.save(item.id, waveform);
         _waveformCache[item.id] = waveform;
-        if (gen == _preloadGeneration) {
+        if (stillCurrent()) {
           await _updateMixPoints(track, waveform, preload: true);
         }
       }
@@ -1377,61 +751,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  void _swapToPreloaded(PlaylistTrack newTrack) {
-    // プリロード状態をクリア（プレイヤーはstopしない — これからスワップして使う）
-    _preloadGeneration++;
-    _preloadedTrackIndex = null;
-    _preloadingTargetIndex = null;
-    _isPreloading = false;
-
-    // 動画ソースを先に更新しておく（スワップ前にUIが参照できるように）。
-    // URI はプリロード側が実際に開いたもの（キャッシュのファイルかストリーム URL）。
-    // 曲の登録 URL（YouTube のページ）を入れると書き出し・波形が使えない
-    final item = newTrack.item;
-    final openedUri =
-        ref.read(preloadPlayerProvider).state.playlist.medias.firstOrNull?.uri;
-    ref.read(videoSourceProvider.notifier).state = VideoSource(
-      type: item.isYouTube
-          ? VideoSourceType.youtube
-          : VideoSourceType.local,
-      uri: openedUri ?? item.uri,
-      title: item.title,
-      videoId: item.videoId,
-      thumbnailUrl: item.thumbnailUrl,
-    );
-
-    // スロット入替・旧プレイヤーの停止・新プレイヤーの再生開始は
-    // PlaylistEngine に集約（ミニプレイヤー側と同じ実装を通る）
-    ref.read(playlistEngineProvider).swapSlots();
-
-    // 再生カウント: トラック切替
-    ref.read(loopProvider.notifier).setCurrentItem(item.id);
-
-    // Apply cached waveform or generate fresh
-    // 一覧からは消さない（前曲に戻ったとき、重ね表示で次曲の波形として使う）
-    final cachedWaveform = _waveformCache[item.id];
-    if (cachedWaveform != null) {
-      ref.read(waveformDataProvider.notifier).state = cachedWaveform;
-      ref.read(waveformErrorProvider.notifier).state = null;
-      ref.read(waveformLoadingProvider.notifier).state = false;
-    } else {
-      ref.read(waveformDataProvider.notifier).state = null;
-      ref.read(waveformErrorProvider.notifier).state = null;
-      final source = ref.read(videoSourceProvider);
-      if (source != null) {
-        _generateWaveform(source, item);
-      }
-    }
-
-    if (mounted) setState(() => _loading = false);
-  }
-
   // --- Loading ---
 
   /// 曲を開く（手順は PlayerLoader）。
   /// オフライン保存があればそれを優先し、YouTube の波形用音声は裏で先読みする
   Future<void> _loadItem() async {
-    _cancelFade();
+    _transport.cancelFade();
     _progress.begin();
     setState(() {
       _loading = true;
@@ -1471,10 +796,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         });
         // プレイリストモード: 自動で次のトラックにスキップ（上限あり）
         if (_isPlaylist) {
-          _consecutiveLoadErrors++;
-          if (_consecutiveLoadErrors < _maxConsecutiveErrors) {
+          _transport.loadErrors++;
+          if (_transport.loadErrors <
+              PlaylistTransportController.maxLoadErrors) {
             Future.delayed(const Duration(seconds: 3), () {
-              if (mounted && _loadError != null) _autoAdvance();
+              if (mounted && _loadError != null) _transport.autoAdvance();
             });
           }
         }
@@ -1497,14 +823,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     // Setup playlist callbacks
-    _setupPlaylistCallbacks();
+    _transport.setupCallbacks();
 
     _loader.finish();
-    setState(() {
-      _loading = false;
-      _trackLoading = false;
-    });
-    _consecutiveLoadErrors = 0;
+    setState(() => _loading = false);
 
     // 再生カウント: 現在のアイテムを設定
     ref.read(loopProvider.notifier).setCurrentItem(item.id);
@@ -1517,21 +839,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     WakelockPlus.enable();
     PipBridge.startPlaybackService(item);
 
-    // フルリロードパスでのフェードイン（_advanceToNextから来た場合）
-    if (_pendingFadeIn) {
-      _pendingFadeIn = false;
-      _startFadeIn();
-    }
-
-    // Start preload monitor for playlist mode（2秒後に開始、再生を安定させてから）
-    if (_isPlaylist) {
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted && !_isPreloading && _preloadedTrackIndex == null) {
-          _startPreloadMonitor();
-          _preloadNextTrack();
-        }
-      });
-    }
+    // フェードイン（自動遷移の開き直しから来た場合）と先読みの開始
+    _transport.onItemLoaded();
 
     // Waveform（ローカルは即。YouTube は音声の先読みが済んでいれば）
     if (_waveform.shouldGenerateNow(source)) {
@@ -1857,13 +1166,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// [_normalizedVolume] を今のプレイヤーに反映する（フェード中は上限だけ更新）
-  void _applyVolumeNorm(LoopItem item) {
-    _baseVolume = _normalizedVolume(item);
-    if (_isFading) return;
-    try {
-      ref.read(playerProvider).setVolume(_baseVolume);
-    } catch (_) {}
-  }
+  void _applyVolumeNorm(LoopItem item) =>
+      _transport.setBaseVolume(_normalizedVolume(item));
 
 
 
@@ -1880,7 +1184,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           SheetAction(
             icon: Icons.play_arrow,
             label: 'この曲にスキップ',
-            onTap: () => _selectTrack(trackIndex),
+            onTap: () => _transport.selectTrack(trackIndex),
           ),
         SheetAction(
           icon: Icons.label_outline,
@@ -1912,7 +1216,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!removed) return;
 
     // プリロード状態をリセット（インデックスがずれるため）
-    _cancelPreload();
+    _transport.cancelPreload();
 
     if (widget.playlistId != null) {
       await ref
@@ -1924,7 +1228,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (isCurrent) {
       final newTrack = ref.read(playlistPlayerProvider).currentTrack;
       if (newTrack != null) {
-        _cancelFade();
+        _transport.cancelFade();
         _loadItem();
       }
     }
@@ -1944,9 +1248,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       controller: dense ? null : _trackListController,
       dense: dense,
       bottomInset: bottomInset,
-      preloadingIndex: _preloadingTargetIndex,
-      preloadedIndex: _preloadedTrackIndex,
-      onSelect: _selectTrack,
+      preloadingIndex: _transport.preloadingIndex,
+      preloadedIndex: _transport.preloadedIndex,
+      onSelect: _transport.selectTrack,
       onMenu: _showTrackMenu,
     );
   }
@@ -2050,15 +1354,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return PlayerErrorView(
         message: _loadError!,
         stoppedByRepeatedErrors:
-            _isPlaylist && _consecutiveLoadErrors >= _maxConsecutiveErrors,
+            _isPlaylist &&
+                _transport.loadErrors >= PlaylistTransportController.maxLoadErrors,
         onRetry: () {
-          _consecutiveLoadErrors = 0;
+          _transport.loadErrors = 0;
           _loadItem();
         },
         onSkip: _isPlaylist
             ? () {
-                _consecutiveLoadErrors = 0;
-                _autoAdvance();
+                _transport.loadErrors = 0;
+                _transport.autoAdvance();
               }
             : null,
       );
@@ -2089,7 +1394,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         loop: ref.read(loopProvider.notifier),
         playlist: ref.read(playlistPlayerProvider.notifier),
         mini: ref.read(miniPlayerProvider.notifier),
-        preloadedIndex: _preloadedTrackIndex,
+        preloadedIndex: _transport.preloadedIndex,
       )..start();
     }
   }
@@ -2150,10 +1455,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return Column(
         children: [
           FullscreenPlaylistControls(
-            onShuffle: _isPreloading ? null : _toggleShuffle,
+            onShuffle: _transport.isPreloading ? null : _toggleShuffle,
             onRepeat: _cycleRepeatMode,
-            onPrev: plState.hasPrev && !_trackLoading ? _manualPrev : null,
-            onNext: plState.hasNext && !_trackLoading ? _manualNext : null,
+            onPrev: plState.hasPrev && !_transport.trackLoading
+                ? _transport.manualPrev
+                : null,
+            onNext: plState.hasNext && !_transport.trackLoading
+                ? _transport.manualNext
+                : null,
             onMore: _showMoreSheet,
           ),
           Expanded(child: _buildTrackList(dense: true, bottomInset: bottomInset)),
@@ -2315,17 +1624,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
             onRetryWaveform: _retryWaveform,
-            onReplayPrevious: _replayPreviousFrom,
+            onReplayPrevious: _transport.replayPreviousFrom,
             waveformFor: _mixWaveformFor,
             titleFor: (item) => item.title,
           ),
           listOpen: panelOpen,
           shuffle: plState.shuffle,
-          onShuffle: _isPreloading ? null : _toggleShuffle,
+          onShuffle: _transport.isPreloading ? null : _toggleShuffle,
           repeatMode: plState.repeatMode,
           onRepeat: _cycleRepeatMode,
-          onPrev: plState.hasPrev && !_trackLoading ? _manualPrev : null,
-          onNext: plState.hasNext && !_trackLoading ? _manualNext : null,
+          onPrev: plState.hasPrev && !_transport.trackLoading
+              ? _transport.manualPrev
+              : null,
+          onNext: plState.hasNext && !_transport.trackLoading
+              ? _transport.manualNext
+              : null,
           onMore: _showMoreSheet,
           onToggleList: () => _setPanelOpen(!panelOpen),
           firstVerse: plState.firstVerseMode,
@@ -2538,19 +1851,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _toggleShuffle() {
     ref.read(playlistPlayerProvider.notifier).toggleShuffle();
-    _pendingJumpIndex = null;
-    _cancelPreload();
-    _preloadNextTrack();
+    _transport.onShuffleToggled();
   }
 
   void _cycleRepeatMode() {
     ref.read(playlistPlayerProvider.notifier).cycleRepeatMode();
-    // プリロード済みの次曲が変わった場合のみ再プリロード
-    // （_checkPreloadの定期チェックで自然に対応される）
-    final nextIdx = ref.read(playlistPlayerProvider).peekNextTrackIndex();
-    if (_preloadedTrackIndex != null && _preloadedTrackIndex != nextIdx) {
-      _cancelPreload();
-    }
+    // プリロード済みの次曲が変わった場合のみ捨てる（読み直しは定期チェックで）
+    _transport.onRepeatChanged();
   }
 
   void _toggleFirstVerseMode() {
@@ -2561,7 +1868,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (plState.firstVerseMode) {
         _applyFirstVerseCut(track);
       } else {
-        _cancelFade();
+        _transport.cancelFade();
         ref.read(loopProvider.notifier).reset();
       }
     }
@@ -2637,7 +1944,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         aMs: loop.pointA!.inMilliseconds, bMs: b));
     final stillCurrent =
         ref.read(playlistPlayerProvider).currentTrack?.item.id == id;
-    if (stillCurrent) _startFadeOutMonitor(b);
+    if (stillCurrent) _transport.startFadeOutMonitor(b);
     AppToast.instance.show(AppSnackBar.action(
       'この曲の1番として覚えました',
       label: '取り消し',
