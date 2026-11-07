@@ -333,7 +333,12 @@ class WaveformService {
   /// [cacheKey]（アイテムID）を渡すと [WaveformCache] を使う。
   /// ただし [onPcm] がある＝解析が必要なとき、[needLoudness]＝曲の大きさがまだ無いときは、
   /// デコードし直す（保存した波形はピーク正規化済みで大きさが分からない）。
-  /// 大きさは [onLoudness] で返す
+  /// 大きさは [onLoudness] で返す。
+  ///
+  /// 保存した波形があり、この起動中にもうデコードを試した曲（[decodeTried]）は、
+  /// 解析・帯域・大きさが取れていなくてもデコードし直さない（[force] で試し直す）。
+  /// 取れない曲（ネイティブのデコードが PCM を返さず粗い波形になる等）を開くたびに
+  /// 丸ごとデコードしていた
   Future<List<double>?> generateForVideoSource(
     VideoSource source,
     YouTubeService ytService, {
@@ -343,18 +348,21 @@ class WaveformService {
     LoudnessCallback? onLoudness,
     bool needLoudness = false,
     String? cacheKey,
+    bool force = false,
   }) async {
     // 帯域の波形（色の濃淡）がまだ無ければ、PCM を取り出して一緒に作る
     if (cacheKey != null) {
       onPcm = await WaveformCache.pcmSinkWithBands(cacheKey, onPcm);
     }
-    if (cacheKey != null &&
-        onPcm == null &&
-        !needLoudness &&
-        cachedAudioPath == null) {
-      final cached = await WaveformCache.load(cacheKey);
-      if (cached != null && cached.isNotEmpty) return cached;
+    if (cacheKey != null && cachedAudioPath == null) {
+      final skipDecode =
+          (onPcm == null && !needLoudness) || (!force && decodeTried(cacheKey));
+      if (skipDecode) {
+        final cached = await WaveformCache.load(cacheKey);
+        if (cached != null && cached.isNotEmpty) return cached;
+      }
     }
+    if (cacheKey != null) markDecodeTried(cacheKey);
     final waveform = await _generateForVideoSource(source, ytService,
         cachedAudioPath: cachedAudioPath,
         targetSamples: targetSamples,
@@ -365,6 +373,13 @@ class WaveformService {
     }
     return waveform;
   }
+
+  /// この起動中に音声のデコードを試した曲の ID（[generateForVideoSource] の説明）
+  static final _decodeTried = <String>{};
+
+  static bool decodeTried(String itemId) => _decodeTried.contains(itemId);
+
+  static void markDecodeTried(String itemId) => _decodeTried.add(itemId);
 
   Future<List<double>?> _generateForVideoSource(
     VideoSource source,

@@ -10,6 +10,7 @@ import 'package:u2b_loop_app/core/audio/tempo_sections.dart';
 import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/providers/data_provider.dart';
+import 'package:u2b_loop_app/services/audio_analysis_service.dart';
 import 'package:u2b_loop_app/widgets/tempo_key_sheet.dart';
 
 /// テンポ/キーの手直し: 区切りごとに値を直す
@@ -106,5 +107,22 @@ void main() {
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect(item().bpm, 150);
+  });
+
+  test('倍/半分でない値に手で直しても「未解析」に戻らない（開くたびに解析し直して上書きしない）',
+      () async {
+    final x = item()
+      ..analyzedAt = 1
+      ..leadingSilenceMs = 0
+      ..analysisVersion = LoopItem.currentAnalysisVersion;
+    await AppBoxes.loopItems.put('x', x);
+    expect(AudioAnalysisService.needsAnalysis(item()), isFalse);
+    await container
+        .read(loopItemsProvider.notifier)
+        .saveAnalysis('x', bpm: 80, musicalKey: 'A#min', markAnalyzed: false);
+    expect(item().tempoSections, hasLength(2));
+    expect(item().sectionGridData, isNotNull);
+    expect(item().sectionGrids, [null, null]);
+    expect(AudioAnalysisService.needsAnalysis(item()), isFalse);
   });
 }

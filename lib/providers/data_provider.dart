@@ -131,9 +131,11 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           sections.length < 2;
       item.tempoSectionData =
           keepTempo || sections.length < 2 ? null : TempoSection.flatten(sections);
-      item.sectionGridData = item.tempoSectionData == null || sectionGrids.length != sections.length
+      item.sectionGridData = item.tempoSectionData == null
           ? null
-          : LoopItem.flattenGrids(sectionGrids);
+          : LoopItem.flattenGrids(sectionGrids.length == sections.length
+              ? sectionGrids
+              : List.filled(sections.length, null));
     } else if (!markAnalyzed) {
       // 手動補正: 区切りもメインの BPM と同じ比で（×2 なら全部 ×2）
       final old = item.bpm;
@@ -146,13 +148,18 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
             ]);
       // 区切りごとの格子: 倍/半分なら同じ倍率で引き直し、それ以外は捨てる（線がずれるより出さない）
       final octaves = bpm == null || old == null || old <= 0 ? null : _octavesOf(bpm / old);
+      // 格子が無くても「区切りの数だけ無し」として残す。null は「区切りごとの格子をまだ
+      // 解析していない」の意味になり、開くたびに解析し直して手で直したテンポを上書きしていた
       final grids = item.sectionGrids;
-      item.sectionGridData = item.tempoSectionData == null || octaves == null || grids.isEmpty
+      final n = item.tempoSections.length;
+      item.sectionGridData = item.tempoSectionData == null
           ? null
-          : LoopItem.flattenGrids([
-              for (final g in grids)
-                g?.withBpm(g.bpm * pow(2, octaves), anchorMs: g.barAnchorMs(null)),
-            ]);
+          : LoopItem.flattenGrids(octaves == null || grids.length != n
+              ? List.filled(n, null)
+              : [
+                  for (final g in grids)
+                    g?.withBpm(g.bpm * pow(2, octaves), anchorMs: g.barAnchorMs(null)),
+                ]);
     }
     if (!keepTempo) item.bpm = bpm;
     if (span != null) {
@@ -244,7 +251,8 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
             regrid(grids[i], old[i].bpm, tempo[i].bpm),
         ]);
       } else {
-        item.sectionGridData = null;
+        // null にすると「未解析」とみなされて解析し直し、直した値が上書きされる
+        item.sectionGridData = LoopItem.flattenGrids(List.filled(tempo.length, null));
       }
       final oldMain = item.bpm;
       final newMain = tempo[mainIdx.clamp(0, tempo.length - 1)].bpm;

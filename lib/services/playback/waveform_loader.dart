@@ -10,6 +10,7 @@ import '../../models/video_source.dart';
 import '../../providers/data_provider.dart';
 import '../../providers/player_provider.dart';
 import '../audio_analysis_service.dart';
+import '../waveform_cache.dart';
 import '../waveform_service.dart';
 import 'hq_audio.dart';
 
@@ -36,7 +37,7 @@ class WaveformLoader {
       _ref.read(volumeNormProvider) && item.loudnessDb == null;
 
   /// 音声を先読みしてから [generate] を呼ぶ（待たない）。
-  /// 波形が保存済み（かつ解析不要）なら DL せずにすぐ [generate]
+  /// 保存した波形は先読みを待たずにすぐ出す。波形が保存済みで解析も不要なら DL せずにすぐ [generate]
   void prefetchThenGenerate(
       LoopItem item, StreamManifest manifest, VoidCallback generate) {
     // 長い動画は波形を作らない（音声も落とさない）
@@ -44,8 +45,12 @@ class WaveformLoader {
         durationMs: item.durationMs, manifest: manifest)) {
       return;
     }
-    WaveformService.canSkipAudioFetch(item, needLoudness: _needLoudness(item))
-        .then((skip) async {
+    () async {
+      final cached = await _showCached(item);
+      var skip = await WaveformService.canSkipAudioFetch(item,
+          needLoudness: _needLoudness(item));
+      // この起動中にもう試した曲は、保存した波形があれば音声を落とし直さない
+      if (cached && WaveformService.decodeTried(item.id)) skip = true;
       if (!isMounted()) return;
       if (!skip) {
         final videoId = item.videoId;
@@ -57,7 +62,20 @@ class WaveformLoader {
         _prefetchedAudioPath = path;
       }
       generate();
-    });
+    }();
+  }
+
+  /// 保存した波形があれば、まだ何も出ていないうちに出す（デコードを待たない）。出せたら true
+  Future<bool> _showCached(LoopItem item) async {
+    final cached = await WaveformCache.load(item.id);
+    if (cached == null || cached.isEmpty || !isMounted()) return false;
+    final data = _ref.read(waveformDataProvider.notifier);
+    if (data.state == null) {
+      data.state = cached;
+      _ref.read(waveformErrorProvider.notifier).state = null;
+      _ref.read(waveformLoadingProvider.notifier).state = false;
+    }
+    return true;
   }
 
   /// 読み込み完了時に波形を作るか: ローカルは即、YouTube は先読みが済んでいれば
@@ -71,23 +89,29 @@ class WaveformLoader {
   /// 何回目の [generate] か。古い呼び出しが後から終わっても表示を上書きしないように
   int _generation = 0;
 
-  /// 波形を作って provider に流す。戻り値は成功した波形（失敗・空・中止は null）
+  /// 波形を作って provider に流す。戻り値は成功した波形（失敗・空・中止は null）。
+  /// 保存した波形があれば先に出し、解析・帯域・大きさのためのデコードはその裏で
+  /// （読込中にしない。失敗しても保存した波形のまま）
   Future<List<double>?> generate(VideoSource source, LoopItem item) async {
     final gen = ++_generation;
     bool current() => isMounted() && gen == _generation;
     final data = _ref.read(waveformDataProvider.notifier);
     final error = _ref.read(waveformErrorProvider.notifier);
     final loading = _ref.read(waveformLoadingProvider.notifier);
-    data.state = null;
     error.state = null;
     // 長い動画は波形を作らない（細いシークバーだけ。読込中もエラーも出さない）
     if (WaveformService.tooLongForWaveform(
         durationMs: item.durationMs,
         playerDuration: _ref.read(playerProvider).state.duration)) {
+      data.state = null;
       loading.state = false;
       return null;
     }
-    loading.state = true;
+    final saved = await WaveformCache.load(item.id);
+    if (!current()) return null;
+    final cached = saved != null && saved.isNotEmpty ? saved : null;
+    data.state = cached;
+    loading.state = cached == null;
     try {
       final service = WaveformService();
       await service.cancel();
@@ -114,8 +138,8 @@ class WaveformLoader {
       );
       if (!current()) return null;
       if (waveform == null || waveform.isEmpty) {
-        error.state = failedMessage;
-        return null;
+        if (cached == null) error.state = failedMessage;
+        return cached;
       }
       data.state = waveform;
       return waveform;
@@ -123,8 +147,8 @@ class WaveformLoader {
       // 新しい波形を頼んだので中止された（表示はそちらが決める）
       return null;
     } catch (e) {
-      if (current()) error.state = AppErrors.describe(e);
-      return null;
+      if (current() && cached == null) error.state = AppErrors.describe(e);
+      return current() ? cached : null;
     } finally {
       if (current()) loading.state = false;
     }

@@ -1297,18 +1297,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               duration: preloadDuration == Duration.zero ? null : preloadDuration));
       List<double>? waveform;
 
-      // 保存済みの波形があれば音声 DL ごと省く（解析が必要なときは作り直す）
-      if (onPcm == null) {
-        waveform = await WaveformCache.load(item.id);
-        if (waveform != null && waveform.isNotEmpty) {
-          // 波形は曲のものなので、世代が変わっても残す（重ね表示が使う）
-          _waveformCache[item.id] = waveform;
-          if (gen == _preloadGeneration) {
-            await _updateMixPoints(track, waveform, preload: true);
-          }
-          return;
+      // 保存済みの波形は先に使う（重ね表示・切り替わった後の表示がデコードを待たない）。
+      // 解析・帯域が要らない、またはこの起動中にもう試した曲は音声 DL ごと省く
+      final saved = await WaveformCache.load(item.id);
+      if (saved != null && saved.isNotEmpty) {
+        // 波形は曲のものなので、世代が変わっても残す（重ね表示が使う）
+        _waveformCache[item.id] = saved;
+        if (gen == _preloadGeneration) {
+          await _updateMixPoints(track, saved, preload: true);
         }
+        if (onPcm == null || WaveformService.decodeTried(item.id)) return;
       }
+      WaveformService.markDecodeTried(item.id);
 
       // 通信せずに使える音声（高音質の音声・自動キャッシュ・オフライン保存）があればそれで
       final localAudio = item.isYouTube && item.videoId != null

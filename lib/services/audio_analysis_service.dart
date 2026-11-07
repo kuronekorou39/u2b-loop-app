@@ -151,6 +151,8 @@ class AudioAnalysisService {
           completer.complete(run(items, item.id, pcm, sampleRate));
         },
         cacheKey: item.id,
+        // 手動・まとめての解析は、この起動中に試した曲でもデコードし直す
+        force: true,
       );
     } catch (e) {
       debugPrint('[AudioAnalysis] 音声取得失敗: $e');
