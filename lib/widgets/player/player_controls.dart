@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
+import 'player_glass_bar.dart';
 import 'volume_slider.dart';
 
 class PlayerControls extends ConsumerWidget {
@@ -140,14 +141,15 @@ class PlayerControls extends ConsumerWidget {
                   : null,
             ),
           ),
-          IconButton(
-            icon: Icon(
-              playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+          // 再生ボタンは縦・横の画面と同じ緑の丸
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: BigPlayButton(
+              playing: playing,
+              enabled: hasSource,
+              size: 48,
+              onTap: () => player.playOrPause(),
             ),
-            iconSize: 48,
-            tooltip: playing ? '一時停止' : '再生',
-            onPressed: hasSource ? () => player.playOrPause() : null,
-            color: Theme.of(context).colorScheme.primary,
           ),
           // Forward: tap=seek, long press=set step
           GestureDetector(
