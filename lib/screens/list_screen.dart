@@ -361,7 +361,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   SizedBox(width: _landscapeTabsWidth, child: tabsOrSelection),
                   const SizedBox(width: AppSpacing.md),
                   if (_tab == _tabItems)
-                    Expanded(child: _buildSearchRow(inline: true))
+                    Expanded(child: _buildSearchRow(inline: true, tags: tags))
                   else
                     const Spacer(),
                 ],
@@ -370,8 +370,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          if (_tab == _tabItems && tags.isNotEmpty)
-            SelectedTagBar(tags: tags, onClosed: _searchFocusNode.unfocus),
         ] else ...[
           AppBar(
             primary: false,
@@ -533,8 +531,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
   static const _landscapeTabsWidth = 340.0;
 
   /// 曲タブの検索・並び替えの行（見出しの中。一覧と一緒に上へ抜ける）。
-  /// [inline] は横画面の 1 行に入れるとき（外の余白なし）
-  Widget _buildSearchRow({bool inline = false}) {
+  /// [inline] は横画面の 1 行に入れるとき（外の余白なし。タグの絞り込みもボタンにして
+  /// この行に入れる。縦は下の [SelectedTagBar] の行）
+  Widget _buildSearchRow({bool inline = false, List<Tag> tags = const []}) {
     return Padding(
           padding: inline
               ? EdgeInsets.zero
@@ -555,6 +554,11 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   },
                 ),
               ),
+              if (inline && tags.isNotEmpty) ...[
+                const SizedBox(width: AppSpacing.md),
+                TagFilterButton(
+                    tags: tags, onClosed: _searchFocusNode.unfocus),
+              ],
               const SizedBox(width: AppSpacing.md),
               PopupMenuButton<ItemSortMode>(
                 tooltip: '並び替え',

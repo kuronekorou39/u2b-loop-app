@@ -248,3 +248,42 @@ class SelectedTagBar extends ConsumerWidget {
     );
   }
 }
+
+/// 横画面の見出しの 1 行に入れる絞り込みボタン（[SelectedTagBar] の代わり）。
+/// 絞り込み中は緑にして、選んでいるタグの数を出す。外すのはシートの「クリア」
+class TagFilterButton extends ConsumerWidget {
+  const TagFilterButton({super.key, required this.tags, this.onClosed});
+
+  final List<Tag> tags;
+
+  /// シートを閉じたあと
+  final VoidCallback? onClosed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(tagFilterProvider).length;
+    final active = count > 0;
+    return GlassPill(
+      active: active,
+      tooltip: 'タグフィルター',
+      padding: const EdgeInsets.all(10),
+      onTap: () => showTagFilterSheet(context, ref, tags, onClosed: onClosed),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.filter_alt_outlined,
+              size: AppIconSizes.md,
+              color: active ? AppTheme.accentGreen : null),
+          if (active) ...[
+            const SizedBox(width: AppSpacing.xs),
+            Text('$count',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelMedium!
+                    .copyWith(color: AppTheme.accentGreen)),
+          ],
+        ],
+      ),
+    );
+  }
+}

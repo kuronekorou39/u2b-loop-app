@@ -9,6 +9,7 @@ import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist.dart';
 import 'package:u2b_loop_app/models/tag.dart';
 import 'package:u2b_loop_app/screens/home/item_views.dart';
+import 'package:u2b_loop_app/screens/home/tag_filter_bar.dart';
 import 'package:u2b_loop_app/screens/list_screen.dart';
 import 'package:u2b_loop_app/widgets/glass_controls.dart';
 
@@ -100,5 +101,15 @@ void main() {
     await tester.flingFrom(const Offset(700, 300), const Offset(-500, 0), 2000);
     await tester.pumpAndSettle();
     expect(find.text('プレイリスト').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('横画面はタグの絞り込みもボタンにして見出しの 1 行に入れる', (tester) async {
+    await AppBoxes.tags.put('t1', Tag(id: 't1', name: 'ロック'));
+    addTearDown(() => AppBoxes.tags.delete('t1'));
+    await pump(tester);
+    expect(find.byType(SelectedTagBar), findsNothing);
+    final button = tester.getRect(find.byType(TagFilterButton));
+    expect(button.center.dy, closeTo(searchRect(tester).center.dy, 1));
+    expect(tester.takeException(), isNull);
   });
 }
