@@ -1491,22 +1491,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       bottomInset: bottomInset,
       onToggleLoop:
           hasSource ? ref.read(loopProvider.notifier).toggleEnabled : null,
-      // 編集は全画面の外で（横レイアウトに AB 編集の板が出る）
-      onEdit: () {
-        _exitFullscreen();
-        _beginSingleEdit();
-      },
+      // 編集・区間追加は全画面では出さない（押すと全画面が解除されて編集の板が出ていた）
       onExport: ({required fullTrack}) => _showExportDialog(fullTrack: fullTrack),
       onSelectAll: _clearRegion,
       onSelect: _selectRegion,
       onMenu: _showRegionMenu,
-      // 追加すると編集に入るので、全画面は解除する
-      onAdd: regions.length < _maxRegions
-          ? () {
-              _exitFullscreen();
-              _addRegion();
-            }
-          : null,
     );
   }
 

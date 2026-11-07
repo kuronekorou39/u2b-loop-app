@@ -5,9 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:u2b_loop_app/core/storage/app_boxes.dart';
+import 'package:u2b_loop_app/providers/player_provider.dart';
 import 'package:u2b_loop_app/widgets/player/fullscreen_player_view.dart';
 
-/// 全画面の上の帯のピン: 押すと呼び出し側へ届き、留めている間は塗りのピンになる
+/// 全画面の下の板: 右端のピン（コントロールの固定）、左端の反転。ドロワーは外のタップで閉じる
 void main() {
   setUpAll(() async {
     Hive.init(null);
@@ -15,7 +16,8 @@ void main() {
   });
   tearDownAll(() => Hive.close());
 
-  Future<List<String>> pump(WidgetTester tester, {required bool pinned}) async {
+  Future<List<String>> pump(WidgetTester tester,
+      {required bool pinned, bool drawerOpen = false}) async {
     tester.view.physicalSize = const Size(900, 412);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -30,10 +32,10 @@ void main() {
           showOverlay: true,
           overlayPinned: pinned,
           onToggleOverlayPin: () => events.add('pin'),
-          drawerOpen: false,
+          drawerOpen: drawerOpen,
           drawer: const SizedBox(),
           onToggleOverlay: noop,
-          onToggleDrawer: noop,
+          onToggleDrawer: () => events.add('drawer'),
           onExit: noop,
           onSubtitleLongPress: noop,
           onRetryWaveform: noop,
@@ -59,5 +61,33 @@ void main() {
     await pump(tester, pinned: true);
     expect(find.byIcon(Icons.push_pin), findsOneWidget);
     expect(find.byTooltip('コントロールの固定を外す'), findsOneWidget);
+  });
+
+  testWidgets('ピンと反転は下の板の中（左右の端）', (tester) async {
+    await pump(tester, pinned: false);
+    final pin = tester.getRect(find.byTooltip('コントロールを固定する'));
+    final flipH = tester.getRect(find.byTooltip('左右反転'));
+    expect(pin.top, greaterThan(300), reason: '上の帯ではなく下の板');
+    expect(flipH.left, lessThan(pin.left));
+    expect(find.byTooltip('上下反転'), findsOneWidget);
+  });
+
+  testWidgets('反転のボタンで動画の向きが切り替わる', (tester) async {
+    await pump(tester, pinned: false);
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(FullscreenPlayerView)));
+    await tester.tap(find.byTooltip('左右反転'));
+    await tester.pump();
+    expect(container.read(flipHorizontalProvider), isTrue);
+    expect(find.byTooltip('左右反転を戻す'), findsOneWidget);
+    await tester.tap(find.byTooltip('上下反転'));
+    await tester.pump();
+    expect(container.read(flipVerticalProvider), isTrue);
+  });
+
+  testWidgets('ドロワーを開いている間は、外のタップで閉じる', (tester) async {
+    final events = await pump(tester, pinned: false, drawerOpen: true);
+    await tester.tapAt(const Offset(200, 200));
+    expect(events, ['drawer']);
   });
 }

@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/loop_region.dart';
 import '../../models/loop_state.dart';
 import '../../models/playlist_mode.dart' as pl;
+import '../../providers/player_provider.dart';
 import '../../providers/playlist_player_provider.dart';
 import '../../providers/subtitle_provider.dart';
 import '../glass_panel.dart';
@@ -80,6 +81,9 @@ class FullscreenPlayerView extends StatelessWidget {
 
   /// 下の板の高さの目安（字幕をその上に逃がす）
   static const panelHeight = 132.0;
+
+  /// 下の板の左右の端（反転 / 固定）の幅。真ん中の再生操作が真ん中に来るよう同じ幅
+  static const _panelSideWidth = 96.0;
 
   @override
   Widget build(BuildContext context) {
@@ -184,17 +188,6 @@ class FullscreenPlayerView extends StatelessWidget {
                               ],
                             ),
                           ),
-                          if (onToggleOverlayPin != null)
-                            IconButton(
-                              onPressed: onToggleOverlayPin,
-                              tooltip: overlayPinned
-                                  ? 'コントロールの固定を外す'
-                                  : 'コントロールを固定する',
-                              color: overlayPinned ? AppTheme.accentGreen : white,
-                              icon: Icon(overlayPinned
-                                  ? Icons.push_pin
-                                  : Icons.push_pin_outlined),
-                            ),
                           IconTheme(
                             data: const IconThemeData(color: white),
                             child: SubtitleToggleButton(
@@ -209,8 +202,11 @@ class FullscreenPlayerView extends StatelessWidget {
                     left: padL,
                     right: padR,
                     bottom: padB,
+                    // ぼかしは使わない。フェード中は効かず、出しきった瞬間に一気に効いて
+                    // 「最後にカクッと濃くなる」ように見えた（動画の上では重さもある）
                     child: GlassPanel(
-                      scrim: Colors.black.withValues(alpha: 0.45),
+                      blur: false,
+                      scrim: Colors.black.withValues(alpha: 0.5),
                       radius: 18,
                       padding: const EdgeInsets.fromLTRB(
                           AppSpacing.xs, AppSpacing.md, AppSpacing.xs, AppSpacing.xs),
@@ -223,7 +219,39 @@ class FullscreenPlayerView extends StatelessWidget {
                                 allowMarkerDrag: false,
                                 onRetryWaveform: onRetryWaveform,
                               ),
-                          controls ??
+                          Row(
+                            children: [
+                              // 左: 左右・上下の反転（全画面では動画の上のボタンに届かない）
+                              SizedBox(
+                                width: _panelSideWidth,
+                                child: Row(children: [
+                                  Consumer(builder: (_, ref, _) {
+                                    final on = ref.watch(flipHorizontalProvider);
+                                    return _PanelIcon(
+                                      icon: Icons.flip,
+                                      on: on,
+                                      tooltip: on ? '左右反転を戻す' : '左右反転',
+                                      onPressed: () => ref
+                                          .read(flipHorizontalProvider.notifier)
+                                          .state = !on,
+                                    );
+                                  }),
+                                  Consumer(builder: (_, ref, _) {
+                                    final on = ref.watch(flipVerticalProvider);
+                                    return _PanelIcon(
+                                      icon: Icons.flip,
+                                      rotate: true,
+                                      on: on,
+                                      tooltip: on ? '上下反転を戻す' : '上下反転',
+                                      onPressed: () => ref
+                                          .read(flipVerticalProvider.notifier)
+                                          .state = !on,
+                                    );
+                                  }),
+                                ]),
+                              ),
+                              Expanded(
+                                child: controls ??
                               PlayerControls(
                                 prevTrack: isPlaylist
                                     ? IconButton(
@@ -240,6 +268,28 @@ class FullscreenPlayerView extends StatelessWidget {
                                       )
                                     : null,
                               ),
+                              ),
+                              // 右: コントロールの固定（留めると自動で消えない）
+                              SizedBox(
+                                width: _panelSideWidth,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: onToggleOverlayPin == null
+                                      ? null
+                                      : _PanelIcon(
+                                          icon: overlayPinned
+                                              ? Icons.push_pin
+                                              : Icons.push_pin_outlined,
+                                          on: overlayPinned,
+                                          tooltip: overlayPinned
+                                              ? 'コントロールの固定を外す'
+                                              : 'コントロールを固定する',
+                                          onPressed: onToggleOverlayPin!,
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -259,6 +309,14 @@ class FullscreenPlayerView extends StatelessWidget {
           bottom: (showOverlay ? panelHeight + AppSpacing.lg : 32.0) + bottomInset,
           child: const IgnorePointer(child: KaraokeSubtitle()),
         ),
+        // ドロワーを開いている間は、外のタップで閉じる（コントロールの出し入れはしない）
+        if (drawerOpen)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onToggleDrawer,
+            ),
+          ),
         // 右ドロワー（ガラス）
         AnimatedPositioned(
           duration: const Duration(milliseconds: 300),
@@ -432,12 +490,12 @@ class FullscreenRegionDrawer extends StatelessWidget {
     required this.loop,
     required this.bottomInset,
     required this.onToggleLoop,
-    required this.onEdit,
+    this.onEdit,
     required this.onExport,
     required this.onSelectAll,
     required this.onSelect,
     required this.onMenu,
-    required this.onAdd,
+    this.onAdd,
   });
 
   final List<LoopRegion> regions;
@@ -450,8 +508,8 @@ class FullscreenRegionDrawer extends StatelessWidget {
   /// null ならループの切り替えは無効（ソースがまだ無い）
   final VoidCallback? onToggleLoop;
 
-  /// 区間を選んでいるときだけ出る「編集」
-  final VoidCallback onEdit;
+  /// 区間を選んでいるときだけ出る「編集」。null なら出さない（全画面では出さない）
+  final VoidCallback? onEdit;
 
   /// 書き出し。A・B が揃っていなければ全体として呼ぶ
   final void Function({required bool fullTrack}) onExport;
@@ -482,7 +540,7 @@ class FullscreenRegionDrawer extends StatelessWidget {
                 tooltip: loop.enabled ? 'ループ ON' : 'ループ OFF',
               ),
               const Spacer(),
-              if (activeIndex >= 0)
+              if (activeIndex >= 0 && onEdit != null)
                 TextButton.icon(
                   onPressed: onEdit,
                   icon: Icon(Icons.edit_outlined,
@@ -542,6 +600,36 @@ class FullscreenRegionDrawer extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 全画面の下の板の左右の端に置く小さなボタン（反転・固定）。オンは緑
+class _PanelIcon extends StatelessWidget {
+  const _PanelIcon({
+    required this.icon,
+    required this.on,
+    required this.tooltip,
+    required this.onPressed,
+    this.rotate = false,
+  });
+
+  final IconData icon;
+  final bool on;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  /// 90 度回す（上下反転のアイコン）
+  final bool rotate;
+
+  @override
+  Widget build(BuildContext context) {
+    final glyph = Icon(icon, size: AppIconSizes.md);
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      color: on ? AppTheme.accentGreen : Colors.white,
+      icon: rotate ? RotatedBox(quarterTurns: 1, child: glyph) : glyph,
     );
   }
 }
