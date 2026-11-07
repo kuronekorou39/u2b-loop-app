@@ -128,8 +128,12 @@ class _FakeHost implements TransportHost {
   bool initialLoading = false;
   @override
   void refresh() {}
+  bool canReload = true;
   @override
-  void reloadCurrent() => calls.add('reload');
+  bool reloadCurrent() {
+    calls.add('reload');
+    return canReload;
+  }
   @override
   void loadTrackRegion(PlaylistTrack track) =>
       calls.add('region ${track.item.id}');
@@ -328,6 +332,33 @@ void main() {
       t.setBaseVolume(50);
       expect(deck.volumes, hasLength(n));
       expect(t.baseVolume, 50);
+      await finish(tester);
+    });
+  });
+
+  group('画面の無いとき（ミニプレイヤー中）', () {
+    testWidgets('先読みしていない曲へ進むときは、画面を開き直さず鳴っている側に直接開く',
+        (tester) async {
+      host.canReload = false;
+      t.autoAdvance();
+      expect(host.calls, contains('reload'));
+      expect(deck.calls, contains('prepareActive b'));
+      deck.activeGate!.complete();
+      await tester.pump();
+      expect(playlist.currentState.currentTrack!.item.id, 'b');
+      expect(host.calls, containsAllInOrder(['source b -', 'region b', 'switched b']));
+      expect(deck.calls, contains('play'));
+      await finish(tester);
+    });
+
+    testWidgets('持ち主がいなくなったら、B 点・曲の終わり・先読みの監視は何もしない',
+        (tester) async {
+      host.mounted = false;
+      expect(deck.bPoint!(), isFalse);
+      deck.trackEnd!();
+      t.checkPreload();
+      expect(deck.calls, isEmpty);
+      expect(playlist.currentState.currentTrack!.item.id, 'a');
       await finish(tester);
     });
   });

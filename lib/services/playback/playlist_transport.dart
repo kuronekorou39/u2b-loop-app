@@ -13,6 +13,10 @@ import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
 import '../../providers/playlist_player_provider.dart';
 
+/// プロバイダーを読む関数。再生画面は WidgetRef.read、ミニプレイヤー中は
+/// ProviderContainer.read（画面の dispose 後も使える）を渡す
+typedef ProviderReader = T Function<T>(ProviderListenable<T> provider);
+
 /// 進行役が使う再生の土台。本番は [EngineTransportDeck]（PlaylistEngine とプロバイダー）、
 /// テストでは偽物に差し替える（media_kit の Player を作らずに遷移の手順を確かめるため）
 abstract class TransportDeck {
@@ -73,8 +77,9 @@ abstract class TransportHost {
   /// 進行の状態（読込中・先読み中の印）が変わった。描き直す
   void refresh();
 
-  /// 先読みしていない曲へ自動で進む: 画面ごと開き直す
-  void reloadCurrent();
+  /// 先読みしていない曲へ自動で進む: 画面ごと開き直す。
+  /// false なら開き直せない（画面が無い）ので、進行役が鳴っている側に直接開く
+  bool reloadCurrent();
 
   /// 曲の区間（AB・1 番だけ）を反映する。中で [PlaylistTransportController.setupCallbacks] を呼ぶ
   void loadTrackRegion(PlaylistTrack track);
@@ -99,10 +104,11 @@ abstract class TransportHost {
   double normalizedVolume(LoopItem item);
 }
 
-/// 再生画面のプレイリスト進行（先読み・自動遷移・手動の前後と選曲・1 番だけモードのフェード）。
+/// プレイリスト進行（先読み・自動遷移・手動の前後と選曲・1 番だけモードのフェード）。
 ///
-/// 画面を閉じた後は [MiniPlayerTransport] が同じ役を引き継ぐ。遷移の機構（URL 解決・
-/// プリロード・スロット入替・区間適用）は PlaylistEngine にあり、どちらも同じ実装を通る。
+/// 再生画面とミニプレイヤー中（画面を閉じた後）の両方がこれを使い、違いは [host] だけ
+/// （画面は _PlayerScreenState、ミニプレイヤーは MiniTransportHost）。
+/// 遷移の機構（URL 解決・プリロード・スロット入替・区間適用）は PlaylistEngine にある。
 ///
 /// 思想:
 /// - 再生が止まることは最悪の事態。どんな状態でも再生を継続する
@@ -210,6 +216,8 @@ class PlaylistTransportController {
     }
 
     deck.onBPointReached = () {
+      // 画面が閉じた・別の再生が始まった後に残ったコールバックは何もしない
+      if (!host.mounted) return false;
       if (_playlist.currentState.repeatMode == pl.RepeatMode.single) {
         return false;
       }
@@ -231,6 +239,7 @@ class PlaylistTransportController {
     };
 
     deck.onTrackEnd = () {
+      if (!host.mounted) return;
       final readiness = _readiness();
       if (readiness == AdvanceReadiness.none) return;
 
@@ -339,7 +348,10 @@ class PlaylistTransportController {
       cancelPreload();
       _checkTimer?.cancel();
       _pendingFadeIn = shouldFadeIn;
-      host.reloadCurrent();
+      if (!host.reloadCurrent()) {
+        _pendingFadeIn = false;
+        _directLoadTrack(newTrack);
+      }
     }
   }
 
@@ -766,7 +778,13 @@ class PlaylistTransportController {
   /// 先読みを始める時刻か見る（定期チェック）
   @visibleForTesting
   void checkPreload() {
-    if (!host.mounted || !isPlaylist || host.initialLoading) return;
+    if (!host.mounted) {
+      // 持ち主がいなくなった（ミニプレイヤー中に別の再生が始まった）。監視も止める
+      _checkTimer?.cancel();
+      _checkTimer = null;
+      return;
+    }
+    if (!isPlaylist || host.initialLoading) return;
     if (_isPreloading || _preloadedIndex != null) return;
 
     // 連続失敗時はバックオフ（失敗数 × 10秒）、上限5回で停止
@@ -894,16 +912,16 @@ class PlaylistTransportController {
 /// 本番の [TransportDeck]: PlaylistEngine とプロバイダーを毎回読みに行く
 /// （鳴っている側・先読み側のプレイヤーはスロットの入れ替えで変わる）
 class EngineTransportDeck implements TransportDeck {
-  EngineTransportDeck(this._ref);
+  EngineTransportDeck(this._read);
 
-  final WidgetRef _ref;
+  final ProviderReader _read;
 
-  PlaylistEngine get _engine => _ref.read(playlistEngineProvider);
-  LoopNotifier get _loop => _ref.read(loopProvider.notifier);
+  PlaylistEngine get _engine => _read(playlistEngineProvider);
+  LoopNotifier get _loop => _read(loopProvider.notifier);
 
   @override
   PlaylistPlayerNotifier get playlist =>
-      _ref.read(playlistPlayerProvider.notifier);
+      _read(playlistPlayerProvider.notifier);
 
   @override
   AdvanceReadiness readiness({int? preloadedIndex, int? pendingJumpIndex}) =>
@@ -913,13 +931,13 @@ class EngineTransportDeck implements TransportDeck {
   @override
   Future<Object?> preparePreload(PlaylistTrack track,
           {required bool Function() isStale}) =>
-      _engine.prepare(_ref.read(preloadPlayerProvider), track,
+      _engine.prepare(_read(preloadPlayerProvider), track,
           isStale: isStale, downloadFirst: true);
 
   @override
   Future<void> prepareActive(PlaylistTrack track,
           {required bool Function() isStale}) =>
-      _engine.prepare(_ref.read(playerProvider), track, isStale: isStale);
+      _engine.prepare(_read(playerProvider), track, isStale: isStale);
 
   @override
   void armCrossfade(PlaylistTrack next) => _engine.armCrossfade(next);
@@ -943,30 +961,30 @@ class EngineTransportDeck implements TransportDeck {
   @override
   Duration? plannedCut() => _engine.plannedCut();
   @override
-  bool get crossfadeOn => _ref.read(crossfadeProvider) > 0;
+  bool get crossfadeOn => _read(crossfadeProvider) > 0;
 
   @override
-  Duration get position => _ref.read(playerProvider).state.position;
+  Duration get position => _read(playerProvider).state.position;
   @override
-  Duration get duration => _ref.read(playerProvider).state.duration;
+  Duration get duration => _read(playerProvider).state.duration;
   @override
-  void setVolume(double volume) => _ref.read(playerProvider).setVolume(volume);
+  void setVolume(double volume) => _read(playerProvider).setVolume(volume);
   @override
-  void seek(Duration position) => _ref.read(playerProvider).seek(position);
+  void seek(Duration position) => _read(playerProvider).seek(position);
   @override
-  void play() => _ref.read(playerProvider).play();
+  void play() => _read(playerProvider).play();
   @override
   String? get activeOpenedUri =>
-      _ref.read(playerProvider).state.playlist.medias.firstOrNull?.uri;
+      _read(playerProvider).state.playlist.medias.firstOrNull?.uri;
 
   @override
-  void stopPreload() => _ref.read(preloadPlayerProvider).stop();
+  void stopPreload() => _read(preloadPlayerProvider).stop();
   @override
   String? get preloadOpenedUri =>
-      _ref.read(preloadPlayerProvider).state.playlist.medias.firstOrNull?.uri;
+      _read(preloadPlayerProvider).state.playlist.medias.firstOrNull?.uri;
 
   @override
-  LoopState get loopState => _ref.read(loopProvider);
+  LoopState get loopState => _read(loopProvider);
   @override
   set onBPointReached(bool Function()? callback) =>
       _loop.onBPointReached = callback;

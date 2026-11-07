@@ -789,7 +789,7 @@ class PlaylistEngine {
     return Loudness.carry(fromVolume, from?.loudnessDb, to?.loudnessDb);
   }
 
-  /// プレイリスト再生のひと続きの番号。ミニプレイヤーの進行役（MiniPlayerTransport）は
+  /// プレイリスト再生のひと続きの番号。ミニプレイヤー中の進行役（startMiniTransport）は
   /// 作られたときの値を覚え、変わっていたら何もしない。
   /// 以前は別の曲を開いても進行役が止まらず、途中だった先読みが終わると
   /// プレイリストの次の曲を読み込んでクロスフェードを予約し、単体再生の曲末で鳴り出していた

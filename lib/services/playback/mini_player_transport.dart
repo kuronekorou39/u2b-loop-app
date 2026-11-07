@@ -1,218 +1,121 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
-import '../../models/playlist_mode.dart' as pl;
+import '../../core/audio/loudness.dart';
+import '../../models/loop_item.dart';
 import '../../models/playlist_track.dart';
-import '../../providers/loop_provider.dart';
+import '../../models/video_source.dart';
+import '../../providers/data_provider.dart';
 import '../../providers/mini_player_provider.dart';
+import '../../providers/player_provider.dart';
 import '../../providers/playlist_engine.dart';
 import '../../providers/playlist_player_provider.dart';
-import 'pip_bridge.dart';
+import '../waveform_cache.dart';
+import 'playlist_transport.dart';
 
-/// ミニプレイヤー中（再生画面を閉じた後）のプレイリスト進行。
+/// ミニプレイヤー中（再生画面を閉じた後）のプレイリスト進行を始める。
 ///
-/// 再生画面の dispose 後も動く必要があるので ref / mounted / BuildContext に依存せず、
-/// 作るときに engine と各 Notifier を受け取る。遷移の機構（URL 解決・プリロード・
-/// スロット入替・区間適用）は PlaylistEngine に集約してあり、再生画面側と同じ実装を通る。
-/// ここに組み立てるのは「画面が無いときの振る舞い」だけ:
-/// B 点・曲終了で次へ、未準備なら頭からやり直して止めない、通知・PiP のボタン
-class MiniPlayerTransport {
-  /// [preloadedIndex] は再生画面がもう先読みして予約してある次曲の番号。
-  /// 渡されれば読み直さず、その予約をそのまま使う（捨てると同じ曲をもう一度落とすことになる）
-  MiniPlayerTransport({
-    required this.engine,
-    required this.loop,
-    required this.playlist,
-    required this.mini,
-    int? preloadedIndex,
-  }) : _preloadedIdx = preloadedIndex;
+/// 進行の手順は再生画面と同じ [PlaylistTransportController]。画面の代わりに
+/// [MiniTransportHost] を付けるだけなので、直すときは 1 か所で済む
+/// （以前は MiniPlayerTransport という別実装があり、片方だけ直す事故が起きていた）。
+///
+/// [read] は ProviderContainer.read（画面の dispose 後も使える）。
+/// [preloadedIndex] は再生画面がもう先読みして予約してある次曲の番号（読み直さない）
+PlaylistTransportController startMiniTransport(ProviderReader read,
+    {int? preloadedIndex}) {
+  final transport = PlaylistTransportController(
+    deck: EngineTransportDeck(read),
+    host: MiniTransportHost(read),
+    isPlaylist: true,
+  )..setupCallbacks();
+  if (preloadedIndex != null) transport.adoptPreloaded(preloadedIndex);
+  // 画面が途中まで読んでいた分も捨てない（予約が無ければ監視が残り時間で読みに行く）
+  transport.startPreloadMonitor(keepPreload: true);
+  return transport;
+}
 
-  final PlaylistEngine engine;
-  final LoopNotifier loop;
-  final PlaylistPlayerNotifier playlist;
-  final MiniPlayerNotifier mini;
+/// 画面の無いときの [TransportHost]。映像・波形はプロバイダーに入れておくだけ
+/// （再生画面に戻ったときに今の曲のものが出る）。字幕・1 番だけの切断点・
+/// 波形の先読みは画面にしか無いので何もしない
+class MiniTransportHost implements TransportHost {
+  MiniTransportHost(this._read) : _session = _read(playlistEngineProvider).session;
 
-  int? _preloadedIdx;
-  bool _isPreloading = false;
-  DateTime? _lastReplayAt;
+  final ProviderReader _read;
 
   /// 作られたときのプレイリスト再生の番号（[PlaylistEngine.session]）
-  late final int _session;
+  final int _session;
 
-  /// 別の曲・別のプレイリストが始まった（またはこのプレイリストの再生画面に戻った）
-  bool get _ended => engine.session != _session;
+  PlaylistEngine get _engine => _read(playlistEngineProvider);
 
-  /// ループのコールバックを握り、最初のプリロードを始める
-  void start() {
-    _session = engine.session;
-    loop.onBPointReached = () {
-      if (_ended) return false;
-      if (playlist.currentState.repeatMode == pl.RepeatMode.single) {
-        return false;
-      }
-      final readiness = engine.readiness(preloadedIndex: _preloadedIdx);
-      if (readiness == AdvanceReadiness.sameItem ||
-          readiness == AdvanceReadiness.preloaded) {
-        _advance(readiness);
-        return true;
-      }
-      if (readiness == AdvanceReadiness.none) {
-        // リピートなしで最後の曲: ループせずにそこで止める
-        unawaited(engine.pauseAtPlaylistEnd().then((_) => notifyPlayState()));
-        return true;
-      }
-      // 未準備 → AB ループ継続、裏でプリロードを確保
-      if (!_isPreloading) _preloadNext();
-      return false;
-    };
+  /// 別の曲・別のプレイリストが始まった（またはこのプレイリストの再生画面に戻った）ら false
+  @override
+  bool get mounted => _engine.session == _session;
 
-    loop.onTrackEnd = () {
-      if (_ended) return;
-      final readiness = engine.readiness(preloadedIndex: _preloadedIdx);
-      if (readiness == AdvanceReadiness.sameItem ||
-          readiness == AdvanceReadiness.preloaded) {
-        _advance(readiness);
-      } else if (readiness == AdvanceReadiness.notReady) {
-        _replayCurrent();
-        if (!_isPreloading) _preloadNext();
-      }
-    };
+  @override
+  bool get initialLoading => false;
 
-    _preloadNext();
-  }
+  @override
+  void refresh() {}
 
-  // --- 通知・PiP のボタンから ---
+  /// 画面ごとの開き直しは無い。進行役が鳴っている側に直接開く
+  @override
+  bool reloadCurrent() => false;
 
-  Future<void> playPause() async {
-    await engine.activePlayer.playOrPause();
-    notifyPlayState();
-  }
-
-  void next() {
-    if (_ended) return;
-    final readiness = engine.readiness(preloadedIndex: _preloadedIdx);
-    if (readiness == AdvanceReadiness.none) return;
-    if (readiness == AdvanceReadiness.notReady) {
-      if (!_isPreloading) _preloadNext();
-      return;
-    }
-    _advance(readiness);
-  }
-
-  /// 前の曲。同一アイテムの別区間ならシーク、違う曲ならアクティブ側に直接読み込む
-  Future<void> prev() async {
-    if (_ended) return;
-    final ps = playlist.currentState;
-    final prevIdx = ps.peekPrevTrackIndex();
-    if (prevIdx == null) return;
-    final prevTrack = ps.tracks[prevIdx];
-    final current = ps.currentTrack;
-    if (current != null && prevTrack.isSameItem(current)) {
-      if (!playlist.prev()) return;
-      final track = playlist.currentState.currentTrack;
-      if (track != null) _seekToTrack(track);
-      return;
-    }
-    try {
-      await engine.prepare(engine.activePlayer, prevTrack,
-          isStale: () => _ended);
-      if (_ended) return;
-      playlist.jumpTo(prevIdx);
-      final track = playlist.currentState.currentTrack;
-      if (track == null) return;
-      engine.activePlayer.play();
-      engine.applyRegion(track);
-      loop.setCurrentItem(track.item.id);
-      mini.updateCurrentItem(track.item,
-          trackIndex: playlist.currentState.currentTrackIndex);
-      _preloadedIdx = null;
-      _preloadNext();
-    } catch (e) {
-      debugPrint('[MiniPlayer] 前トラックの読み込みに失敗: $e');
-    }
-  }
-
-  /// 再生状態を PiP と通知に伝える
-  void notifyPlayState() => PipBridge.notifyPlayState(
-        playing: engine.activePlayer.state.playing,
-        item: mini.currentState.item,
-      );
-
-  // --- 内部 ---
-
-  /// 次トラックをプリロードプレイヤーに読み込む
-  Future<void> _preloadNext() async {
-    if (_ended || _isPreloading || _preloadedIdx != null) return;
-    final ps = playlist.currentState;
-    final nextIdx = ps.peekNextTrackIndex();
-    if (nextIdx == null) return;
-    final nextTrack = ps.tracks[nextIdx];
-    final current = ps.currentTrack;
-    // 同一アイテムは遷移時のシークだけで済むためプリロード不要
-    if (current != null && nextTrack.isSameItem(current)) return;
-
-    _isPreloading = true;
-    try {
-      await engine.prepare(engine.preloadPlayer, nextTrack,
-          isStale: () => _ended, downloadFirst: true);
-      // 先読み中に別の曲が始まっていたら、予約もしない（単体再生の曲末で鳴り出す）
-      if (_ended) return;
-      _preloadedIdx = nextIdx;
-      engine.armCrossfade(nextTrack);
-    } catch (e) {
-      debugPrint('[MiniPlayer] プリロード失敗: $e');
-    } finally {
-      _isPreloading = false;
-    }
-  }
-
-  void _advance(AdvanceReadiness readiness) {
-    if (_ended || !playlist.next()) return;
-    final track = playlist.currentState.currentTrack;
-    if (track == null) return;
-    if (readiness == AdvanceReadiness.sameItem) {
-      _seekToTrack(track);
-    } else {
-      _swapToPreloaded(track);
-    }
-  }
-
-  /// プリロード済みプレイヤーにスワップして再生開始
-  void _swapToPreloaded(PlaylistTrack track) {
-    _preloadedIdx = null;
-    engine.swapSlots();
-    engine.applyRegion(track);
-    loop.setCurrentItem(track.item.id);
-    mini.updateCurrentItem(track.item,
-        trackIndex: playlist.currentState.currentTrackIndex);
-    _preloadNext();
-  }
-
-  /// 同一アイテムの別区間にシーク
-  void _seekToTrack(PlaylistTrack track) {
+  @override
+  void loadTrackRegion(PlaylistTrack track) {
+    _engine.applyRegion(track);
     if (track.startMs != null) {
-      engine.activePlayer.seek(Duration(milliseconds: track.startMs!));
+      try {
+        _read(playerProvider).seek(Duration(milliseconds: track.startMs!));
+      } catch (_) {}
     }
-    engine.applyRegion(track);
-    mini.updateCurrentItem(track.item,
-        trackIndex: playlist.currentState.currentTrackIndex);
   }
 
-  /// 未準備のまま曲が終わった場合に、同じ曲を頭からやり直して再生を止めない。
-  /// タイマーと completed の二重発火や極短トラックでの連続やり直しで
-  /// フリーズしないよう 1 秒間は抑制する
-  void _replayCurrent() {
-    final now = DateTime.now();
-    if (_lastReplayAt != null &&
-        now.difference(_lastReplayAt!) <= const Duration(seconds: 1)) {
-      return;
-    }
-    _lastReplayAt = now;
-    try {
-      engine.activePlayer
-        ..seek(Duration.zero)
-        ..play();
-    } catch (_) {}
+  @override
+  void showSource(PlaylistTrack track, {String? openedUri}) {
+    final item = track.item;
+    _read(videoSourceProvider.notifier).state = VideoSource(
+      type: item.isYouTube ? VideoSourceType.youtube : VideoSourceType.local,
+      uri: openedUri ?? item.uri,
+      title: item.title,
+      videoId: item.videoId,
+      thumbnailUrl: item.thumbnailUrl,
+    );
+  }
+
+  /// 保存済みの波形があれば出しておく（無ければ空。画面に戻ったときに作る）
+  @override
+  void showWaveform(PlaylistTrack track) {
+    final id = track.item.id;
+    final data = _read(waveformDataProvider.notifier);
+    data.state = null;
+    _read(waveformErrorProvider.notifier).state = null;
+    _read(waveformLoadingProvider.notifier).state = false;
+    unawaited(WaveformCache.load(id).then((cached) {
+      if (cached == null || !mounted) return;
+      if (_read(miniPlayerProvider).item?.id != id) return;
+      data.state = cached;
+    }).catchError((_) {}));
+  }
+
+  @override
+  void endLoading() {}
+
+  /// ミニプレイヤーの表示（曲名・サムネ・番号）を切り替える
+  @override
+  void onTrackSwitched(PlaylistTrack track) {
+    final ps = _read(playlistPlayerProvider);
+    _read(miniPlayerProvider.notifier)
+        .updateCurrentItem(track.item, trackIndex: ps.currentTrackIndex);
+  }
+
+  @override
+  void onPreloaded(PlaylistTrack track, Object? manifest,
+      {required bool Function() stillCurrent}) {}
+
+  @override
+  double normalizedVolume(LoopItem item) {
+    if (!_read(volumeNormProvider)) return 100.0;
+    final latest = _read(loopItemsProvider.notifier).byId(item.id) ?? item;
+    return Loudness.volumeFor(latest.loudnessDb);
   }
 }

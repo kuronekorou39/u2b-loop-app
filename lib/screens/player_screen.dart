@@ -160,7 +160,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// プレイリストの進行（先読み・自動遷移・手動の前後と選曲・1 番だけモードのフェード）
   late final _transport = PlaylistTransportController(
-    deck: EngineTransportDeck(ref),
+    deck: EngineTransportDeck(ref.read),
     host: this,
     isPlaylist: _isPlaylist,
   );
@@ -181,8 +181,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _wasPlayingBeforePause = false;
 
   /// ミニプレイヤー中（この画面の dispose 後）のプレイリスト進行と、通知・PiP のボタン。
-  /// ref/mounted に依存しないので dispose 後も動く
-  MiniPlayerTransport? _miniTransport;
+  /// 画面と同じ PlaylistTransportController を、画面の無い受け口で動かす
+  PlaylistTransportController? _miniTransport;
 
   /// 字幕の用意（オフライン SRT / YouTube 取得 / 言語の選び直し）
   late final _subtitles = SubtitleLoader(ref, isMounted: () => mounted);
@@ -395,16 +395,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         onAction: (action) async {
           switch (action) {
             case PipAction.playPause:
-              if (transport != null) {
-                await transport.playPause();
-              } else {
-                await engine.activePlayer.playOrPause();
-                notify();
-              }
+              await engine.activePlayer.playOrPause();
+              notify();
             case PipAction.next:
-              transport?.next();
+              await transport?.manualNext();
             case PipAction.prev:
-              await transport?.prev();
+              await transport?.manualPrev();
           }
         },
         onAudioDeviceChanged: (device) => audioDevice.state = device,
@@ -443,7 +439,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   @override
-  void reloadCurrent() => _loadItem();
+  bool reloadCurrent() {
+    _loadItem();
+    return true;
+  }
 
   @override
   void loadTrackRegion(PlaylistTrack track) => _loadTrackRegion(track);
@@ -1389,13 +1388,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_isPlaylist) {
       // 先読み済みの次曲（✓）は進行役に引き継ぐ（読み直さない）。読み込み中の分は
       // 画面と一緒に止まるので、進行役が自分で読みに行く
-      _miniTransport = MiniPlayerTransport(
-        engine: ref.read(playlistEngineProvider),
-        loop: ref.read(loopProvider.notifier),
-        playlist: ref.read(playlistPlayerProvider.notifier),
-        mini: ref.read(miniPlayerProvider.notifier),
+      _miniTransport = startMiniTransport(
+        ProviderScope.containerOf(context, listen: false).read,
         preloadedIndex: _transport.preloadedIndex,
-      )..start();
+      );
     }
   }
 
