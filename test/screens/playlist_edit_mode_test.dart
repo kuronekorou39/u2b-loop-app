@@ -127,4 +127,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('外しました'), findsNothing);
   });
+
+  testWidgets('横画面: AppBar の代わりに左の列の上に「プレイリスト」の行、曲の一覧は右で画面の上から',
+      (tester) async {
+    tester.view.physicalSize = const Size(2700, 1236);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const ProviderScope(
+        child: MaterialApp(home: PlaylistDetailScreen(playlistId: 'p'))));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppBar), findsNothing);
+    final back = tester.getRect(find.byType(BackButton));
+    final title = tester.getRect(find.text('リスト'));
+    final play = tester.getRect(find.text('再生'));
+    final song = tester.getRect(find.text('曲 a'));
+    // 戻る → 名前 → 再生 の順に左の列を下へ。曲は右の列で、戻るの行と同じ高さから
+    expect(title.top, greaterThan(back.bottom));
+    expect(play.top, greaterThan(title.bottom));
+    expect(song.left, greaterThan(play.right));
+    expect(song.top, lessThan(title.top));
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -30,6 +30,8 @@ class FullscreenPlayerView extends StatelessWidget {
     this.subtitle = '',
     required this.bottomInset,
     required this.showOverlay,
+    this.overlayPinned = false,
+    this.onToggleOverlayPin,
     required this.drawerOpen,
     required this.drawer,
     required this.onToggleOverlay,
@@ -51,6 +53,10 @@ class FullscreenPlayerView extends StatelessWidget {
   final String subtitle;
   final double bottomInset;
   final bool showOverlay;
+
+  /// コントロールを出したままにする（上の帯のピン。全画面だけで出す）
+  final bool overlayPinned;
+  final VoidCallback? onToggleOverlayPin;
   final bool drawerOpen;
   final Widget drawer;
   final VoidCallback onToggleOverlay;
@@ -178,6 +184,17 @@ class FullscreenPlayerView extends StatelessWidget {
                               ],
                             ),
                           ),
+                          if (onToggleOverlayPin != null)
+                            IconButton(
+                              onPressed: onToggleOverlayPin,
+                              tooltip: overlayPinned
+                                  ? 'コントロールの固定を外す'
+                                  : 'コントロールを固定する',
+                              color: overlayPinned ? AppTheme.accentGreen : white,
+                              icon: Icon(overlayPinned
+                                  ? Icons.push_pin
+                                  : Icons.push_pin_outlined),
+                            ),
                           IconTheme(
                             data: const IconThemeData(color: white),
                             child: SubtitleToggleButton(

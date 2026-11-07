@@ -74,6 +74,8 @@ class SettingsKeys {
   static const homeTagView = 'home_tag_view';
   static const homePlaylistGrid = 'home_playlist_grid';
   static const tagOrderHintSeen = 'tag_order_hint_seen';
+  /// 全画面のコントロールを出したままにする（上の帯のピン）
+  static const fullscreenControlsPinned = 'fullscreen_controls_pinned';
 
   // 隠しステータスの解放フラグ（設定のバージョン行を 5 回タップ）
   static const eeStats = 'ee_stats';

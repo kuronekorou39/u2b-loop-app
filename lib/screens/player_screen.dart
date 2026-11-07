@@ -128,6 +128,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _showFullscreenOverlay = true;
   bool _showRightDrawer = false;
   Timer? _overlayHideTimer;
+
+  /// 全画面のコントロールを自動で隠さない（上の帯のピン。保存して次も同じ）
+  bool _overlayPinned = AppBoxes.settings
+      .get(SettingsKeys.fullscreenControlsPinned, defaultValue: false) as bool;
   bool _hideVideo = false;
 
   /// 中段パネル（プレイリスト: トラック一覧、単体: AB 区間）を開いているか。
@@ -1441,9 +1445,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _resetOverlayTimer() {
     _overlayHideTimer?.cancel();
+    if (_overlayPinned) return;
     _overlayHideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showFullscreenOverlay = false);
     });
+  }
+
+  /// 全画面のコントロールのピン: 留めると自動で消えない（タップで隠すことはできる）
+  void _toggleOverlayPin() {
+    setState(() => _overlayPinned = !_overlayPinned);
+    AppBoxes.settings.put(SettingsKeys.fullscreenControlsPinned, _overlayPinned);
+    _resetOverlayTimer();
   }
 
   /// 全画面の右ドロワー（モード別）。一覧と最小限の操作だけ。
@@ -1521,6 +1533,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           : null,
       bottomInset: bottomInset,
       showOverlay: _showFullscreenOverlay,
+      overlayPinned: _overlayPinned,
+      onToggleOverlayPin: _toggleOverlayPin,
       drawerOpen: _showRightDrawer,
       drawer: _buildFullscreenDrawer(bottomInset),
       onToggleOverlay: _toggleFullscreenOverlay,

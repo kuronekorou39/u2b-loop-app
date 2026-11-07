@@ -22,6 +22,7 @@ import '../providers/thumb_tone_provider.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/glass_scaffold.dart';
+import '../widgets/detail_split.dart';
 import '../widgets/glass_surface.dart';
 import '../widgets/item_tag_sheet.dart';
 import '../widgets/item_thumbnail.dart';
@@ -438,6 +439,41 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ? null
         : ref.watch(thumbToneProvider(thumbPath)).valueOrNull;
 
+    // 横画面は AppBar を置かず、左の列の一番上に同じ行（戻る・保存・その他）
+    final split = DetailSplit.of(MediaQuery.sizeOf(context));
+    final actions = <Widget>[
+      if (_hasChanges(item))
+        TextButton.icon(
+          onPressed: () => _save(item),
+          icon: const Icon(Icons.save, size: AppIconSizes.sm),
+          label: const Text('保存'),
+        ),
+      PopupMenuButton<String>(
+        onSelected: (v) {
+          if (v == 'duplicate') _duplicateItem(item);
+          if (v == 'playlist') _showAddToPlaylist(item);
+          if (v == 'offline_save') _saveItem(item);
+          if (v == 'offline_delete') _clearOffline(item);
+          if (v == 'delete') _deleteItem(item);
+        },
+        itemBuilder: (_) => [
+          const PopupMenuItem(
+              value: 'duplicate', child: Text('複製')),
+          const PopupMenuItem(
+              value: 'playlist', child: Text('プレイリストに追加')),
+          const PopupMenuItem(
+              value: 'offline_save', child: Text('保存・書き出し')),
+          if (item.isCached)
+            const PopupMenuItem(
+                value: 'offline_delete', child: Text('アプリ内の保存を削除')),
+          const PopupMenuItem(
+              value: 'delete',
+              child:
+                  Text('削除', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    ];
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -455,50 +491,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
         tone: tone,
         title: Text('詳細', style: textTheme.titleMedium),
-        actions: [
-            if (_hasChanges(item))
-              TextButton.icon(
-                onPressed: () => _save(item),
-                icon: const Icon(Icons.save, size: AppIconSizes.sm),
-                label: const Text('保存'),
-              ),
-            PopupMenuButton<String>(
-              onSelected: (v) {
-                if (v == 'duplicate') _duplicateItem(item);
-                if (v == 'playlist') _showAddToPlaylist(item);
-                if (v == 'offline_save') _saveItem(item);
-                if (v == 'offline_delete') _clearOffline(item);
-                if (v == 'delete') _deleteItem(item);
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                    value: 'duplicate', child: Text('複製')),
-                const PopupMenuItem(
-                    value: 'playlist', child: Text('プレイリストに追加')),
-                const PopupMenuItem(
-                    value: 'offline_save', child: Text('保存・書き出し')),
-                if (item.isCached)
-                  const PopupMenuItem(
-                      value: 'offline_delete', child: Text('アプリ内の保存を削除')),
-                const PopupMenuItem(
-                    value: 'delete',
-                    child:
-                        Text('削除', style: TextStyle(color: Colors.red))),
-              ],
-            ),
-          ],
+        showAppBar: !split,
+        actions: actions,
         // 本文の上端は bodyBuilder の context から（AppBar の高さが入る）
         bodyBuilder: (bodyContext) {
               final padding = MediaQuery.paddingOf(bodyContext);
               final viewPadding = MediaQuery.viewPaddingOf(bodyContext);
               final dim = Theme.of(context).colorScheme.onSurface;
-              return ListView(
-                padding: EdgeInsets.fromLTRB(
-                    AppSpacing.lg + viewPadding.left,
-                    padding.top + AppSpacing.xs,
-                    AppSpacing.lg + viewPadding.right,
-                    padding.bottom + AppSpacing.xxl),
-                children: [
+              // 左（横画面は左の列）: サムネ・曲名・再生などのボタン
+              final head = <Widget>[
                   // サムネイル
                   ClipRRect(
                     borderRadius: AppRadius.borderXl,
@@ -552,14 +553,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   const SizedBox(height: AppSpacing.lg),
 
                   // 再生 / AB 設定 / オフライン / URL
-                  Row(
+                  Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: AppSpacing.md,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       GreenButton(
                         icon: Icons.play_arrow_rounded,
                         label: '再生',
                         onPressed: () => _openPlayer(item),
                       ),
-                      const SizedBox(width: AppSpacing.md),
                       GlassPill(
                         onTap: () => _openAbEditor(item),
                         tooltip: 'AB 区間を設定',
@@ -573,7 +576,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         ),
                       ),
                       ...[
-                        const SizedBox(width: AppSpacing.md),
                         GlassPill(
                           active: item.isCached,
                           tooltip: item.isCached
@@ -591,7 +593,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         ),
                       ],
                       if (ytUrl != null) ...[
-                        const SizedBox(width: AppSpacing.md),
                         GlassPill(
                           tooltip: 'URL をコピー（長押しで開く）',
                           padding: const EdgeInsets.all(10),
@@ -602,8 +603,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       ],
                     ],
                   ),
-                  const SizedBox(height: AppSpacing.xl),
-
+              ];
+              // 右（横画面は右の列）: 区間・テンポとキー・タグ・メモ
+              final body = <Widget>[
                   // 再生できないと分かっている曲（年齢制限など）。通信の失敗のこともあるので試し直せる
                   if (item.isUnplayable) ...[
                     _buildUnplayableNotice(item),
@@ -663,6 +665,57 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       ],
                     ),
                   ),
+              ];
+              if (split) {
+                final size = MediaQuery.sizeOf(context);
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: DetailSplit.sideWidth(size),
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(
+                            AppSpacing.lg + viewPadding.left,
+                            padding.top,
+                            AppSpacing.lg,
+                            padding.bottom + AppSpacing.xxl),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                            child: Transform.translate(
+                              // 戻るボタンの左端をサムネの左端に揃える
+                              offset: const Offset(-AppSpacing.md, 0),
+                              child: DetailSplitTopBar(
+                                  title: '詳細', actions: actions),
+                            ),
+                          ),
+                          ...head,
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(
+                            AppSpacing.sm,
+                            padding.top + AppSpacing.md,
+                            AppSpacing.lg + viewPadding.right,
+                            padding.bottom + AppSpacing.xxl),
+                        children: body,
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return ListView(
+                padding: EdgeInsets.fromLTRB(
+                    AppSpacing.lg + viewPadding.left,
+                    padding.top + AppSpacing.xs,
+                    AppSpacing.lg + viewPadding.right,
+                    padding.bottom + AppSpacing.xxl),
+                children: [
+                  ...head,
+                  const SizedBox(height: AppSpacing.xl),
+                  ...body,
                 ],
               );
         },

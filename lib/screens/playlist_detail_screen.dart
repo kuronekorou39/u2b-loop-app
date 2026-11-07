@@ -22,6 +22,7 @@ import '../widgets/empty_hint.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/glass_scaffold.dart';
+import '../widgets/detail_split.dart';
 import '../widgets/glass_surface.dart';
 import '../widgets/item_thumbnail.dart';
 import '../widgets/tag_chip.dart';
@@ -409,6 +410,286 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ? null
         : ref.watch(thumbToneProvider(thumbPath)).valueOrNull;
 
+    // 横画面は AppBar を置かず、左の列の上に「プレイリスト」の行（戻る・編集・その他）を
+    // 置く。右の曲の一覧は画面の上まで使う
+    final split = DetailSplit.of(MediaQuery.sizeOf(context));
+    final actions = <Widget>[
+      // 編集モードは「完了」だけ（同じ場所に「編集」と入れ替わる）
+      if (_editing)
+        TextButton.icon(
+          onPressed: () => setState(() => _editing = false),
+          icon: const Icon(Icons.check, size: AppIconSizes.sm),
+          label: const Text('完了'),
+          style: TextButton.styleFrom(foregroundColor: AppTheme.accentGreen),
+        )
+      else if (items.isNotEmpty)
+        IconButton(
+          icon: const Icon(Icons.edit_note),
+          tooltip: '編集（並べ替え・外す）',
+          onPressed: () => setState(() => _editing = true),
+        ),
+      if (!_editing)
+        PopupMenuButton<_PlaylistMenu>(
+          tooltip: 'その他',
+          onSelected: (m) => switch (m) {
+            _PlaylistMenu.share => _sharePlaylist(pl, items),
+            _PlaylistMenu.saveAll => _saveAll(pl, items),
+            _PlaylistMenu.analyze => _analyzeUnanalyzed(pl, items),
+            _PlaylistMenu.sortByCompatibility =>
+              _sortByCompatibility(pl, items),
+            _PlaylistMenu.delete => _deletePlaylist(pl),
+          },
+          itemBuilder: (_) {
+            final unanalyzed = AudioAnalysisService.unanalyzed(items).length;
+            final bulk = ref.read(bulkAnalysisProvider);
+            return [
+              if (items.isNotEmpty) ...[
+              const PopupMenuItem(
+                value: _PlaylistMenu.share,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.share_outlined),
+                  title: Text('共有'),
+                ),
+              ),
+              const PopupMenuItem(
+                value: _PlaylistMenu.saveAll,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.download_outlined),
+                  title: Text('まとめて保存'),
+                  subtitle: Text('アプリ内に保存 / 端末に書き出し'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _PlaylistMenu.analyze,
+                // 動いている間は 2 つ目を始めない（音声のダウンロードが詰まる）
+                enabled: unanalyzed > 0 && bulk == null,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.music_note),
+                  title: const Text('テンポ/キーをまとめて解析'),
+                  subtitle: Text(bulk != null
+                      ? '解析中 ${bulk.index} / ${bulk.total}'
+                      : unanalyzed > 0
+                          ? '未解析・要更新 $unanalyzed 曲を順に解析'
+                          : 'すべて解析済み'),
+                ),
+              ),
+              const PopupMenuItem(
+                value: _PlaylistMenu.sortByCompatibility,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.join_inner),
+                  title: Text('相性順に並べ替え'),
+                  subtitle: Text('テンポとキーが近い曲が続くように'),
+                ),
+              ),
+              const PopupMenuDivider(),
+              ],
+              const PopupMenuItem(
+                value: _PlaylistMenu.delete,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.delete_outline, color: Colors.redAccent),
+                  title: Text('プレイリストを削除',
+                      style: TextStyle(color: Colors.redAccent)),
+                ),
+              ),
+            ];
+          },
+        ),
+    ];
+    // サムネイル + 写真ボタン。[frame] で大きさを決める（縦は小さく、横は列の幅いっぱい）
+    Widget thumb(Widget Function(Widget child) frame) =>
+      Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: frame(
+              thumbItem != null
+                  ? ItemThumbnail(item: thumbItem, iconSize: AppIconSizes.sm)
+                  : Container(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.08),
+                      child: Icon(Icons.playlist_play,
+                          color: AppTheme.muted(context), size: 40),
+                    ),
+            ),
+          ),
+          if (items.isNotEmpty)
+            Positioned(
+              right: 2,
+              top: 2,
+              child: IconButton(
+                onPressed: () => _selectThumbnail(pl, items),
+                tooltip: 'サムネイルを選ぶ',
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black54,
+                  foregroundColor: Colors.white70,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: AppRadius.borderSm),
+                ),
+                icon: const Icon(Icons.photo_camera,
+                    size: AppIconSizes.s),
+              ),
+            ),
+        ],
+      );
+    // タイトル + 曲数 + 自動で入れるタグ
+    final titleBlock = <Widget>[
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              pl.name,
+              style: textTheme.titleLarge,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            onPressed: () => _renamePlaylist(pl),
+            tooltip: '名前を変更',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.edit,
+                size: AppIconSizes.sm,
+                color: AppTheme.muted(context)),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      Text('${items.length} 曲',
+          style: textTheme.bodyMedium
+              ?.copyWith(color: AppTheme.muted(context))),
+      // 自動で入れるタグ（タップで変更）
+      if ([
+        for (final t in tags)
+          if (pl.tagIds.contains(t.id)) t
+      ] case final autoTags when autoTags.isNotEmpty) ...[
+        const SizedBox(height: AppSpacing.sm),
+        InkWell(
+          borderRadius: AppRadius.borderSm,
+          onTap: () => _showTagPicker(pl),
+          child: Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Icon(Icons.autorenew,
+                  size: AppIconSizes.s,
+                  color: AppTheme.muted(context)),
+              for (final t in autoTags) TagChip(tag: t),
+            ],
+          ),
+        ),
+      ],
+    ];
+    // 再生・シャッフル（横画面の左の列が狭いときは折り返す）
+    final buttons = Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.md,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (items.isNotEmpty)
+          GreenButton(
+            icon: Icons.play_arrow_rounded,
+            label: '再生',
+            size: 38,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PlayerScreen(
+                  item: items.first,
+                  playlistItems: items,
+                  regionSelections:
+                      pl.regionSelections.isNotEmpty
+                          ? pl.regionSelections
+                          : null,
+                  disabledItemIds:
+                      pl.disabledItemIds.isNotEmpty
+                          ? pl.disabledItemIds
+                          : null,
+                  playlistName: pl.name,
+                  playlistId: pl.id,
+                ),
+              ),
+            ),
+          ),
+        GlassPill(
+          active: pl.defaultShuffle,
+          tooltip: pl.defaultShuffle ? 'シャッフル再生' : '順に再生',
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg, vertical: 8),
+          onTap: () {
+            pl.defaultShuffle = !pl.defaultShuffle;
+            ref.read(playlistsProvider.notifier).update(pl);
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.shuffle,
+                  size: AppIconSizes.sm,
+                  color: pl.defaultShuffle
+                      ? AppTheme.accentGreen
+                      : null),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                'シャッフル',
+                style: textTheme.labelSmall!.copyWith(
+                  color: pl.defaultShuffle
+                      ? AppTheme.accentGreen
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final tallHeader = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          thumb((c) => SizedBox(width: 120, height: 90, child: c)),
+          const SizedBox(width: AppSpacing.xl),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...titleBlock,
+                const SizedBox(height: AppSpacing.lg),
+                buttons,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    // 横: 上に「プレイリスト」の行、大きいサムネ、その下にタイトルなど、再生・シャッフル
+    final splitHeader = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DetailSplitTopBar(title: 'プレイリスト', actions: actions),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              thumb((c) => AspectRatio(aspectRatio: 16 / 9, child: c)),
+              const SizedBox(height: AppSpacing.lg),
+              ...titleBlock,
+              const SizedBox(height: AppSpacing.lg),
+              buttons,
+            ],
+          ),
+        ),
+      ],
+    );
+
     return PopScope(
       // 編集モード中の「戻る」は編集を終えるだけ（画面は閉じない）
       canPop: !_editing,
@@ -419,265 +700,16 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
       tone: tone,
       title: Text('プレイリスト', style: textTheme.titleMedium),
-      actions: [
-          // 編集モードは「完了」だけ（同じ場所に「編集」と入れ替わる）
-          if (_editing)
-            TextButton.icon(
-              onPressed: () => setState(() => _editing = false),
-              icon: const Icon(Icons.check, size: AppIconSizes.sm),
-              label: const Text('完了'),
-              style: TextButton.styleFrom(foregroundColor: AppTheme.accentGreen),
-            )
-          else if (items.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.edit_note),
-              tooltip: '編集（並べ替え・外す）',
-              onPressed: () => setState(() => _editing = true),
-            ),
-          if (!_editing)
-            PopupMenuButton<_PlaylistMenu>(
-              tooltip: 'その他',
-              onSelected: (m) => switch (m) {
-                _PlaylistMenu.share => _sharePlaylist(pl, items),
-                _PlaylistMenu.saveAll => _saveAll(pl, items),
-                _PlaylistMenu.analyze => _analyzeUnanalyzed(pl, items),
-                _PlaylistMenu.sortByCompatibility =>
-                  _sortByCompatibility(pl, items),
-                _PlaylistMenu.delete => _deletePlaylist(pl),
-              },
-              itemBuilder: (_) {
-                final unanalyzed = AudioAnalysisService.unanalyzed(items).length;
-                final bulk = ref.read(bulkAnalysisProvider);
-                return [
-                  if (items.isNotEmpty) ...[
-                  const PopupMenuItem(
-                    value: _PlaylistMenu.share,
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.share_outlined),
-                      title: Text('共有'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: _PlaylistMenu.saveAll,
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.download_outlined),
-                      title: Text('まとめて保存'),
-                      subtitle: Text('アプリ内に保存 / 端末に書き出し'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: _PlaylistMenu.analyze,
-                    // 動いている間は 2 つ目を始めない（音声のダウンロードが詰まる）
-                    enabled: unanalyzed > 0 && bulk == null,
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.music_note),
-                      title: const Text('テンポ/キーをまとめて解析'),
-                      subtitle: Text(bulk != null
-                          ? '解析中 ${bulk.index} / ${bulk.total}'
-                          : unanalyzed > 0
-                              ? '未解析・要更新 $unanalyzed 曲を順に解析'
-                              : 'すべて解析済み'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: _PlaylistMenu.sortByCompatibility,
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.join_inner),
-                      title: Text('相性順に並べ替え'),
-                      subtitle: Text('テンポとキーが近い曲が続くように'),
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  ],
-                  const PopupMenuItem(
-                    value: _PlaylistMenu.delete,
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.delete_outline, color: Colors.redAccent),
-                      title: Text('プレイリストを削除',
-                          style: TextStyle(color: Colors.redAccent)),
-                    ),
-                  ),
-                ];
-              },
-            ),
-        ],
+      showAppBar: !split,
+      actions: actions,
       // 本文の上端は bodyBuilder の context から（AppBar の高さが入る）
       bodyBuilder: (bodyContext) => SafeArea(
         top: false,
         bottom: false,
         child: _DetailLayout(
           top: MediaQuery.paddingOf(bodyContext).top + AppSpacing.xs,
-          // ヘッダー
-          header: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // サムネイル + 編集ボタン
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: SizedBox(
-                        width: 120,
-                        height: 90,
-                        child: thumbItem != null
-                            ? ItemThumbnail(item: thumbItem, iconSize: AppIconSizes.sm)
-                            : Container(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.08),
-                                child: Icon(Icons.playlist_play,
-                                    color: AppTheme.muted(context), size: 40),
-                              ),
-                      ),
-                    ),
-                    if (items.isNotEmpty)
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: IconButton(
-                          onPressed: () => _selectThumbnail(pl, items),
-                          tooltip: 'サムネイルを選ぶ',
-                          visualDensity: VisualDensity.compact,
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.black54,
-                            foregroundColor: Colors.white70,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: AppRadius.borderSm),
-                          ),
-                          icon: const Icon(Icons.photo_camera,
-                              size: AppIconSizes.s),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: AppSpacing.xl),
-                // タイトル + 曲数 + ボタン
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              pl.name,
-                              style: textTheme.titleLarge,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => _renamePlaylist(pl),
-                            tooltip: '名前を変更',
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(Icons.edit,
-                                size: AppIconSizes.sm,
-                                color: AppTheme.muted(context)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text('${items.length} 曲',
-                          style: textTheme.bodyMedium
-                              ?.copyWith(color: AppTheme.muted(context))),
-                      // 自動で入れるタグ（タップで変更）
-                      if ([
-                        for (final t in tags)
-                          if (pl.tagIds.contains(t.id)) t
-                      ] case final autoTags when autoTags.isNotEmpty) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        InkWell(
-                          borderRadius: AppRadius.borderSm,
-                          onTap: () => _showTagPicker(pl),
-                          child: Wrap(
-                            spacing: AppSpacing.xs,
-                            runSpacing: AppSpacing.xs,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Icon(Icons.autorenew,
-                                  size: AppIconSizes.s,
-                                  color: AppTheme.muted(context)),
-                              for (final t in autoTags) TagChip(tag: t),
-                            ],
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: AppSpacing.lg),
-                      // 横画面の左の列は狭いので、入りきらなければ折り返す
-                      Wrap(
-                        spacing: AppSpacing.md,
-                        runSpacing: AppSpacing.md,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          if (items.isNotEmpty)
-                            GreenButton(
-                              icon: Icons.play_arrow_rounded,
-                              label: '再生',
-                              size: 38,
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => PlayerScreen(
-                                    item: items.first,
-                                    playlistItems: items,
-                                    regionSelections:
-                                        pl.regionSelections.isNotEmpty
-                                            ? pl.regionSelections
-                                            : null,
-                                    disabledItemIds:
-                                        pl.disabledItemIds.isNotEmpty
-                                            ? pl.disabledItemIds
-                                            : null,
-                                    playlistName: pl.name,
-                                    playlistId: pl.id,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          GlassPill(
-                            active: pl.defaultShuffle,
-                            tooltip: pl.defaultShuffle ? 'シャッフル再生' : '順に再生',
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.lg, vertical: 8),
-                            onTap: () {
-                              pl.defaultShuffle = !pl.defaultShuffle;
-                              ref.read(playlistsProvider.notifier).update(pl);
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.shuffle,
-                                    size: AppIconSizes.sm,
-                                    color: pl.defaultShuffle
-                                        ? AppTheme.accentGreen
-                                        : null),
-                                const SizedBox(width: AppSpacing.xs),
-                                Text(
-                                  'シャッフル',
-                                  style: textTheme.labelSmall!.copyWith(
-                                    color: pl.defaultShuffle
-                                        ? AppTheme.accentGreen
-                                        : null,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // ヘッダー（横は左の列に縦に積む）
+          header: split ? splitHeader : tallHeader,
           // まとめて解析の進み具合（このプレイリストで動いているときだけ）
           progress: _BulkAnalysisCard(playlistId: pl.id),
           // トラック一覧（1 枚のガラス面）
@@ -1034,7 +1066,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
 /// プレイリスト詳細の並べ方。縦は上からヘッダー・進み具合・曲の一覧。
 /// 横（幅が足りるとき）は左にヘッダーと進み具合、右に曲の一覧（縦のままだと
-/// ヘッダーで高さが埋まり、曲が 1〜2 行しか見えなかった）。左は収まらなければスクロール
+/// ヘッダーで高さが埋まり、曲が 1〜2 行しか見えなかった）。左は収まらなければスクロール。
+/// 横は AppBar を置かない（ヘッダーの上に同じ行がある）ので、[top] は状態バーの下
 class _DetailLayout extends StatelessWidget {
   const _DetailLayout({
     required this.top,
@@ -1049,16 +1082,10 @@ class _DetailLayout extends StatelessWidget {
   final Widget progress;
   final Widget list;
 
-  /// 横で左右に分ける最小の幅と、左の列の幅
-  static const splitMinWidth = 600.0;
-  static const sideMin = 320.0;
-  static const sideMax = 420.0;
-
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final split = size.width > size.height && size.width >= splitMinWidth;
-    if (!split) {
+    if (!DetailSplit.of(size)) {
       return Column(
         children: [
           SizedBox(height: top),
@@ -1068,7 +1095,7 @@ class _DetailLayout extends StatelessWidget {
         ],
       );
     }
-    final side = (size.width * 0.38).clamp(sideMin, sideMax).toDouble();
+    final side = DetailSplit.sideWidth(size);
     return Padding(
       padding: EdgeInsets.only(top: top),
       child: Row(
