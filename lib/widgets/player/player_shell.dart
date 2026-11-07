@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,10 +23,9 @@ import 'player_glass_bar.dart';
 /// 縮めて（レターボックス）コントローラーを優先する。曲名行とコントローラーの高さは
 /// 描画後に測って次のフレームで反映する。
 ///
-/// 横画面（[wide]）は同じ部品を左右に分ける: 左に [topBar]（AppBar の代わり）と動画、
-/// 右の脇（幅 [asideMin]〜[asideMax]）に曲名行とコントローラー。[panel] は縦と同じく
-/// 動画の上に重ねる（横画面でもコントローラーの高さは変わらないので、脇に入れると溢れる）。
-/// 脇が画面より高いとき（波形を開いた小さい端末）は脇だけスクロールする。
+/// 横画面（[wide]）は上の段に動画（左）と [topBar]（AppBar の代わり）・曲名行（右）、
+/// 下に横幅いっぱいのコントローラー（再生操作とピルを 1 行に詰めた形）。[panel] は
+/// 上の段に重ねる。デッキの板はコントローラーの上（動画の上）に浮く。
 class PlayerShell extends ConsumerStatefulWidget {
   const PlayerShell({
     super.key,
@@ -48,7 +49,7 @@ class PlayerShell extends ConsumerStatefulWidget {
   final Widget? panel;
   final Widget controller;
 
-  /// 横画面のレイアウト（左: 動画、右: 曲名行 + コントローラー）
+  /// 横画面のレイアウト（上: 動画と曲名行、下: コントローラー）
   final bool wide;
 
   /// [wide] のとき動画の上に出す 1 行（戻る・プレイリスト名・字幕・PiP など）。
@@ -61,10 +62,8 @@ class PlayerShell extends ConsumerStatefulWidget {
   /// 動画を縮めるときの下限（16:9 の高さに対する割合）
   static const videoMinScale = 0.6;
 
-  /// 横画面の脇（曲名行 + コントローラー）の幅。画面幅の 42% をこの範囲に収める
-  static const asideMin = 300.0;
-  static const asideMax = 420.0;
-  static const asideRatio = 0.42;
+  /// 横画面の動画の幅の上限（画面幅に対する割合。残りに曲名行）
+  static const wideVideoMaxWidth = 0.6;
 
   @override
   ConsumerState<PlayerShell> createState() => _PlayerShellState();
@@ -109,90 +108,81 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     );
   }
 
-  /// 横画面: 左に [PlayerShell.topBar] と動画（パネルはその上に重なる）、右の脇に曲名行と
-  /// コントローラー。脇は収まらなければスクロール（コントローラーは下に寄せたまま）
+  /// 横画面: 上の段に動画（左）と [PlayerShell.topBar]・曲名行・字幕（右）、下に横幅
+  /// いっぱいのコントローラー（再生操作とピルを 1 行に）。パネルは上の段に重ねる。
+  /// コントローラーを右の脇に置いていたときは、デッキの板（コントローラーの上に浮かせる）の
+  /// 場所が無く、上が画面の外に切れていた
   Widget _buildWide() {
     final mq = MediaQuery.of(context);
     // 横画面は AppBar を置かないので padding.top はステータスバーの分だけ
     final topInset = mq.padding.top;
-    final bottomInset = mq.viewPadding.bottom;
+    final sides = EdgeInsets.only(left: mq.padding.left, right: mq.padding.right);
     final video = _clippedVideo;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final asideWidth = (constraints.maxWidth * PlayerShell.asideRatio)
-            .clamp(PlayerShell.asideMin, PlayerShell.asideMax)
-            .toDouble();
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(left: mq.padding.left),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(height: topInset),
-                    if (widget.topBar != null) widget.topBar!,
-                    Expanded(
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          if (video != null)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: PlayerShell.margin,
-                                    vertical: AppSpacing.sm),
-                                child: AspectRatio(
-                                    aspectRatio: 16 / 9, child: video),
-                              ),
+    final coveredByPanel = widget.panel != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: topInset),
+        Expanded(
+          child: Padding(
+            padding: sides,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                LayoutBuilder(builder: (context, upper) {
+                  // 動画は上の段の高さいっぱい（幅は画面の [wideVideoMaxWidth] まで）
+                  final videoH = math.max(
+                      0.0,
+                      math.min(upper.maxHeight - AppSpacing.sm * 2,
+                          upper.maxWidth * PlayerShell.wideVideoMaxWidth * 9 / 16));
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (video != null)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                              left: PlayerShell.margin, top: AppSpacing.sm),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: SizedBox(
+                              width: videoH * 16 / 9,
+                              height: videoH,
+                              child: video,
                             ),
-                          _panelSwitcher(),
-                        ],
-                      ),
-                    ),
-                    Visibility(
-                      visible: widget.panel == null,
-                      maintainState: true,
-                      maintainAnimation: true,
-                      maintainSize: true,
-                      child: const KaraokeSubtitle(),
-                    ),
-                    SizedBox(height: AppSpacing.xl + bottomInset),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(
-              width: asideWidth + mq.padding.right,
-              child: Padding(
-                padding: EdgeInsets.only(right: mq.padding.right),
-                child: LayoutBuilder(
-                  builder: (context, aside) => SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: aside.maxHeight),
-                      child: IntrinsicHeight(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SizedBox(height: topInset + AppSpacing.md),
-                            // 曲名はコントローラーのすぐ上（縦と同じまとまり。上に浮かせると
-                            // 間が空いて離れて見える）
-                            const Spacer(),
-                            widget.header,
-                            const SizedBox(height: AppSpacing.lg),
-                            PlayerDensity(dense: true, child: widget.controller),
-                          ],
+                          ),
+                        ),
+                      Expanded(
+                        // パネルを開いている間は描かない（高さは保ってレイアウトを動かさない）
+                        child: Visibility(
+                          visible: !coveredByPanel,
+                          maintainState: true,
+                          maintainAnimation: true,
+                          maintainSize: true,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (widget.topBar != null) widget.topBar!,
+                              const Spacer(),
+                              widget.header,
+                              const KaraokeSubtitle(),
+                              const SizedBox(height: AppSpacing.sm),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
+                    ],
+                  );
+                }),
+                _panelSwitcher(),
+              ],
             ),
-          ],
-        );
-      },
+          ),
+        ),
+        Padding(
+          padding: sides,
+          child: PlayerDensity(dense: true, oneRow: true, child: widget.controller),
+        ),
+      ],
     );
   }
 

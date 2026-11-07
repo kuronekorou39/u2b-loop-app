@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -315,14 +317,30 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
           narrower == null ? null : () => setState(() => _margin = narrower),
     );
     final trigger = _triggerOf(pair);
+    final engine = ref.read(playlistEngineProvider);
+    final showCurves = ref.watch(showMixCurvesProvider);
+    final showBeats = ref.watch(showBeatLinesProvider);
+    // 次曲の位置: 切り替わった後は鳴っている曲、前は先読み側（交差の前は開始位置で止まっている）
+    final inPosition =
+        swapped ? position : engine.preloadPlayer.state.position;
+    // 前曲の位置: 切り替わった後は切替点で止まっている
+    final outPosition = swapped ? pair.cut : now;
+    // デッキの板は波形を閉じていても出す（板は帯と別の場所に浮く）
+    _deckData = (
+      pair: pair,
+      swapped: swapped,
+      outPosition: outPosition,
+      inPosition: inPosition,
+      zoom: zoom,
+      showCurves: showCurves,
+      showBeats: showBeats,
+    );
     // 閉じているときは帯を出さない（細いバーの紫の塗りで範囲は分かる）
     if (widget.compact) {
       return _seekbar(mixRanges: [_rangeOf(trigger, pair, swapped: swapped)]);
     }
 
-    final engine = ref.read(playlistEngineProvider);
     final current = ref.watch(waveformDataProvider);
-    final showCurves = ref.watch(showMixCurvesProvider);
     final outItem = pair.outItem;
     final inItem = pair.next.item;
     // 鳴っている側の波形は waveformDataProvider（生成し立てでも届く）、もう片方は先読み分
@@ -332,16 +350,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final inWaveform =
         swapped ? current ?? widget.waveformFor(inItem) : widget.waveformFor(inItem);
     final recipe = pair.recipe;
-    final showBeats = ref.watch(showBeatLinesProvider);
     final loop = ref.watch(loopProvider);
     // 交差中か（次曲の棒でのシークは、交差中か切り替わった後だけ効く）
     final crossfading = ref.watch(crossfadeProgressProvider) != null;
-
-    // 次曲の位置: 切り替わった後は鳴っている曲、前は先読み側（交差の前は開始位置で止まっている）
-    final inPosition =
-        swapped ? position : engine.preloadPlayer.state.position;
-    // 前曲の位置: 切り替わった後は切替点で止まっている
-    final outPosition = swapped ? pair.cut : now;
 
     final bandHeight =
         widget.mixHeight - PlaylistSeekArea.topBarHeight - AppSpacing.xs;
@@ -381,16 +392,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       linesOpacity: linesOpacity,
       onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
     );
-    _deckData = (
-      pair: pair,
-      swapped: swapped,
-      outPosition: outPosition,
-      inPosition: inPosition,
-      zoom: zoom,
-      showCurves: showCurves,
-      showBeats: showBeats,
-    );
-
     // 棒 2 本と帯は組ごと。組が次へ進んだら 3 拍子で入れ替える（前曲の段が左へ抜け、
     // 次曲の段が上がり、新しい次曲の段が右から）。時刻行は外に置いて動かさない（開閉ボタンの場所）
     final lanes = MixLanesAdvance(
@@ -484,6 +485,17 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       ref.read(tempoTrimProvider.notifier).state = null;
     }
 
+    // 板の幅はこの領域に合わせる（横幅いっぱいの横画面では広すぎるので上限）。
+    // 上に入りきらないとき（横画面）は縮めて、状態バーの下に収める
+    final deckWidth = math.min(_width, MixDeck.maxWidth);
+    final box = context.findRenderObject() as RenderBox?;
+    final areaTop = box != null && box.hasSize
+        ? box.localToGlobal(Offset.zero).dy
+        : double.infinity;
+    final room = areaTop -
+        MixDeck.liftAbove -
+        MediaQuery.paddingOf(portalContext).top -
+        AppSpacing.sm;
     return Positioned(
       left: 0,
       top: 0,
@@ -493,8 +505,14 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         targetAnchor: Alignment.topCenter,
         followerAnchor: Alignment.bottomCenter,
         offset: const Offset(0, -MixDeck.liftAbove),
-        child: MixDeck(
-          width: _width,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: room.isFinite && room > 0 ? room : double.infinity),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.bottomCenter,
+            child: MixDeck(
+          width: deckWidth,
           contentKey: ValueKey(pair.key),
           outTurns: JogWheel.platterTurns(data.outPosition),
           inTurns: swapped ? JogWheel.platterTurns(data.inPosition) : 0,
@@ -544,6 +562,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
                   AppToast.instance.show(
                       AppSnackBar.success('この曲の拍を直しました'));
                 },
+            ),
+          ),
         ),
       ),
     );

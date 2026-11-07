@@ -18,11 +18,11 @@ import '../../widgets/tag_chip.dart';
 import '../../widgets/thumb_picker_sheet.dart';
 import 'home_parts.dart';
 
-/// タグ一覧の表示: リスト / 2列 / 4列（4 列は並べ替え向けに小さく）
+/// タグ一覧の表示: リスト / グリッド大 / グリッド小（小は並べ替え向け。列数は幅で決まる）
 enum TagViewMode {
   list(Icons.view_list, 'リスト'),
-  grid2(Icons.grid_view, '2列'),
-  grid4(Icons.apps, '4列');
+  grid2(Icons.grid_view, 'グリッド大'),
+  grid4(Icons.apps, 'グリッド小');
 
   const TagViewMode(this.icon, this.label);
 
@@ -35,7 +35,7 @@ enum TagViewMode {
       (legacyGrid ? grid2 : list);
 }
 
-/// ホームの「タグ」タブ。タグの一覧（リスト / 2列 / 4列）と、名前・色の変更、削除、並べ替え。
+/// ホームの「タグ」タブ。タグの一覧（リスト / グリッド大 / グリッド小）と、名前・色の変更、削除、並べ替え。
 /// 並べ替えはリストなら右の ≡ をドラッグ、グリッドなら長押ししたまま動かす
 /// （動かさずに離すと長押し = 複数選択）。曲に付いたタグもこの並びで出る
 ///

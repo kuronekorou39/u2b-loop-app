@@ -25,6 +25,7 @@ class GlassScaffold extends StatelessWidget {
     this.tone,
     this.floatingActionButton,
     this.resizeToAvoidBottomInset,
+    this.showAppBar = true,
   }) : assert((body == null) != (bodyBuilder == null),
             'body か bodyBuilder のどちらか一方');
 
@@ -46,24 +47,29 @@ class GlassScaffold extends StatelessWidget {
   final Widget? floatingActionButton;
   final bool? resizeToAvoidBottomInset;
 
+  /// false なら AppBar を置かない（見出しを自分で組む画面。ホームはスクロールで隠す）
+  final bool showAppBar;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: title,
-        actions: actions,
-        leading: leading,
-        centerTitle: centerTitle,
-        automaticallyImplyLeading: automaticallyImplyLeading,
-        bottom: appBarBottom,
-        toolbarHeight: toolbarHeight,
-      ),
+      appBar: !showAppBar
+          ? null
+          : AppBar(
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              title: title,
+              actions: actions,
+              leading: leading,
+              centerTitle: centerTitle,
+              automaticallyImplyLeading: automaticallyImplyLeading,
+              bottom: appBarBottom,
+              toolbarHeight: toolbarHeight,
+            ),
       body: Stack(
         children: [
           Positioned.fill(child: AppBackdrop(tone: tone)),

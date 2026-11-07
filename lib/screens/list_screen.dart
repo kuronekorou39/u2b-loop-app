@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/storage/app_boxes.dart';
@@ -31,7 +34,11 @@ import 'settings_screen.dart';
 ///
 /// 中身はタブごとに分かれている: タグ [TagManagerTab]、プレイリスト [PlaylistTab]、
 /// 曲の一覧 [ItemCollectionView]、取り込み [YouTubeImportFlow]、
-/// 絞り込みの計算 [ItemFilter]。ここに残るのはタブ・選択・検索の状態と AppBar
+/// 絞り込みの計算 [ItemFilter]。ここに残るのはタブ・選択・検索の状態と見出し。
+///
+/// 見出し（ロゴの行・タブ・曲タブの検索とタグ）は一覧を下へ送ると上へ抜けて隠れ、
+/// 戻すと出てくる（横画面だと見出しだけで一覧が 1 行しか見えなかった）。
+/// 一覧は見出しの分だけ広がり、指の下の中身は動かさない（[_onScroll]）
 class ListScreen extends ConsumerStatefulWidget {
   const ListScreen({super.key});
 
@@ -40,7 +47,7 @@ class ListScreen extends ConsumerStatefulWidget {
 }
 
 class _ListScreenState extends ConsumerState<ListScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _tabTags = 0;
   static const _tabItems = 1;
   // 2 = プレイリスト（switch の既定）
@@ -85,6 +92,81 @@ class _ListScreenState extends ConsumerState<ListScreen>
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode(skipTraversal: true);
 
+  // --- 見出しの出し入れ ---
+
+  /// 見出しの隠れている高さ（0 = 全部見えている、[_headerExtent] = 全部隠れた）
+  double _headerHidden = 0;
+
+  /// 隠れる部分（ロゴの行から下）の本来の高さ。描画後に測る
+  double _headerExtent = 0;
+  final _headerKey = GlobalKey();
+
+  /// 指を離したとき途中なら、近い方（出す / 隠す）へ寄せる
+  late final AnimationController _headerSnap = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 180))
+    ..addListener(() => setState(() => _headerHidden = _headerSnapTween
+        .transform(Curves.easeOutCubic.transform(_headerSnap.value))));
+  Tween<double> _headerSnapTween = Tween(begin: 0, end: 0);
+
+  void _animateHeaderTo(double hidden) {
+    _headerSnap.stop();
+    if ((hidden - _headerHidden).abs() < 0.5) {
+      if (hidden != _headerHidden) setState(() => _headerHidden = hidden);
+      return;
+    }
+    _headerSnapTween = Tween(begin: _headerHidden, end: hidden);
+    _headerSnap.forward(from: 0);
+  }
+
+  /// 一覧のスクロールに合わせて見出しを出し入れする。下へ送ると隠れ、戻すと出る
+  /// （一番上でさらに引いても出る）。指で動かしている間は、見出しが縮んだ / 伸びた分だけ
+  /// 一覧の位置を直し、中身が指から離れないようにする
+  bool _onScroll(ScrollNotification n) {
+    if (n.metrics.axis != Axis.vertical) return false;
+    final extent = _headerExtent;
+    if (extent <= 0) return false;
+    if (n is ScrollStartNotification) {
+      _headerSnap.stop();
+    } else if (n is ScrollUpdateNotification) {
+      final delta = n.scrollDelta ?? 0;
+      final ctx = n.context;
+      final position = n.dragDetails == null || ctx == null
+          ? null
+          : Scrollable.maybeOf(ctx)?.position;
+      if (delta > 0 && _headerHidden < extent) {
+        final c = math.min(delta, extent - _headerHidden);
+        setState(() => _headerHidden += c);
+        position?.correctPixels(position.pixels - c);
+      } else if (delta < 0 && _headerHidden > 0) {
+        final c = math.min(-delta, _headerHidden);
+        setState(() => _headerHidden -= c);
+        position?.correctPixels(position.pixels + c);
+      }
+    } else if (n is OverscrollNotification &&
+        n.overscroll < 0 &&
+        _headerHidden > 0) {
+      setState(() =>
+          _headerHidden = math.max(0, _headerHidden + n.overscroll));
+    } else if (n is ScrollEndNotification) {
+      if (_headerHidden > 0 && _headerHidden < extent) {
+        final hide = _headerHidden > extent / 2 &&
+            n.metrics.pixels > n.metrics.minScrollExtent;
+        _animateHeaderTo(hide ? extent : 0);
+      }
+    }
+    return false;
+  }
+
+  /// 見出しの本来の高さを測る（タブで中身が変わる）
+  void _measureHeader() {
+    final h = _headerKey.currentContext?.size?.height;
+    if (h == null || (h - _headerExtent).abs() < 0.5) return;
+    setState(() {
+      _headerExtent = h;
+      _headerHidden = _headerHidden.clamp(0.0, h);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -97,12 +179,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
         _selectMode = false;
         _selectedIds.clear();
       }
+      // タブを移ったら見出しは出す（隠れたままだとタブが押せない）
+      if (_headerHidden > 0) _animateHeaderTo(0);
       setState(() {});
     });
   }
 
   @override
   void dispose() {
+    _headerSnap.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
     _tabController.dispose();
@@ -239,91 +324,129 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    final theme = Theme.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _measureHeader();
+    });
+    final extent = _headerExtent;
+    // 隠れる部分: ロゴの行・タブ（選択中は操作バー）・曲タブの検索とタグ
+    final collapsible = Column(
+      key: _headerKey,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppBar(
+          primary: false,
+          automaticallyImplyLeading: false,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          toolbarHeight: landscape ? 44 : kToolbarHeight,
+          title: Image.asset(
+            'assets/images/logo.png',
+            height: landscape ? 22 : 30,
+            fit: BoxFit.contain,
+          ),
+          actions: _buildAppBarActions(canSelect: selectableIds.isNotEmpty),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          // 選択に入っても下の一覧が動かないよう、高さを揃える
+          child: SizedBox(
+            height: _topBarHeight,
+            child: _isSelecting
+                ? _buildSelectionBar(selectableIds)
+                : GlassSegmentedTabs(
+                    controller: _tabController,
+                    labels: const ['タグ', '曲', 'プレイリスト'],
+                  ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (_tab == _tabItems) ...[
+          _buildSearchRow(),
+          // タグがあるあいだは常に出す（選ぶたびに一覧が下がらないように）
+          if (tags.isNotEmpty)
+            SelectedTagBar(tags: tags, onClosed: _searchFocusNode.unfocus),
+        ],
+      ],
+    );
     return PopScope(
       canPop: !_isSelecting,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _isSelecting) _clearSelection();
       },
-      child: GlassScaffold(
-        toolbarHeight: landscape ? 44 : null,
-        title: Image.asset(
-          'assets/images/logo.png',
-          height: landscape ? 22 : 30,
-          fit: BoxFit.contain,
-        ),
-        actions: _buildAppBarActions(canSelect: selectableIds.isNotEmpty),
-        // 本文の上端は bodyBuilder の context から（AppBar の高さが入る）
-        bodyBuilder: (bodyContext) => SafeArea(
-              top: false,
-              bottom: false,
-              child: Stack(
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: theme.brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
+        child: GlassScaffold(
+          showAppBar: false,
+          body: SafeArea(
+            top: false,
+            bottom: false,
+            child: GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              behavior: HitTestBehavior.translucent,
+              child: Column(
                 children: [
-                  GestureDetector(
-                    onTap: () => FocusScope.of(context).unfocus(),
-                    behavior: HitTestBehavior.translucent,
-                    child: Column(
+                  // 状態バーの分は隠さない
+                  SizedBox(height: MediaQuery.paddingOf(context).top),
+                  ClipRect(
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      heightFactor: extent <= 0
+                          ? 1
+                          : (1 - _headerHidden / extent).clamp(0.0, 1.0),
+                      child: collapsible,
+                    ),
+                  ),
+                  Expanded(
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _onScroll,
+                      child: TabBarView(
+                        controller: _tabController,
+                        physics: _isSelecting
+                            ? const NeverScrollableScrollPhysics()
+                            : null,
                         children: [
-                          SizedBox(
-                              height: MediaQuery.paddingOf(bodyContext).top +
-                                  AppSpacing.xs),
-                          // タブ（選択中は操作バー）: ガラスのセグメント
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.lg),
-                            // 選択に入っても下の一覧が動かないよう、高さを揃える
-                            child: SizedBox(
-                              height: _topBarHeight,
-                              child: _isSelecting
-                                  ? _buildSelectionBar(selectableIds)
-                                  : GlassSegmentedTabs(
-                                      controller: _tabController,
-                                      labels: const ['タグ', '曲', 'プレイリスト'],
-                                    ),
-                            ),
+                          TagManagerTab(
+                            viewMode: _tagViewMode,
+                            selecting: _isSelecting,
+                            selectedIds: _selectedIds,
+                            onToggleSelect: (t) => _toggleSelectId(t.id),
+                            onLongPress: (t) => _startSelectId(t.id),
+                            onTagTap: (tag) {
+                              // 曲タブに移動してこのタグでフィルター
+                              ref.read(tagFilterProvider.notifier).state = {
+                                tag.id: true
+                              };
+                              _tabController.animateTo(_tabItems);
+                            },
                           ),
-                          const SizedBox(height: AppSpacing.md),
-                          Expanded(
-                            child: TabBarView(
-                              controller: _tabController,
-                              physics: _isSelecting
-                                  ? const NeverScrollableScrollPhysics()
-                                  : null,
-                              children: [
-                                TagManagerTab(
-                                  viewMode: _tagViewMode,
-                                  selecting: _isSelecting,
-                                  selectedIds: _selectedIds,
-                                  onToggleSelect: (t) => _toggleSelectId(t.id),
-                                  onLongPress: (t) => _startSelectId(t.id),
-                                  onTagTap: (tag) {
-                                    // 曲タブに移動してこのタグでフィルター
-                                    ref.read(tagFilterProvider.notifier).state = {
-                                      tag.id: true
-                                    };
-                                    _tabController.animateTo(_tabItems);
-                                  },
-                                ),
-                                _buildItemsTab(items, filterTagIds),
-                                PlaylistTab(
-                                  grid: _playlistGrid,
-                                  selecting: _isSelecting,
-                                  selectedIds: _selectedIds,
-                                  onToggleSelect: (p) => _toggleSelectId(p.id),
-                                  onLongPress: (p) => _startSelectId(p.id),
-                                ),
-                              ],
-                            ),
+                          _buildItemsTab(items, filterTagIds),
+                          PlaylistTab(
+                            grid: _playlistGrid,
+                            selecting: _isSelecting,
+                            selectedIds: _selectedIds,
+                            onToggleSelect: (p) => _toggleSelectId(p.id),
+                            onLongPress: (p) => _startSelectId(p.id),
                           ),
                         ],
                       ),
+                    ),
                   ),
                 ],
               ),
             ),
-        // キーボードが出ている間は FAB を出さない。出したままだとキーボードの上に
-        // 逃げ、閉じるときは先に定位置へ飛んでキーボードの裏に隠れ、キーボードが
-        // 下がりきってから下から現れる、という動きに見える
-        floatingActionButton: _isSelecting || keyboardOpen ? null : _buildFab(),
+          ),
+          // キーボードが出ている間は FAB を出さない。出したままだとキーボードの上に
+          // 逃げ、閉じるときは先に定位置へ飛んでキーボードの裏に隠れ、キーボードが
+          // 下がりきってから下から現れる、という動きに見える
+          floatingActionButton:
+              _isSelecting || keyboardOpen ? null : _buildFab(),
+        ),
       ),
     );
   }
@@ -352,12 +475,37 @@ class _ListScreenState extends ConsumerState<ListScreen>
     };
   }
 
-  /// 曲タブ: 検索・絞り込み・並び替えの行 + 一覧
+  /// 曲タブの一覧（検索・絞り込み・並び替えの行は見出しの中 [_buildSearchRow]）
   Widget _buildItemsTab(List<LoopItem> items, Map<String, bool> filterTagIds) {
     final allTags = ref.watch(tagsProvider);
-    return Column(
-      children: [
-        Padding(
+    return items.isEmpty
+              ? EmptyHint(
+                  icon: Icons.music_note_outlined,
+                  title: filterTagIds.isNotEmpty
+                      ? '該当するデータがありません'
+                      : 'データがありません',
+                  subtitle: filterTagIds.isNotEmpty
+                      ? 'フィルターを変更してください'
+                      : '＋ ボタンで追加',
+                )
+              : ItemCollectionView(
+                  items: items,
+                  tags: allTags,
+                  viewMode: _itemViewMode,
+                  selectedIds: _selectedIds,
+                  selecting: _isSelecting,
+                  onOpen: _openDetail,
+                  onLongPress: (item) => _startSelectId(item.id),
+                  onToggleSelect: (item) => _toggleSelectId(item.id),
+                  onDelete: _deleteItem,
+                  onRetry: (item) =>
+                      ref.read(loopItemsProvider.notifier).retryFetch(item),
+                );
+  }
+
+  /// 曲タブの検索・並び替えの行（見出しの中。一覧と一緒に上へ抜ける）
+  Widget _buildSearchRow() {
+    return Padding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 0),
           child: Row(
@@ -404,37 +552,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               ),
             ],
           ),
-        ),
-        // タグがあるあいだは常に出す（選ぶたびに一覧が下がらないように）
-        if (allTags.isNotEmpty)
-          SelectedTagBar(tags: allTags, onClosed: _searchFocusNode.unfocus),
-        Expanded(
-          child: items.isEmpty
-              ? EmptyHint(
-                  icon: Icons.music_note_outlined,
-                  title: filterTagIds.isNotEmpty
-                      ? '該当するデータがありません'
-                      : 'データがありません',
-                  subtitle: filterTagIds.isNotEmpty
-                      ? 'フィルターを変更してください'
-                      : '＋ ボタンで追加',
-                )
-              : ItemCollectionView(
-                  items: items,
-                  tags: allTags,
-                  viewMode: _itemViewMode,
-                  selectedIds: _selectedIds,
-                  selecting: _isSelecting,
-                  onOpen: _openDetail,
-                  onLongPress: (item) => _startSelectId(item.id),
-                  onToggleSelect: (item) => _toggleSelectId(item.id),
-                  onDelete: _deleteItem,
-                  onRetry: (item) =>
-                      ref.read(loopItemsProvider.notifier).retryFetch(item),
-                ),
-        ),
-      ],
-    );
+        );
   }
 
   /// AppBar: ロゴ / 表示切替 / 複数選択 / 設定。表示と選択はどのタブにも出す

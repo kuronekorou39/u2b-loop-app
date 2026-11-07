@@ -11,13 +11,13 @@ import '../../widgets/item_thumbnail.dart';
 import '../../widgets/tag_chip.dart';
 import 'home_parts.dart';
 
-/// 曲一覧の表示モード: リスト / 曲名（曲名を 3 行まで出すリスト）/ 2列 / 4列。
+/// 曲一覧の表示モード: リスト / 曲名（曲名を 3 行まで出すリスト）/ グリッド大 / グリッド小（列数は幅で決まる）。
 /// 候補が 4 つなので、AppBar では押して回すのではなくプルダウンで選ぶ
 enum ItemViewMode {
   list(Icons.view_list, 'リスト'),
   titles(Icons.subject, '曲名'),
-  grid2(Icons.grid_view, '2列'),
-  grid4(Icons.apps, '4列');
+  grid2(Icons.grid_view, 'グリッド大'),
+  grid4(Icons.apps, 'グリッド小');
 
   const ItemViewMode(this.icon, this.label);
 

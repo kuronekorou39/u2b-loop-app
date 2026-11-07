@@ -1565,11 +1565,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 画面の高さに合わせて低くする（コントローラーがスクロールしないように）
   double _seekHeight(bool wide) {
     if (!wide) return 120;
+    // 横はコントローラーが動画の下に入るので、動画の場所を残すよう低めに
     final h = MediaQuery.sizeOf(context).height;
-    if (h < 380) return 48;
-    if (h < 440) return 64;
-    if (h < 560) return 88;
-    return 120;
+    if (h < 380) return 40;
+    if (h < 440) return 52;
+    if (h < 560) return 72;
+    return 96;
   }
 
   Widget _buildPlayerView(double bottomInset) {

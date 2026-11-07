@@ -115,6 +115,9 @@ class MixDeck extends StatelessWidget {
   static const _padding = AppSpacing.lg;
   static const _gap = AppSpacing.lg;
 
+  /// 板の幅の上限（横幅いっぱいのコントローラーの上に出すとき。円盤は [maxDiscSize] で頭打ち）
+  static const maxWidth = 480.0;
+
   /// 板の下端を、コントローラーの上端からどれだけ上に浮かせるか
   /// （コントローラーの板の上の余白 18px + 隙間）
   static const liftAbove = 26.0;

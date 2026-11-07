@@ -26,6 +26,7 @@ void main() {
     bool compact = false,
     bool canRegister = true,
     bool dense = false,
+    bool oneRow = false,
     double? width,
   }) async {
     final events = <String>[];
@@ -49,6 +50,7 @@ void main() {
                 width: width,
                 child: PlayerDensity(
                   dense: dense,
+                  oneRow: oneRow,
                   child: PlaylistBottomBar(
                     seekbar: const SizedBox(height: 40, key: Key('seek')),
                     compact: compact,
@@ -122,5 +124,28 @@ void main() {
     expect(play.width, PlayerGlassBar.playSizeDense);
     await tester.tap(find.text('トラック'));
     expect(r.events, ['list']);
+  });
+
+  testWidgets('横幅いっぱいの 1 行: 左にトラック、真ん中に再生、右に 1番・その他が同じ行', (tester) async {
+    final r = await pump(tester, dense: true, oneRow: true, width: 780);
+    expect(tester.takeException(), isNull);
+    final play = tester.getRect(find.byType(BigPlayButton));
+    final track = tester.getRect(find.text('トラック'));
+    final more = tester.getRect(find.byTooltip('その他'));
+    expect(play.center.dx,
+        closeTo(tester.getRect(find.byType(PlaylistBottomBar)).center.dx, 1));
+    expect(track.right, lessThan(play.left));
+    expect(more.left, greaterThan(play.right));
+    // 同じ行（縦の真ん中が揃う）
+    expect(track.center.dy, closeTo(play.center.dy, 2));
+    expect(more.center.dy, closeTo(play.center.dy, 2));
+    await tester.tap(find.text('トラック'));
+    await tester.tap(find.byTooltip('次の曲'));
+    expect(r.events, ['list', 'next']);
+  });
+
+  testWidgets('1 行の形は狭くても溢れない（ピルが縮む）', (tester) async {
+    await pump(tester, dense: true, oneRow: true, width: 560);
+    expect(tester.takeException(), isNull);
   });
 }

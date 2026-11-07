@@ -510,11 +510,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       bodyBuilder: (bodyContext) => SafeArea(
         top: false,
         bottom: false,
-        child: Column(
-        children: [
-          SizedBox(height: MediaQuery.paddingOf(bodyContext).top + AppSpacing.xs),
+        child: _DetailLayout(
+          top: MediaQuery.paddingOf(bodyContext).top + AppSpacing.xs,
           // ヘッダー
-          Padding(
+          header: Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -612,7 +611,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         ),
                       ],
                       const SizedBox(height: AppSpacing.lg),
-                      Row(
+                      // 横画面の左の列は狭いので、入りきらなければ折り返す
+                      Wrap(
+                        spacing: AppSpacing.md,
+                        runSpacing: AppSpacing.md,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           if (items.isNotEmpty)
                             GreenButton(
@@ -638,7 +641,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                 ),
                               ),
                             ),
-                          const SizedBox(width: AppSpacing.md),
                           GlassPill(
                             active: pl.defaultShuffle,
                             tooltip: pl.defaultShuffle ? 'シャッフル再生' : '順に再生',
@@ -677,10 +679,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             ),
           ),
           // まとめて解析の進み具合（このプレイリストで動いているときだけ）
-          _BulkAnalysisCard(playlistId: pl.id),
+          progress: _BulkAnalysisCard(playlistId: pl.id),
           // トラック一覧（1 枚のガラス面）
-          Expanded(
-            child: items.isEmpty
+          list: items.isEmpty
                 ? const EmptyHint(
                     icon: Icons.playlist_play,
                     iconSize: AppIconSizes.xxl,
@@ -840,9 +841,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 ),
               ),
             ),
-          ),
-        ],
-      )),
+        )),
       // キーボードが出ている間は出さない（list_screen と同じ理由）
       floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
           ? null
@@ -1031,6 +1030,64 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
+}
+
+/// プレイリスト詳細の並べ方。縦は上からヘッダー・進み具合・曲の一覧。
+/// 横（幅が足りるとき）は左にヘッダーと進み具合、右に曲の一覧（縦のままだと
+/// ヘッダーで高さが埋まり、曲が 1〜2 行しか見えなかった）。左は収まらなければスクロール
+class _DetailLayout extends StatelessWidget {
+  const _DetailLayout({
+    required this.top,
+    required this.header,
+    required this.progress,
+    required this.list,
+  });
+
+  /// 本文の上端（AppBar の下）
+  final double top;
+  final Widget header;
+  final Widget progress;
+  final Widget list;
+
+  /// 横で左右に分ける最小の幅と、左の列の幅
+  static const splitMinWidth = 600.0;
+  static const sideMin = 320.0;
+  static const sideMax = 420.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final split = size.width > size.height && size.width >= splitMinWidth;
+    if (!split) {
+      return Column(
+        children: [
+          SizedBox(height: top),
+          header,
+          progress,
+          Expanded(child: list),
+        ],
+      );
+    }
+    final side = (size.width * 0.38).clamp(sideMin, sideMax).toDouble();
+    return Padding(
+      padding: EdgeInsets.only(top: top),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: side,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.viewPaddingOf(context).bottom +
+                      AppSpacing.lg),
+              child: Column(children: [header, progress]),
+            ),
+          ),
+          Expanded(child: list),
+        ],
+      ),
+    );
+  }
 }
 
 /// まとめて解析の進み具合（曲一覧の上）。閉じられない板で、中止だけできる

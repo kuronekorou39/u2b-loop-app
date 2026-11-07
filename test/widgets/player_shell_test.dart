@@ -61,66 +61,56 @@ void main() {
   }
 
   group('横レイアウト（wide）', () {
-    testWidgets('左に topBar と 16:9 の動画、右の脇に曲名行とコントローラー（下寄せ）',
+    testWidgets('上の段に 16:9 の動画（左）と topBar・曲名行（右）、下に横幅いっぱいのコントローラー',
         (tester) async {
       await pump(tester,
           width: 900,
           height: 400,
-          controllerHeight: 250,
+          controllerHeight: 180,
           wide: true,
           topBar: const SizedBox(height: 40, key: Key('topBar')));
       final topBar = tester.getRect(find.byKey(const Key('topBar')));
       final video = tester.getRect(find.byKey(const Key('video')));
       final header = tester.getRect(find.byKey(const Key('header')));
       final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
-      // 脇の幅は画面幅の 42%（300〜420 に収める）
-      final aside = (900 * PlayerShell.asideRatio)
-          .clamp(PlayerShell.asideMin, PlayerShell.asideMax);
-      expect(ctrl.width, closeTo(aside, 0.5));
-      expect(ctrl.left, closeTo(900 - aside, 0.5));
-      expect(header.left, closeTo(900 - aside, 0.5));
-      // コントローラーは脇の下端に寄る
+      // コントローラーは下端で横幅いっぱい
+      expect(ctrl.width, closeTo(900, 0.5));
       expect(ctrl.bottom, closeTo(400, 0.5));
-      expect(header.bottom, lessThan(ctrl.top));
-      // 動画は左の列に 16:9 で、topBar の下
-      expect(video.right, lessThanOrEqualTo(900 - aside + 0.5));
+      // 動画は上の段に 16:9、コントローラーより上
       expect(video.width / video.height, closeTo(16 / 9, 0.01));
-      expect(video.top, greaterThanOrEqualTo(topBar.bottom - 0.5));
-      expect(topBar.left, closeTo(0, 0.5));
+      expect(video.bottom, lessThanOrEqualTo(ctrl.top + 0.5));
+      expect(video.left, closeTo(PlayerShell.margin, 0.5));
+      // topBar と曲名行は動画の右。曲名行はコントローラーのすぐ上の方
+      expect(topBar.left, greaterThanOrEqualTo(video.right - 0.5));
+      expect(header.left, greaterThanOrEqualTo(video.right - 0.5));
+      expect(header.top, greaterThanOrEqualTo(topBar.bottom - 0.5));
+      expect(header.bottom, lessThanOrEqualTo(ctrl.top + 0.5));
     });
 
-    testWidgets('パネルは縦と同じく動画の上（左の列）に重なり、脇は変わらない', (tester) async {
+    testWidgets('パネルは上の段全体に重なり、コントローラーにはかからない', (tester) async {
       await pump(tester,
           width: 900,
           height: 400,
-          controllerHeight: 250,
+          controllerHeight: 180,
           wide: true,
           panel: const ColoredBox(color: Colors.red, key: Key('panel')));
       final panel = tester.getRect(find.byKey(const Key('panel')));
       final video = tester.getRect(find.byKey(const Key('video')));
-      final header = tester.getRect(find.byKey(const Key('header')));
       final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
       expect(panel.left, closeTo(0, 0.5));
-      expect(panel.right, lessThanOrEqualTo(ctrl.left + 0.5));
+      expect(panel.right, closeTo(900, 0.5));
       expect(panel.top, lessThanOrEqualTo(video.top + 0.5));
-      expect(panel.bottom, greaterThanOrEqualTo(video.bottom - 0.5));
-      // 曲名行・コントローラー（脇）にはかからない
-      expect(header.left, greaterThanOrEqualTo(panel.right - 0.5));
-      expect(ctrl.left, greaterThanOrEqualTo(panel.right - 0.5));
+      expect(panel.bottom, closeTo(ctrl.top, 0.5));
     });
 
-    testWidgets('脇が画面より高いときは溢れずにスクロールする', (tester) async {
-      // 小さい端末で波形を開いたとき（コントローラー 340 + 曲名行 40 > 高さ 360）
+    testWidgets('低い画面でも溢れない（動画が縮む）', (tester) async {
       await pump(tester,
-          width: 800, height: 360, controllerHeight: 340, wide: true);
+          width: 800, height: 360, controllerHeight: 220, wide: true);
       expect(tester.takeException(), isNull);
       final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
-      expect(ctrl.bottom, greaterThan(360));
-      await tester.drag(
-          find.byType(SingleChildScrollView), const Offset(0, -200));
-      await tester.pumpAndSettle();
-      final after = tester.getRect(find.byKey(const Key('ctrl')));
-      expect(after.bottom, closeTo(360, 0.5));
+      final video = tester.getRect(find.byKey(const Key('video')));
+      expect(ctrl.bottom, closeTo(360, 0.5));
+      expect(video.bottom, lessThanOrEqualTo(ctrl.top + 0.5));
     });
   });
 

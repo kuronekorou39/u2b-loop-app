@@ -97,7 +97,15 @@ class FullscreenPlayerView extends StatelessWidget {
           child: video ?? const VideoPlayerWidget(useAspectRatio: false),
         ),
         // リリクスオーバーレイ（動画上に重ねる）
-        const Positioned.fill(child: LyricsOverlay()),
+        // 歌詞（スクロール）の空いた所をタップしてもコントロールを出す（下のタップ検知は
+        // 歌詞の間は外すので、これが無いとコントロールが出せず字幕の切替に届かなかった）。
+        // 行のタップはその行へのシークが先に取る
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: onToggleOverlay,
+            child: const LyricsOverlay(),
+          ),
+        ),
         // タップ検知レイヤー（リリクス非表示時のみ有効）
         Positioned.fill(
           child: Consumer(builder: (_, ref, _) {
