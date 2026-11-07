@@ -79,8 +79,9 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
     expect(find.byType(GlassSearchField).hitTestable(), findsNothing);
+    // 一覧の上端は状態バーのすぐ下まで上がる（見出しの分だけ広がる）
     final hiddenTop = tester.getRect(find.byType(ListView)).top;
-    expect(hiddenTop, lessThan(listTop - 100));
+    expect(hiddenTop, lessThan(search.top));
 
     // 少し戻すと見出しが出てくる（途中で離せば寄せる）
     await tester.dragFrom(const Offset(450, 200), const Offset(0, 120));
