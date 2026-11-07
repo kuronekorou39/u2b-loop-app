@@ -83,7 +83,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
   // 複数選択（いま開いているタブのもの。タブを移ると解除）
   final Set<String> _selectedIds = {};
 
-  /// AppBar の「選択」で入ったとき（まだ何も選んでいなくても選択中として扱う）
+  /// 選択に入ったまま全部外したとき（まだ何も選んでいなくても選択中として扱う）
   bool _selectMode = false;
   bool get _isSelecting => _selectMode || _selectedIds.isNotEmpty;
 
@@ -260,9 +260,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
     });
   }
 
-  /// AppBar の「選択」から。長押しを知らなくても入れるように
-  void _enterSelectMode() => setState(() => _selectMode = true);
-
   void _selectAll(Iterable<String> ids) {
     setState(() => _selectedIds.addAll(ids));
   }
@@ -314,7 +311,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final items = ItemFilter.apply(allItems,
         tagFilter: filterTagIds, query: _searchQuery, sort: _sortMode);
 
-    // いまのタブで選べるものの ID（「全選択」と AppBar の「選択」の表示に使う）
+    // いまのタブで選べるものの ID（「全選択」に使う）
     final selectableIds = switch (_tab) {
       _tabTags => tags.map((t) => t.id),
       _tabItems => items.map((i) => i.id),
@@ -329,46 +326,75 @@ class _ListScreenState extends ConsumerState<ListScreen>
       if (mounted) _measureHeader();
     });
     final extent = _headerExtent;
-    // 隠れる部分: ロゴの行・タブ（選択中は操作バー）・曲タブの検索とタグ
+    // 隠れる部分: ロゴの行・タブ（選択中は操作バー）・曲タブの検索とタグ。
+    // 横画面は高さが足りないので、ロゴ・タブ・検索・ボタンを 1 行にまとめる
+    final tabsOrSelection = SizedBox(
+      // 選択に入っても下の一覧が動かないよう、高さを揃える
+      height: _topBarHeight,
+      child: _isSelecting
+          ? _buildSelectionBar(selectableIds)
+          : GlassSegmentedTabs(
+              controller: _tabController,
+              labels: const ['タグ', '曲', 'プレイリスト'],
+            ),
+    );
+    final logo = Image.asset(
+      'assets/images/logo.png',
+      height: landscape ? 22 : 30,
+      fit: BoxFit.contain,
+    );
     final collapsible = Column(
       key: _headerKey,
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppBar(
-          primary: false,
-          automaticallyImplyLeading: false,
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          toolbarHeight: landscape ? 44 : kToolbarHeight,
-          title: Image.asset(
-            'assets/images/logo.png',
-            height: landscape ? 22 : 30,
-            fit: BoxFit.contain,
+        if (landscape) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Padding(
+            padding: const EdgeInsets.only(left: AppSpacing.xl),
+            child: Row(
+              children: [
+                logo,
+                const SizedBox(width: AppSpacing.xl),
+                if (_isSelecting)
+                  Expanded(child: tabsOrSelection)
+                else ...[
+                  SizedBox(width: _landscapeTabsWidth, child: tabsOrSelection),
+                  const SizedBox(width: AppSpacing.md),
+                  if (_tab == _tabItems)
+                    Expanded(child: _buildSearchRow(inline: true))
+                  else
+                    const Spacer(),
+                ],
+                ..._buildAppBarActions(),
+              ],
+            ),
           ),
-          actions: _buildAppBarActions(canSelect: selectableIds.isNotEmpty),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          // 選択に入っても下の一覧が動かないよう、高さを揃える
-          child: SizedBox(
-            height: _topBarHeight,
-            child: _isSelecting
-                ? _buildSelectionBar(selectableIds)
-                : GlassSegmentedTabs(
-                    controller: _tabController,
-                    labels: const ['タグ', '曲', 'プレイリスト'],
-                  ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        if (_tab == _tabItems) ...[
-          _buildSearchRow(),
-          // タグがあるあいだは常に出す（選ぶたびに一覧が下がらないように）
-          if (tags.isNotEmpty)
+          const SizedBox(height: AppSpacing.sm),
+          if (_tab == _tabItems && tags.isNotEmpty)
             SelectedTagBar(tags: tags, onClosed: _searchFocusNode.unfocus),
+        ] else ...[
+          AppBar(
+            primary: false,
+            automaticallyImplyLeading: false,
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            title: logo,
+            actions: _buildAppBarActions(),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: tabsOrSelection,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (_tab == _tabItems) ...[
+            _buildSearchRow(),
+            // タグがあるあいだは常に出す（選ぶたびに一覧が下がらないように）
+            if (tags.isNotEmpty)
+              SelectedTagBar(tags: tags, onClosed: _searchFocusNode.unfocus),
+          ],
         ],
       ],
     );
@@ -503,11 +529,17 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 );
   }
 
-  /// 曲タブの検索・並び替えの行（見出しの中。一覧と一緒に上へ抜ける）
-  Widget _buildSearchRow() {
+  /// 横画面の 1 行の見出しで、タブに使う幅
+  static const _landscapeTabsWidth = 340.0;
+
+  /// 曲タブの検索・並び替えの行（見出しの中。一覧と一緒に上へ抜ける）。
+  /// [inline] は横画面の 1 行に入れるとき（外の余白なし）
+  Widget _buildSearchRow({bool inline = false}) {
     return Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 0),
+          padding: inline
+              ? EdgeInsets.zero
+              : const EdgeInsets.fromLTRB(
+                  AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 0),
           child: Row(
             children: [
               Expanded(
@@ -555,9 +587,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
         );
   }
 
-  /// AppBar: ロゴ / 表示切替 / 複数選択 / 設定。表示と選択はどのタブにも出す
-  /// AppBar の右側: 表示の切り替え（タブごと）・複数選択・設定
-  List<Widget> _buildAppBarActions({required bool canSelect}) {
+  /// 見出しの右側: 表示の切り替え（タブごと）・設定。
+  /// 複数選択のボタンは置かない（長押しで入れる。v1.143.0 で外した）
+  List<Widget> _buildAppBarActions() {
     final Widget viewButton = switch (_tab) {
       _tabTags => PopupMenuButton<TagViewMode>(
           icon: Icon(_tagViewMode.icon),
@@ -595,12 +627,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
     };
     return [
       viewButton,
-      if (canSelect)
-        IconButton(
-          icon: const Icon(Icons.checklist, size: AppIconSizes.ml),
-          onPressed: _enterSelectMode,
-          tooltip: '複数選択',
-        ),
       IconButton(
         icon: const Icon(Icons.settings, size: AppIconSizes.ml),
         onPressed: () => Navigator.of(context).push(
