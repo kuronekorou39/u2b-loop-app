@@ -1159,9 +1159,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 音量正規化がオンなら、その曲の大きさ（保存されている最新の値）に合わせた音量。オフなら 100
   double _normalizedVolume(LoopItem item) {
-    if (!ref.read(volumeNormProvider)) return 100.0;
+    final user = ref.read(userVolumeProvider);
+    if (!ref.read(volumeNormProvider)) return user;
     final latest = ref.read(loopItemsProvider.notifier).byId(item.id) ?? item;
-    return Loudness.volumeFor(latest.loudnessDb);
+    return Loudness.volumeFor(latest.loudnessDb, base: user);
   }
 
   /// [_normalizedVolume] を今のプレイヤーに反映する（フェード中は上限だけ更新）
@@ -1263,6 +1264,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       PipBridge.notifyPlayState(
           playing: next.valueOrNull ?? false, item: _currentItem);
     });
+    // 音量のスライダー・ミュート: 今の曲の正規化をかけてプレイヤーへ（フェード中は上限だけ）
+    ref.listen(userVolumeProvider, (_, _) => _applyVolumeNorm(_currentItem));
 
     // PiP中は映像をアプリのルートが描くので、ここでは何も描かない。
     // Videoウィジェットを2つ積むと media_kit のコントローラを取り合うため。

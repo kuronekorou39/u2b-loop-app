@@ -8,7 +8,8 @@ import 'dart:math';
 /// 曲全体の RMS を dBFS で測り（[measureDb]）、曲に保存して使う（LoopItem.loudnessDb）。
 ///
 /// 合わせ方は「大きい曲を下げる」だけ（[maxBoostDb] = 0）。mpv の音量は 100 を超えると
-/// クリップするので上げない。下げ幅にも下限（[maxCutDb]）を置き、聞こえなくならないようにする
+/// クリップしやすいので自動では上げない（100 を超えるのはユーザーが音量を上げたときだけ）。
+/// 下げ幅にも下限（[maxCutDb]）を置き、聞こえなくならないようにする
 class Loudness {
   Loudness._();
 
@@ -20,6 +21,9 @@ class Loudness {
 
   /// これより上げない（上げるとクリップする）
   static const maxBoostDb = 0.0;
+
+  /// 音量の上限（%）。mpv の volume-max もこれに合わせる（[allowLoudVolume]）
+  static const maxVolume = 200.0;
 
   static const _fullScale = 32768.0;
 
@@ -42,12 +46,12 @@ class Loudness {
   /// 補正の倍率（0.25〜1）
   static double gain(double? loudnessDb) => pow(10, gainDb(loudnessDb) / 20).toDouble();
 
-  /// 基準の音量 [base]（0〜100）にかけた、その曲の音量
+  /// 基準の音量 [base]（ユーザーの音量、0〜[maxVolume]）にかけた、その曲の音量
   static double volumeFor(double? loudnessDb, {double base = 100}) =>
-      (base * gain(loudnessDb)).clamp(0.0, 100.0);
+      (base * gain(loudnessDb)).clamp(0.0, maxVolume);
 
   /// 今の曲の音量 [fromVolume] を、補正を外して次の曲の補正をかけ直した値
   /// （スライダーで動かした分を引き継ぐ）
   static double carry(double fromVolume, double? fromDb, double? toDb) =>
-      (fromVolume / gain(fromDb) * gain(toDb)).clamp(0.0, 100.0);
+      (fromVolume / gain(fromDb) * gain(toDb)).clamp(0.0, maxVolume);
 }

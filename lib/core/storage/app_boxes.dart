@@ -50,6 +50,7 @@ class SettingsKeys {
   static const autoMix = 'auto_mix';
   static const djPro = 'dj_pro';
   static const volumeNorm = 'volume_norm';
+  static const userVolume = 'user_volume';
   static const beatMatch = 'beat_match';
   static const showBeatLines = 'show_beat_lines';
   static const playlistBeatLines = 'playlist_beat_lines';

@@ -21,12 +21,20 @@ void main() {
     expect(Loudness.volumeFor(-8, base: 50), closeTo(25.06, 0.1));
   });
 
-  test('carry: 今の補正を外して次の補正をかけ直す（100 を超えない）', () {
+  test('carry: 今の補正を外して次の補正をかけ直す（上限 maxVolume を超えない）', () {
     // 大きい曲（50%）→ ふつうの曲（100%）
     expect(Loudness.carry(50.1, -8, -14), closeTo(100, 0.2));
     // ふつうの曲でスライダー 80 → 大きい曲は 40
     expect(Loudness.carry(80, -14, -8), closeTo(40.1, 0.1));
     expect(Loudness.carry(100, null, null), 100);
-    expect(Loudness.carry(90, -8, -14), 100);
+    // ユーザーが 180% に上げていた大きい曲（90）→ ふつうの曲は 180
+    expect(Loudness.carry(90, -8, -14), closeTo(179.6, 0.2));
+    expect(Loudness.carry(150, -8, -14), Loudness.maxVolume);
+  });
+
+  test('volumeFor: ユーザーの音量が 100 を超えても、上限までは掛けた値', () {
+    expect(Loudness.volumeFor(null, base: 150), 150);
+    expect(Loudness.volumeFor(-8, base: 200), closeTo(100.2, 0.1));
+    expect(Loudness.volumeFor(null, base: 300), Loudness.maxVolume);
   });
 }

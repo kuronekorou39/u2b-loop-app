@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:media_kit/media_kit.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
+import 'volume_slider.dart';
 
 class PlayerControls extends ConsumerWidget {
   const PlayerControls({super.key});
@@ -56,13 +56,13 @@ class PlayerControls extends ConsumerWidget {
     }
   }
 
-  void _showVolumeMenu(
-      BuildContext context, Offset position, Player player, WidgetRef ref) async {
+  void _showVolumeMenu(BuildContext context, Offset position, WidgetRef ref) async {
     await showDialog(
       context: context,
       barrierColor: Colors.transparent,
       builder: (ctx) => _VolumeDialog(
-        player: player,
+        initial: ref.read(userVolumeProvider),
+        onChanged: (v) => ref.read(userVolumeProvider.notifier).value = v,
         anchor: position,
         previousVolume: ref.read(previousVolumeProvider),
         onPreviousVolumeChanged: (v) =>
@@ -74,7 +74,7 @@ class PlayerControls extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final playing = ref.watch(playingProvider).valueOrNull ?? false;
-    final volume = ref.watch(volumeProvider).valueOrNull ?? 100.0;
+    final volume = ref.watch(userVolumeProvider);
     final rate = ref.watch(rateProvider).valueOrNull ?? 1.0;
     final player = ref.read(playerProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
@@ -161,15 +161,15 @@ class PlayerControls extends ConsumerWidget {
           // Volume: tap=mute toggle (with memory), long press=slider
           GestureDetector(
             onLongPressStart: hasSource
-                ? (details) => _showVolumeMenu(
-                    context, details.globalPosition, player, ref)
+                ? (details) =>
+                    _showVolumeMenu(context, details.globalPosition, ref)
                 : null,
             child: IconButton(
               icon: Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Icon(volume > 0 ? Icons.volume_up : Icons.volume_off),
-                  if (volume < 100)
+                  if (volume.round() != 100)
                     Positioned(
                       right: -6,
                       bottom: -8,
@@ -192,11 +192,12 @@ class PlayerControls extends ConsumerWidget {
                         // Mute: save current volume
                         ref.read(previousVolumeProvider.notifier).state =
                             volume;
-                        player.setVolume(0);
+                        ref.read(userVolumeProvider.notifier).value = 0;
                       } else {
                         // Unmute: restore previous volume
                         final prev = ref.read(previousVolumeProvider);
-                        player.setVolume(prev > 0 ? prev : 100.0);
+                        ref.read(userVolumeProvider.notifier).value =
+                            prev > 0 ? prev : 100.0;
                       }
                     }
                   : null,
@@ -247,12 +248,14 @@ class PlayerControls extends ConsumerWidget {
 
 /// Volume slider dialog shown near the anchor position
 class _VolumeDialog extends StatefulWidget {
-  final Player player;
+  final double initial;
+  final ValueChanged<double> onChanged;
   final Offset anchor;
   final double previousVolume;
   final ValueChanged<double> onPreviousVolumeChanged;
   const _VolumeDialog({
-    required this.player,
+    required this.initial,
+    required this.onChanged,
     required this.anchor,
     required this.previousVolume,
     required this.onPreviousVolumeChanged,
@@ -268,7 +271,7 @@ class _VolumeDialogState extends State<_VolumeDialog> {
   @override
   void initState() {
     super.initState();
-    _volume = widget.player.state.volume;
+    _volume = widget.initial;
   }
 
   @override
@@ -295,12 +298,12 @@ class _VolumeDialogState extends State<_VolumeDialog> {
                     onTap: () {
                       if (_volume > 0) {
                         widget.onPreviousVolumeChanged(_volume);
-                        widget.player.setVolume(0);
+                        widget.onChanged(0);
                         setState(() => _volume = 0);
                       } else {
                         final restored =
                             widget.previousVolume > 0 ? widget.previousVolume : 100.0;
-                        widget.player.setVolume(restored);
+                        widget.onChanged(restored);
                         setState(() => _volume = restored);
                       }
                     },
@@ -310,20 +313,20 @@ class _VolumeDialogState extends State<_VolumeDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 140,
+                    width: 180,
                     child: SliderTheme(
                       data: SliderTheme.of(context).copyWith(
                         trackHeight: 3,
                         thumbShape: const RoundSliderThumbShape(
                             enabledThumbRadius: 7),
                       ),
-                      child: Slider(
-                        value: _volume.clamp(0, 100),
-                        min: 0,
-                        max: 100,
+                      child: VolumeSlider(
+                        value: _volume,
                         onChanged: (v) {
-                          widget.player.setVolume(v);
-                          setState(() => _volume = v);
+                          widget.onChanged(v);
+                          // 100% への吸い付きは保存側で決まる
+                          setState(() => _volume =
+                              (v - 100).abs() < 4 ? 100 : v);
                         },
                       ),
                     ),

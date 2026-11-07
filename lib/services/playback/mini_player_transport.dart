@@ -114,8 +114,9 @@ class MiniTransportHost implements TransportHost {
 
   @override
   double normalizedVolume(LoopItem item) {
-    if (!_read(volumeNormProvider)) return 100.0;
+    final user = _read(userVolumeProvider);
+    if (!_read(volumeNormProvider)) return user;
     final latest = _read(loopItemsProvider.notifier).byId(item.id) ?? item;
-    return Loudness.volumeFor(latest.loudnessDb);
+    return Loudness.volumeFor(latest.loudnessDb, base: user);
   }
 }

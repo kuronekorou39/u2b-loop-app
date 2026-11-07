@@ -6,6 +6,7 @@ import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../screens/settings/dj_mix_settings_screen.dart';
 import 'player_controls.dart';
+import 'volume_slider.dart';
 
 /// プレイリスト再生画面の「その他」シート。
 /// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・DJ ミックス・速度・音量・
@@ -199,15 +200,12 @@ class VolumeSliderRow extends ConsumerStatefulWidget {
 }
 
 class _VolumeSliderRowState extends ConsumerState<VolumeSliderRow> {
-  double? _volume;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final player = ref.read(playerProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
-    final volume =
-        _volume ?? ref.watch(volumeProvider).valueOrNull ?? player.state.volume;
+    final volume = ref.watch(userVolumeProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
@@ -226,21 +224,15 @@ class _VolumeSliderRowState extends ConsumerState<VolumeSliderRow> {
                       final prev = ref.read(previousVolumeProvider);
                       next = prev > 0 ? prev : 100.0;
                     }
-                    player.setVolume(next);
-                    setState(() => _volume = next);
+                    ref.read(userVolumeProvider.notifier).value = next;
                   }
                 : null,
           ),
           Expanded(
-            child: Slider(
-              value: volume.clamp(0, 100),
-              min: 0,
-              max: 100,
+            child: VolumeSlider(
+              value: volume,
               onChanged: hasSource
-                  ? (v) {
-                      player.setVolume(v);
-                      setState(() => _volume = v);
-                    }
+                  ? (v) => ref.read(userVolumeProvider.notifier).value = v
                   : null,
             ),
           ),

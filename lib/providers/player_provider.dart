@@ -1,3 +1,4 @@
+import '../core/audio/loudness.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -43,6 +44,16 @@ void _disableNativeSubtitles(Player player) {
     // 生成直後でもsetPropertyは初期化完了まで待ってから適用される
     platform.setProperty('sub-auto', 'no');
     platform.setProperty('sub-visibility', 'no');
+  }
+  allowLoudVolume(player);
+}
+
+/// 音量を 100% より上（[Loudness.maxVolume] まで）にできるようにする。
+/// mpv の volume-max の既定は 130 で、それ以上の setVolume は 130 に丸められる
+void allowLoudVolume(Player player) {
+  final platform = player.platform;
+  if (platform is NativePlayer) {
+    platform.setProperty('volume-max', Loudness.maxVolume.round().toString());
   }
 }
 
@@ -110,6 +121,7 @@ void resetPlayerSlots(WidgetRef ref) {
 /// 切り替えの演出で効果音を使うときに初めて作られる（使わない人にはコストが無い）
 final sfxPlayerProvider = Provider<Player>((ref) {
   final player = Player();
+  allowLoudVolume(player);
   _watchMpvLog(player, 'SFX');
   ref.onDispose(player.dispose);
   return player;
@@ -606,6 +618,33 @@ class VolumeNormNotifier extends StateNotifier<bool> {
   set value(bool v) {
     state = v;
     AppBoxes.settings.put(_key, v);
+  }
+}
+
+/// ユーザーの音量（0〜[Loudness.maxVolume]%、保存する）。プレイヤーに入れるのは
+/// これに曲ごとの正規化をかけた値（[Loudness.volumeFor]）。曲が替わっても引き継ぐ。
+/// 以前はプレイヤーの音量そのものをスライダーで動かしていたので、プレイリストで
+/// 曲が替わるたびに正規化の値（オフなら 100）へ戻っていた
+final userVolumeProvider =
+    StateNotifierProvider<UserVolumeNotifier, double>((ref) => UserVolumeNotifier());
+
+class UserVolumeNotifier extends StateNotifier<double> {
+  static const _key = SettingsKeys.userVolume;
+
+  UserVolumeNotifier() : super(100) {
+    final saved = (AppBoxes.settings.get(_key) as num?)?.toDouble();
+    // ミュートのまま終わっても、次に起動したときは鳴らす
+    if (saved != null && saved > 0) state = saved.clamp(0.0, Loudness.maxVolume);
+  }
+
+  /// 100% の前後はそこに吸い付かせる（200% までのスライダーで 100 に戻しやすく）
+  static const _snap = 4.0;
+
+  set value(double v) {
+    var next = v.clamp(0.0, Loudness.maxVolume);
+    if ((next - 100).abs() < _snap) next = 100;
+    state = next;
+    AppBoxes.settings.put(_key, next);
   }
 }
 

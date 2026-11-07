@@ -1,3 +1,4 @@
+import '../core/audio/loudness.dart';
 import 'dart:async';
 import 'dart:math';
 
@@ -91,7 +92,7 @@ class TransitionSfx {
     if (!_ready) return;
     _ready = false;
     try {
-      await _player.setVolume(volume.clamp(0.0, 100.0));
+      await _player.setVolume(volume.clamp(0.0, Loudness.maxVolume));
       await setRate(rate);
       final t0 = DateTime.now();
       await _player.play();
@@ -149,7 +150,7 @@ class TransitionSfx {
 
   /// 曲の音量 [trackVolume]（0〜100）に対する効果音の音量。[levelDb] は曲との差（0 = 同じ）
   static double volumeFor(double trackVolume, int levelDb) =>
-      (trackVolume * _gain(levelDb)).clamp(0.0, 100.0);
+      (trackVolume * _gain(levelDb)).clamp(0.0, Loudness.maxVolume);
 
   static double _gain(int db) => db >= 0 ? 1 : pow(10, db / 20).toDouble();
 }
