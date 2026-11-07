@@ -34,6 +34,19 @@ void main() {
     expect(TransitionEffect.none.cutsHard, isFalse);
   });
 
+  test('焦らしは効果音を使わず、拍合わせは続ける（切替点まで前の曲だけ、ではない）', () {
+    expect(TransitionEffect.tease.usesSfx, isFalse);
+    expect(TransitionEffect.tease.cutsHard, isFalse);
+    expect(TransitionEffect.tease.sweepsOut, isFalse);
+    // 段取りは切替点に向かって並び、最後は前の曲に戻してから切替点で次の曲へ
+    final steps = TransitionEffect.teaseSteps;
+    for (var i = 1; i < steps.length; i++) {
+      expect(steps[i].$1, lessThan(steps[i - 1].$1));
+    }
+    expect(steps.first.$1, lessThanOrEqualTo(TransitionEffect.teaseBeats));
+    expect(steps.last.$2, isFalse);
+  });
+
   test('fromName は旧設定の名前をそのまま読める', () {
     expect(TransitionEffect.fromName('filterSweep'), TransitionEffect.filterSweep);
     expect(TransitionEffect.fromName('loopRoll'), TransitionEffect.loopRoll);

@@ -16,6 +16,8 @@ class TransitionRecipe {
     this.name = '',
     this.reason = '',
     this.auto = false,
+    this.style,
+    this.sfxDb = 0,
   });
 
   /// クロスフェードの長さ（拍）。0 = オフ
@@ -31,6 +33,12 @@ class TransitionRecipe {
   final String reason;
   final bool auto;
 
+  /// ガチのタイプ（同じタイプが続かないように次の選択で見る）。ガチ以外は null
+  final MixStyle? style;
+
+  /// 効果音の音量の上乗せ（dB、マイナスで小さく）。設定の音量に足す
+  final int sfxDb;
+
   /// ミックスビューに出す 1 行。例「ドロップ合わせ（テンポ差 2% · ドロップ +11dB）」
   String get summary => reason.isEmpty ? name : '$name（$reason）';
 
@@ -44,11 +52,31 @@ class TransitionRecipe {
         name: name,
         reason: reason ?? this.reason,
         auto: auto,
+        style: style,
+        sfxDb: sfxDb,
       );
 
   @override
   String toString() => 'TransitionRecipe($beats拍 ${curve.name} bass=$bassSwap '
       '${effect.name} beat=$beatMatch tempo=$tempoMatch $summary)';
+}
+
+/// ガチのつなぎのタイプ
+enum MixStyle {
+  /// 溶かす: 長く重ね、いつ変わったか分からないように
+  melt('溶かす'),
+
+  /// 盛り上げる: 次の曲の立ち上がりに向けて上げる（効果音はたまに、控えめに）
+  lift('盛り上げ'),
+
+  /// 焦らす: 次の曲をちらっと出しては戻し、小節の頭で切り替える（たまに）
+  tease('焦らし'),
+
+  /// テンポが合わないので、前の曲を止める・刻むで切り替える
+  cut('切り替え');
+
+  const MixStyle(this.label);
+  final String label;
 }
 
 /// おまかせ: 2 曲の解析結果から、つなぎのレシピを選ぶ（純粋関数）。
@@ -92,8 +120,17 @@ class TransitionPlanner {
   /// ガチ: 歌が重なりそうなら、重ねる長さをここまで縮める
   static const vocalClashMaxBeats = 8;
 
+  /// ガチ: 効果音を設定の音量からさらに下げる量（dB）。曲の切り替わりを効果音で
+  /// 塗りつぶさない（「大きくして紛らわせてるだけ」に聞こえた）
+  static const proSfxDb = -4;
+
+  /// ガチ: 焦らしを選ぶ割合（[seed] をこれで割った余りが 0 のとき）。遊びなのでたまに
+  static const teaseEvery = 4;
+
   /// [pro] はガチ。[outTailMid] / [inHeadMid] は前の曲の終わり・次の曲の始まりの
   /// 中音の平均（帯域の波形から。無ければ null で歌のぶつかりは見ない）。
+  /// [lastStyle] は直前のつなぎのタイプ（ガチで同じタイプが続かないように）、
+  /// [seed] は曲の組ごとに決まる数（同じ組なら何度呼んでも同じ結果。ばらつきに使う）。
   /// [outAtMs] / [inAtMs] は重なる位置（前の曲の切断点・次の曲の入り口）。テンポが途中で
   /// 変わる曲はその位置の区切りのテンポと格子で決める（null なら曲全体の値）
   static TransitionRecipe plan(LoopItem out, LoopItem next,
@@ -101,7 +138,9 @@ class TransitionPlanner {
       double? outTailMid,
       double? inHeadMid,
       double? outAtMs,
-      double? inAtMs}) {
+      double? inAtMs,
+      MixStyle? lastStyle,
+      int seed = 0}) {
     final outBpm = out.bpmAt(outAtMs);
     final inBpm = next.bpmAt(inAtMs);
     final tempoDiff = TrackCompatibility.tempoDiffPercent(outBpm, inBpm);
@@ -125,6 +164,23 @@ class TransitionPlanner {
     final facts = <String>[
       if (tempoDiff != null) 'テンポ差 ${tempoDiff.round()}%',
     ];
+    if (pro && !quiet && !live && tempoDiff != null) {
+      return _planPro(
+        facts: facts,
+        tempoDiff: tempoDiff,
+        faster: faster,
+        energy: energy,
+        drop: drop,
+        fadesOut: fadesOut,
+        keyClash: keyClash,
+        vocalClash: outTailMid != null &&
+            inHeadMid != null &&
+            outTailMid >= vocalMid &&
+            inHeadMid >= vocalMid,
+        lastStyle: lastStyle,
+        seed: seed,
+      );
+    }
     TransitionRecipe recipe;
     if (quiet) {
       facts.add('静かな曲同士');
@@ -139,14 +195,11 @@ class TransitionPlanner {
       recipe = _make('標準', 8, CrossfadeCurve.equalPower,
           bass: true, effect: TransitionEffect.filterSweep, match: false);
     } else if (tempoDiff > tempoLimitPercent) {
-      // ガチはテンポが合わないのを逆手に、前の曲をブレーキで止めて切り替える
-      recipe = _make(pro ? 'ブレーキで切り替え' : '短く切り替え', 4, CrossfadeCurve.equalPower,
-          bass: false,
-          effect: pro ? TransitionEffect.brake : TransitionEffect.impact,
-          match: false);
+      recipe = _make('短く切り替え', 4, CrossfadeCurve.equalPower,
+          bass: false, effect: TransitionEffect.impact, match: false);
     } else if (fadesOut) {
       facts.add('フェードアウト');
-      recipe = _make('フェードアウトに重ねる', pro ? proLongBeats : 16, CrossfadeCurve.nextFirst,
+      recipe = _make('フェードアウトに重ねる', 16, CrossfadeCurve.nextFirst,
           bass: true, effect: TransitionEffect.none, match: true);
     } else if (drop != null && drop >= strongDropDb) {
       facts.add('ドロップ +${drop.round()}dB');
@@ -155,32 +208,104 @@ class TransitionPlanner {
     } else if ((faster ?? 0) >= fasterPercent || (energy ?? 0) >= energyStepDb) {
       facts.add(_energyFact(faster, energy, up: true));
       recipe = _make('盛り上げ', 8, CrossfadeCurve.nextFirst,
-          bass: true,
-          effect: pro ? TransitionEffect.riserImpact : TransitionEffect.riser,
-          match: true);
+          bass: true, effect: TransitionEffect.riser, match: true);
     } else if ((faster ?? 0) <= -fasterPercent || (energy ?? 0) <= -energyStepDb) {
       facts.add(_energyFact(faster, energy, up: false));
       recipe = _make('落ち着かせ', 16, CrossfadeCurve.equalPower,
           bass: true, effect: TransitionEffect.filterSweep, match: true);
     } else {
-      recipe = _make('ブレンド', pro ? proLongBeats : 16, CrossfadeCurve.nextFirst,
+      recipe = _make('ブレンド', 16, CrossfadeCurve.nextFirst,
           bass: true, effect: TransitionEffect.filterSweep, match: true);
-    }
-    // ガチ: 前の曲の終わりと次の曲の始まりで、どちらも中音（声）が強ければ短く重ねる
-    if (pro &&
-        outTailMid != null &&
-        inHeadMid != null &&
-        outTailMid >= vocalMid &&
-        inHeadMid >= vocalMid &&
-        recipe.beats > vocalClashMaxBeats) {
-      facts.add('歌が重なりそうで短め');
-      recipe = recipe.copyWith(beats: vocalClashMaxBeats);
     }
     if (keyClash && recipe.beats > keyClashMaxBeats) {
       facts.add('キー不一致で短め');
       recipe = recipe.copyWith(beats: keyClashMaxBeats);
     }
     return recipe.copyWith(reason: facts.join(' · '));
+  }
+
+  /// ガチ: テンポが分かっていて拍が安定した 2 曲を、溶かす・盛り上げ・焦らし・切り替えから選ぶ。
+  ///
+  /// 1. 曲の組み合わせで候補を絞る（盛り上がる組は盛り上げ、そうでなければ溶かす。
+  ///    キーが合わない・歌がぶつかる組は長く重ねられないので溶かすを外す）
+  /// 2. ときどき（[teaseEvery] 回に 1 回くらい）焦らし
+  /// 3. 直前と同じタイプなら、ほかの候補に替える
+  static TransitionRecipe _planPro({
+    required List<String> facts,
+    required double tempoDiff,
+    required double? faster,
+    required double? energy,
+    required double? drop,
+    required bool fadesOut,
+    required bool keyClash,
+    required bool vocalClash,
+    required MixStyle? lastStyle,
+    required int seed,
+  }) {
+    TransitionRecipe done(TransitionRecipe r) => r.copyWith(reason: facts.join(' · '));
+
+    // テンポが合わない: 前の曲を止める（ブレーキ）か刻む（ループロール）で切り替える
+    if (tempoDiff > tempoLimitPercent) {
+      final brake = seed.isEven;
+      return done(_make(brake ? 'ブレーキで切り替え' : 'ループロールで切り替え', 4,
+          CrossfadeCurve.equalPower,
+          bass: false,
+          effect: brake ? TransitionEffect.brake : TransitionEffect.loopRoll,
+          match: false,
+          style: MixStyle.cut));
+    }
+
+    final strongDrop = drop != null && drop >= strongDropDb;
+    final up = strongDrop ||
+        (faster ?? 0) >= fasterPercent ||
+        (energy ?? 0) >= energyStepDb;
+    final canMelt = !keyClash && !vocalClash;
+
+    final candidates = <MixStyle>[
+      if (up) MixStyle.lift,
+      if (canMelt) MixStyle.melt,
+      MixStyle.tease,
+      if (!up) MixStyle.lift,
+    ];
+    var style = candidates.first;
+    if (seed % teaseEvery == 0 && lastStyle != MixStyle.tease) style = MixStyle.tease;
+    if (style == lastStyle) {
+      style = candidates.firstWhere((c) => c != lastStyle, orElse: () => style);
+    }
+
+    if (keyClash) facts.add('キー不一致');
+    if (vocalClash) facts.add('歌が重なりそう');
+    switch (style) {
+      case MixStyle.melt:
+        if (fadesOut) facts.add('フェードアウト');
+        return done(_make('溶かす', proLongBeats, CrossfadeCurve.melt,
+            bass: true, effect: TransitionEffect.none, match: true, style: style));
+      case MixStyle.tease:
+        // 拍ごとにはっきり出し入れするので、重ならない（キー・歌がぶつからない）
+        return done(_make('焦らし', TransitionEffect.teaseBeats, CrossfadeCurve.cut,
+            bass: false, effect: TransitionEffect.tease, match: true, style: style));
+      case MixStyle.lift || MixStyle.cut:
+        // 効果音は 2 回に 1 回くらい。鳴らさない回はこもらせて抜くだけ
+        final sfx = seed % 3 != 1;
+        if (strongDrop) {
+          facts.add('ドロップ +${drop.round()}dB');
+          return done(_make('ドロップ合わせ', 8, CrossfadeCurve.cut,
+              bass: true,
+              effect: sfx ? TransitionEffect.riserImpact : TransitionEffect.filterSweep,
+              match: true,
+              style: MixStyle.lift,
+              sfxDb: proSfxDb));
+        }
+        if (up) facts.add(_energyFact(faster, energy, up: true));
+        // 歌・キーがぶつかる組は短く入れ替える
+        final beats = canMelt ? 16 : vocalClashMaxBeats;
+        return done(_make(up ? '盛り上げ' : '入れ替え', beats, CrossfadeCurve.nextFirst,
+            bass: true,
+            effect: up && sfx ? TransitionEffect.riser : TransitionEffect.filterSweep,
+            match: true,
+            style: MixStyle.lift,
+            sfxDb: proSfxDb));
+    }
   }
 
   static String _energyFact(double? faster, double? energy, {required bool up}) {
@@ -192,7 +317,11 @@ class TransitionPlanner {
   }
 
   static TransitionRecipe _make(String name, int beats, CrossfadeCurve curve,
-          {required bool bass, required TransitionEffect effect, required bool match}) =>
+          {required bool bass,
+          required TransitionEffect effect,
+          required bool match,
+          MixStyle? style,
+          int sfxDb = 0}) =>
       TransitionRecipe(
         beats: beats,
         curve: curve,
@@ -202,5 +331,16 @@ class TransitionPlanner {
         tempoMatch: match,
         name: name,
         auto: true,
+        style: style,
+        sfxDb: sfxDb,
       );
+
+  /// 曲の組から決まる数（[plan] の seed）。同じ組なら起動し直しても同じ
+  static int seedFor(String outId, String inId) {
+    var h = 17;
+    for (final c in '$outId>$inId'.codeUnits) {
+      h = (h * 31 + c) & 0x3fffffff;
+    }
+    return h;
+  }
 }

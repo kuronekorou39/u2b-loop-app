@@ -77,14 +77,20 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
     expect(chipOf(tester, '次曲先行').onSelected, isNotNull);
 
+    await tester.ensureVisible(find.text('次曲先行'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('次曲先行'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
 
+    await tester.ensureVisible(find.text('ベーススワップ'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('ベーススワップ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.bassSwap), false);
 
+    await tester.ensureVisible(find.text('ブレーキ'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('ブレーキ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'brake');
@@ -96,6 +102,8 @@ void main() {
     expect(chipOf(tester, 'ふつう').selected, isTrue);
     expect(chipOf(tester, '大きめ').onSelected, isNull);
 
+    await tester.ensureVisible(find.text('ライザー＋インパクト'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('ライザー＋インパクト'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'riserImpact');

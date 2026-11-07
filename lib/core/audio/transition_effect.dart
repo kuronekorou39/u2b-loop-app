@@ -19,7 +19,8 @@ enum TransitionEffect {
   impact('インパクト', '切り替わりの瞬間に一撃と余韻を重ねる'),
   brake('ブレーキ', '前の曲をレコードが止まるように遅くして止め、その瞬間に次の曲へ'),
   spinback('スピンバック', '前の曲を逆回転の音で巻き取り、その瞬間に次の曲へ'),
-  loopRoll('ループロール', '前の曲の最後の 1 小節を 1/2 → 1/4 → 1/8 拍と細かく刻み、次の曲へ');
+  loopRoll('ループロール', '前の曲の最後の 1 小節を 1/2 → 1/4 → 1/8 拍と細かく刻み、次の曲へ'),
+  tease('焦らし', '次の曲を 1〜2 拍だけ出しては前の曲に戻すのを繰り返し、小節の頭で切り替える');
 
   const TransitionEffect(this.label, this.description);
 
@@ -49,4 +50,16 @@ enum TransitionEffect {
 
   /// 切替点までは前の曲だけ、その瞬間に次の曲へ（音量曲線・ベーススワップを使わない）
   bool get cutsHard => this == brake || this == spinback || this == loopRoll;
+
+  /// 焦らしの段取り: (切替点の何拍前, 次の曲を出すか)。その拍から次の段取りまでその状態。
+  /// 4 小節（16 拍）のうち、2 小節目の頭で 1 拍、3 小節目の頭で 2 拍、
+  /// 最後の小節は 1 拍ごとに出し入れし、最後の 1 拍は前の曲に戻してから切替点で次の曲へ
+  static const teaseSteps = <(double, bool)>[
+    (12, true), (11, false),
+    (8, true), (6, false),
+    (4, true), (3, false), (2, true), (1, false),
+  ];
+
+  /// 焦らしに要る長さ（拍）
+  static const teaseBeats = 16;
 }

@@ -16,7 +16,11 @@ enum CrossfadeCurve {
   linear('直線', '単純に入れ替える。中間で少し音が薄くなる'),
 
   /// カット: 切替点まで前の曲のまま、その瞬間に次の曲へ（ドロップ合わせと組み合わせると気持ちいい）
-  cut('カット', '切替点まで前の曲のまま、その瞬間に次の曲へ。ドロップ合わせ向き');
+  cut('カット', '切替点まで前の曲のまま、その瞬間に次の曲へ。ドロップ合わせ向き'),
+
+  /// 溶かす: 次の曲を前半でゆっくり 8 割まで上げ（低音は切ったまま）、真ん中で低音を入れ替え、
+  /// 後半で前の曲をゆっくり抜く。長く（32 拍）使うと、いつ変わったか分からない
+  melt('溶かす', '次の曲をゆっくり重ね、低音を入れ替えてから前の曲をゆっくり抜く。いつ変わったか分からない');
 
   const CrossfadeCurve(this.label, this.description);
 
@@ -35,6 +39,7 @@ enum CrossfadeCurve {
         equalPower || linear => 0.5,
         nextFirst => 0.7,
         cut => 1.0,
+        melt => 0.5,
       };
 
   /// [t] は 0〜1。戻り値は 0〜1 の音量比
@@ -56,6 +61,17 @@ enum CrossfadeCurve {
         return (out: outLevel.clamp(0.0, 1.0), in_: inLevel.clamp(0.0, 1.0));
       case cut:
         return p >= 1 ? (out: 0, in_: 1) : (out: 1, in_: 0);
+      case melt:
+        // 入る曲: 前半で S 字に 0.8 まで、低音が入れ替わった後に 1 へ
+        final inLevel = p < 0.5
+            ? 0.8 * _ease(p / 0.5)
+            : 0.8 + 0.2 * _ease(min(1.0, (p - 0.5) / 0.25));
+        // 出る曲: 真ん中まで全開、後半で S 字に抜く
+        final outLevel = p < 0.5 ? 1.0 : 1 - _ease((p - 0.5) / 0.5);
+        return (out: outLevel.clamp(0.0, 1.0), in_: inLevel.clamp(0.0, 1.0));
     }
   }
+
+  /// 0〜1 の S 字（両端がなだらか）
+  static double _ease(double x) => (1 - cos(x.clamp(0.0, 1.0) * pi)) / 2;
 }

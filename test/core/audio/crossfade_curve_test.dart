@@ -22,6 +22,23 @@ void main() {
       });
     }
 
+    test('溶かすは真ん中まで前の曲が全開で、次の曲は 8 割。どちらもなめらかに動く', () {
+      final mid = CrossfadeCurve.melt.levels(0.5);
+      expect(mid.out, 1);
+      expect(mid.in_, closeTo(0.8, 1e-9));
+      expect(CrossfadeCurve.melt.bassSwapAt, 0.5);
+      var prevIn = -1.0, prevOut = 2.0;
+      for (var t = 0.0; t <= 1.0; t += 0.05) {
+        final l = CrossfadeCurve.melt.levels(t);
+        expect(l.in_, greaterThanOrEqualTo(prevIn));
+        expect(l.out, lessThanOrEqualTo(prevOut));
+        prevIn = l.in_;
+        prevOut = l.out;
+      }
+      // 入り始めはごく小さい（いつ入ったか分からない）
+      expect(CrossfadeCurve.melt.levels(0.05).in_, lessThan(0.05));
+    });
+
     test('等パワーは中間で合計の音圧が落ちない', () {
       final l = CrossfadeCurve.equalPower.levels(0.5);
       expect(l.out * l.out + l.in_ * l.in_, closeTo(1, 1e-9));

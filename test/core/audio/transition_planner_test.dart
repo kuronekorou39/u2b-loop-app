@@ -164,29 +164,72 @@ void main() {
   });
 
   group('ガチ', () {
-    test('なじませるつなぎは 32 拍（1 フレーズ）、盛り上げはライザー＋インパクト', () {
-      final blend = TransitionPlanner.plan(item(bpm: 126), item(bpm: 128), pro: true);
-      expect(blend.name, 'ブレンド');
-      expect(blend.beats, 32);
-      final up = TransitionPlanner.plan(item(bpm: 120), item(bpm: 126), pro: true);
-      expect(up.name, '盛り上げ');
-      expect(up.effect, TransitionEffect.riserImpact);
+    // seed: 焦らしは seed % 4 == 0、盛り上げの効果音は seed % 3 != 1
+    TransitionRecipe pro(LoopItem a, LoopItem b,
+            {int seed = 1, MixStyle? last, double? outMid, double? inMid}) =>
+        TransitionPlanner.plan(a, b,
+            pro: true, seed: seed, lastStyle: last, outTailMid: outMid, inHeadMid: inMid);
+
+    test('同じくらいの 2 曲は溶かす（32 拍・効果音なし・低音の入れ替え）', () {
+      final r = pro(item(bpm: 126), item(bpm: 128));
+      expect(r.style, MixStyle.melt);
+      expect(r.name, '溶かす');
+      expect(r.beats, 32);
+      expect(r.curve, CrossfadeCurve.melt);
+      expect(r.effect, TransitionEffect.none);
+      expect(r.bassSwap, isTrue);
     });
 
-    test('テンポ差が大きければブレーキで切り替え', () {
-      final r = TransitionPlanner.plan(item(bpm: 100), item(bpm: 140), pro: true);
-      expect(r.effect, TransitionEffect.brake);
-      expect(r.beats, 4);
+    test('盛り上がる組は盛り上げ。効果音は控えめで、毎回は鳴らさない', () {
+      final withSfx = pro(item(bpm: 120), item(bpm: 126), seed: 2);
+      expect(withSfx.style, MixStyle.lift);
+      expect(withSfx.effect, TransitionEffect.riser);
+      expect(withSfx.sfxDb, TransitionPlanner.proSfxDb);
+      final quiet = pro(item(bpm: 120), item(bpm: 126), seed: 1);
+      expect(quiet.style, MixStyle.lift);
+      expect(quiet.effect.usesSfx, isFalse);
     });
 
-    test('前の曲の終わりと次の曲の始まりの両方で中音が強ければ 8 拍に縮める', () {
-      final r = TransitionPlanner.plan(item(bpm: 126), item(bpm: 128),
-          pro: true, outTailMid: 0.75, inHeadMid: 0.7);
-      expect(r.beats, TransitionPlanner.vocalClashMaxBeats);
-      expect(r.reason, contains('歌が重なりそう'));
-      final one = TransitionPlanner.plan(item(bpm: 126), item(bpm: 128),
-          pro: true, outTailMid: 0.75, inHeadMid: 0.3);
-      expect(one.beats, 32, reason: '片方だけなら縮めない');
+    test('ときどき焦らし（16 拍、はっきり出し入れするので低音の入れ替えなし）', () {
+      final r = pro(item(bpm: 126), item(bpm: 128), seed: 4);
+      expect(r.style, MixStyle.tease);
+      expect(r.effect, TransitionEffect.tease);
+      expect(r.beats, TransitionEffect.teaseBeats);
+      expect(r.bassSwap, isFalse);
+      expect(r.beatMatch, isTrue);
+    });
+
+    test('直前と同じタイプは続けない', () {
+      expect(pro(item(bpm: 126), item(bpm: 128), last: MixStyle.melt).style,
+          isNot(MixStyle.melt));
+      expect(pro(item(bpm: 126), item(bpm: 128), seed: 4, last: MixStyle.tease).style,
+          MixStyle.melt);
+    });
+
+    test('歌が重なりそう・キーが合わない組は溶かさない（長く重ねない）', () {
+      final vocal = pro(item(bpm: 126), item(bpm: 128), outMid: 0.75, inMid: 0.7);
+      expect(vocal.style, isNot(MixStyle.melt));
+      expect(vocal.reason, contains('歌が重なりそう'));
+      final key = pro(item(bpm: 128, key: 'Cmaj'), item(bpm: 128, key: 'F#maj'));
+      expect(key.style, isNot(MixStyle.melt));
+      expect(key.beats, lessThanOrEqualTo(16));
+      final one = pro(item(bpm: 126), item(bpm: 128), outMid: 0.75, inMid: 0.3);
+      expect(one.style, MixStyle.melt, reason: '片方だけなら溶かす');
+    });
+
+    test('テンポ差が大きければ、ブレーキかループロールで切り替え', () {
+      final a = pro(item(bpm: 100), item(bpm: 140), seed: 2);
+      expect(a.effect, TransitionEffect.brake);
+      expect(a.beats, 4);
+      final b = pro(item(bpm: 100), item(bpm: 140), seed: 3);
+      expect(b.effect, TransitionEffect.loopRoll);
+      expect(b.style, MixStyle.cut);
+    });
+
+    test('同じ組なら何度呼んでも同じ（seed は組で決まる）', () {
+      expect(TransitionPlanner.seedFor('a', 'b'), TransitionPlanner.seedFor('a', 'b'));
+      expect(TransitionPlanner.seedFor('a', 'b'),
+          isNot(TransitionPlanner.seedFor('b', 'a')));
     });
 
     test('普通（ガチでない）は今までと同じ', () {
@@ -194,6 +237,8 @@ void main() {
           outTailMid: 0.9, inHeadMid: 0.9);
       expect(r.beats, 16);
       expect(r.reason, isNot(contains('歌')));
+      expect(r.style, isNull);
+      expect(r.sfxDb, 0);
     });
   });
 }

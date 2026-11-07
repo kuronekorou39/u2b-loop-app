@@ -462,6 +462,9 @@ class PlaylistEngine {
 
     // 切替点の瞬間の効果音（インパクト）はここで鳴らす
     session?.onCut();
+    // ガチのタイプを覚えておく（次のつなぎで同じタイプを続けない）。
+    // 交差の途中で覚えると、まだ予約中のこの組のレシピが変わってしまうので切り替わってから
+    if (session != null) _lastStyle = session.recipe.style;
     // 重ね表示の組（交差していた / 重ね表示で切替点より後を押した）。
     // 前曲は止めずにパークして、次に切り替わるまで開き直さずに行き来できるようにする。
     // パークした曲は 3 台目にいるので、次の曲の先読みは空いているスロットで続けられる
@@ -871,7 +874,9 @@ class PlaylistEngine {
           outTailMid: pro ? _tailMid(current) : null,
           inHeadMid: pro ? _headMid(next.item) : null,
           outAtMs: _outAtMs(),
-          inAtMs: inAtMs(next));
+          inAtMs: inAtMs(next),
+          lastStyle: _lastStyle,
+          seed: TransitionPlanner.seedFor(current.id, next.item.id));
     }
     return TransitionRecipe(
       beats: manualBeats,
@@ -882,6 +887,9 @@ class PlaylistEngine {
       tempoMatch: _ref.read(tempoMatchProvider),
     );
   }
+
+  /// 直前のつなぎのガチのタイプ（切り替わったときに覚える）
+  MixStyle? _lastStyle;
 
   /// ガチの歌のぶつかり判定で見る長さ（曲の終わり・始まりから）
   static const _vocalWindowMs = 30000.0;
@@ -1264,7 +1272,8 @@ class PlaylistEngine {
       beatMediaMs: beatMs,
       sfx: sfxPlan != null ? _ref.read(transitionSfxProvider) : null,
       sfxPlan: sfxPlan,
-      sfxVolume: TransitionSfx.volumeFor(volume, _ref.read(sfxLevelProvider)),
+      sfxVolume: TransitionSfx.volumeFor(
+          volume, _ref.read(sfxLevelProvider) + recipe.sfxDb),
       sfxOffsetMs: _ref.read(sfxOffsetMsProvider),
       jogMs: jogMsFor(next),
       onForceCut: _forceCut,
@@ -1715,8 +1724,9 @@ class _CrossfadeSession {
   Timer? _brakeTimer;
   bool _tricksStarted = false;
 
-  /// トリック中の出る曲の音量比（null = 曲線のまま）
+  /// トリック中の出る曲・入る曲の音量比（null = 曲線のまま）
   double? _outOverride;
+  double? _inOverride;
 
   /// 効果音とトリックを予定する。[wallToCutMs] は切替点までの実時間
   void startTricks({required int wallToCutMs}) {
@@ -1756,9 +1766,34 @@ class _CrossfadeSession {
         _after(toCut - durMs, () => _startBrake(durMs));
       case TransitionEffect.loopRoll:
         _after(toCut - (beatRealMs * loopRollBeats).round(), _startLoopRoll);
+      case TransitionEffect.tease:
+        _scheduleTease(toCut);
       default:
         break;
     }
+  }
+
+  /// 焦らし: [TransitionEffect.teaseSteps] の拍で、次の曲と前の曲をはっきり出し入れする。
+  /// 交差の途中から始めた（もう過ぎた段取りがある）ときは、過ぎた最後の状態から
+  void _scheduleTease(int toCut) {
+    bool? current;
+    for (final (beats, inOn) in TransitionEffect.teaseSteps) {
+      final at = toCut - (beats * beatRealMs).round();
+      if (at <= 0) {
+        current = inOn;
+      } else {
+        _after(at, () => _setTease(inOn));
+      }
+    }
+    if (current != null) _setTease(current);
+  }
+
+  void _setTease(bool inOn) {
+    _outOverride = inOn ? 0 : 1;
+    _inOverride = inOn ? 1 : 0;
+    outVolume = volume * _outOverride!;
+    outPlayer.setVolume(outVolume);
+    inPlayer.setVolume(inVolume * _inOverride!);
   }
 
   void _after(int ms, void Function() fn) {
@@ -2017,7 +2052,7 @@ class _CrossfadeSession {
     final levels = effect.cutsHard ? CrossfadeCurve.cut.levels(t) : curve.levels(t);
     outVolume = volume * (_outOverride ?? levels.out);
     outPlayer.setVolume(outVolume);
-    inPlayer.setVolume(inVolume * levels.in_);
+    inPlayer.setVolume(inVolume * (_inOverride ?? levels.in_));
 
     final posMs = pos.inMicroseconds / 1000;
     final cutMs = cut.inMicroseconds / 1000;
