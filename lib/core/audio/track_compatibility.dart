@@ -77,9 +77,9 @@ class TrackCompatibility {
   }
 
   /// [a] の後に [b] をつなぐときの総合スコア 0〜1（テンポ 5 : キー 3 : 音量の流れ 2）。
-  /// キーは [a] の終わりと [b] の始まり（転調する曲は表示のキーと違うことがある）
+  /// テンポもキーも [a] の終わりと [b] の始まり（途中で変わる曲は表示の値と違うことがある）
   static double score(LoopItem a, LoopItem b) =>
-      0.5 * tempoScore(a.bpm, b.bpm) +
+      0.5 * tempoScore(a.endBpm, b.startBpm) +
       0.3 * keyScore(a.endKey, b.startKey) +
       0.2 * flowScore(a, b);
 
@@ -130,7 +130,7 @@ class TrackCompatibility {
   static String describe(LoopItem target, LoopItem other) {
     final parts = <String>[];
     if (other.bpm != null) {
-      final ratio = tempoRatio(target.bpm, other.bpm);
+      final ratio = tempoRatio(target.endBpm, other.startBpm);
       final pct = ratio == null ? '' : _signedPercent((1 / ratio - 1) * 100);
       parts.add('${other.bpm!.round()} BPM$pct');
     }

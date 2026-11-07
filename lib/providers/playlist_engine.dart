@@ -285,15 +285,18 @@ class PlaylistEngine {
     final cut = _cutPoint()?.cut;
     if (cut == null) return null;
     const step = EnergyProfile.curveStepMs;
-    final outGrid = outItem.beatGrid;
-    final exitDb = EntryPlanner.exitDb(outCurve, cut.inMicroseconds / 1000,
+    final cutMs = cut.inMicroseconds / 1000;
+    final outGrid = outItem.beatGridAt(cutMs);
+    final exitDb = EntryPlanner.exitDb(outCurve, cutMs,
         stepMs: step, grid: outGrid != null && outGrid.reliable ? outGrid : null);
-    final inGrid = next.item.beatGrid;
+    // 入り口の候補は曲の前半。テンポが変わる曲は曲頭の区切りの格子で段落を数える
+    final headMs = next.item.introSkipMs.toDouble();
+    final inGrid = next.item.beatGridAt(headMs);
     final sections = EntryPlanner.sections(
       inCurve,
       stepMs: step,
       grid: inGrid != null && inGrid.reliable ? inGrid : null,
-      dropMs: next.item.mixInMs?.toDouble(),
+      dropMs: next.item.barAnchorAt(headMs),
       leadingSilenceMs: next.item.introSkipMs,
     );
     return EntryPlanner.entryMs(exitDb: exitDb, sections: sections);
@@ -358,6 +361,34 @@ class PlaylistEngine {
     final cutPoint = _cutPoint();
     return cutPoint == null ? null : cutPoint.cut - crossfadeDuration;
   }
+
+  // --- 重なる位置（テンポが途中で変わる曲は、この位置の区切りの格子・テンポでつなぐ） ---
+
+  /// 前の曲（鳴っている曲）の重なる位置: 予定の切断点（曲の時刻 ms）。決まらなければ null
+  double? _outAtMs() {
+    final cut = _cutPoint()?.cut;
+    return cut == null ? null : cut.inMicroseconds / 1000;
+  }
+
+  /// 前の曲の重なる位置の拍の格子
+  BeatGrid? _outGrid() =>
+      _ref.read(playlistPlayerProvider).currentTrack?.item.beatGridAt(_outAtMs());
+
+  /// 次曲 [next] の重なる位置（曲の時刻 ms）: A 点 → 出口に合わせた入り口 → ドロップ → 曲頭。
+  /// [effectiveStart] の土台と同じ順（フェードの長さは引かない。つなぎ方の拍数が
+  /// この位置のテンポで決まるので、ここで crossfadeDuration を呼ぶと回り続ける）
+  double inAtMs(PlaylistTrack next) {
+    final startMs = next.startMs;
+    if (startMs != null) return startMs.toDouble();
+    final entry = _smartEntryMs(next);
+    if (entry != null) return entry;
+    final mixIn = next.item.mixInMs;
+    if (mixIn != null && _ref.read(mixPointAlignProvider)) return mixIn.toDouble();
+    return next.item.introSkipMs.toDouble();
+  }
+
+  /// 次曲 [next] の重なる位置の拍の格子（デッキの板・拍合わせ・ジョグが使う）
+  BeatGrid? inGridFor(PlaylistTrack next) => next.item.beatGridAt(inAtMs(next));
 
   /// プリロード側の次曲の交差中の速度（テンポ合わせ + 手の微調整）
   double _preloadInRate(PlaylistTrack next) {
@@ -837,7 +868,9 @@ class PlaylistEngine {
       return TransitionPlanner.plan(current, next.item,
           pro: pro,
           outTailMid: pro ? _tailMid(current) : null,
-          inHeadMid: pro ? _headMid(next.item) : null);
+          inHeadMid: pro ? _headMid(next.item) : null,
+          outAtMs: _outAtMs(),
+          inAtMs: inAtMs(next));
     }
     return TransitionRecipe(
       beats: manualBeats,
@@ -884,7 +917,10 @@ class PlaylistEngine {
   /// 拍を秒に直すときのテンポ。今鳴っている曲 → 予約済みの次曲 → 120
   double _referenceBpm() {
     final current = _ref.read(playlistPlayerProvider).currentTrack?.item;
-    final bpm = current?.bpm ?? _armedTrack?.item.bpm;
+    final armed = _armedTrack;
+    final bpm = current != null
+        ? current.bpmAt(_outAtMs())
+        : armed?.item.bpmAt(inAtMs(armed));
     if (bpm == null || bpm <= 0) return 120;
     final rate = current == null ? 1.0 : activePlayer.state.rate;
     return bpm * (rate > 0 ? rate : 1);
@@ -892,7 +928,7 @@ class PlaylistEngine {
 
   /// 出る曲の 1 拍（媒体のミリ秒）。格子が無ければ [_referenceBpm] から
   double _outBeatMs() {
-    final grid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    final grid = _outGrid();
     return grid != null && grid.reliable ? grid.periodMs : 60000 / _referenceBpm();
   }
 
@@ -918,7 +954,11 @@ class PlaylistEngine {
   /// 効果音を使わない演出なら null
   SfxPlan? _sfxPlanFor(TransitionEffect effect, Duration start, Duration cut) {
     if (!effect.usesSfx) return null;
-    final grid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    final grid = _ref
+        .read(playlistPlayerProvider)
+        .currentTrack
+        ?.item
+        .beatGridAt(cut.inMicroseconds / 1000);
     return SfxPlan.plan(
       effect: effect,
       startMs: start.inMicroseconds / 1000,
@@ -1032,13 +1072,14 @@ class PlaylistEngine {
   ({Duration cut, bool advancesAtCut}) _snapToGrid(
       LoopItem? item, ({Duration cut, bool advancesAtCut}) raw,
       {double? latestMs}) {
-    final grid = item?.beatGrid;
-    if (grid == null || !grid.reliable) return raw;
     final rawMs = raw.cut.inMicroseconds / 1000;
-    var snappedMs = snapCutMs(grid, rawMs,
-        dropMs: item!.mixInMs?.toDouble(), allowLater: latestMs != null);
+    final grid = item?.beatGridAt(rawMs);
+    if (grid == null || !grid.reliable) return raw;
+    final dropMs = item!.barAnchorAt(rawMs);
+    var snappedMs =
+        snapCutMs(grid, rawMs, dropMs: dropMs, allowLater: latestMs != null);
     if (latestMs != null && snappedMs > latestMs) {
-      snappedMs = snapCutMs(grid, rawMs, dropMs: item.mixInMs?.toDouble());
+      snappedMs = snapCutMs(grid, rawMs, dropMs: dropMs);
     }
     final snapped = Duration(microseconds: (snappedMs * 1000).round());
     if (snapped <= Duration.zero ||
@@ -1138,7 +1179,11 @@ class PlaylistEngine {
     final curve = recipe.curve;
     // ベーススワップの位置: 曲線の決める進捗を、出る曲の次の拍の頭へ寄せる（区切りで一動作）
     final beatMs = _outBeatMs();
-    final outGrid = _ref.read(playlistPlayerProvider).currentTrack?.item.beatGrid;
+    final outGrid = _ref
+        .read(playlistPlayerProvider)
+        .currentTrack
+        ?.item
+        .beatGridAt(cut.inMicroseconds / 1000);
     final atMs = (start + (cut - start) * curve.bassSwapAt).inMicroseconds / 1000;
     final cutMs = cut.inMicroseconds / 1000;
     var swapStartMs = atMs;
@@ -1255,8 +1300,10 @@ class PlaylistEngine {
   _BeatPlan? _beatPlan(PlaylistTrack next, double inRate) {
     if (!recipeFor(next).beatMatch) return null;
     final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
-    final outGrid = outItem?.beatGrid;
-    final inGrid = next.item.beatGrid;
+    final outAt = _outAtMs();
+    final inAt = inAtMs(next);
+    final outGrid = outItem?.beatGridAt(outAt);
+    final inGrid = next.item.beatGridAt(inAt);
     // 格子が当てはまっていない曲（生演奏・揺れる曲）は合わせようとしない方が自然
     if (outGrid == null || inGrid == null || !outGrid.reliable || !inGrid.reliable) {
       return null;
@@ -1270,8 +1317,8 @@ class PlaylistEngine {
       inGrid: inGrid,
       // 重ね始めは小節（ドロップを小節頭とみなして 4 拍ごと）で揃える。
       // 切断点も小節頭なので、入る曲のドロップが切り替わりの瞬間に来る
-      outBars: outGrid.barGrid(outItem!.mixInMs?.toDouble()),
-      inBars: inGrid.barGrid(next.item.mixInMs?.toDouble()),
+      outBars: outGrid.barGrid(outItem!.barAnchorAt(outAt)),
+      inBars: inGrid.barGrid(next.item.barAnchorAt(inAt)),
       outRate: outRate,
       inRate: inRate,
       lock: ratio != null && (ratio - 1).abs() < 0.005,
@@ -1284,7 +1331,7 @@ class PlaylistEngine {
   /// これより広いと自動の拍合わせの寄せ（±半小節）の外に出て、保存の計算が折り返す。
   /// 格子が無い・信用できない曲は null（手で合わせても自動が使わない）
   double? jogMaxMs(MixPair pair) {
-    final grid = pair.next.item.beatGrid;
+    final grid = inGridFor(pair.next);
     if (grid == null || !grid.reliable) return null;
     return grid.periodMs * (BeatGrid.beatsPerBar / 2);
   }
@@ -1294,9 +1341,8 @@ class PlaylistEngine {
   /// （ジョグ込み）から出す予想値。測れないときは null
   double? jogErrorMs(MixPair pair) {
     if (_crossfade != null) return _ref.read(beatPhaseErrorProvider);
-    final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
-    final out = outItem?.beatGrid;
-    final in_ = pair.next.item.beatGrid;
+    final out = _outGrid();
+    final in_ = inGridFor(pair.next);
     if (out == null || in_ == null || !out.reliable || !in_.reliable) return null;
     final outRate = activePlayer.state.rate;
     final inRate = _preloadInRate(pair.next);
@@ -1344,11 +1390,10 @@ class PlaylistEngine {
   /// 音はもう合っているので動かさない。拍の線は新しい格子で引き直される
   Future<void> saveJog(MixPair pair, double jogMs) async {
     final item = pair.next.item;
-    final grid = item.beatGrid;
+    final at = inAtMs(pair.next);
+    final grid = item.beatGridAt(at);
     if (grid == null || jogMs == 0) return;
-    final shifted = grid.shiftedBy(jogMs);
-    item.beatOffsetMs = shifted.offsetMs;
-    item.downbeatMs = shifted.downbeatMs;
+    item.setBeatGridAt(at, grid.shiftedBy(jogMs));
     _crossfade?.acceptJog();
     await _ref.read(loopItemsProvider.notifier).update(item);
   }
@@ -1383,22 +1428,18 @@ class PlaylistEngine {
   Future<void> _rescaleBpm(MixPair pair, double factor,
       {required double anchorMs}) async {
     final item = pair.next.item;
-    final grid = item.beatGrid;
+    final at = inAtMs(pair.next);
+    final grid = item.beatGridAt(at);
     if (grid == null) return;
-    final next = grid.withBpm(grid.bpm * factor, anchorMs: anchorMs);
-    item.beatBpm = next.bpm;
-    item.beatOffsetMs = next.offsetMs;
-    item.downbeatMs = next.downbeatMs;
-    // 表示・相性用の BPM（0.1 刻み）も同じ比で
-    final bpm = item.bpm;
-    if (bpm != null) item.bpm = (bpm * factor * 10).round() / 10;
+    item.setBeatGridAt(at, grid.withBpm(grid.bpm * factor, anchorMs: anchorMs));
+    // 表示・相性用の BPM（0.1 刻み）も同じ比で（テンポが変わる曲はその区切りの値）
+    item.scaleBpmAt(at, factor);
     await _ref.read(loopItemsProvider.notifier).update(item);
   }
 
   /// 前曲が鳴っているテンポ（BPM × 速度）。BPM が無ければ null。円盤の下に出す
   double? outTempoBpm(MixPair pair) {
-    final item = pair.outItem;
-    final bpm = item?.beatBpm ?? item?.bpm;
+    final bpm = pair.outItem?.bpmAt(pair.cut.inMicroseconds / 1000);
     if (bpm == null) return null;
     return bpm * _ref.read(slotPlayerProvider(pair.outSlot)).state.rate;
   }
@@ -1406,8 +1447,7 @@ class PlaylistEngine {
   /// 次曲のテンポ（BPM × 速度）。交差の前・交差中はテンポ合わせと微調整を入れた速度で
   /// （ナッジの一時的な速度は除く）、切り替わった後は鳴っている速度で
   double? inTempoBpm(MixPair pair) {
-    final item = pair.next.item;
-    final bpm = item.beatBpm ?? item.bpm;
+    final bpm = pair.next.item.bpmAt(inAtMs(pair.next));
     if (bpm == null) return null;
     final rate = _ref.read(activeSlotProvider) != pair.outSlot
         ? activePlayer.state.rate
@@ -1433,12 +1473,14 @@ class PlaylistEngine {
   double? _tempoMatchedRate(PlaylistTrack next, double inBaseRate) {
     if (!recipeFor(next).tempoMatch) return null;
     final outItem = _ref.read(playlistPlayerProvider).currentTrack?.item;
-    final outGrid = outItem?.beatGrid;
-    final inGrid = next.item.beatGrid;
+    final outAt = _outAtMs();
+    final inAt = inAtMs(next);
+    final outGrid = outItem?.beatGridAt(outAt);
+    final inGrid = next.item.beatGridAt(inAt);
     // 格子が当てはまっていない曲はテンポも揺れている。寄せても合わないので触らない
     if (outGrid?.reliable == false || inGrid?.reliable == false) return null;
-    final outBpm = outGrid?.bpm ?? outItem?.bpm;
-    final inBpm = inGrid?.bpm ?? next.item.bpm;
+    final outBpm = outItem?.bpmAt(outAt);
+    final inBpm = next.item.bpmAt(inAt);
     if (outBpm == null || inBpm == null) return null;
     final ratio = TrackCompatibility.tempoRatio(
         outBpm * activePlayer.state.rate, inBpm * inBaseRate);

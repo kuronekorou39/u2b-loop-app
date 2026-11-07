@@ -366,8 +366,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
       height: bandHeight,
       curve: recipe.curve,
       bassSwap: recipe.bassSwap,
-      outBeats: showBeats ? outItem?.beatLines : null,
-      inBeats: showBeats ? inItem.beatLines : null,
+      // テンポが途中で変わる曲は、重なる位置（切断点）の区切りの格子で線を引く
+      outBeats: showBeats
+          ? outItem?.beatLinesAt(pair.cut.inMicroseconds / 1000)
+          : null,
+      inBeats: showBeats
+          ? inItem.beatLinesAt(pair.toInClock(pair.cut).inMicroseconds / 1000)
+          : null,
       inRatio: pair.inRatio,
       // 交差の間だけ測れる（切り替わった後・交差の前は出さない）
       beatError: showBeats ? ref.watch(beatPhaseErrorProvider) : null,
@@ -456,8 +461,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final pair = data.pair;
     final swapped = data.swapped;
     final engine = ref.read(playlistEngineProvider);
-    final inItem = pair.next.item;
-    final grid = inItem.beatGrid;
+    final grid = engine.inGridFor(pair.next);
     final jogMax = swapped ? null : engine.jogMaxMs(pair);
     final jogMs = engine.jogMsFor(pair.next);
     final trim = engine.tempoTrimFor(pair.next);

@@ -379,6 +379,105 @@ class LoopItem {
     return (grid: grid, anchorMs: mixInMs?.toDouble());
   }
 
+  // --- 位置ごとのテンポ（テンポが変わる曲は区切りごとに。DJ のつなぎはここを通す） ---
+
+  /// [ms]（曲の時刻）を含むテンポの区切りの番号。区切りが無い・[ms] が null なら null
+  int? tempoSectionIndexAt(double? ms) {
+    final s = tempoSections;
+    if (ms == null || s.length < 2) return null;
+    var i = 0;
+    while (i + 1 < s.length && s[i + 1].startMs <= ms) {
+      i++;
+    }
+    return i;
+  }
+
+  /// [ms] が一番長い区切り（[beatGrid] の区切り）か。区切りが無ければ曲全体なので true
+  bool _isMainSectionAt(double? ms) {
+    final i = tempoSectionIndexAt(ms);
+    return i == null || i == mainTempoSectionIndex;
+  }
+
+  /// [ms] の位置で効く拍の格子。一番長い区切りと区切りの無い曲は [beatGrid]、
+  /// ほかの区切りはその区切りだけで求めた格子（取れていなければ null = 拍を合わせない）。
+  /// [ms] が null なら [beatGrid]
+  BeatGrid? beatGridAt(double? ms) {
+    if (_isMainSectionAt(ms)) return beatGrid;
+    final grids = sectionGrids;
+    final i = tempoSectionIndexAt(ms)!;
+    return i < grids.length ? grids[i] : null;
+  }
+
+  /// [ms] の位置で小節頭が分からないときの基準（ドロップ）。ドロップは一番長い区切りの
+  /// 格子と組で使う値なので、ほかの区切りでは null（[BeatMap.segmentsOf] と同じ）
+  double? barAnchorAt(double? ms) =>
+      _isMainSectionAt(ms) ? mixInMs?.toDouble() : null;
+
+  /// [ms] の位置のテンポ（精密）: その位置の格子 → 区切りのテンポ → [bpm]
+  double? bpmAt(double? ms) {
+    final grid = beatGridAt(ms);
+    if (grid != null) return grid.bpm;
+    final i = tempoSectionIndexAt(ms);
+    if (i != null && !_isMainSectionAt(ms)) return tempoSections[i].bpm;
+    return beatBpm ?? bpm;
+  }
+
+  /// [ms] の位置の拍の線の材料（重ね表示用。信用できない格子なら null）
+  BeatLineSource? beatLinesAt(double? ms) {
+    final grid = beatGridAt(ms);
+    if (grid == null || !grid.reliable) return null;
+    return (grid: grid, anchorMs: barAnchorAt(ms));
+  }
+
+  /// [ms] の位置の格子を [grid] に置き換える（ジョグ・フェーダーで手で合わせた分の保存）。
+  /// 一番長い区切りは [beatGrid] の値、ほかは [sectionGridData] のその区切り。
+  /// 当てはまり（confidence）は解析の値のまま
+  void setBeatGridAt(double? ms, BeatGrid grid) {
+    if (_isMainSectionAt(ms)) {
+      beatBpm = grid.bpm;
+      beatOffsetMs = grid.offsetMs;
+      downbeatMs = grid.downbeatMs;
+      return;
+    }
+    final i = tempoSectionIndexAt(ms)!;
+    final grids = List<BeatGrid?>.of(sectionGrids);
+    if (i >= grids.length || grids[i] == null) return;
+    final old = grids[i]!;
+    grids[i] = BeatGrid(
+      bpm: grid.bpm,
+      offsetMs: grid.offsetMs,
+      confidence: old.confidence,
+      downbeatMs: grid.downbeatMs,
+      downbeatConfidence: old.downbeatConfidence,
+    );
+    sectionGridData = flattenGrids(grids);
+  }
+
+  /// [ms] の位置のテンポを [factor] 倍にした表示用の値に（フェーダーの保存）。
+  /// 区切りのある曲はその区切りのテンポ、一番長い区切りなら [bpm] も（0.1 刻み）
+  void scaleBpmAt(double? ms, double factor) {
+    final i = tempoSectionIndexAt(ms);
+    if (i != null) {
+      final s = List.of(tempoSections);
+      s[i] = TempoSection(s[i].startMs, (s[i].bpm * factor * 10).round() / 10);
+      tempoSectionData = TempoSection.flatten(s);
+    }
+    final b = bpm;
+    if (_isMainSectionAt(ms) && b != null) bpm = (b * factor * 10).round() / 10;
+  }
+
+  /// 曲の始まりのテンポ（DJ で次の曲として入るときに比べる。[startKey] と同じ考え）
+  double? get startBpm {
+    final s = tempoSections;
+    return s.length >= 2 ? s.first.bpm : bpm;
+  }
+
+  /// 曲の終わりのテンポ（DJ で前の曲として出るときに比べる）
+  double? get endBpm {
+    final s = tempoSections;
+    return s.length >= 2 ? s.last.bpm : bpm;
+  }
+
   /// YouTube由来か（文字列比較を19箇所に散らさないための入口）
   bool get isYouTube => sourceType == SourceTypes.youtube;
 

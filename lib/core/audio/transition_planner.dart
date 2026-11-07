@@ -93,15 +93,23 @@ class TransitionPlanner {
   static const vocalClashMaxBeats = 8;
 
   /// [pro] はガチ。[outTailMid] / [inHeadMid] は前の曲の終わり・次の曲の始まりの
-  /// 中音の平均（帯域の波形から。無ければ null で歌のぶつかりは見ない）
+  /// 中音の平均（帯域の波形から。無ければ null で歌のぶつかりは見ない）。
+  /// [outAtMs] / [inAtMs] は重なる位置（前の曲の切断点・次の曲の入り口）。テンポが途中で
+  /// 変わる曲はその位置の区切りのテンポと格子で決める（null なら曲全体の値）
   static TransitionRecipe plan(LoopItem out, LoopItem next,
-      {bool pro = false, double? outTailMid, double? inHeadMid}) {
-    final tempoDiff = TrackCompatibility.tempoDiffPercent(out.bpm, next.bpm);
-    final ratio = TrackCompatibility.tempoRatio(out.bpm, next.bpm);
+      {bool pro = false,
+      double? outTailMid,
+      double? inHeadMid,
+      double? outAtMs,
+      double? inAtMs}) {
+    final outBpm = out.bpmAt(outAtMs);
+    final inBpm = next.bpmAt(inAtMs);
+    final tempoDiff = TrackCompatibility.tempoDiffPercent(outBpm, inBpm);
+    final ratio = TrackCompatibility.tempoRatio(outBpm, inBpm);
     // 入る曲が出る曲よりどれだけ速いか（%、倍/半は折り畳む）
     final faster = ratio == null ? null : (1 / ratio - 1) * 100;
-    final outGrid = out.beatGrid;
-    final inGrid = next.beatGrid;
+    final outGrid = out.beatGridAt(outAtMs);
+    final inGrid = next.beatGridAt(inAtMs);
     final live = (outGrid != null && !outGrid.reliable) || (inGrid != null && !inGrid.reliable);
     final energy = next.headDb != null && out.tailDb != null ? next.headDb! - out.tailDb! : null;
     final drop = next.mixInMs == null ? null : next.dropDb;
