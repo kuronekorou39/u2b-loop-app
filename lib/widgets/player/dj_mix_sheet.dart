@@ -109,7 +109,7 @@ class DjMixSheet extends ConsumerWidget {
             ),
             SwitchListTile(
               secondary: const Icon(Icons.login),
-              title: const Text('入り口を選ぶ'),
+              title: const Text('出入り口を選ぶ'),
               value: ref.watch(smartEntryProvider),
               onChanged: on
                   ? (v) => ref.read(smartEntryProvider.notifier).value = v

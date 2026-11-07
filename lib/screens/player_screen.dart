@@ -1131,14 +1131,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final plState = ref.read(playlistPlayerProvider);
     final isFirstVerse =
         plState.firstVerseMode && loop.enabled && loop.hasB;
-    final endPoint = isFirstVerse ? loop.pointB! : duration;
+    final engine = ref.read(playlistEngineProvider);
+    var endPoint = isFirstVerse ? loop.pointB! : duration;
+    // アウトロ点・選んだ出口で早めに切るなら、そこから逆算する（曲末からだと交差に間に合わない）
+    final cut = isFirstVerse ? null : engine.plannedCut();
+    if (cut != null && cut > Duration.zero && cut < endPoint) endPoint = cut;
 
     // 先読みを始める残り時間の式はエンジンと共通
     final lead = PlaylistEngine.preloadLead(
       item: _currentItem,
       endPoint: endPoint,
       firstVerse: isFirstVerse,
-      fade: ref.read(playlistEngineProvider).crossfadeDuration,
+      fade: engine.crossfadeDuration,
     );
     if (endPoint - position <= lead) {
       _preloadNextTrack();

@@ -11,6 +11,7 @@ import '../core/audio/audio_quality.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/energy_profile.dart';
 import '../core/audio/entry_planner.dart';
+import '../core/audio/exit_planner.dart';
 import '../core/audio/loudness.dart';
 import '../core/audio/sfx_plan.dart';
 import '../core/audio/track_compatibility.dart';
@@ -1048,6 +1049,11 @@ class PlaylistEngine {
     final d = activePlayer.state.duration;
     if (d <= Duration.zero) return null;
     final item = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    return _smartExit(item, _plainCutPoint(item, d));
+  }
+
+  /// [_cutPoint] の AB ループ以外: アウトロ点 → 曲末の無音の手前 → 曲の終端の少し手前
+  ({Duration cut, bool advancesAtCut}) _plainCutPoint(LoopItem? item, Duration d) {
     final mixOut = item?.mixOutMs;
     if (mixOut != null && _ref.read(mixPointAlignProvider)) {
       final cut = Duration(milliseconds: mixOut);
@@ -1065,6 +1071,38 @@ class PlaylistEngine {
     }
     return _snapToGrid(item, (cut: d - trailing, advancesAtCut: true));
   }
+
+  /// 出口を選ぶ（[ExitPlanner]）: 最後の盛り上がりの後が静かで長いアウトロなら、
+  /// 盛り上がりの終わり（フレーズの頭）で切る。「出入り口を選ぶ」（[smartEntryProvider]）が
+  /// オンでクロスフェードするときだけ。もう通り過ぎていたら [raw] のまま。
+  /// クロスフェードの長さは見ない（crossfadeDuration → recipeFor → 切断点 と回り続ける）
+  ({Duration cut, bool advancesAtCut}) _smartExit(
+      LoopItem? item, ({Duration cut, bool advancesAtCut}) raw) {
+    final curve = item?.energyDb;
+    if (item == null ||
+        curve == null ||
+        !_ref.read(smartEntryProvider) ||
+        _ref.read(crossfadeProvider) <= 0) {
+      return raw;
+    }
+    final rawMs = raw.cut.inMicroseconds / 1000;
+    final grid = item.beatGridAt(rawMs);
+    final exit = ExitPlanner.exitMs(
+      curve,
+      stepMs: EnergyProfile.curveStepMs,
+      cutMs: rawMs,
+      grid: grid != null && grid.reliable ? grid : null,
+      dropMs: item.barAnchorAt(rawMs),
+      leadingSilenceMs: item.introSkipMs,
+    );
+    if (exit == null || exit >= rawMs) return raw;
+    final cut = Duration(microseconds: (exit * 1000).round());
+    if (activePlayer.state.position >= cut) return raw;
+    return (cut: cut, advancesAtCut: true);
+  }
+
+  /// 鳴っている曲を切る予定の位置（先読みを始める時刻の基準）。決まらなければ null
+  Duration? plannedCut() => _cutPoint()?.cut;
 
   /// 切断点をフレーズの頭か小節頭へ寄せる（[snapCutMs]）。DJ は段落の区切りで切り替える。
   /// 格子が無い・信用できない曲はそのまま。[latestMs] より後ろへは動かさない（null なら手前だけ）。

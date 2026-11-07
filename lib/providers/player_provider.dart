@@ -332,7 +332,9 @@ class MixPointAlignNotifier extends StateNotifier<bool> {
 
 /// 次曲の入り口を前曲の出口に合わせて選ぶか（既定オン）。前曲が盛り上がったまま終わるなら
 /// 次曲の静かなイントロを飛ばし、同じくらい鳴っている段落から入れる（EntryPlanner）。
-/// オフなら曲頭（ドロップ合わせがあればそれ）。クロスフェードがオフのときは効かない
+/// オフなら曲頭（ドロップ合わせがあればそれ）。クロスフェードがオフのときは効かない。
+/// 出口も（v1.138.0「出入り口を選ぶ」）: 前曲の静かで長いアウトロは待たず、最後の盛り上がりの
+/// 終わりで切る（ExitPlanner）
 final smartEntryProvider =
     StateNotifierProvider<SmartEntryNotifier, bool>((ref) => SmartEntryNotifier());
 

@@ -177,7 +177,7 @@ void main() {
     expect(switchOf('ドロップに合わせる').onChanged, isNull);
     expect(switchOf('ベーススワップ').onChanged, isNull);
     expect(switchOf('拍合わせ').onChanged, isNull);
-    expect(switchOf('入り口を選ぶ').onChanged, isNull);
+    expect(switchOf('出入り口を選ぶ').onChanged, isNull);
     expect(find.text('クロスフェードをオンにすると使えます'), findsNWidgets(10),
         reason: '効果音のタイミング・入り口を選ぶの行が増えた');
   });
