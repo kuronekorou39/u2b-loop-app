@@ -6,7 +6,11 @@ import '../../providers/player_provider.dart';
 import 'volume_slider.dart';
 
 class PlayerControls extends ConsumerWidget {
-  const PlayerControls({super.key});
+  const PlayerControls({super.key, this.prevTrack, this.nextTrack});
+
+  /// 再生ボタンの外側に置く「前の曲」「次の曲」（全画面のプレイリスト）
+  final Widget? prevTrack;
+  final Widget? nextTrack;
 
   static const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
@@ -100,8 +104,10 @@ class PlayerControls extends ConsumerWidget {
           }),
           // 最初から: A地点 or 先頭にシーク
           IconButton(
-            icon: const Icon(Icons.skip_previous),
-            iconSize: 20,
+            // 前の曲（skip_previous）と見分けられるように、単体再生の「先頭へ」と同じ形
+            icon: const Icon(Icons.first_page_rounded),
+            tooltip: 'A / 先頭へ',
+            iconSize: 22,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(),
             padding: const EdgeInsets.all(8),
@@ -115,6 +121,7 @@ class PlayerControls extends ConsumerWidget {
                   }
                 : null,
           ),
+          ?prevTrack,
           // Rewind: tap=seek, long press=set step
           GestureDetector(
             onLongPressStart: hasSource
@@ -158,6 +165,7 @@ class PlayerControls extends ConsumerWidget {
                   : null,
             ),
           ),
+          ?nextTrack,
           // Volume: tap=mute toggle (with memory), long press=slider
           GestureDetector(
             onLongPressStart: hasSource

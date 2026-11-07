@@ -8,6 +8,7 @@ import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/models/playlist_mode.dart' as pl;
 import 'package:u2b_loop_app/models/video_source.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
+import 'package:u2b_loop_app/widgets/player/player_glass_bar.dart';
 import 'package:u2b_loop_app/widgets/player/playlist_bottom_bar.dart';
 
 /// プレイリストのコントローラー: ふだんのピルと AB 編集中のピルの切り替え、
@@ -24,42 +25,59 @@ void main() {
     bool editing = false,
     bool compact = false,
     bool canRegister = true,
+    bool dense = false,
+    double? width,
   }) async {
     final events = <String>[];
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        playingProvider.overrideWith((ref) => Stream.value(false)),
-        videoSourceProvider.overrideWith((ref) =>
-            const VideoSource(type: VideoSourceType.local, uri: 'x', title: 'x')),
-      ],
-      child: MaterialApp(
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.bottomCenter,
-            child: PlaylistBottomBar(
-              seekbar: const SizedBox(height: 40, key: Key('seek')),
-              compact: compact,
-              shuffle: false,
-              onShuffle: () => events.add('shuffle'),
-              repeatMode: pl.RepeatMode.none,
-              onRepeat: () => events.add('repeat'),
-              onPrev: () => events.add('prev'),
-              onNext: () => events.add('next'),
-              onMore: () => events.add('more'),
-              onToggleList: () => events.add('list'),
-              firstVerse: false,
-              onToggleFirstVerse: () => events.add('firstVerse'),
-              editing: editing,
-              editBlock: const SizedBox(height: 60, key: Key('edit')),
-              onFinishEdit: () => events.add('finish'),
-              onSetA: () => events.add('setA'),
-              onSetB: () => events.add('setB'),
-              onRegister: canRegister ? () => events.add('register') : null,
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          playingProvider.overrideWith((ref) => Stream.value(false)),
+          videoSourceProvider.overrideWith(
+            (ref) => const VideoSource(
+              type: VideoSourceType.local,
+              uri: 'x',
+              title: 'x',
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: width,
+                child: PlayerDensity(
+                  dense: dense,
+                  child: PlaylistBottomBar(
+                    seekbar: const SizedBox(height: 40, key: Key('seek')),
+                    compact: compact,
+                    shuffle: false,
+                    onShuffle: () => events.add('shuffle'),
+                    repeatMode: pl.RepeatMode.none,
+                    onRepeat: () => events.add('repeat'),
+                    onPrev: () => events.add('prev'),
+                    onNext: () => events.add('next'),
+                    onMore: () => events.add('more'),
+                    onToggleList: () => events.add('list'),
+                    firstVerse: false,
+                    onToggleFirstVerse: () => events.add('firstVerse'),
+                    editing: editing,
+                    editBlock: const SizedBox(height: 60, key: Key('edit')),
+                    onFinishEdit: () => events.add('finish'),
+                    onSetA: () => events.add('setA'),
+                    onSetB: () => events.add('setB'),
+                    onRegister: canRegister
+                        ? () => events.add('register')
+                        : null,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     return (events: events);
   }
@@ -96,5 +114,13 @@ void main() {
     expect(find.byKey(const Key('edit')), findsNothing);
     expect(find.text('終了'), findsNothing);
     expect(find.byKey(const Key('seek')), findsOneWidget);
+  });
+
+  testWidgets('横画面の詰めた形: 脇がいちばん狭く（300）ても溢れず、ピルは押せる', (tester) async {
+    final r = await pump(tester, dense: true, width: 300);
+    final play = tester.getSize(find.byType(BigPlayButton));
+    expect(play.width, PlayerGlassBar.playSizeDense);
+    await tester.tap(find.text('トラック'));
+    expect(r.events, ['list']);
   });
 }

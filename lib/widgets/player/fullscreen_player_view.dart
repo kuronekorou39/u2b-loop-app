@@ -7,6 +7,7 @@ import '../../models/loop_state.dart';
 import '../../models/playlist_mode.dart' as pl;
 import '../../providers/playlist_player_provider.dart';
 import '../../providers/subtitle_provider.dart';
+import '../glass_panel.dart';
 import '../karaoke_subtitle.dart';
 import '../loop/loop_panel_parts.dart';
 import '../loop/loop_seekbar.dart';
@@ -18,13 +19,15 @@ import 'video_player_widget.dart';
 
 /// 全画面（ボタンで入る。端末の向きだけでは入らない）。
 ///
-/// 動画の上に、タップで出入りするコントロール（上: 曲名 + 字幕切替、下: シークバー +
-/// 再生操作）、カラオケ字幕、右から出るドロワー（中身は [drawer]）、解除ボタン。
+/// 動画の上に、タップで出入りするコントロールを重ねる。上: 全画面の解除・曲名と
+/// 曲の情報・字幕切替。下: ガラスの板にシークバーと再生操作（プレイリストは前後の曲も）。
+/// カラオケ字幕は常に出し、右端のつまみからドロワー（中身は [drawer]）。
 /// 状態（コントロールの表示・ドロワーの開閉）は画面が持ち、ここは描くだけ
 class FullscreenPlayerView extends StatelessWidget {
   const FullscreenPlayerView({
     super.key,
     required this.title,
+    this.subtitle = '',
     required this.bottomInset,
     required this.showOverlay,
     required this.drawerOpen,
@@ -34,9 +37,18 @@ class FullscreenPlayerView extends StatelessWidget {
     required this.onExit,
     required this.onSubtitleLongPress,
     required this.onRetryWaveform,
+    this.onPrev,
+    this.onNext,
+    this.isPlaylist = false,
+    @visibleForTesting this.video,
+    @visibleForTesting this.seekbar,
+    @visibleForTesting this.controls,
   });
 
   final String title;
+
+  /// 曲名の下の 1 行（BPM・キー・n / 全）
+  final String subtitle;
   final double bottomInset;
   final bool showOverlay;
   final bool drawerOpen;
@@ -47,8 +59,21 @@ class FullscreenPlayerView extends StatelessWidget {
   final VoidCallback onSubtitleLongPress;
   final VoidCallback onRetryWaveform;
 
+  /// プレイリストの前後の曲（[isPlaylist] のときだけ出す。null なら無効）
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+  final bool isPlaylist;
+
+  /// テストで差し替える（media_kit のプレイヤーを作らずに配置を見るため）
+  final Widget? video;
+  final Widget? seekbar;
+  final Widget? controls;
+
   /// ドロワーの幅（画面幅に対する割合）
   static const drawerFraction = 0.4;
+
+  /// 下の板の高さの目安（字幕をその上に逃がす）
+  static const panelHeight = 132.0;
 
   @override
   Widget build(BuildContext context) {
@@ -57,18 +82,19 @@ class FullscreenPlayerView extends StatelessWidget {
     // 領域などの物理インセット)を明示的に使う。最低マージンも確保。
     final vp = MediaQuery.viewPaddingOf(context);
     double atLeast(double v, double m) => v > m ? v : m;
-    final padL = atLeast(vp.left, 12);
-    final padR = atLeast(vp.right, 12);
-    // 開閉タブはコントロール表示に同調（常時表示は邪魔）。ただしドロワーを開いて
+    final padL = atLeast(vp.left, AppSpacing.xl);
+    final padR = atLeast(vp.right, AppSpacing.xl);
+    final padB = atLeast(vp.bottom, AppSpacing.lg);
+    // 開閉つまみはコントロール表示に同調（常時表示は邪魔）。ただしドロワーを開いて
     // いる間は閉じられるよう表示し続ける。
     final showToggle = showOverlay || drawerOpen;
     final theme = Theme.of(context);
+    const white = Colors.white;
 
     return Stack(
       children: [
-        // 動画（全画面）+ タップ検知を上に被せる
-        const Positioned.fill(
-          child: VideoPlayerWidget(useAspectRatio: false),
+        Positioned.fill(
+          child: video ?? const VideoPlayerWidget(useAspectRatio: false),
         ),
         // リリクスオーバーレイ（動画上に重ねる）
         const Positioned.fill(child: LyricsOverlay()),
@@ -84,82 +110,131 @@ class FullscreenPlayerView extends StatelessWidget {
             );
           }),
         ),
-        // オーバーレイ（コントロール）
+        // コントロール（上の帯と下の板）
         Positioned.fill(
           child: AnimatedOpacity(
             opacity: showOverlay ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 300),
             child: IgnorePointer(
               ignoring: !showOverlay,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black54,
-                      Colors.transparent,
-                      Colors.transparent,
-                      Colors.black54,
-                    ],
-                    stops: [0.0, 0.2, 0.7, 1.0],
-                  ),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: padL,
-                    right: padR,
-                    top: atLeast(vp.top, 8),
-                    bottom: atLeast(vp.bottom, 12),
-                  ),
-                  child: Column(
-                    children: [
-                      // 上部バー（タイトル + 字幕切替）
-                      Row(
+              child: Stack(
+                children: [
+                  // 上の帯: 曲名が動画の明るい所でも読めるよう、上だけ暗くする
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xA6000000), Color(0x00000000)],
+                        ),
+                      ),
+                      padding: EdgeInsets.fromLTRB(
+                          padL - AppSpacing.md,
+                          atLeast(vp.top, AppSpacing.md),
+                          padR,
+                          AppSpacing.xxl * 2),
+                      child: Row(
                         children: [
+                          IconButton(
+                            onPressed: onExit,
+                            tooltip: '全画面を解除',
+                            color: white,
+                            icon: const Icon(Icons.fullscreen_exit,
+                                size: AppIconSizes.lg),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
                           Expanded(
-                            child: Text(
-                              title,
-                              style: theme.textTheme.bodyLarge!
-                                  .copyWith(color: Colors.white),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  title,
+                                  style: theme.textTheme.titleMedium!.copyWith(
+                                      color: white, fontWeight: FontWeight.w600),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (subtitle.isNotEmpty)
+                                  Text(
+                                    subtitle,
+                                    style: theme.textTheme.labelSmall!.copyWith(
+                                        color: white.withValues(alpha: 0.75)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
                             ),
                           ),
-                          SubtitleToggleButton(onLongPress: onSubtitleLongPress),
+                          IconTheme(
+                            data: const IconThemeData(color: white),
+                            child: SubtitleToggleButton(
+                                onLongPress: onSubtitleLongPress),
+                          ),
                         ],
                       ),
-                      const Spacer(),
-                      // 下部コントロール
-                      Column(
+                    ),
+                  ),
+                  // 下の板: シークバーと再生操作。動画の上でも読めるよう暗く敷く
+                  Positioned(
+                    left: padL,
+                    right: padR,
+                    bottom: padB,
+                    child: GlassPanel(
+                      scrim: Colors.black.withValues(alpha: 0.45),
+                      radius: 18,
+                      padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.xs, AppSpacing.md, AppSpacing.xs, AppSpacing.xs),
+                      child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          LoopSeekbar(
-                            compact: true,
-                            allowMarkerDrag: false,
-                            onRetryWaveform: onRetryWaveform,
-                          ),
-                          const PlayerControls(),
+                          seekbar ??
+                              LoopSeekbar(
+                                compact: true,
+                                allowMarkerDrag: false,
+                                onRetryWaveform: onRetryWaveform,
+                              ),
+                          controls ??
+                              PlayerControls(
+                                prevTrack: isPlaylist
+                                    ? IconButton(
+                                        onPressed: onPrev,
+                                        tooltip: '前の曲',
+                                        icon: const Icon(Icons.skip_previous_rounded),
+                                      )
+                                    : null,
+                                nextTrack: isPlaylist
+                                    ? IconButton(
+                                        onPressed: onNext,
+                                        tooltip: '次の曲',
+                                        icon: const Icon(Icons.skip_next_rounded),
+                                      )
+                                    : null,
+                              ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
         ),
         // 字幕（カラオケ）: コントロールの自動非表示に関わらず常時表示。
-        // コントロール表示中はシークバーより上、非表示中は画面下寄りに移動。
+        // コントロール表示中は下の板より上、非表示中は画面下寄りに移動。
         AnimatedPositioned(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
           left: padL,
           right: padR,
-          bottom: (showOverlay ? 132.0 : 32.0) + bottomInset,
+          bottom: (showOverlay ? panelHeight + AppSpacing.lg : 32.0) + bottomInset,
           child: const IgnorePointer(child: KaraokeSubtitle()),
         ),
-        // 右ドロワー（半透明）
+        // 右ドロワー（ガラス）
         AnimatedPositioned(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -170,7 +245,7 @@ class FullscreenPlayerView extends StatelessWidget {
           child: GestureDetector(
             onTap: () {}, // タップ透過防止
             child: Material(
-              color: theme.scaffoldBackgroundColor.withValues(alpha: 0.75),
+              color: theme.scaffoldBackgroundColor.withValues(alpha: 0.82),
               elevation: 8,
               child: Theme(
                 data: theme.copyWith(
@@ -184,7 +259,8 @@ class FullscreenPlayerView extends StatelessWidget {
             ),
           ),
         ),
-        // ドロワー開閉タブ（コントロール表示に同調。右端はノッチ分内側へ）
+        // ドロワー開閉つまみ（コントロール表示に同調。右端はノッチ分内側へ）。
+        // 動画の上で目立ちすぎないよう、暗いガラスの細いつまみ
         AnimatedPositioned(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -197,21 +273,32 @@ class FullscreenPlayerView extends StatelessWidget {
               opacity: showToggle ? 1.0 : 0.0,
               child: IgnorePointer(
                 ignoring: !showToggle,
-                child: GestureDetector(
-                  onTap: onToggleDrawer,
-                  child: Container(
-                    // 指で掴める幅に（以前は 24px）
-                    width: 40,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.7),
-                      borderRadius: const BorderRadius.horizontal(
-                          left: Radius.circular(8)),
-                    ),
-                    child: Icon(
-                      drawerOpen ? Icons.chevron_right : Icons.chevron_left,
-                      color: Colors.white,
-                      size: AppIconSizes.sm,
+                child: Tooltip(
+                  message: drawerOpen ? '閉じる' : '一覧を開く',
+                  child: GestureDetector(
+                    onTap: onToggleDrawer,
+                    child: Container(
+                      // 指で掴める幅（見た目は細く、当たり判定は 40px）
+                      width: 40,
+                      height: 88,
+                      alignment: Alignment.centerRight,
+                      color: Colors.transparent,
+                      child: Container(
+                        width: 28,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: const BorderRadius.horizontal(
+                              left: Radius.circular(14)),
+                          border: Border.all(
+                              color: white.withValues(alpha: 0.12)),
+                        ),
+                        child: Icon(
+                          drawerOpen ? Icons.chevron_right : Icons.chevron_left,
+                          color: white,
+                          size: AppIconSizes.ml,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -219,23 +306,6 @@ class FullscreenPlayerView extends StatelessWidget {
             ),
           ),
         ),
-        // フルスクリーン解除ボタン（右下、フルスクリーンボタンと同じ位置）
-        if (showOverlay)
-          Positioned(
-            right: 12 + padR,
-            bottom: 12 + vp.bottom,
-            child: IconButton(
-              onPressed: onExit,
-              tooltip: '全画面を解除',
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.black.withValues(alpha: 0.5),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(48, 48),
-                shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
-              ),
-              icon: const Icon(Icons.fullscreen_exit, size: AppIconSizes.lg),
-            ),
-          ),
       ],
     );
   }

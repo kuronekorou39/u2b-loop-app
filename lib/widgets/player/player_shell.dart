@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/loop_item.dart';
 import '../../providers/thumb_tone_provider.dart';
 import '../karaoke_subtitle.dart';
+import 'player_glass_bar.dart';
 
 /// 再生画面（縦）の骨組み。プレイリスト再生と単体再生で共通。
 ///
@@ -115,7 +116,6 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     // 横画面は AppBar を置かないので padding.top はステータスバーの分だけ
     final topInset = mq.padding.top;
     final bottomInset = mq.viewPadding.bottom;
-    const gap = AppSpacing.lg + 2;
     final video = _clippedVideo;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -175,11 +175,13 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            SizedBox(height: topInset + AppSpacing.sm + gap),
-                            widget.header,
-                            const SizedBox(height: gap),
+                            SizedBox(height: topInset + AppSpacing.md),
+                            // 曲名はコントローラーのすぐ上（縦と同じまとまり。上に浮かせると
+                            // 間が空いて離れて見える）
                             const Spacer(),
-                            widget.controller,
+                            widget.header,
+                            const SizedBox(height: AppSpacing.lg),
+                            PlayerDensity(dense: true, child: widget.controller),
                           ],
                         ),
                       ),

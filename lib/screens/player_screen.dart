@@ -1500,11 +1500,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 全画面（FullscreenPlayerView）。コントロールの表示とドロワーの開閉はこの State が持つ
   Widget _buildFullscreenView(double bottomInset) {
+    final plState = _isPlaylist ? ref.watch(playlistPlayerProvider) : null;
+    final idx = plState?.currentTrackIndex;
+    final subParts = <String>[
+      ..._currentItem.musicInfoParts,
+      if (plState != null)
+        idx != null ? '${idx + 1} / ${plState.trackCount}' : '- / ${plState.trackCount}',
+    ];
     return FullscreenPlayerView(
       title: _isPlaylist
-          ? (ref.read(playlistPlayerProvider).currentTrack?.displayName ??
-              _currentItem.title)
+          ? (plState?.currentTrack?.displayName ?? _currentItem.title)
           : _currentItem.title,
+      subtitle: subParts.join('  ·  '),
+      isPlaylist: _isPlaylist,
+      onPrev: plState != null && plState.hasPrev && !_transport.trackLoading
+          ? _transport.manualPrev
+          : null,
+      onNext: plState != null && plState.hasNext && !_transport.trackLoading
+          ? _transport.manualNext
+          : null,
       bottomInset: bottomInset,
       showOverlay: _showFullscreenOverlay,
       drawerOpen: _showRightDrawer,
@@ -1545,6 +1559,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       subtitle: subtitle,
       child: controls,
     );
+  }
+
+  /// 波形・重ね表示の高さ。縦は 120（プレイリスト）。横は脇の高さが足りないので、
+  /// 画面の高さに合わせて低くする（コントローラーがスクロールしないように）
+  double _seekHeight(bool wide) {
+    if (!wide) return 120;
+    final h = MediaQuery.sizeOf(context).height;
+    if (h < 380) return 48;
+    if (h < 440) return 64;
+    if (h < 560) return 88;
+    return 120;
   }
 
   Widget _buildPlayerView(double bottomInset) {
@@ -1618,8 +1643,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         controller: PlaylistBottomBar(
           seekbar: PlaylistSeekArea(
             compact: _compactSeekbar,
-            waveHeight: 120,
-            mixHeight: 120,
+            waveHeight: _seekHeight(wide),
+            mixHeight: _seekHeight(wide),
             onToggleCompact: () =>
                 setState(() => _compactSeekbar = !_compactSeekbar),
             onRetryWaveform: _retryWaveform,
@@ -1745,6 +1770,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               setState(() => _compactSeekbar = !_compactSeekbar),
           allowMarkerDrag: _editMode,
           onRetryWaveform: _retryWaveform,
+          barHeight: wide ? _seekHeight(true) : 72,
           // 保存された最新の曲（開いたあとに裏で解析が終わっても線が出るように）
           beatItem: ref.watch(loopItemsProvider
                   .select((l) => l.where((i) => i.id == item.id).firstOrNull)) ??

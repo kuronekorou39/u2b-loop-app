@@ -196,9 +196,7 @@ class SinglePlayerBar extends ConsumerWidget {
         BigPlayButton(
           playing: playing,
           enabled: hasSource,
-          size: compact
-              ? PlayerGlassBar.playSizeCompact
-              : PlayerGlassBar.playSize,
+          size: PlayerGlassBar.playSizeFor(context, compact: compact),
           onTap: () => ref.read(playerProvider).playOrPause(),
         ),
         TransportIconButton(
