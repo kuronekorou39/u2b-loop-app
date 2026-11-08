@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +93,10 @@ class FullscreenPlayerView extends StatelessWidget {
   /// 下の板の左右の端（反転 / 固定）の幅。真ん中の再生操作が真ん中に来るよう同じ幅
   static const _panelSideWidth = 96.0;
 
+  /// DJ の板の高さを決めるときに空けておく、上の帯（解除・曲名）と再生操作の行の高さ
+  static const _topBandReserve = 56.0;
+  static const _transportRowReserve = 64.0;
+
   @override
   Widget build(BuildContext context) {
     final drawerWidth = MediaQuery.sizeOf(context).width * drawerFraction;
@@ -106,6 +112,16 @@ class FullscreenPlayerView extends StatelessWidget {
     final showToggle = showOverlay || drawerOpen;
     final theme = Theme.of(context);
     const white = Colors.white;
+    // DJ の板の置き場所の高さの上限: 上の帯と再生操作の行と板の余白を除いた残り
+    final maxDeckHeight = math.max(
+        0.0,
+        MediaQuery.sizeOf(context).height -
+            atLeast(vp.top, AppSpacing.md) -
+            _topBandReserve -
+            _transportRowReserve -
+            AppSpacing.md -
+            AppSpacing.xs -
+            padB);
 
     return DeckAnchorScope(
         builder: (context, anchor) =>
@@ -220,7 +236,8 @@ class FullscreenPlayerView extends StatelessWidget {
                       radius: 18,
                       padding: const EdgeInsets.fromLTRB(
                           AppSpacing.xs, AppSpacing.md, AppSpacing.xs, AppSpacing.xs),
-                      child: _panelContents(anchor),
+                      child: _panelContents(anchor,
+                          maxDeckHeight: maxDeckHeight),
                     )),
                   ),
                 ],
@@ -327,10 +344,11 @@ class FullscreenPlayerView extends StatelessWidget {
   }
 
   /// 下の板の中身。ふだんは上にシークバー、下に反転 / 再生操作 / 固定。
-  /// DJ の板を出している間は左半分を板の置き場所にし、右半分にシークバーと再生操作
-  /// （板を上に浮かせると動画に被り、縮んで小さかった）。シークバーはいつも同じ位置に
-  /// 置く（作り直されるとデッキを開いた状態が消える）
-  Widget _panelContents(DeckAnchorController anchor) {
+  /// DJ の板を出している間は、シークバーの行の左半分を板の置き場所にし、シークバーは
+  /// 右半分へ寄せる（再生操作の行はそのまま）。板を上に浮かせると動画に被り、縮んで
+  /// 小さかった。シークバーはいつも同じ位置に置く（作り直されるとデッキを開いた状態が消える）
+  Widget _panelContents(DeckAnchorController anchor,
+      {required double maxDeckHeight}) {
     final seek = seekbar ??
         LoopSeekbar(
           compact: true,
@@ -386,53 +404,51 @@ class FullscreenPlayerView extends StatelessWidget {
             tooltip: overlayPinned ? 'コントロールの固定を外す' : 'コントロールを固定する',
             onPressed: onToggleOverlayPin!,
           );
-    return ValueListenableBuilder<bool>(
-      valueListenable: anchor.open,
-      builder: (context, deckOpen, _) => LayoutBuilder(builder: (context, c) {
-        final half = c.maxWidth / 2;
-        final deckWidth = (half - AppSpacing.sm).clamp(0.0, double.infinity);
-        final deckHeight =
-            MixDeck.heightFor(deckWidth, max: MixDeck.maxDiscSizeLarge);
-        anchor.size = Size(deckWidth, deckHeight);
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ValueListenableBuilder<bool>(
+          valueListenable: anchor.open,
+          builder: (context, deckOpen, _) =>
+              LayoutBuilder(builder: (context, c) {
+            final half = c.maxWidth / 2;
+            final deckWidth =
+                (half - AppSpacing.sm).clamp(0.0, double.infinity);
+            // 画面の高さに入りきらなければ低くする（板は置き場所に合わせて縮む）
+            final deckHeight = math.min(
+              MixDeck.heightFor(deckWidth, max: MixDeck.maxDiscSizeLarge),
+              maxDeckHeight,
+            );
+            anchor.size = Size(deckWidth, deckHeight);
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // DJ の板の置き場所（開くと半分まで伸び、波形は右半分へ寄る）
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  width: deckOpen ? half : 0,
+                  height: deckOpen ? deckHeight : 0,
+                  padding: const EdgeInsets.only(right: AppSpacing.sm),
+                  child: DeckAnchorTarget(anchor: anchor),
+                ),
+                Expanded(child: seek),
+              ],
+            );
+          }),
+        ),
+        // 再生操作の行は DJ を出していても変えない
+        Row(
           children: [
-            // DJ の板の置き場所（開くと半分まで伸びる）
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutCubic,
-              width: deckOpen ? half : 0,
-              height: deckOpen ? deckHeight : 0,
-              padding: const EdgeInsets.only(right: AppSpacing.sm),
-              child: DeckAnchorTarget(anchor: anchor),
-            ),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  seek,
-                  if (deckOpen) ...[
-                    // 半分の幅に入りきらなければ縮める
-                    FittedBox(fit: BoxFit.scaleDown, child: transport),
-                    Row(children: [flips, const Spacer(), pin]),
-                  ] else
-                    Row(
-                      children: [
-                        SizedBox(width: _panelSideWidth, child: flips),
-                        Expanded(child: transport),
-                        SizedBox(
-                          width: _panelSideWidth,
-                          child: Align(
-                              alignment: Alignment.centerRight, child: pin),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
+            SizedBox(width: _panelSideWidth, child: flips),
+            Expanded(child: transport),
+            SizedBox(
+              width: _panelSideWidth,
+              child: Align(alignment: Alignment.centerRight, child: pin),
             ),
           ],
-        );
-      }),
+        ),
+      ],
     );
   }
 }

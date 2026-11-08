@@ -18,8 +18,10 @@ void main() {
   tearDownAll(() => Hive.close());
 
   Future<List<String>> pump(WidgetTester tester,
-      {required bool pinned, bool drawerOpen = false}) async {
-    tester.view.physicalSize = const Size(900, 412);
+      {required bool pinned,
+      bool drawerOpen = false,
+      Size size = const Size(900, 412)}) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final events = <String>[];
@@ -44,7 +46,7 @@ void main() {
           video: const ColoredBox(color: Colors.black),
           seekbar: const SizedBox(
               height: 20, width: double.infinity, key: Key('seek')),
-          controls: const SizedBox(height: 40),
+          controls: const SizedBox(height: 40, key: Key('controls')),
         ),
       ),
     ));
@@ -93,11 +95,14 @@ void main() {
     expect(events, ['drawer']);
   });
 
-  testWidgets('DJ の板を出している間は、下の板の左半分が置き場所、右半分にシークバーと再生操作',
+  testWidgets('DJ の板を出している間は、シークバーだけ右半分へ寄り、左半分が置き場所。再生操作の行は変わらない',
       (tester) async {
     await pump(tester, pinned: false);
     final seek = find.byKey(const Key('seek'));
+    final controls = find.byKey(const Key('controls'));
     final full = tester.getRect(seek);
+    final controlsBefore = tester.getRect(controls);
+    final pinBefore = tester.getRect(find.byTooltip('コントロールを固定する'));
     final anchor = DeckAnchorScope.maybeOf(tester.element(seek))!;
     anchor.setOpen(true);
     await tester.pumpAndSettle();
@@ -107,13 +112,29 @@ void main() {
     expect(half.left, greaterThan(400));
     final target = tester.getRect(find.byType(DeckAnchorTarget));
     expect(target.right, lessThanOrEqualTo(half.left + 0.5));
+    expect(target.bottom, lessThanOrEqualTo(controlsBefore.top + 0.5));
     expect(anchor.size.width, greaterThan(300));
-    // ピンと反転は残る
-    expect(find.byTooltip('コントロールを固定する'), findsOneWidget);
-    expect(find.byTooltip('左右反転'), findsOneWidget);
+    // 再生操作の行（反転・ピンも）は幅も横の位置も同じ
+    final controlsAfter = tester.getRect(controls);
+    expect(controlsAfter.width, closeTo(controlsBefore.width, 0.5));
+    expect(controlsAfter.left, closeTo(controlsBefore.left, 0.5));
+    expect(tester.getRect(find.byTooltip('コントロールを固定する')).left,
+        closeTo(pinBefore.left, 0.5));
     // 閉じれば元の幅
     anchor.setOpen(false);
     await tester.pumpAndSettle();
     expect(tester.getRect(seek).width, closeTo(full.width, 0.5));
+  });
+
+  testWidgets('低い画面でも DJ の置き場所は上の帯にかからない', (tester) async {
+    await pump(tester, pinned: false, size: const Size(780, 360));
+    final seek = find.byKey(const Key('seek'));
+    final anchor = DeckAnchorScope.maybeOf(tester.element(seek))!;
+    anchor.setOpen(true);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final target = tester.getRect(find.byType(DeckAnchorTarget));
+    expect(target.top, greaterThanOrEqualTo(56));
+    expect(anchor.size.height, lessThanOrEqualTo(target.height + 0.5));
   });
 }

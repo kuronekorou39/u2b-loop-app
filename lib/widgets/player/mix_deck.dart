@@ -158,12 +158,17 @@ class MixDeck extends StatelessWidget {
           {bool side = false, double max = maxDiscSize}) =>
       discSizeFor(width, side: side, max: max) * subDiscRatio;
 
-  /// 幅 [width]・ボタンを右に置く形のときの板の高さの目安（置き場所の高さを決める）。
+  /// 幅 [width] のときの板の高さの目安（置き場所の高さを決める）。
+  /// ボタンを下に置く形は 円盤 + BPM の行 + ボタンの行、右に置く形（[side]）は
   /// 円盤 + BPM の行と、ボタン 3 段の高い方
-  static double heightFor(double width, {double max = maxDiscSize}) =>
-      _padding * 2 +
-      math.max(discSizeFor(width, side: true, max: max) + _bpmRowHeight,
-          _sideToolbarRows * 40.0);
+  static double heightFor(double width,
+      {double max = maxDiscSize, bool side = false}) {
+    final disc = discSizeFor(width, side: side, max: max) + _bpmRowHeight;
+    return _padding * 2 +
+        (side
+            ? math.max(disc, _sideToolbarRows * 40.0)
+            : disc + AppSpacing.xs + buttonsRowHeight);
+  }
 
   /// BPM の行（円盤の下）の高さの目安と、右に置くボタンの段数
   static const _bpmRowHeight = 20.0;
@@ -201,12 +206,12 @@ class MixDeck extends StatelessWidget {
         opacity: subOpacity,
         child: _column([
           JogWheel.platter(turns: outTurns, size: subSize),
-          _bpmLabel(context, outBpm, matched: false),
+          _bpmLabel(context, outBpm, matched: false, width: subSize),
         ]),
       ),
       inCol: _column([
         inDisc,
-        _bpmLabel(context, inBpm, matched: matched),
+        _bpmLabel(context, inBpm, matched: matched, width: size),
       ]),
       fader: SizedBox(
         width: faderColumnWidth,
@@ -413,15 +418,24 @@ class MixDeck extends StatelessWidget {
         children: children,
       );
 
-  Widget _bpmLabel(BuildContext context, double? bpm, {required bool matched}) {
+  /// 円盤の下の BPM。円盤の幅を超えない（小さい前曲の盤からはみ出していた）
+  Widget _bpmLabel(BuildContext context, double? bpm,
+      {required bool matched, required double width}) {
     final style = Theme.of(context).textTheme.labelSmall!.copyWith(
           fontFeatures: const [FontFeature.tabularFigures()],
           color: matched ? AppTheme.accentGreen : AppTheme.muted(context),
         );
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.xs),
-      child: Text(bpm == null ? '-- BPM' : '${bpm.toStringAsFixed(1)} BPM',
-          style: style),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: width),
+        // 縮めると行の高さが変わり、円盤の下端が揃わなくなるので端をぼかして切る
+        child: Text(bpm == null ? '-- BPM' : '${bpm.toStringAsFixed(1)} BPM',
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.fade,
+            style: style),
+      ),
     );
   }
 }

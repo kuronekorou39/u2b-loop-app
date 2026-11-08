@@ -629,8 +629,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
               height: room.height,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
+                // 置き場所は十分広いので、ボタンは円盤の下の 1 行のまま
                 child: deck(math.min(room.width, MixDeck.maxWidthLarge),
-                    side: true, discMax: MixDeck.maxDiscSizeLarge),
+                    side: false, discMax: MixDeck.maxDiscSizeLarge),
               ),
             ),
           ),
