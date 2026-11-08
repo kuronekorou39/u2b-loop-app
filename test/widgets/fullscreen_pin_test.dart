@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
+import 'package:u2b_loop_app/widgets/player/deck_anchor.dart';
 import 'package:u2b_loop_app/widgets/player/fullscreen_player_view.dart';
 
 /// 全画面の下の板: 右端のピン（コントロールの固定）、左端の反転。ドロワーは外のタップで閉じる
@@ -41,7 +42,8 @@ void main() {
           onRetryWaveform: noop,
           isPlaylist: false,
           video: const ColoredBox(color: Colors.black),
-          seekbar: const SizedBox(height: 20),
+          seekbar: const SizedBox(
+              height: 20, width: double.infinity, key: Key('seek')),
           controls: const SizedBox(height: 40),
         ),
       ),
@@ -89,5 +91,29 @@ void main() {
     final events = await pump(tester, pinned: false, drawerOpen: true);
     await tester.tapAt(const Offset(200, 200));
     expect(events, ['drawer']);
+  });
+
+  testWidgets('DJ の板を出している間は、下の板の左半分が置き場所、右半分にシークバーと再生操作',
+      (tester) async {
+    await pump(tester, pinned: false);
+    final seek = find.byKey(const Key('seek'));
+    final full = tester.getRect(seek);
+    final anchor = DeckAnchorScope.maybeOf(tester.element(seek))!;
+    anchor.setOpen(true);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final half = tester.getRect(seek);
+    expect(half.width, lessThan(full.width * 0.6));
+    expect(half.left, greaterThan(400));
+    final target = tester.getRect(find.byType(DeckAnchorTarget));
+    expect(target.right, lessThanOrEqualTo(half.left + 0.5));
+    expect(anchor.size.width, greaterThan(300));
+    // ピンと反転は残る
+    expect(find.byTooltip('コントロールを固定する'), findsOneWidget);
+    expect(find.byTooltip('左右反転'), findsOneWidget);
+    // 閉じれば元の幅
+    anchor.setOpen(false);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(seek).width, closeTo(full.width, 0.5));
   });
 }

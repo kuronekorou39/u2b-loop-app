@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -52,7 +54,11 @@ class MixDeck extends StatelessWidget {
     this.showBeats = true,
     this.onShowBeats,
     this.sideToolbar = false,
+    this.discMax = maxDiscSize,
   });
+
+  /// 次曲の円盤の直径の上限（置き場所に大きく出すときは [maxDiscSizeLarge]）
+  final double discMax;
 
   /// 下の 1 行（ボタン）を円盤の右に縦に置く。横画面・全画面は板の上の高さが
   /// 足りず、下に置くと板ごと小さく縮んでいた
@@ -103,6 +109,9 @@ class MixDeck extends StatelessWidget {
 
   /// 次曲の円盤の直径の範囲。幅から決める（脇の狭い横画面は小さく、タブレットは大きく）
   static const maxDiscSize = 150.0;
+
+  /// 置き場所（横画面の左の列・全画面の下の板）に大きく出すときの上限
+  static const maxDiscSizeLarge = 200.0;
   static const minDiscSize = 80.0;
 
   /// 前曲の盤は次曲の円盤に対してこの倍率（触れない脇役）
@@ -126,31 +135,47 @@ class MixDeck extends StatelessWidget {
   /// 板の幅の上限（横幅いっぱいのコントローラーの上に出すとき。円盤は [maxDiscSize] で頭打ち）
   static const maxWidth = 480.0;
 
+  /// 置き場所に大きく出すときの板の幅の上限
+  static const maxWidthLarge = 640.0;
+
   /// 板の下端を、コントローラーの上端からどれだけ上に浮かせるか
   /// （コントローラーの板の上の余白 18px + 隙間）
   static const liftAbove = 26.0;
 
   /// 幅 [width] のときの次曲の円盤の直径
-  static double discSizeFor(double width, {bool side = false}) =>
+  static double discSizeFor(double width,
+          {bool side = false, double max = maxDiscSize}) =>
       ((width -
                   _padding * 2 -
                   _gap * 2 -
                   faderColumnWidth -
                   (side ? sideToolbarWidth + _gap : 0)) /
               (1 + subDiscRatio))
-          .clamp(minDiscSize, maxDiscSize);
+          .clamp(minDiscSize, max);
 
   /// 幅 [width] のときの前曲の盤の直径
-  static double subDiscSizeFor(double width, {bool side = false}) =>
-      discSizeFor(width, side: side) * subDiscRatio;
+  static double subDiscSizeFor(double width,
+          {bool side = false, double max = maxDiscSize}) =>
+      discSizeFor(width, side: side, max: max) * subDiscRatio;
+
+  /// 幅 [width]・ボタンを右に置く形のときの板の高さの目安（置き場所の高さを決める）。
+  /// 円盤 + BPM の行と、ボタン 3 段の高い方
+  static double heightFor(double width, {double max = maxDiscSize}) =>
+      _padding * 2 +
+      math.max(discSizeFor(width, side: true, max: max) + _bpmRowHeight,
+          _sideToolbarRows * 40.0);
+
+  /// BPM の行（円盤の下）の高さの目安と、右に置くボタンの段数
+  static const _bpmRowHeight = 20.0;
+  static const _sideToolbarRows = 3;
 
   /// 2 つのテンポが揃っているとみなす差（%）
   static const matchedPercent = 0.5;
 
   @override
   Widget build(BuildContext context) {
-    final size = discSizeFor(width, side: sideToolbar);
-    final subSize = subDiscSizeFor(width, side: sideToolbar);
+    final size = discSizeFor(width, side: sideToolbar, max: discMax);
+    final subSize = subDiscSizeFor(width, side: sideToolbar, max: discMax);
     final jog = this.jog;
     final tempo = this.tempo;
     final outBpm = this.outBpm;

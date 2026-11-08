@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/loop_item.dart';
 import '../../providers/thumb_tone_provider.dart';
 import '../karaoke_subtitle.dart';
+import 'deck_anchor.dart';
 import 'player_glass_bar.dart';
 
 /// 再生画面（縦）の骨組み。プレイリスト再生と単体再生で共通。
@@ -21,10 +24,9 @@ import 'player_glass_bar.dart';
 /// 縮めて（レターボックス）コントローラーを優先する。曲名行とコントローラーの高さは
 /// 描画後に測って次のフレームで反映する。
 ///
-/// 横画面（[wide]）は左右 2 列。左に動画（大きく）・曲名行・再生操作、右に [topBar]
-/// （AppBar の代わり）・字幕・波形とピル（[controller] を 2 か所に置き、
-/// [PlayerDensity.part] で描く部分を分ける）。[panel] は左の列の動画と曲名行に重ねる。
-/// デッキの板は右の列の波形の上に浮く。
+/// 横画面（[wide]）は左右 2 列。左に動画（大きく）・曲名行、右に [topBar]
+/// （AppBar の代わり）・字幕・[controller]（波形・再生操作・ピル）。[panel] は左の列に
+/// 重ねる。デッキの板も左の列に大きく出す（[DeckAnchorScope]。出している間は動画を暗く）。
 class PlayerShell extends ConsumerStatefulWidget {
   const PlayerShell({
     super.key,
@@ -61,7 +63,7 @@ class PlayerShell extends ConsumerStatefulWidget {
   /// 動画を縮めるときの下限（16:9 の高さに対する割合）
   static const videoMinScale = 0.6;
 
-  /// 横画面の左の列（動画・曲名行・再生操作）の幅（画面幅に対する割合）
+  /// 横画面の左の列（動画・曲名行・デッキの板）の幅（画面幅に対する割合）
   static const wideLeftRatio = 0.55;
 
   @override
@@ -107,34 +109,45 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     );
   }
 
-  /// 横画面: 左の列に動画・曲名行・再生操作、右の列に [PlayerShell.topBar]・字幕・
-  /// 波形とピル。以前は下に横幅いっぱいのコントローラーを置いていたが、動画が小さく、
-  /// デッキの板を出すと狭すぎた
+  /// 横画面: 左の列に動画・曲名行（DJ の板もここ）、右の列に [PlayerShell.topBar]・字幕・
+  /// コントローラー。以前は左の列の下に再生操作、右に波形だったが、デッキの板が波形の
+  /// 上の狭い所にしか出せなかった
   Widget _buildWide() {
     final mq = MediaQuery.of(context);
     // 横画面は AppBar を置かないので padding.top はステータスバーの分だけ
     final topInset = mq.padding.top;
     final sides = EdgeInsets.only(left: mq.padding.left, right: mq.padding.right);
-    final video = _clippedVideo;
     final coveredByPanel = widget.panel != null;
-    return Padding(
-      padding: EdgeInsets.only(top: topInset).add(sides),
-      child: LayoutBuilder(builder: (context, c) {
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: c.maxWidth * PlayerShell.wideLeftRatio,
-              child: Column(
+    return DeckAnchorScope(builder: (context, anchor) {
+      // トラック一覧などを開いている間は板を出さない（同じ場所）
+      anchor.suppressed = coveredByPanel;
+      return Padding(
+        padding: EdgeInsets.only(top: topInset).add(sides),
+        child: LayoutBuilder(builder: (context, c) {
+          final leftWidth = c.maxWidth * PlayerShell.wideLeftRatio;
+          anchor.size = Size(
+              math.max(0.0, leftWidth - PlayerShell.margin * 2),
+              math.max(0.0, c.maxHeight - AppSpacing.sm * 2));
+          return ValueListenableBuilder<bool>(
+            valueListenable: anchor.open,
+            builder: (context, deckOpen, _) {
+              final covered = coveredByPanel || deckOpen;
+              final video = widget.video == null
+                  ? null
+                  : ClipRRect(
+                      borderRadius: AppRadius.borderXl,
+                      child: _DimWhenCovered(
+                          dim: covered, child: widget.video!),
+                    );
+              return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 動画と曲名行。パネルはここに重ねる
-                  Expanded(
+                  SizedBox(
+                    width: leftWidth,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        // 動画は上に寄せ、曲名行はそのすぐ下。余りは再生操作の上に残る
-                        // （広い画面で動画が上下の真ん中に浮き、曲名が離れて見えた）
+                        // 動画は上に寄せ、曲名行はそのすぐ下
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -155,9 +168,9 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                                   ),
                                 ),
                               ),
-                            // パネルを開いている間は描かない（高さは保ってレイアウトを動かさない）
+                            // パネルや板を出している間は描かない（高さは保つ）
                             Visibility(
-                              visible: !coveredByPanel,
+                              visible: !covered,
                               maintainState: true,
                               maintainAnimation: true,
                               maintainSize: true,
@@ -166,43 +179,41 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                             const SizedBox(height: AppSpacing.sm),
                           ],
                         ),
+                        // デッキの板の置き場所（左の列いっぱい）
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: PlayerShell.margin,
+                              vertical: AppSpacing.sm),
+                          child: DeckAnchorTarget(anchor: anchor),
+                        ),
                         _panelSwitcher(),
                       ],
                     ),
                   ),
-                  PlayerDensity(
-                    dense: true,
-                    part: PlayerBarPart.transport,
-                    child: widget.controller,
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ?widget.topBar,
-                  // 字幕は波形の上の空き（デッキの板もここに浮く）
-                  const Expanded(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: KaraokeSubtitle(),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ?widget.topBar,
+                        // 字幕はコントローラーの上の空き
+                        const Expanded(
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: KaraokeSubtitle(),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        PlayerDensity(dense: true, child: widget.controller),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  PlayerDensity(
-                    dense: true,
-                    part: PlayerBarPart.seek,
-                    child: widget.controller,
-                  ),
                 ],
-              ),
-            ),
-          ],
-        );
-      }),
-    );
+              );
+            },
+          );
+        }),
+      );
+    });
   }
 
   /// 縦画面: 動画・曲名行・空き・コントローラーを縦に積む

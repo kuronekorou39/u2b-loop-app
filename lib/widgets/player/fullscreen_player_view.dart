@@ -14,6 +14,8 @@ import '../karaoke_subtitle.dart';
 import '../loop/loop_panel_parts.dart';
 import '../loop/loop_seekbar.dart';
 import '../lyrics_overlay.dart';
+import 'deck_anchor.dart';
+import 'mix_deck.dart';
 import 'player_controls.dart';
 import 'player_glass_bar.dart';
 import 'subtitle_toggle_button.dart';
@@ -105,7 +107,9 @@ class FullscreenPlayerView extends StatelessWidget {
     final theme = Theme.of(context);
     const white = Colors.white;
 
-    return _PanelHeight(builder: (panelKey, panelH) => Stack(
+    return DeckAnchorScope(
+        builder: (context, anchor) =>
+            _PanelHeight(builder: (panelKey, panelH) => Stack(
       children: [
         Positioned.fill(
           child: video ?? const VideoPlayerWidget(useAspectRatio: false),
@@ -216,88 +220,7 @@ class FullscreenPlayerView extends StatelessWidget {
                       radius: 18,
                       padding: const EdgeInsets.fromLTRB(
                           AppSpacing.xs, AppSpacing.md, AppSpacing.xs, AppSpacing.xs),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          seekbar ??
-                              LoopSeekbar(
-                                compact: true,
-                                allowMarkerDrag: false,
-                                onRetryWaveform: onRetryWaveform,
-                              ),
-                          Row(
-                            children: [
-                              // 左: 左右・上下の反転（全画面では動画の上のボタンに届かない）
-                              SizedBox(
-                                width: _panelSideWidth,
-                                child: Row(children: [
-                                  Consumer(builder: (_, ref, _) {
-                                    final on = ref.watch(flipHorizontalProvider);
-                                    return _PanelIcon(
-                                      icon: Icons.flip,
-                                      on: on,
-                                      tooltip: on ? '左右反転を戻す' : '左右反転',
-                                      onPressed: () => ref
-                                          .read(flipHorizontalProvider.notifier)
-                                          .state = !on,
-                                    );
-                                  }),
-                                  Consumer(builder: (_, ref, _) {
-                                    final on = ref.watch(flipVerticalProvider);
-                                    return _PanelIcon(
-                                      icon: Icons.flip,
-                                      rotate: true,
-                                      on: on,
-                                      tooltip: on ? '上下反転を戻す' : '上下反転',
-                                      onPressed: () => ref
-                                          .read(flipVerticalProvider.notifier)
-                                          .state = !on,
-                                    );
-                                  }),
-                                ]),
-                              ),
-                              Expanded(
-                                child: controls ??
-                              PlayerControls(
-                                prevTrack: isPlaylist
-                                    ? IconButton(
-                                        onPressed: onPrev,
-                                        tooltip: '前の曲',
-                                        icon: const Icon(Icons.skip_previous_rounded),
-                                      )
-                                    : null,
-                                nextTrack: isPlaylist
-                                    ? IconButton(
-                                        onPressed: onNext,
-                                        tooltip: '次の曲',
-                                        icon: const Icon(Icons.skip_next_rounded),
-                                      )
-                                    : null,
-                              ),
-                              ),
-                              // 右: コントロールの固定（留めると自動で消えない）
-                              SizedBox(
-                                width: _panelSideWidth,
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: onToggleOverlayPin == null
-                                      ? null
-                                      : _PanelIcon(
-                                          icon: overlayPinned
-                                              ? Icons.push_pin
-                                              : Icons.push_pin_outlined,
-                                          on: overlayPinned,
-                                          tooltip: overlayPinned
-                                              ? 'コントロールの固定を外す'
-                                              : 'コントロールを固定する',
-                                          onPressed: onToggleOverlayPin!,
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                      child: _panelContents(anchor),
                     )),
                   ),
                 ],
@@ -400,7 +323,117 @@ class FullscreenPlayerView extends StatelessWidget {
           ),
         ),
       ],
-    ));
+    )));
+  }
+
+  /// 下の板の中身。ふだんは上にシークバー、下に反転 / 再生操作 / 固定。
+  /// DJ の板を出している間は左半分を板の置き場所にし、右半分にシークバーと再生操作
+  /// （板を上に浮かせると動画に被り、縮んで小さかった）。シークバーはいつも同じ位置に
+  /// 置く（作り直されるとデッキを開いた状態が消える）
+  Widget _panelContents(DeckAnchorController anchor) {
+    final seek = seekbar ??
+        LoopSeekbar(
+          compact: true,
+          allowMarkerDrag: false,
+          onRetryWaveform: onRetryWaveform,
+        );
+    final transport = controls ??
+        PlayerControls(
+          prevTrack: isPlaylist
+              ? IconButton(
+                  onPressed: onPrev,
+                  tooltip: '前の曲',
+                  icon: const Icon(Icons.skip_previous_rounded),
+                )
+              : null,
+          nextTrack: isPlaylist
+              ? IconButton(
+                  onPressed: onNext,
+                  tooltip: '次の曲',
+                  icon: const Icon(Icons.skip_next_rounded),
+                )
+              : null,
+        );
+    // 左右・上下の反転（全画面では動画の上のボタンに届かない）
+    final flips = Row(mainAxisSize: MainAxisSize.min, children: [
+      Consumer(builder: (_, ref, _) {
+        final on = ref.watch(flipHorizontalProvider);
+        return _PanelIcon(
+          icon: Icons.flip,
+          on: on,
+          tooltip: on ? '左右反転を戻す' : '左右反転',
+          onPressed: () =>
+              ref.read(flipHorizontalProvider.notifier).state = !on,
+        );
+      }),
+      Consumer(builder: (_, ref, _) {
+        final on = ref.watch(flipVerticalProvider);
+        return _PanelIcon(
+          icon: Icons.flip,
+          rotate: true,
+          on: on,
+          tooltip: on ? '上下反転を戻す' : '上下反転',
+          onPressed: () => ref.read(flipVerticalProvider.notifier).state = !on,
+        );
+      }),
+    ]);
+    // コントロールの固定（留めると自動で消えない）
+    final pin = onToggleOverlayPin == null
+        ? const SizedBox.shrink()
+        : _PanelIcon(
+            icon: overlayPinned ? Icons.push_pin : Icons.push_pin_outlined,
+            on: overlayPinned,
+            tooltip: overlayPinned ? 'コントロールの固定を外す' : 'コントロールを固定する',
+            onPressed: onToggleOverlayPin!,
+          );
+    return ValueListenableBuilder<bool>(
+      valueListenable: anchor.open,
+      builder: (context, deckOpen, _) => LayoutBuilder(builder: (context, c) {
+        final half = c.maxWidth / 2;
+        final deckWidth = (half - AppSpacing.sm).clamp(0.0, double.infinity);
+        final deckHeight =
+            MixDeck.heightFor(deckWidth, max: MixDeck.maxDiscSizeLarge);
+        anchor.size = Size(deckWidth, deckHeight);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // DJ の板の置き場所（開くと半分まで伸びる）
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              width: deckOpen ? half : 0,
+              height: deckOpen ? deckHeight : 0,
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: DeckAnchorTarget(anchor: anchor),
+            ),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  seek,
+                  if (deckOpen) ...[
+                    // 半分の幅に入りきらなければ縮める
+                    FittedBox(fit: BoxFit.scaleDown, child: transport),
+                    Row(children: [flips, const Spacer(), pin]),
+                  ] else
+                    Row(
+                      children: [
+                        SizedBox(width: _panelSideWidth, child: flips),
+                        Expanded(child: transport),
+                        SizedBox(
+                          width: _panelSideWidth,
+                          child: Align(
+                              alignment: Alignment.centerRight, child: pin),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+      }),
+    );
   }
 }
 

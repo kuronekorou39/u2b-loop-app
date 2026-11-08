@@ -9,9 +9,7 @@ import 'player_shell.dart';
 /// 上から [seekbar] / [extra]（AB 編集ブロックなど、無ければ省く）/ [transport] の一列 /
 /// [pills] の一列。中身はモードごとに渡す（プレイリスト: PlaylistBottomBar、単体: SinglePlayerBar）。
 /// [compact] は中段のパネルを開いている間の低い形で、ピル行を省く。
-/// 横画面では [PlayerDensity] で詰めた形（余白と再生ボタンを小さく）になり、
-/// 左右の列に分けて置く（[PlayerDensity.part]）: 左の列（動画の下）は再生操作だけ、
-/// 右の列は波形とピル。同じコントローラーを 2 か所に置き、それぞれが自分の部分を描く。
+/// 横画面では [PlayerDensity] で詰めた形（余白と再生ボタンを小さく）になり、右の列に置く。
 class PlayerGlassBar extends StatelessWidget {
   const PlayerGlassBar({
     super.key,
@@ -64,53 +62,7 @@ class PlayerGlassBar extends StatelessWidget {
         : compact
             ? AppSpacing.md
             : AppSpacing.xl;
-    final part = PlayerDensity.partOf(context);
     final bottomMargin = (dense ? AppSpacing.lg : AppSpacing.xl) + bottomInset;
-    if (part == PlayerBarPart.transport) {
-      return GlassPanel(
-        margin: EdgeInsets.fromLTRB(
-            PlayerShell.margin, 0, PlayerShell.margin, bottomMargin),
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm, vertical: AppSpacing.md),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: transport,
-        ),
-      );
-    }
-    if (part == PlayerBarPart.seek) {
-      return GlassPanel(
-        margin: EdgeInsets.fromLTRB(0, 0, PlayerShell.margin, bottomMargin),
-        padding: EdgeInsets.fromLTRB(2, top, 2, bottom),
-        child: AnimatedSize(
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.bottomCenter,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              seekbar,
-              if (extra != null) ...[
-                const SizedBox(height: AppSpacing.lg),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-                  child: extra,
-                ),
-              ],
-              if (!compact && pills != null) ...[
-                const SizedBox(height: AppSpacing.md),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                  child: _densePills(pills!),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
     return GlassPanel(
       // 下はジェスチャーバー/ナビバーの分（bottomInset）に加えて余白をとる。
       // 画面の最下段は指が触れにくく、詰めると窮屈に見える
@@ -189,42 +141,21 @@ class PlayerGlassBar extends StatelessWidget {
   }
 }
 
-/// コントローラーのどの部分を描くか。横画面は左の列に [transport]、右の列に [seek]
-enum PlayerBarPart {
-  /// 全部（縦画面）
-  all,
-
-  /// 再生操作の行だけ
-  transport,
-
-  /// 波形（シークバー）・編集ブロック・ピルだけ
-  seek,
-}
-
 /// 横画面のコントローラーを詰めた形にする（[PlayerShell] の横レイアウトが付ける）
 class PlayerDensity extends InheritedWidget {
   const PlayerDensity({
     super.key,
     required this.dense,
-    this.part = PlayerBarPart.all,
     required super.child,
   });
 
   final bool dense;
 
-  /// 描く部分（横画面は左右の列に分けて置く）
-  final PlayerBarPart part;
-
   static bool of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<PlayerDensity>()?.dense ?? false;
 
-  static PlayerBarPart partOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<PlayerDensity>()?.part ??
-      PlayerBarPart.all;
-
   @override
-  bool updateShouldNotify(PlayerDensity old) =>
-      old.dense != dense || old.part != part;
+  bool updateShouldNotify(PlayerDensity old) => old.dense != dense;
 }
 
 /// シャッフル・リピート・ループのようなオン/オフのあるボタン。オンなら緑の丸を敷く

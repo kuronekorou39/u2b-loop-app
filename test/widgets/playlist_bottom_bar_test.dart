@@ -26,7 +26,6 @@ void main() {
     bool compact = false,
     bool canRegister = true,
     bool dense = false,
-    PlayerBarPart part = PlayerBarPart.all,
     double? width,
   }) async {
     final events = <String>[];
@@ -50,7 +49,6 @@ void main() {
                 width: width,
                 child: PlayerDensity(
                   dense: dense,
-                  part: part,
                   child: PlaylistBottomBar(
                     seekbar: const SizedBox(height: 40, key: Key('seek')),
                     compact: compact,
@@ -124,34 +122,5 @@ void main() {
     expect(play.width, PlayerGlassBar.playSizeDense);
     await tester.tap(find.text('トラック'));
     expect(r.events, ['list']);
-  });
-
-  testWidgets('横画面の左の列（再生操作だけ）: シークバーとピルは描かない', (tester) async {
-    final r = await pump(tester,
-        dense: true, part: PlayerBarPart.transport, width: 480);
-    expect(tester.takeException(), isNull);
-    expect(find.byType(BigPlayButton), findsOneWidget);
-    expect(find.byKey(const Key('seek')), findsNothing);
-    expect(find.text('トラック'), findsNothing);
-    await tester.tap(find.byTooltip('次の曲'));
-    expect(r.events, ['next']);
-  });
-
-  testWidgets('横画面の右の列（波形とピル）: 再生操作は描かず、狭くても溢れない', (tester) async {
-    final r = await pump(tester, dense: true, part: PlayerBarPart.seek, width: 360);
-    expect(tester.takeException(), isNull);
-    expect(find.byType(BigPlayButton), findsNothing);
-    expect(find.byKey(const Key('seek')), findsOneWidget);
-    await tester.tap(find.text('トラック'));
-    await tester.tap(find.byTooltip('その他'));
-    expect(r.events, ['list', 'more']);
-  });
-
-  testWidgets('右の列で編集中は編集ブロックと 今をA/B のピル', (tester) async {
-    final r = await pump(tester,
-        dense: true, part: PlayerBarPart.seek, width: 400, editing: true);
-    expect(find.byKey(const Key('edit')), findsOneWidget);
-    await tester.tap(find.text('今をA'));
-    expect(r.events, ['setA']);
   });
 }

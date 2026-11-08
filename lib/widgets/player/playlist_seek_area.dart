@@ -16,6 +16,7 @@ import '../../providers/playlist_player_provider.dart';
 import '../../services/waveform_cache.dart';
 import '../loop/loop_seekbar.dart';
 import 'jog_wheel.dart';
+import 'deck_anchor.dart';
 import 'mix_deck.dart';
 import 'mix_lanes_advance.dart';
 import 'mix_view.dart';
@@ -53,7 +54,6 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
     this.waveHeight = 72,
     this.mixHeight = 72,
     this.hideDeck = false,
-    this.deckShiftX = 0,
   });
 
   final bool compact;
@@ -73,9 +73,6 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
 
   /// デッキの板を開いていても描かない（全画面でコントロールが隠れている間）
   final bool hideDeck;
-
-  /// 板を横にずらす量（全画面で右の一覧を開いている間、一覧に被らないよう左へ）
-  final double deckShiftX;
 
   /// 曲の波形（プリロード時に先行生成したもの）。無ければ null
   final List<double>? Function(LoopItem item) waveformFor;
@@ -158,7 +155,16 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
   @override
   Widget build(BuildContext context) {
     _deckData = null;
+    final anchor = DeckAnchorScope.maybeOf(context);
+    if (anchor != _anchor) {
+      _anchor?.setOpen(false);
+      _anchor = anchor;
+    }
     final body = _body();
+    // 組を作り終えてから知らせる（build の中で知らせると親の描き直しと重なる）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncAnchor();
+    });
     return OverlayPortal(
       controller: _deckPortal,
       overlayChildBuilder: _buildDeck,
@@ -179,6 +185,14 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
     );
   }
 
+  /// 置き場所（横画面・全画面）。無ければ板は波形の上に浮かせる
+  DeckAnchorController? _anchor;
+
+  /// 板を出しているかを置き場所に知らせる（重ね表示が無ければ板も無い）
+  void _syncAnchor() {
+    _anchor?.setOpen(_wheelsOpen && _deckData != null);
+  }
+
   void _toggleDeck() {
     setState(() => _wheelsOpen = !_wheelsOpen);
     if (_wheelsOpen) {
@@ -194,6 +208,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
 
   @override
   void dispose() {
+    _anchor?.setOpen(false);
     _deckAnim.dispose();
     super.dispose();
   }
@@ -482,33 +497,25 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
   /// デッキの板（この領域の上に浮かせる）。重ね表示を出していないときは空。
   /// 左（前曲）は再生に合わせて回るだけ、右（次曲）は回して拍の位置を、
   /// フェーダーでテンポを合わせる。切り替わった後は右も回るだけ
-  /// 板の動き: 出し入れ（[_deckAnim]）、全画面でコントロールが隠れている間は
-  /// 一緒にフェードで消す（[PlaylistSeekArea.hideDeck]）、右の一覧を開いている間は
-  /// 左へずらす（[PlaylistSeekArea.deckShiftX]）
-  Widget _deckMotion(Widget deck) {
+  /// 板の動き: 出し入れ（[_deckAnim]）、全画面でコントロールが隠れている間や
+  /// 置き場所が他に使われている間は一緒にフェードで消す
+  Widget _deckMotion(Widget deck, {required bool hidden}) {
     final curved =
         CurvedAnimation(parent: _deckAnim, curve: Curves.easeOutCubic);
-    return TweenAnimationBuilder<double>(
-      tween: Tween(end: widget.deckShiftX),
+    return AnimatedOpacity(
+      opacity: hidden ? 0 : 1,
       duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      builder: (context, dx, child) =>
-          Transform.translate(offset: Offset(dx, 0), child: child),
-      child: AnimatedOpacity(
-        opacity: widget.hideDeck ? 0 : 1,
-        duration: const Duration(milliseconds: 300),
-        child: IgnorePointer(
-          ignoring: widget.hideDeck,
-          child: FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween(begin: const Offset(0, 0.06), end: Offset.zero)
-                  .animate(curved),
-              child: ScaleTransition(
-                scale: Tween(begin: 0.96, end: 1.0).animate(curved),
-                alignment: Alignment.bottomCenter,
-                child: deck,
-              ),
+      child: IgnorePointer(
+        ignoring: hidden,
+        child: FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween(begin: const Offset(0, 0.06), end: Offset.zero)
+                .animate(curved),
+            child: ScaleTransition(
+              scale: Tween(begin: 0.96, end: 1.0).animate(curved),
+              alignment: Alignment.bottomCenter,
+              child: deck,
             ),
           ),
         ),
@@ -545,37 +552,13 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
       ref.read(tempoTrimProvider.notifier).state = null;
     }
 
-    // 板の幅はこの領域に合わせる（横幅いっぱいの横画面では広すぎるので上限）。
-    // 上に入りきらないとき（横画面）は縮めて、状態バーの下に収める
-    final deckWidth = math.min(_width, MixDeck.maxWidth);
-    final box = context.findRenderObject() as RenderBox?;
-    final areaTop = box != null && box.hasSize
-        ? box.localToGlobal(Offset.zero).dy
-        : double.infinity;
-    final room = areaTop -
-        MixDeck.liftAbove -
-        MediaQuery.paddingOf(portalContext).top -
-        AppSpacing.sm;
-    return Positioned(
-      left: 0,
-      top: 0,
-      child: CompositedTransformFollower(
-        link: _link,
-        showWhenUnlinked: false,
-        targetAnchor: Alignment.topCenter,
-        followerAnchor: Alignment.bottomCenter,
-        offset: const Offset(0, -MixDeck.liftAbove),
-        child: _deckMotion(ConstrainedBox(
-          constraints: BoxConstraints(
-              maxHeight: room.isFinite && room > 0 ? room : double.infinity),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.bottomCenter,
-            child: MixDeck(
-          width: deckWidth,
+    MixDeck deck(double width,
+            {required bool side, double discMax = MixDeck.maxDiscSize}) =>
+        MixDeck(
+          width: width,
           // 横画面・全画面は上の高さが足りないので、ボタンを円盤の右に縦に置く
-          sideToolbar: MediaQuery.orientationOf(portalContext) ==
-              Orientation.landscape,
+          sideToolbar: side,
+          discMax: discMax,
           contentKey: ValueKey(pair.key),
           outTurns: JogWheel.platterTurns(data.outPosition),
           inTurns: swapped ? JogWheel.platterTurns(data.inPosition) : 0,
@@ -624,9 +607,69 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
                   AppToast.instance.show(
                       AppSnackBar.success('この曲の拍を直しました'));
                 },
+            );
+
+    final anchor = _anchor;
+    if (anchor != null && !anchor.disposed) {
+      // 置き場所に大きく出す（横画面の左の列・全画面の下の板の左半分）
+      final room = anchor.size;
+      if (room.isEmpty) return const SizedBox.shrink();
+      return Positioned(
+        left: 0,
+        top: 0,
+        child: CompositedTransformFollower(
+          link: anchor.link,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.center,
+          followerAnchor: Alignment.center,
+          child: _deckMotion(
+            hidden: widget.hideDeck || anchor.suppressed,
+            SizedBox(
+              width: room.width,
+              height: room.height,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: deck(math.min(room.width, MixDeck.maxWidthLarge),
+                    side: true, discMax: MixDeck.maxDiscSizeLarge),
+              ),
             ),
           ),
-        )),
+        ),
+      );
+    }
+
+    // 波形の上に浮かせる（縦画面）。板の幅はこの領域に合わせ、上に入りきらなければ縮める
+    final box = context.findRenderObject() as RenderBox?;
+    final areaTop = box != null && box.hasSize
+        ? box.localToGlobal(Offset.zero).dy
+        : double.infinity;
+    final room = areaTop -
+        MixDeck.liftAbove -
+        MediaQuery.paddingOf(portalContext).top -
+        AppSpacing.sm;
+    return Positioned(
+      left: 0,
+      top: 0,
+      child: CompositedTransformFollower(
+        link: _link,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topCenter,
+        followerAnchor: Alignment.bottomCenter,
+        offset: const Offset(0, -MixDeck.liftAbove),
+        child: _deckMotion(
+          hidden: widget.hideDeck,
+          ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: room.isFinite && room > 0 ? room : double.infinity),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.bottomCenter,
+              child: deck(math.min(_width, MixDeck.maxWidth),
+                  side: MediaQuery.orientationOf(portalContext) ==
+                      Orientation.landscape),
+            ),
+          ),
+        ),
       ),
     );
   }
