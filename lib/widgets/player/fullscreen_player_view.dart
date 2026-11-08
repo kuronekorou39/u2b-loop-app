@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,7 +45,7 @@ class FullscreenPlayerView extends StatelessWidget {
     this.onNext,
     this.isPlaylist = false,
     @visibleForTesting this.video,
-    @visibleForTesting this.seekbar,
+    this.seekbar,
     @visibleForTesting this.controls,
   });
 
@@ -73,13 +74,16 @@ class FullscreenPlayerView extends StatelessWidget {
 
   /// テストで差し替える（media_kit のプレイヤーを作らずに配置を見るため）
   final Widget? video;
+
+  /// 下の板のシークバー。再生画面は普段と同じもの（波形の開閉・DJ）を渡す。
+  /// null なら細いバーだけ
   final Widget? seekbar;
   final Widget? controls;
 
   /// ドロワーの幅（画面幅に対する割合）
   static const drawerFraction = 0.4;
 
-  /// 下の板の高さの目安（字幕をその上に逃がす）
+  /// 下の板の高さの目安（測る前。字幕をその上に逃がす）
   static const panelHeight = 132.0;
 
   /// 下の板の左右の端（反転 / 固定）の幅。真ん中の再生操作が真ん中に来るよう同じ幅
@@ -101,7 +105,7 @@ class FullscreenPlayerView extends StatelessWidget {
     final theme = Theme.of(context);
     const white = Colors.white;
 
-    return Stack(
+    return _PanelHeight(builder: (panelKey, panelH) => Stack(
       children: [
         Positioned.fill(
           child: video ?? const VideoPlayerWidget(useAspectRatio: false),
@@ -204,7 +208,9 @@ class FullscreenPlayerView extends StatelessWidget {
                     bottom: padB,
                     // ぼかしは使わない。フェード中は効かず、出しきった瞬間に一気に効いて
                     // 「最後にカクッと濃くなる」ように見えた（動画の上では重さもある）
-                    child: GlassPanel(
+                    child: SizeChangedLayoutNotifier(
+                      key: panelKey,
+                      child: GlassPanel(
                       blur: false,
                       scrim: Colors.black.withValues(alpha: 0.5),
                       radius: 18,
@@ -292,7 +298,7 @@ class FullscreenPlayerView extends StatelessWidget {
                           ),
                         ],
                       ),
-                    ),
+                    )),
                   ),
                 ],
               ),
@@ -301,13 +307,17 @@ class FullscreenPlayerView extends StatelessWidget {
         ),
         // 字幕（カラオケ）: コントロールの自動非表示に関わらず常時表示。
         // コントロール表示中は下の板より上、非表示中は画面下寄りに移動。
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          left: padL,
-          right: padR,
-          bottom: (showOverlay ? panelHeight + AppSpacing.lg : 32.0) + bottomInset,
-          child: const IgnorePointer(child: KaraokeSubtitle()),
+        // 板の高さは波形の開閉で変わるので測った値を使う
+        ValueListenableBuilder<double>(
+          valueListenable: panelH,
+          builder: (_, h, _) => AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            left: padL,
+            right: padR,
+            bottom: (showOverlay ? padB + h + AppSpacing.lg : 32.0) + bottomInset,
+            child: const IgnorePointer(child: KaraokeSubtitle()),
+          ),
         ),
         // ドロワーを開いている間は、外のタップで閉じる（コントロールの出し入れはしない）
         if (drawerOpen)
@@ -390,7 +400,7 @@ class FullscreenPlayerView extends StatelessWidget {
           ),
         ),
       ],
-    );
+    ));
   }
 }
 
@@ -630,6 +640,48 @@ class _PanelIcon extends StatelessWidget {
       tooltip: tooltip,
       color: on ? AppTheme.accentGreen : Colors.white,
       icon: rotate ? RotatedBox(quarterTurns: 1, child: glyph) : glyph,
+    );
+  }
+}
+
+/// 全画面の下の板の高さを測って渡す（波形の開閉で変わる。字幕をその上に逃がす）
+class _PanelHeight extends StatefulWidget {
+  const _PanelHeight({required this.builder});
+
+  final Widget Function(GlobalKey panelKey, ValueListenable<double> height)
+      builder;
+
+  @override
+  State<_PanelHeight> createState() => _PanelHeightState();
+}
+
+class _PanelHeightState extends State<_PanelHeight> {
+  final _key = GlobalKey();
+  final _height = ValueNotifier(FullscreenPlayerView.panelHeight);
+
+  @override
+  void dispose() {
+    _height.dispose();
+    super.dispose();
+  }
+
+  void _measure() {
+    final h = _key.currentContext?.size?.height;
+    if (mounted && h != null && (h - _height.value).abs() > 0.5) {
+      _height.value = h;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+    // 板の大きさが変わるたび（波形の開閉のアニメーション中も）測り直す
+    return NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+        return false;
+      },
+      child: widget.builder(_key, _height),
     );
   }
 }

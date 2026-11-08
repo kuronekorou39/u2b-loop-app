@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -126,6 +127,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // 全画面（ボタンで入る。横画面のレイアウトとは別）
   bool _isFullscreen = false;
   bool _showFullscreenOverlay = true;
+
+  /// 全画面のシークバーを細いバーにしておくか（普段の画面の [_compactSeekbar] とは別）
+  bool _fsCompactSeekbar = true;
+
+  /// 全画面の波形の高さ（動画をなるべく隠さない）
+  static const _fullscreenSeekHeight = 72.0;
   bool _showRightDrawer = false;
   Timer? _overlayHideTimer;
 
@@ -346,6 +353,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     playerScreenActive = false;
     _progress.dispose();
     _overlayHideTimer?.cancel();
+    if (_isFullscreen) {
+      GestureBinding.instance.pointerRouter
+          .removeGlobalRoute(_onFullscreenPointer);
+    }
     _trackListController.dispose();
     _transport.dispose();
     // 全画面モード解除（バックジェスチャ等で全画面のまま離脱しても向きを戻す）
@@ -1419,6 +1430,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _resetOverlayTimer();
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onFullscreenPointer);
+  }
+
+  /// 全画面で画面のどこか（デッキの板も含む）に触れている間は、コントロールを隠さない。
+  /// デッキの板は Overlay に出るので、画面の木の Listener では拾えない
+  void _onFullscreenPointer(PointerEvent e) {
+    if (e is PointerDownEvent && _showFullscreenOverlay) _resetOverlayTimer();
   }
 
   /// 全画面を解除する（解除ボタン・ダブルタップ・戻る）。向きの固定を外すだけなので、
@@ -1430,6 +1448,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _showRightDrawer = false;
     });
     _overlayHideTimer?.cancel();
+    GestureBinding.instance.pointerRouter
+        .removeGlobalRoute(_onFullscreenPointer);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
@@ -1532,6 +1552,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onExit: _exitFullscreen,
       onSubtitleLongPress: _showSubtitleLanguagePicker,
       onRetryWaveform: _retryWaveform,
+      // 普段と同じシークバー（時刻の行で波形の開閉・DJ）。全画面は低めの波形
+      seekbar: _isPlaylist
+          ? _playlistSeekArea(_fullscreenSeekHeight, fullscreen: true)
+          : _singleSeekbar(_fullscreenSeekHeight, fullscreen: true),
     );
   }
 
@@ -1568,12 +1592,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 画面の高さに合わせて低くする（コントローラーがスクロールしないように）
   double _seekHeight(bool wide) {
     if (!wide) return 120;
-    // 横はコントローラーが動画の下に入るので、動画の場所を残すよう低めに
+    // 横は右の列に置く。上にデッキの板の場所を残す
     final h = MediaQuery.sizeOf(context).height;
-    if (h < 380) return 40;
-    if (h < 440) return 52;
-    if (h < 560) return 72;
-    return 96;
+    if (h < 380) return 64;
+    if (h < 440) return 84;
+    if (h < 560) return 104;
+    return 120;
+  }
+
+  /// シークバーの開閉（細いバー ⇄ 波形）。全画面は別に覚える（細いバーで始める）
+  void _toggleCompactSeekbar(bool fullscreen) => setState(() {
+        if (fullscreen) {
+          _fsCompactSeekbar = !_fsCompactSeekbar;
+        } else {
+          _compactSeekbar = !_compactSeekbar;
+        }
+      });
+
+  /// プレイリストのシークバー（波形・重ね表示・DJ）。縦横の画面と全画面で同じもの
+  Widget _playlistSeekArea(double height, {bool fullscreen = false}) {
+    return PlaylistSeekArea(
+      compact: fullscreen ? _fsCompactSeekbar : _compactSeekbar,
+      waveHeight: height,
+      mixHeight: height,
+      // 全画面でコントロールが隠れている間はデッキも隠す
+      hideDeck: _isFullscreen && !_showFullscreenOverlay,
+      onToggleCompact: () => _toggleCompactSeekbar(fullscreen),
+      onRetryWaveform: _retryWaveform,
+      onReplayPrevious: _transport.replayPreviousFrom,
+      waveformFor: _mixWaveformFor,
+      titleFor: (item) => item.title,
+    );
+  }
+
+  /// 単体再生のシークバー（波形・追従）。縦横の画面と全画面で同じもの
+  Widget _singleSeekbar(double height, {bool fullscreen = false}) {
+    final item = _currentItem;
+    return LoopSeekbar(
+      compact: fullscreen ? _fsCompactSeekbar : _compactSeekbar,
+      onToggleCompact: () => _toggleCompactSeekbar(fullscreen),
+      allowMarkerDrag: _editMode,
+      onRetryWaveform: _retryWaveform,
+      barHeight: height,
+      // 保存された最新の曲（開いたあとに裏で解析が終わっても線が出るように）
+      beatItem: ref.watch(loopItemsProvider
+              .select((l) => l.where((i) => i.id == item.id).firstOrNull)) ??
+          item,
+    );
   }
 
   Widget _buildPlayerView(double bottomInset) {
@@ -1645,17 +1710,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     subtitle: plState.currentTrack?.displayName)
                 : null,
         controller: PlaylistBottomBar(
-          seekbar: PlaylistSeekArea(
-            compact: _compactSeekbar,
-            waveHeight: _seekHeight(wide),
-            mixHeight: _seekHeight(wide),
-            onToggleCompact: () =>
-                setState(() => _compactSeekbar = !_compactSeekbar),
-            onRetryWaveform: _retryWaveform,
-            onReplayPrevious: _transport.replayPreviousFrom,
-            waveformFor: _mixWaveformFor,
-            titleFor: (item) => item.title,
-          ),
+          seekbar: _playlistSeekArea(_seekHeight(wide)),
           listOpen: panelOpen,
           shuffle: plState.shuffle,
           onShuffle: _transport.isPreloading ? null : _toggleShuffle,
@@ -1768,18 +1823,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ? _buildWideEditPanel(editBlock, subtitle: activeRegion?.name)
               : null,
       controller: SinglePlayerBar(
-        seekbar: LoopSeekbar(
-          compact: _compactSeekbar,
-          onToggleCompact: () =>
-              setState(() => _compactSeekbar = !_compactSeekbar),
-          allowMarkerDrag: _editMode,
-          onRetryWaveform: _retryWaveform,
-          barHeight: wide ? _seekHeight(true) : 72,
-          // 保存された最新の曲（開いたあとに裏で解析が終わっても線が出るように）
-          beatItem: ref.watch(loopItemsProvider
-                  .select((l) => l.where((i) => i.id == item.id).firstOrNull)) ??
-              item,
-        ),
+        seekbar: _singleSeekbar(wide ? _seekHeight(true) : 72),
         regionsOpen: panelOpen,
         loop: loop,
         onToggleLoop: notifier.toggleEnabled,

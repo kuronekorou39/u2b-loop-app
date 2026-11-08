@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,9 +21,10 @@ import 'player_glass_bar.dart';
 /// 縮めて（レターボックス）コントローラーを優先する。曲名行とコントローラーの高さは
 /// 描画後に測って次のフレームで反映する。
 ///
-/// 横画面（[wide]）は上の段に動画（左）と [topBar]（AppBar の代わり）・曲名行（右）、
-/// 下に横幅いっぱいのコントローラー（再生操作とピルを 1 行に詰めた形）。[panel] は
-/// 上の段に重ねる。デッキの板はコントローラーの上（動画の上）に浮く。
+/// 横画面（[wide]）は左右 2 列。左に動画（大きく）・曲名行・再生操作、右に [topBar]
+/// （AppBar の代わり）・字幕・波形とピル（[controller] を 2 か所に置き、
+/// [PlayerDensity.part] で描く部分を分ける）。[panel] は左の列の動画と曲名行に重ねる。
+/// デッキの板は右の列の波形の上に浮く。
 class PlayerShell extends ConsumerStatefulWidget {
   const PlayerShell({
     super.key,
@@ -62,8 +61,8 @@ class PlayerShell extends ConsumerStatefulWidget {
   /// 動画を縮めるときの下限（16:9 の高さに対する割合）
   static const videoMinScale = 0.6;
 
-  /// 横画面の動画の幅の上限（画面幅に対する割合。残りに曲名行）
-  static const wideVideoMaxWidth = 0.6;
+  /// 横画面の左の列（動画・曲名行・再生操作）の幅（画面幅に対する割合）
+  static const wideLeftRatio = 0.55;
 
   @override
   ConsumerState<PlayerShell> createState() => _PlayerShellState();
@@ -108,10 +107,9 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     );
   }
 
-  /// 横画面: 上の段に動画（左）と [PlayerShell.topBar]・曲名行・字幕（右）、下に横幅
-  /// いっぱいのコントローラー（再生操作とピルを 1 行に）。パネルは上の段に重ねる。
-  /// コントローラーを右の脇に置いていたときは、デッキの板（コントローラーの上に浮かせる）の
-  /// 場所が無く、上が画面の外に切れていた
+  /// 横画面: 左の列に動画・曲名行・再生操作、右の列に [PlayerShell.topBar]・字幕・
+  /// 波形とピル。以前は下に横幅いっぱいのコントローラーを置いていたが、動画が小さく、
+  /// デッキの板を出すと狭すぎた
   Widget _buildWide() {
     final mq = MediaQuery.of(context);
     // 横画面は AppBar を置かないので padding.top はステータスバーの分だけ
@@ -119,70 +117,91 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     final sides = EdgeInsets.only(left: mq.padding.left, right: mq.padding.right);
     final video = _clippedVideo;
     final coveredByPanel = widget.panel != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(height: topInset),
-        Expanded(
-          child: Padding(
-            padding: sides,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                LayoutBuilder(builder: (context, upper) {
-                  // 動画は上の段の高さいっぱい（幅は画面の [wideVideoMaxWidth] まで）
-                  final videoH = math.max(
-                      0.0,
-                      math.min(upper.maxHeight - AppSpacing.sm * 2,
-                          upper.maxWidth * PlayerShell.wideVideoMaxWidth * 9 / 16));
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (video != null)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                              left: PlayerShell.margin, top: AppSpacing.sm),
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: SizedBox(
-                              width: videoH * 16 / 9,
-                              height: videoH,
-                              child: video,
+    return Padding(
+      padding: EdgeInsets.only(top: topInset).add(sides),
+      child: LayoutBuilder(builder: (context, c) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: c.maxWidth * PlayerShell.wideLeftRatio,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 動画と曲名行。パネルはここに重ねる
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // 動画は上に寄せ、曲名行はそのすぐ下。余りは再生操作の上に残る
+                        // （広い画面で動画が上下の真ん中に浮き、曲名が離れて見えた）
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (video != null)
+                              Flexible(
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      PlayerShell.margin,
+                                      AppSpacing.sm,
+                                      PlayerShell.margin,
+                                      AppSpacing.sm),
+                                  // 高さは動画に合わせる（余りを抱え込まない）
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    heightFactor: 1,
+                                    child: AspectRatio(
+                                        aspectRatio: 16 / 9, child: video),
+                                  ),
+                                ),
+                              ),
+                            // パネルを開いている間は描かない（高さは保ってレイアウトを動かさない）
+                            Visibility(
+                              visible: !coveredByPanel,
+                              maintainState: true,
+                              maintainAnimation: true,
+                              maintainSize: true,
+                              child: widget.header,
                             ),
-                          ),
+                            const SizedBox(height: AppSpacing.sm),
+                          ],
                         ),
-                      Expanded(
-                        // パネルを開いている間は描かない（高さは保ってレイアウトを動かさない）
-                        child: Visibility(
-                          visible: !coveredByPanel,
-                          maintainState: true,
-                          maintainAnimation: true,
-                          maintainSize: true,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (widget.topBar != null) widget.topBar!,
-                              const Spacer(),
-                              widget.header,
-                              const KaraokeSubtitle(),
-                              const SizedBox(height: AppSpacing.sm),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }),
-                _panelSwitcher(),
-              ],
+                        _panelSwitcher(),
+                      ],
+                    ),
+                  ),
+                  PlayerDensity(
+                    dense: true,
+                    part: PlayerBarPart.transport,
+                    child: widget.controller,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
-        Padding(
-          padding: sides,
-          child: PlayerDensity(dense: true, oneRow: true, child: widget.controller),
-        ),
-      ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ?widget.topBar,
+                  // 字幕は波形の上の空き（デッキの板もここに浮く）
+                  const Expanded(
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: KaraokeSubtitle(),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  PlayerDensity(
+                    dense: true,
+                    part: PlayerBarPart.seek,
+                    child: widget.controller,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      }),
     );
   }
 

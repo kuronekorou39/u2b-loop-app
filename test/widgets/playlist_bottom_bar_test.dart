@@ -26,7 +26,7 @@ void main() {
     bool compact = false,
     bool canRegister = true,
     bool dense = false,
-    bool oneRow = false,
+    PlayerBarPart part = PlayerBarPart.all,
     double? width,
   }) async {
     final events = <String>[];
@@ -50,7 +50,7 @@ void main() {
                 width: width,
                 child: PlayerDensity(
                   dense: dense,
-                  oneRow: oneRow,
+                  part: part,
                   child: PlaylistBottomBar(
                     seekbar: const SizedBox(height: 40, key: Key('seek')),
                     compact: compact,
@@ -126,26 +126,32 @@ void main() {
     expect(r.events, ['list']);
   });
 
-  testWidgets('横幅いっぱいの 1 行: 左にトラック、真ん中に再生、右に 1番・その他が同じ行', (tester) async {
-    final r = await pump(tester, dense: true, oneRow: true, width: 780);
+  testWidgets('横画面の左の列（再生操作だけ）: シークバーとピルは描かない', (tester) async {
+    final r = await pump(tester,
+        dense: true, part: PlayerBarPart.transport, width: 480);
     expect(tester.takeException(), isNull);
-    final play = tester.getRect(find.byType(BigPlayButton));
-    final track = tester.getRect(find.text('トラック'));
-    final more = tester.getRect(find.byTooltip('その他'));
-    expect(play.center.dx,
-        closeTo(tester.getRect(find.byType(PlaylistBottomBar)).center.dx, 1));
-    expect(track.right, lessThan(play.left));
-    expect(more.left, greaterThan(play.right));
-    // 同じ行（縦の真ん中が揃う）
-    expect(track.center.dy, closeTo(play.center.dy, 2));
-    expect(more.center.dy, closeTo(play.center.dy, 2));
-    await tester.tap(find.text('トラック'));
+    expect(find.byType(BigPlayButton), findsOneWidget);
+    expect(find.byKey(const Key('seek')), findsNothing);
+    expect(find.text('トラック'), findsNothing);
     await tester.tap(find.byTooltip('次の曲'));
-    expect(r.events, ['list', 'next']);
+    expect(r.events, ['next']);
   });
 
-  testWidgets('1 行の形は狭くても溢れない（ピルが縮む）', (tester) async {
-    await pump(tester, dense: true, oneRow: true, width: 560);
+  testWidgets('横画面の右の列（波形とピル）: 再生操作は描かず、狭くても溢れない', (tester) async {
+    final r = await pump(tester, dense: true, part: PlayerBarPart.seek, width: 360);
     expect(tester.takeException(), isNull);
+    expect(find.byType(BigPlayButton), findsNothing);
+    expect(find.byKey(const Key('seek')), findsOneWidget);
+    await tester.tap(find.text('トラック'));
+    await tester.tap(find.byTooltip('その他'));
+    expect(r.events, ['list', 'more']);
+  });
+
+  testWidgets('右の列で編集中は編集ブロックと 今をA/B のピル', (tester) async {
+    final r = await pump(tester,
+        dense: true, part: PlayerBarPart.seek, width: 400, editing: true);
+    expect(find.byKey(const Key('edit')), findsOneWidget);
+    await tester.tap(find.text('今をA'));
+    expect(r.events, ['setA']);
   });
 }

@@ -10,8 +10,8 @@ import 'player_shell.dart';
 /// [pills] の一列。中身はモードごとに渡す（プレイリスト: PlaylistBottomBar、単体: SinglePlayerBar）。
 /// [compact] は中段のパネルを開いている間の低い形で、ピル行を省く。
 /// 横画面では [PlayerDensity] で詰めた形（余白と再生ボタンを小さく）になり、
-/// 横幅いっぱいに置くとき（[PlayerDensity.oneRow]）は再生操作とピルを 1 行にまとめる
-/// （左のピル / 再生操作 / 右のピル。高さを抑えて動画とデッキの板の場所を空ける）。
+/// 左右の列に分けて置く（[PlayerDensity.part]）: 左の列（動画の下）は再生操作だけ、
+/// 右の列は波形とピル。同じコントローラーを 2 か所に置き、それぞれが自分の部分を描く。
 class PlayerGlassBar extends StatelessWidget {
   const PlayerGlassBar({
     super.key,
@@ -48,7 +48,6 @@ class PlayerGlassBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final dense = PlayerDensity.of(context);
-    final oneRow = PlayerDensity.oneRowOf(context);
     // 詰めた形は上下の余白を 1 段ずつ小さく
     final top = dense
         ? AppSpacing.md
@@ -65,11 +64,58 @@ class PlayerGlassBar extends StatelessWidget {
         : compact
             ? AppSpacing.md
             : AppSpacing.xl;
+    final part = PlayerDensity.partOf(context);
+    final bottomMargin = (dense ? AppSpacing.lg : AppSpacing.xl) + bottomInset;
+    if (part == PlayerBarPart.transport) {
+      return GlassPanel(
+        margin: EdgeInsets.fromLTRB(
+            PlayerShell.margin, 0, PlayerShell.margin, bottomMargin),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm, vertical: AppSpacing.md),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: transport,
+        ),
+      );
+    }
+    if (part == PlayerBarPart.seek) {
+      return GlassPanel(
+        margin: EdgeInsets.fromLTRB(0, 0, PlayerShell.margin, bottomMargin),
+        padding: EdgeInsets.fromLTRB(2, top, 2, bottom),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.bottomCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              seekbar,
+              if (extra != null) ...[
+                const SizedBox(height: AppSpacing.lg),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                  child: extra,
+                ),
+              ],
+              if (!compact && pills != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                  child: _densePills(pills!),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
     return GlassPanel(
       // 下はジェスチャーバー/ナビバーの分（bottomInset）に加えて余白をとる。
       // 画面の最下段は指が触れにくく、詰めると窮屈に見える
-      margin: EdgeInsets.fromLTRB(PlayerShell.margin, 0, PlayerShell.margin,
-          (dense ? AppSpacing.lg : AppSpacing.xl) + bottomInset),
+      margin: EdgeInsets.fromLTRB(
+          PlayerShell.margin, 0, PlayerShell.margin, bottomMargin),
       padding: EdgeInsets.fromLTRB(2, top, 2, bottom),
       child: AnimatedSize(
         duration: const Duration(milliseconds: 260),
@@ -87,13 +133,7 @@ class PlayerGlassBar extends StatelessWidget {
               ),
             ],
             SizedBox(height: gap),
-            if (oneRow)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-                child: _oneRow(transport, compact ? null : pills),
-              )
-            else
-              Padding(
+            Padding(
                 padding: EdgeInsets.symmetric(
                     horizontal: dense ? AppSpacing.sm : AppSpacing.lg),
                 child: Row(
@@ -101,7 +141,7 @@ class PlayerGlassBar extends StatelessWidget {
                   children: transport,
                 ),
               ),
-            if (!oneRow && !compact && pills != null) ...[
+            if (!compact && pills != null) ...[
               SizedBox(height: dense ? AppSpacing.md : AppSpacing.xl + 2),
               Padding(
                 padding: EdgeInsets.symmetric(
@@ -130,29 +170,6 @@ class PlayerGlassBar extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: ws),
       );
 
-  /// 横幅いっぱいの 1 行: 左のピル / 再生操作（真ん中）/ 右のピル
-  static Widget _oneRow(List<Widget> transport, List<Widget>? pills) {
-    final (left, right) =
-        pills == null ? (const <Widget>[], const <Widget>[]) : _splitPills(pills);
-    return Row(
-      children: [
-        Expanded(child: _pillGroup(left, Alignment.centerLeft)),
-        const SizedBox(width: AppSpacing.lg),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < transport.length; i++) ...[
-              if (i > 0) const SizedBox(width: AppSpacing.md),
-              transport[i],
-            ],
-          ],
-        ),
-        const SizedBox(width: AppSpacing.lg),
-        Expanded(child: _pillGroup(right, Alignment.centerRight)),
-      ],
-    );
-  }
-
   /// 詰めた形のピル行: Spacer の左右を両端に寄せ、幅が足りなければそれぞれを縮める
   /// （脇の狭い横画面。脇は IntrinsicHeight の中なので LayoutBuilder は使えない）
   static Widget _densePills(List<Widget> pills) {
@@ -172,30 +189,42 @@ class PlayerGlassBar extends StatelessWidget {
   }
 }
 
+/// コントローラーのどの部分を描くか。横画面は左の列に [transport]、右の列に [seek]
+enum PlayerBarPart {
+  /// 全部（縦画面）
+  all,
+
+  /// 再生操作の行だけ
+  transport,
+
+  /// 波形（シークバー）・編集ブロック・ピルだけ
+  seek,
+}
+
 /// 横画面のコントローラーを詰めた形にする（[PlayerShell] の横レイアウトが付ける）
 class PlayerDensity extends InheritedWidget {
   const PlayerDensity({
     super.key,
     required this.dense,
-    this.oneRow = false,
+    this.part = PlayerBarPart.all,
     required super.child,
   });
 
   final bool dense;
 
-  /// 横幅いっぱいに置く（再生操作とピルを 1 行に）
-  final bool oneRow;
+  /// 描く部分（横画面は左右の列に分けて置く）
+  final PlayerBarPart part;
 
   static bool of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<PlayerDensity>()?.dense ?? false;
 
-  static bool oneRowOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<PlayerDensity>()?.oneRow ??
-      false;
+  static PlayerBarPart partOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PlayerDensity>()?.part ??
+      PlayerBarPart.all;
 
   @override
   bool updateShouldNotify(PlayerDensity old) =>
-      old.dense != dense || old.oneRow != oneRow;
+      old.dense != dense || old.part != part;
 }
 
 /// シャッフル・リピート・ループのようなオン/オフのあるボタン。オンなら緑の丸を敷く

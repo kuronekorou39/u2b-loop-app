@@ -8,6 +8,7 @@ import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
 import 'package:u2b_loop_app/providers/subtitle_provider.dart';
+import 'package:u2b_loop_app/widgets/player/player_glass_bar.dart';
 import 'package:u2b_loop_app/widgets/player/player_shell.dart';
 
 /// 再生画面の骨組み: 動画は 16:9 で、画面が短いときだけコントローラーを優先して縮む。
@@ -51,7 +52,7 @@ void main() {
             video: const ColoredBox(color: Colors.black, key: Key('video')),
             header: const SizedBox(height: 40, key: Key('header')),
             panel: panel,
-            controller: SizedBox(height: controllerHeight, key: const Key('ctrl')),
+            controller: _PartBox(height: controllerHeight),
           ),
         ),
       ),
@@ -61,56 +62,61 @@ void main() {
   }
 
   group('横レイアウト（wide）', () {
-    testWidgets('上の段に 16:9 の動画（左）と topBar・曲名行（右）、下に横幅いっぱいのコントローラー',
+    testWidgets('左に動画・曲名行・再生操作、右に topBar と波形（コントローラーを 2 か所に分けて置く）',
         (tester) async {
       await pump(tester,
           width: 900,
           height: 400,
-          controllerHeight: 180,
+          controllerHeight: 70,
           wide: true,
           topBar: const SizedBox(height: 40, key: Key('topBar')));
+      expect(tester.takeException(), isNull);
       final topBar = tester.getRect(find.byKey(const Key('topBar')));
       final video = tester.getRect(find.byKey(const Key('video')));
       final header = tester.getRect(find.byKey(const Key('header')));
-      final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
-      // コントローラーは下端で横幅いっぱい
-      expect(ctrl.width, closeTo(900, 0.5));
-      expect(ctrl.bottom, closeTo(400, 0.5));
-      // 動画は上の段に 16:9、コントローラーより上
+      final transport = tester.getRect(find.byKey(const Key('transport')));
+      final seek = tester.getRect(find.byKey(const Key('seek')));
+      final split = 900 * PlayerShell.wideLeftRatio;
+      // 左の列: 動画（16:9）→ 曲名行 → 再生操作（下端）
       expect(video.width / video.height, closeTo(16 / 9, 0.01));
-      expect(video.bottom, lessThanOrEqualTo(ctrl.top + 0.5));
-      expect(video.left, closeTo(PlayerShell.margin, 0.5));
-      // topBar と曲名行は動画の右。曲名行はコントローラーのすぐ上の方
-      expect(topBar.left, greaterThanOrEqualTo(video.right - 0.5));
-      expect(header.left, greaterThanOrEqualTo(video.right - 0.5));
-      expect(header.top, greaterThanOrEqualTo(topBar.bottom - 0.5));
-      expect(header.bottom, lessThanOrEqualTo(ctrl.top + 0.5));
+      expect(video.right, lessThanOrEqualTo(split + 0.5));
+      expect(header.top, greaterThanOrEqualTo(video.bottom - 0.5));
+      expect(transport.top, greaterThanOrEqualTo(header.bottom - 0.5));
+      expect(transport.bottom, closeTo(400, 0.5));
+      expect(transport.right, lessThanOrEqualTo(split + 0.5));
+      // 動画は大きく（左の列の高さの大半）
+      expect(video.height, greaterThan(200));
+      // 右の列: topBar（上）と波形（下端）
+      expect(topBar.left, closeTo(split, 0.5));
+      expect(seek.left, closeTo(split, 0.5));
+      expect(seek.bottom, closeTo(400, 0.5));
+      expect(seek.top, greaterThan(topBar.bottom));
     });
 
-    testWidgets('パネルは上の段全体に重なり、コントローラーにはかからない', (tester) async {
+    testWidgets('パネルは左の列の動画と曲名行に重なり、再生操作と右の列にはかからない', (tester) async {
       await pump(tester,
           width: 900,
           height: 400,
-          controllerHeight: 180,
+          controllerHeight: 70,
           wide: true,
           panel: const ColoredBox(color: Colors.red, key: Key('panel')));
       final panel = tester.getRect(find.byKey(const Key('panel')));
       final video = tester.getRect(find.byKey(const Key('video')));
-      final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
+      final transport = tester.getRect(find.byKey(const Key('transport')));
       expect(panel.left, closeTo(0, 0.5));
-      expect(panel.right, closeTo(900, 0.5));
+      expect(panel.right, closeTo(900 * PlayerShell.wideLeftRatio, 0.5));
       expect(panel.top, lessThanOrEqualTo(video.top + 0.5));
-      expect(panel.bottom, closeTo(ctrl.top, 0.5));
+      expect(panel.bottom, closeTo(transport.top, 0.5));
     });
 
     testWidgets('低い画面でも溢れない（動画が縮む）', (tester) async {
       await pump(tester,
-          width: 800, height: 360, controllerHeight: 220, wide: true);
+          width: 800, height: 360, controllerHeight: 120, wide: true);
       expect(tester.takeException(), isNull);
-      final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
+      final transport = tester.getRect(find.byKey(const Key('transport')));
       final video = tester.getRect(find.byKey(const Key('video')));
-      expect(ctrl.bottom, closeTo(360, 0.5));
-      expect(video.bottom, lessThanOrEqualTo(ctrl.top + 0.5));
+      expect(transport.bottom, closeTo(360, 0.5));
+      expect(video.bottom, lessThanOrEqualTo(transport.top + 0.5));
     });
   });
 
@@ -208,4 +214,20 @@ void main() {
     expect(ctrl.height, closeTo(320, 0.5));
     expect(panel.bottom, closeTo(ctrl.top, 0.5));
   });
+}
+
+/// テスト用のコントローラー: 描く部分（[PlayerDensity.partOf]）ごとに別の目印を出す
+class _PartBox extends StatelessWidget {
+  const _PartBox({required this.height});
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: height,
+        key: Key(switch (PlayerDensity.partOf(context)) {
+          PlayerBarPart.all => 'ctrl',
+          PlayerBarPart.transport => 'transport',
+          PlayerBarPart.seek => 'seek',
+        }),
+      );
 }

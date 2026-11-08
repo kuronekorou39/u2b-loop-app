@@ -52,6 +52,7 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
     required this.titleFor,
     this.waveHeight = 72,
     this.mixHeight = 72,
+    this.hideDeck = false,
   });
 
   final bool compact;
@@ -68,6 +69,9 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   /// 重ね表示の帯の置き場の高さ。前曲の棒と隙間をここから取り、残りが帯
   /// （ふつうの表示の波形の高さと同じにしておくと、切り替わっても下部が動かない）
   final double mixHeight;
+
+  /// デッキの板を開いていても描かない（全画面でコントロールが隠れている間）
+  final bool hideDeck;
 
   /// 曲の波形（プリロード時に先行生成したもの）。無ければ null
   final List<double>? Function(LoopItem item) waveformFor;
@@ -458,7 +462,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   /// フェーダーでテンポを合わせる。切り替わった後は右も回るだけ
   Widget _buildDeck(BuildContext portalContext) {
     final data = _deckData;
-    if (data == null || _width <= 0) return const SizedBox.shrink();
+    if (widget.hideDeck || data == null || _width <= 0) {
+      return const SizedBox.shrink();
+    }
     final pair = data.pair;
     final swapped = data.swapped;
     final engine = ref.read(playlistEngineProvider);
