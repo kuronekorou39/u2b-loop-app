@@ -624,15 +624,20 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
           followerAnchor: Alignment.center,
           child: _deckMotion(
             hidden: widget.hideDeck || anchor.suppressed,
-            SizedBox(
-              width: room.width,
-              height: room.height,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                // 置き場所は十分広いので、ボタンは円盤の下の 1 行のまま
-                child: deck(math.min(room.width, MixDeck.maxWidthLarge),
-                    side: false, discMax: MixDeck.maxDiscSizeLarge),
+            // 板は置き場所の予定の大きさで組み、今の大きさ（開く途中は伸びている）に
+            // 縮めて描く。予定の大きさのまま出すと、伸びきる前の置き場所から飛び出した
+            ValueListenableBuilder<Size>(
+              valueListenable: anchor.room,
+              builder: (context, live, child) => SizedBox(
+                width: live.width,
+                height: live.height,
+                child: live.isEmpty
+                    ? null
+                    : FittedBox(fit: BoxFit.scaleDown, child: child),
               ),
+              // 置き場所は十分広いので、ボタンは円盤の下の 1 行のまま
+              child: deck(math.min(room.width, MixDeck.maxWidthLarge),
+                  side: false, discMax: MixDeck.maxDiscSizeLarge),
             ),
           ),
         ),

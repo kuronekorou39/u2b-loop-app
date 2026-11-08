@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 /// デッキの板（[MixDeck]）を出す場所。画面の側が置き場所を用意すると、板は波形の上に
@@ -13,8 +14,13 @@ class DeckAnchorController {
   /// 板を出しているか（シークバーの側が書く）
   final open = ValueNotifier(false);
 
-  /// 置き場所の大きさ（画面の側が組むときに書く）
+  /// 置き場所の大きさ（画面の側が組むときに書く）。板はこの大きさで組み、
+  /// [room] に収まるよう縮めて描く
   Size size = Size.zero;
+
+  /// 置き場所の今の大きさ（[DeckAnchorTarget] が測る）。開くときに伸びる途中も
+  /// これに合わせるので、板が置き場所の外へ飛び出さない
+  final room = ValueNotifier(Size.zero);
 
   /// 置き場所が他のもの（トラック一覧など）に使われている間は出さない
   bool suppressed = false;
@@ -31,6 +37,7 @@ class DeckAnchorController {
   void dispose() {
     _disposed = true;
     open.dispose();
+    room.dispose();
   }
 }
 
@@ -84,6 +91,42 @@ class DeckAnchorTarget extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CompositedTransformTarget(
         link: anchor.link,
-        child: const SizedBox.expand(),
+        child: _MeasureSize(anchor: anchor, child: const SizedBox.expand()),
       );
+}
+
+/// 組んだ大きさを [DeckAnchorController.room] に知らせる（描いた後。組んでいる最中に
+/// 知らせると板の描き直しと重なる）
+class _MeasureSize extends SingleChildRenderObjectWidget {
+  const _MeasureSize({required this.anchor, super.child});
+
+  final DeckAnchorController anchor;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMeasureSize(anchor);
+
+  @override
+  void updateRenderObject(
+          BuildContext context, _RenderMeasureSize renderObject) =>
+      renderObject.anchor = anchor;
+}
+
+class _RenderMeasureSize extends RenderProxyBox {
+  _RenderMeasureSize(this.anchor);
+
+  DeckAnchorController anchor;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final measured = size;
+    final target = anchor;
+    if (target.disposed || target.room.value == measured) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!target.disposed) target.room.value = measured;
+    });
+    // 次のフレームを確実に起こす（アニメーションが止まった直後でも反映する）
+    WidgetsBinding.instance.scheduleFrame();
+  }
 }

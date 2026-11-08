@@ -126,6 +126,26 @@ void main() {
     expect(tester.getRect(seek).width, closeTo(full.width, 0.5));
   });
 
+  testWidgets('板を描く大きさは置き場所の今の大きさ（伸びる途中も外へ出ない）',
+      (tester) async {
+    await pump(tester, pinned: false);
+    final seek = find.byKey(const Key('seek'));
+    final anchor = DeckAnchorScope.maybeOf(tester.element(seek))!;
+    anchor.setOpen(true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+    final mid = anchor.room.value;
+    expect(mid.width, greaterThan(0));
+    expect(mid.width, lessThan(anchor.size.width - 1), reason: '伸びる途中');
+    expect(mid.height, lessThan(anchor.size.height - 1));
+    await tester.pumpAndSettle();
+    final target = tester.getSize(find.byType(DeckAnchorTarget));
+    expect(anchor.room.value.width, closeTo(target.width, 0.5));
+    expect(anchor.room.value.height, closeTo(target.height, 0.5));
+    expect(anchor.room.value.width, closeTo(anchor.size.width, 0.5));
+  });
+
   testWidgets('低い画面でも DJ の置き場所は上の帯にかからない', (tester) async {
     await pump(tester, pinned: false, size: const Size(780, 360));
     final seek = find.byKey(const Key('seek'));
