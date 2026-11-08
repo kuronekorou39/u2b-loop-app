@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/core/theme/app_theme.dart';
 import 'package:hive/hive.dart';
 import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/widgets/player/jog_wheel.dart';
@@ -39,7 +40,7 @@ void main() {
       inTurns: 0,
       outBpm: 128,
       inBpm: 127.9,
-      jog: (periodMs: 468.75, valueMs: 12, maxMs: 937.5, errorMs: 3),
+      jog: (periodMs: 468.75, valueMs: 12, maxMs: 937.5),
       tempo: (percent: 0.3, autoPercent: 0, maxPercent: 8),
       onJog: (_, {required bool touching}) {},
       onJogEnd: (_) {},
@@ -54,7 +55,7 @@ void main() {
       onShowBeats: (v) => beats = v,
     )));
     expect(find.byType(JogWheel), findsNWidgets(2));
-    expect(find.text('前曲'), findsOneWidget);
+    expect(dot(AppTheme.pointAColor), findsOneWidget);
     expect(find.textContaining('+12ms'), findsOneWidget);
     expect(find.byType(PitchFader), findsOneWidget);
     expect(find.text('+0.3%'), findsOneWidget);
@@ -116,8 +117,8 @@ void main() {
       outTurns: 1.5,
       inTurns: 2,
     )));
-    expect(find.text('前曲'), findsOneWidget);
-    expect(find.text('次曲'), findsOneWidget);
+    expect(dot(AppTheme.pointAColor), findsOneWidget);
+    expect(dot(AppTheme.pointBColor), findsOneWidget);
     expect(find.text('-- BPM'), findsNWidgets(2));
     // フェーダーは 0 のまま見るだけ
     expect(find.text('0'), findsOneWidget);
@@ -134,7 +135,7 @@ void main() {
       width: 372,
       outTurns: 0,
       inTurns: 0,
-      jog: (periodMs: 500, valueMs: 0, maxMs: 1000, errorMs: null),
+      jog: (periodMs: 500, valueMs: 0, maxMs: 1000),
       tempo: (percent: 0, autoPercent: 0, maxPercent: 8),
       onJog: (_, {required bool touching}) {},
       onJogEnd: (_) {},
@@ -191,4 +192,40 @@ void main() {
     expect(MixDeck.discSizeFor(800), 150);
     expect(MixDeck.subDiscSizeFor(800), closeTo(93, 0.01));
   });
+
+  testWidgets('横画面の形（sideToolbar）: ボタンは円盤の右に縦に並び、板は低くなる', (tester) async {
+    Widget deck({required bool side}) => MixDeck(
+          width: 400,
+          outTurns: 0,
+          inTurns: 0,
+          sideToolbar: side,
+          jog: (periodMs: 500, valueMs: 0, maxMs: 1000),
+          tempo: (percent: 0, autoPercent: 0, maxPercent: 8),
+          onJog: (_, {required bool touching}) {},
+          onJogEnd: (_) {},
+          onTempo: (_) {},
+          onTempoEnd: (_) {},
+          onSave: () {},
+          onReset: () {},
+        );
+    await tester.pumpWidget(host(deck(side: false)));
+    final tall = tester.getSize(find.byType(MixDeck)).height;
+    await tester.pumpWidget(host(deck(side: true)));
+    expect(tester.takeException(), isNull);
+    final low = tester.getSize(find.byType(MixDeck)).height;
+    expect(low, lessThan(tall - 20));
+    final pin = tester.getRect(find.byIcon(Icons.push_pin_outlined));
+    final beats = tester.getRect(find.byIcon(Icons.view_week_outlined));
+    final fader = tester.getRect(find.byType(PitchFader));
+    // フェーダーより右に、上下に並ぶ
+    expect(pin.left, greaterThan(fader.right));
+    expect(beats.top, greaterThan(pin.bottom - 1));
+  });
 }
+
+/// 円盤の中心の色の点（前曲 = 赤、次曲 = 青）
+Finder dot(Color color) => find.byWidgetPredicate((w) =>
+    w is Container &&
+    w.decoration is BoxDecoration &&
+    (w.decoration! as BoxDecoration).shape == BoxShape.circle &&
+    (w.decoration! as BoxDecoration).color == color);

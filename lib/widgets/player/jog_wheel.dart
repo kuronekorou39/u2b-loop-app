@@ -25,8 +25,7 @@ class JogWheel extends StatefulWidget {
     required this.maxMs,
     required void Function(double valueMs, {required bool touching}) this.onChanged,
     required ValueChanged<double> this.onChangeEnd,
-    this.errorMs,
-    this.title = '次曲',
+    this.color = AppTheme.pointBColor,
     this.size = 88,
   }) : turns = null;
 
@@ -34,14 +33,13 @@ class JogWheel extends StatefulWidget {
   const JogWheel.platter({
     super.key,
     required double this.turns,
-    this.title = '前曲',
+    this.color = AppTheme.pointAColor,
     this.size = 88,
   })  : periodMs = 0,
         valueMs = 0,
         maxMs = 0,
         onChanged = null,
-        onChangeEnd = null,
-        errorMs = null;
+        onChangeEnd = null;
 
   /// 1 拍の長さ（媒体ミリ秒）。1 周でこの分だけ動く
   final double periodMs;
@@ -57,14 +55,12 @@ class JogWheel extends StatefulWidget {
   final void Function(double valueMs, {required bool touching})? onChanged;
   final ValueChanged<double>? onChangeEnd;
 
-  /// 拍のずれ（実時間 ms、+ で入る曲が遅れている）。null なら出さない
-  final double? errorMs;
-
   /// 表示だけの円盤の回転数。回せる円盤は [valueMs] から
   final double? turns;
 
-  /// 円盤の中心に出す名前（動かしていないとき）
-  final String title;
+  /// 円盤の中心の点の色（重ね表示の段の色: 前曲は赤、次曲は青）。
+  /// 以前は「前曲」「次曲」の文字だった
+  final Color color;
 
   /// 円盤の直径
   final double size;
@@ -128,16 +124,26 @@ class _JogWheelState extends State<JogWheel> {
       height: widget.size,
       child: CustomPaint(
         painter: _WheelPainter(turns: turns, active: active),
+        // 動かしていなければ色の点、動かしていれば量（+ は曲を先へ）
         child: Center(
-          child: Text(
-            _centerLabel(),
-            textAlign: TextAlign.center,
-            style: style.copyWith(
-              color: Colors.white,
-              height: 1.2,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
+          child: active
+              ? Text(
+                  '${widget.valueMs > 0 ? '+' : '−'}${widget.valueMs.abs().round()}ms',
+                  textAlign: TextAlign.center,
+                  style: style.copyWith(
+                    color: Colors.white,
+                    height: 1.2,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                )
+              : Container(
+                  width: (widget.size * 0.12).clamp(8.0, 16.0),
+                  height: (widget.size * 0.12).clamp(8.0, 16.0),
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
         ),
       ),
     );
@@ -153,18 +159,6 @@ class _JogWheelState extends State<JogWheel> {
       onPanCancel: _onEnd,
       child: disc,
     );
-  }
-
-  /// 中心の文字。表示だけなら名前。回せる円盤は動かした量（+ は曲を先へ）と拍のずれ
-  String _centerLabel() {
-    if (widget.readOnly) return widget.title;
-    final ms = widget.valueMs;
-    final value = ms.abs() < 1
-        ? widget.title
-        : '${ms > 0 ? '+' : '−'}${ms.abs().round()}ms';
-    final err = widget.errorMs;
-    if (err == null) return value;
-    return '$value\nずれ ${err >= 0 ? '+' : '−'}${err.abs().round()}';
   }
 }
 

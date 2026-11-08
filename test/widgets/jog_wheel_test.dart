@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/core/theme/app_theme.dart';
 import 'package:u2b_loop_app/widgets/player/jog_wheel.dart';
 
 void main() {
@@ -60,17 +61,16 @@ void main() {
     expect(value, lessThanOrEqualTo(40));
   });
 
-  testWidgets('動かしていなければ中心に名前とずれ、動かしていれば量が出る', (tester) async {
+  testWidgets('動かしていなければ中心に色の点（ずれは出さない）、動かしていれば量が出る', (tester) async {
     await tester.pumpWidget(host(JogWheel(
       periodMs: 500,
       valueMs: 0,
       maxMs: 1000,
-      errorMs: 8,
       onChanged: (ms, {required bool touching}) {},
       onChangeEnd: (_) {},
     )));
-    expect(find.textContaining('次曲'), findsOneWidget);
-    expect(find.textContaining('ずれ +8'), findsOneWidget);
+    expect(dot(AppTheme.pointBColor), findsOneWidget);
+    expect(find.textContaining('ずれ'), findsNothing);
 
     await tester.pumpWidget(host(JogWheel(
       periodMs: 500,
@@ -80,7 +80,7 @@ void main() {
       onChangeEnd: (_) {},
     )));
     expect(find.textContaining('−18ms'), findsOneWidget);
-    expect(find.text('次曲'), findsNothing);
+    expect(dot(AppTheme.pointBColor), findsNothing);
   });
 
   testWidgets('表示だけの円盤（前曲）はボタンが無く、触っても下に落ちない', (tester) async {
@@ -99,7 +99,7 @@ void main() {
         ),
       ],
     )));
-    expect(find.text('前曲'), findsOneWidget);
+    expect(dot(AppTheme.pointAColor), findsOneWidget);
     // 円盤の上を押しても、下のタップにならない
     await tester.tap(find.byType(JogWheel), warnIfMissed: false);
     expect(behind, 0);
@@ -107,3 +107,10 @@ void main() {
     expect(JogWheel.platterTurns(const Duration(milliseconds: 1800)), 1);
   });
 }
+
+/// 円盤の中心の色の点（前曲 = 赤、次曲 = 青）
+Finder dot(Color color) => find.byWidgetPredicate((w) =>
+    w is Container &&
+    w.decoration is BoxDecoration &&
+    (w.decoration! as BoxDecoration).shape == BoxShape.circle &&
+    (w.decoration! as BoxDecoration).color == color);

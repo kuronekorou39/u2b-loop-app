@@ -822,6 +822,7 @@ class _CompactSeekbarPainter extends CustomPainter {
   final bool loopEnabled;
   final Brightness brightness;
   final List<MixRange> mixRanges;
+  final bool advancing;
 
   _CompactSeekbarPainter({
     required this.position,
@@ -831,6 +832,7 @@ class _CompactSeekbarPainter extends CustomPainter {
     required this.loopEnabled,
     required this.brightness,
     this.mixRanges = const [],
+    this.advancing = false,
   });
 
   @override
@@ -897,12 +899,32 @@ class _CompactSeekbarPainter extends CustomPainter {
           canvas, Offset(bX, cy - 6), Offset(bX, cy + 6), AppTheme.pointBColor);
     }
 
+    // 進んでいる曲は白丸に緑の光（ぼかした輪と細い縁）
+    if (advancing) {
+      canvas.drawCircle(
+        Offset(posX, cy),
+        10,
+        Paint()
+          ..color = AppTheme.accentGreen.withValues(alpha: 0.55)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+      canvas.drawCircle(
+        Offset(posX, cy),
+        7.5,
+        Paint()
+          ..color = AppTheme.accentGreen
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+
     // Position dot
     canvas.drawCircle(Offset(posX, cy), 5, Paint()..color = Colors.white);
   }
 
   @override
   bool shouldRepaint(covariant _CompactSeekbarPainter old) =>
+      advancing != old.advancing ||
       position != old.position ||
       duration != old.duration ||
       pointA != old.pointA ||
@@ -1480,11 +1502,16 @@ class ThinSeekbar extends StatelessWidget {
     this.pointA,
     this.pointB,
     this.loopEnabled = false,
+    this.advancing = false,
   });
 
   final Duration position;
   final Duration duration;
   final List<MixRange> mixRanges;
+
+  /// この曲が今進んでいる（重ね表示の 2 本のどちらが鳴っているか見分けるため、
+  /// 白丸に緑の光を付ける。交差中は両方）
+  final bool advancing;
   final ValueChanged<Duration>? onSeek;
   final double height;
 
@@ -1528,6 +1555,7 @@ class ThinSeekbar extends StatelessWidget {
                 loopEnabled: loopEnabled,
                 brightness: brightness,
                 mixRanges: mixRanges,
+                advancing: advancing,
               ),
             ),
           );
@@ -1537,9 +1565,9 @@ class ThinSeekbar extends StatelessWidget {
   }
 }
 
-/// 時刻行: 時刻は端に、開閉ボタンは真ん中に（開くときも閉じるときも、重ね表示でも同じ場所）。
-/// 開閉ボタンの左の枠に [leading]（重ね表示のデッキの開閉）を置ける。右にも同じ幅を
-/// 空けて開閉ボタンを真ん中に保つ（「−」「＋」はデッキの板へ移した。右の枠は空）
+/// 時刻行: 時刻は両端、開閉ボタンは真ん中（開くときも閉じるときも、重ね表示でも同じ場所）。
+/// [leading]（倍率）は左の時刻のすぐ右、[trailing]（DJ・追従）は右の時刻のすぐ左に寄せる
+/// （以前は開閉ボタンの両脇に寄せていた。2026-11-08 ユーザーの希望で端へ）
 class SeekTimeRow extends StatelessWidget {
   const SeekTimeRow({
     super.key,
@@ -1556,22 +1584,19 @@ class SeekTimeRow extends StatelessWidget {
   final bool compact;
   final VoidCallback? onToggleCompact;
 
-  /// 開閉ボタンの左の枠（倍率の −/＋。枠の右に寄せる）
+  /// 左の時刻のすぐ右（倍率の −/＋）
   final Widget? leading;
 
-  /// 開閉ボタンの右の枠（プレイリストのデッキ、単体再生の「追従」。枠の左に寄せる）
+  /// 右の時刻のすぐ左（プレイリストのデッキ、単体再生の「追従」）
   final Widget? trailing;
-
-  /// 開閉ボタンの両脇の枠の幅。左右同じなので開閉ボタンはいつも真ん中
-  /// （倍率の −/＋ が収まる幅 = [ZoomStepper.width]）
-  static const sideWidth = ZoomStepper.width;
 
   @override
   Widget build(BuildContext context) {
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
           fontFeatures: const [FontFeature('tnum')],
         );
-    final sides = leading != null || trailing != null;
+    final leading = this.leading;
+    final trailing = this.trailing;
     return SizedBox(
       height: 32,
       child: Stack(
@@ -1580,40 +1605,27 @@ class SeekTimeRow extends StatelessWidget {
           Row(
             children: [
               Text(TimeUtils.format(position), style: labelStyle),
+              if (leading != null) ...[
+                const SizedBox(width: AppSpacing.sm),
+                leading,
+              ],
               const Spacer(),
+              if (trailing != null) ...[
+                trailing,
+                const SizedBox(width: AppSpacing.sm),
+              ],
               Text(TimeUtils.format(duration), style: labelStyle),
             ],
           ),
-          if (onToggleCompact != null || sides)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (sides)
-                  SizedBox(
-                    width: sideWidth,
-                    child: leading == null
-                        ? null
-                        : Align(alignment: Alignment.centerRight, child: leading),
-                  ),
-                if (onToggleCompact != null)
-                  IconButton(
-                    icon: Icon(compact ? Icons.unfold_more : Icons.unfold_less,
-                        size: AppIconSizes.sm),
-                    onPressed: onToggleCompact,
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 36, minHeight: 36),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: compact ? '波形表示' : 'コンパクト表示',
-                  ),
-                if (sides)
-                  SizedBox(
-                    width: sideWidth,
-                    child: trailing == null
-                        ? null
-                        : Align(alignment: Alignment.centerLeft, child: trailing),
-                  ),
-              ],
+          if (onToggleCompact != null)
+            IconButton(
+              icon: Icon(compact ? Icons.unfold_more : Icons.unfold_less,
+                  size: AppIconSizes.sm),
+              onPressed: onToggleCompact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              visualDensity: VisualDensity.compact,
+              tooltip: compact ? '波形表示' : 'コンパクト表示',
             ),
         ],
       ),

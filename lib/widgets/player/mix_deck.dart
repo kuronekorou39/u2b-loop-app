@@ -51,7 +51,12 @@ class MixDeck extends StatelessWidget {
     this.onShowCurves,
     this.showBeats = true,
     this.onShowBeats,
+    this.sideToolbar = false,
   });
+
+  /// 下の 1 行（ボタン）を円盤の右に縦に置く。横画面・全画面は板の上の高さが
+  /// 足りず、下に置くと板ごと小さく縮んでいた
+  final bool sideToolbar;
 
   /// 帯の窓を広げる「−」・狭める「＋」。null なら押せない
   final VoidCallback? onWider;
@@ -78,7 +83,7 @@ class MixDeck extends StatelessWidget {
   final double? inBpm;
 
   /// 次曲のジョグ。null なら回せない（切り替わった後・拍の格子が無い）
-  final ({double periodMs, double valueMs, double maxMs, double? errorMs})? jog;
+  final ({double periodMs, double valueMs, double maxMs})? jog;
 
   /// 次曲のテンポの微調整（±%）。null なら動かせない
   /// フェーダー: 手の微調整 [percent]、自動のテンポ合わせの位置 [autoPercent]（つまみの土台）、
@@ -112,6 +117,9 @@ class MixDeck extends StatelessWidget {
   /// 板の下の 1 行（「−」「＋」・保存・戻す・線の切り替え）の高さ。常にある
   static const buttonsRowHeight = 36.0;
 
+  /// ボタンを右に縦に置くときの列の幅（ボタン 2 つ分。M3 の IconButton は最小 40px）
+  static const sideToolbarWidth = 80.0;
+
   static const _padding = AppSpacing.lg;
   static const _gap = AppSpacing.lg;
 
@@ -123,21 +131,26 @@ class MixDeck extends StatelessWidget {
   static const liftAbove = 26.0;
 
   /// 幅 [width] のときの次曲の円盤の直径
-  static double discSizeFor(double width) =>
-      ((width - _padding * 2 - _gap * 2 - faderColumnWidth) / (1 + subDiscRatio))
+  static double discSizeFor(double width, {bool side = false}) =>
+      ((width -
+                  _padding * 2 -
+                  _gap * 2 -
+                  faderColumnWidth -
+                  (side ? sideToolbarWidth + _gap : 0)) /
+              (1 + subDiscRatio))
           .clamp(minDiscSize, maxDiscSize);
 
   /// 幅 [width] のときの前曲の盤の直径
-  static double subDiscSizeFor(double width) =>
-      discSizeFor(width) * subDiscRatio;
+  static double subDiscSizeFor(double width, {bool side = false}) =>
+      discSizeFor(width, side: side) * subDiscRatio;
 
   /// 2 つのテンポが揃っているとみなす差（%）
   static const matchedPercent = 0.5;
 
   @override
   Widget build(BuildContext context) {
-    final size = discSizeFor(width);
-    final subSize = subDiscSizeFor(width);
+    final size = discSizeFor(width, side: sideToolbar);
+    final subSize = subDiscSizeFor(width, side: sideToolbar);
     final jog = this.jog;
     final tempo = this.tempo;
     final outBpm = this.outBpm;
@@ -148,12 +161,12 @@ class MixDeck extends StatelessWidget {
         ((inBpm - outBpm) / outBpm).abs() * 100 < matchedPercent;
 
     final Widget inDisc = jog == null
-        ? JogWheel.platter(turns: inTurns, title: '次曲', size: size)
+        ? JogWheel.platter(
+            turns: inTurns, color: AppTheme.pointBColor, size: size)
         : JogWheel(
             periodMs: jog.periodMs,
             valueMs: jog.valueMs,
             maxMs: jog.maxMs,
-            errorMs: jog.errorMs,
             size: size,
             onChanged: onJog ?? (_, {required bool touching}) {},
             onChangeEnd: onJogEnd ?? (_) {},
@@ -162,7 +175,7 @@ class MixDeck extends StatelessWidget {
       out: Opacity(
         opacity: subOpacity,
         child: _column([
-          JogWheel.platter(turns: outTurns, title: '前曲', size: subSize),
+          JogWheel.platter(turns: outTurns, size: subSize),
           _bpmLabel(context, outBpm, matched: false),
         ]),
       ),
@@ -192,24 +205,37 @@ class MixDeck extends StatelessWidget {
         padding: const EdgeInsets.all(_padding),
         // 動画の上に置くので暗く敷く（読めることが優先）
         scrim: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.92),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AdvanceStage<_DeckParts>(
-              stageKey: contentKey ?? const ValueKey('deck'),
-              value: parts,
-              builder: (context, current, previous, phases) => _layout(
-                current,
-                previous,
-                phases,
-                size: size,
-                subSize: subSize,
-              ),
+        child: Builder(builder: (context) {
+          final stage = AdvanceStage<_DeckParts>(
+            stageKey: contentKey ?? const ValueKey('deck'),
+            value: parts,
+            builder: (context, current, previous, phases) => _layout(
+              current,
+              previous,
+              phases,
+              size: size,
+              subSize: subSize,
             ),
-            const SizedBox(height: AppSpacing.xs),
-            _toolbar(context),
-          ],
-        ),
+          );
+          if (sideToolbar) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: stage),
+                const SizedBox(width: _gap),
+                _toolbar(context, vertical: true),
+              ],
+            );
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              stage,
+              const SizedBox(height: AppSpacing.xs),
+              _toolbar(context),
+            ],
+          );
+        }),
       ),
     );
   }
@@ -217,7 +243,8 @@ class MixDeck extends StatelessWidget {
   /// 板の下の 1 行。常に同じ高さであって、押せないときは灰色になるだけ
   /// （消すと板の高さが変わって見た目がずれる）。組が進む演出の外なので動かない。
   /// 左 = 帯の窓「−」「＋」、真ん中 = 次曲の合わせの保存・戻す、右 = 線の表示切り替え
-  Widget _toolbar(BuildContext context) {
+  /// [vertical] は円盤の右に縦に置く形（2 つずつの組を縦に 3 段）
+  Widget _toolbar(BuildContext context, {bool vertical = false}) {
     Widget button(IconData icon, String tooltip, VoidCallback? onTap,
             {Color? color}) =>
         IconButton(
@@ -239,27 +266,34 @@ class MixDeck extends StatelessWidget {
         );
     Widget group(List<Widget> children) =>
         Row(mainAxisSize: MainAxisSize.min, children: children);
+    final groups = <Widget>[
+      // 範囲の −/＋ は v1.131.0 で時刻行の左へ移した（渡されたときだけ）
+      if (onWider != null || onNarrower != null)
+        group([
+          button(Icons.remove, '範囲を広げる', onWider),
+          button(Icons.add, '範囲を狭める', onNarrower),
+        ]),
+      group([
+        button(Icons.push_pin_outlined, '合わせた分をこの曲に保存', onSave,
+            color: AppTheme.accentGreen),
+        button(Icons.refresh, '真ん中に戻す', onReset),
+      ]),
+      group([
+        toggle(Icons.ssid_chart, '音量の線', showCurves, onShowCurves),
+        toggle(Icons.view_week_outlined, '拍の線', showBeats, onShowBeats),
+      ]),
+    ];
+    if (vertical) {
+      return SizedBox(
+        width: sideToolbarWidth,
+        child: Column(mainAxisSize: MainAxisSize.min, children: groups),
+      );
+    }
     return SizedBox(
       height: buttonsRowHeight,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // 範囲の −/＋ は v1.131.0 で時刻行の左へ移した（渡されたときだけ）
-          if (onWider != null || onNarrower != null)
-            group([
-              button(Icons.remove, '範囲を広げる', onWider),
-              button(Icons.add, '範囲を狭める', onNarrower),
-            ]),
-          group([
-            button(Icons.push_pin_outlined, '合わせた分をこの曲に保存', onSave,
-                color: AppTheme.accentGreen),
-            button(Icons.refresh, '真ん中に戻す', onReset),
-          ]),
-          group([
-            toggle(Icons.ssid_chart, '音量の線', showCurves, onShowCurves),
-            toggle(Icons.view_week_outlined, '拍の線', showBeats, onShowBeats),
-          ]),
-        ],
+        children: groups,
       ),
     );
   }

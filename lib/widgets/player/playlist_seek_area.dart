@@ -357,6 +357,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
     final loop = ref.watch(loopProvider);
     // 交差中か（次曲の棒でのシークは、交差中か切り替わった後だけ効く）
     final crossfading = ref.watch(crossfadeProgressProvider) != null;
+    final playing = ref.watch(playingProvider).valueOrNull ?? false;
 
     final bandHeight =
         widget.mixHeight - PlaylistSeekArea.topBarHeight - AppSpacing.xs;
@@ -412,6 +413,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         pointA: swapped ? null : loop.pointA,
         pointB: swapped ? null : loop.pointB,
         loopEnabled: !swapped && loop.enabled,
+        // 前曲は切り替わるまで進む
+        advancing: playing && !swapped,
         onSeek: (t) => _seekInMix(pair, t, swapped: swapped),
       ),
       band: band,
@@ -428,6 +431,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         pointA: swapped ? loop.pointA : null,
         pointB: swapped ? loop.pointB : null,
         loopEnabled: swapped && loop.enabled,
+        // 次曲は交差が始まってから進む（交差中は両方）
+        advancing: playing && (swapped || crossfading),
         onSeek: swapped || crossfading
             ? (u) {
                 ref.read(jogOffsetProvider.notifier).state = null;
@@ -519,6 +524,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
             alignment: Alignment.bottomCenter,
             child: MixDeck(
           width: deckWidth,
+          // 横画面・全画面は上の高さが足りないので、ボタンを円盤の右に縦に置く
+          sideToolbar: MediaQuery.orientationOf(portalContext) ==
+              Orientation.landscape,
           contentKey: ValueKey(pair.key),
           outTurns: JogWheel.platterTurns(data.outPosition),
           inTurns: swapped ? JogWheel.platterTurns(data.inPosition) : 0,
@@ -530,7 +538,6 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
                   periodMs: grid?.periodMs ?? 500.0,
                   valueMs: jogMs,
                   maxMs: jogMax,
-                  errorMs: engine.jogErrorMs(pair),
                 ),
           // つまみは自動のテンポ合わせの位置に手の分を足した所。切り替わった後は
           // 本来の速度へ戻るのを見せるだけ（動かせない）

@@ -35,7 +35,7 @@ void main() {
   });
 
   group('SeekTimeRow', () {
-    testWidgets('時刻は両端、開閉ボタンは真ん中（左の枠に倍率、右の枠にデッキ）', (tester) async {
+    testWidgets('時刻は両端、開閉ボタンは真ん中。倍率は左の時刻の右、デッキは右の時刻の左', (tester) async {
       var toggled = 0;
       await tester.pumpWidget(host(SeekTimeRow(
         position: const Duration(seconds: 65),
@@ -49,12 +49,16 @@ void main() {
       final rowCenter = tester.getCenter(find.byType(SeekTimeRow));
       final toggle = find.widgetWithIcon(IconButton, Icons.unfold_less);
       expect(tester.getCenter(toggle).dx, closeTo(rowCenter.dx, 1));
-      // 右の枠にデッキ（開閉ボタンのすぐ右）
-      final wheels = tester.getCenter(find.byKey(const Key('wheels')));
-      expect(wheels.dx, greaterThan(rowCenter.dx));
-      expect(wheels.dx, lessThan(rowCenter.dx + SeekTimeRow.sideWidth + 18));
-      // 左の枠に倍率
-      expect(tester.getCenter(find.text('4x')).dx, lessThan(rowCenter.dx));
+      // デッキは右に寄せる（右の時刻のすぐ左）
+      final wheels = tester.getRect(find.byKey(const Key('wheels')));
+      final end = tester.getRect(find.text('3:00.000'));
+      expect(wheels.right, lessThan(end.left));
+      expect(end.left - wheels.right, lessThan(12));
+      // 倍率は左に寄せる（左の時刻のすぐ右）
+      final zoom = tester.getRect(find.byType(ZoomStepper));
+      final start = tester.getRect(find.text('1:05.000'));
+      expect(zoom.left, greaterThan(start.right));
+      expect(zoom.left - start.right, lessThan(12));
       await tester.tap(toggle);
       expect(toggled, 1);
     });
