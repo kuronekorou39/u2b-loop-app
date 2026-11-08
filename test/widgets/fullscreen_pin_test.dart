@@ -109,6 +109,8 @@ void main() {
     expect(tester.takeException(), isNull);
     final half = tester.getRect(seek);
     expect(half.width, lessThan(full.width * 0.6));
+    // 高さの位置は変わらない（右へ寄るだけ）
+    expect(half.bottom, closeTo(full.bottom, 0.5));
     expect(half.left, greaterThan(400));
     final target = tester.getRect(find.byType(DeckAnchorTarget));
     expect(target.right, lessThanOrEqualTo(half.left + 0.5));

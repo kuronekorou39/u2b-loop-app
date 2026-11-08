@@ -420,8 +420,9 @@ class FullscreenPlayerView extends StatelessWidget {
               maxDeckHeight,
             );
             anchor.size = Size(deckWidth, deckHeight);
+            // シークバーは下に揃える（板の方が高いので、真ん中だと上へ動いていた）
             return Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 // DJ の板の置き場所（開くと半分まで伸び、波形は右半分へ寄る）
                 AnimatedContainer(
