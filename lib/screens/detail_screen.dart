@@ -34,6 +34,7 @@ import 'player_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
+import '../core/utils/rate_label.dart';
 
 class DetailScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -728,7 +729,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final parts = <String>[
       ...item.musicInfoParts,
       '${item.playCount} 回再生',
-      if (item.speed != 1.0) '${item.speed}x',
+      if (item.speed != 1.0) rateLabel(item.speed),
       if (item.isYouTube) 'YouTube' else 'ローカル',
     ];
     return parts.join('  ·  ');

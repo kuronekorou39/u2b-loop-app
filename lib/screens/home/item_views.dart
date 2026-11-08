@@ -10,6 +10,7 @@ import '../../widgets/glass_surface.dart';
 import '../../widgets/item_thumbnail.dart';
 import '../../widgets/tag_chip.dart';
 import 'home_parts.dart';
+import '../../core/utils/rate_label.dart';
 
 /// 曲一覧の表示モード: リスト / 曲名（曲名を 3 行まで出すリスト）/ グリッド大 / グリッド小（列数は幅で決まる）。
 /// 候補が 4 つなので、AppBar では押して回すのではなくプルダウンで選ぶ
@@ -392,7 +393,7 @@ class ItemCollectionView extends StatelessWidget {
 
     final info = <String>[
       ?regionInfoText(item),
-      if (item.speed != 1.0) '${item.speed}x',
+      if (item.speed != 1.0) rateLabel(item.speed),
       if (item.playCount > 0) '${item.playCount}回',
       ...item.musicInfoParts,
       if (item.memo != null && item.memo!.isNotEmpty) item.memo!,

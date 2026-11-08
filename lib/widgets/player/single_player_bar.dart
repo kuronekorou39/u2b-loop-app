@@ -7,6 +7,7 @@ import '../../providers/player_provider.dart';
 import '../glass_panel.dart';
 import 'player_controls.dart';
 import 'player_glass_bar.dart';
+import '../../core/utils/rate_label.dart';
 
 /// 単体再生画面の下部コントローラー（[PlayerGlassBar] の中身）。
 ///
@@ -238,10 +239,10 @@ class _SpeedPill extends ConsumerWidget {
           PopupMenuItem(
             value: s,
             child: Text(
-              '${s}x',
+              rateLabel(s),
               style: TextStyle(
-                fontWeight: s == rate ? FontWeight.bold : null,
-                color: s == rate ? theme.colorScheme.primary : null,
+                fontWeight: sameRate(s, rate) ? FontWeight.bold : null,
+                color: sameRate(s, rate) ? theme.colorScheme.primary : null,
               ),
             ),
           ),
@@ -252,7 +253,7 @@ class _SpeedPill extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.lg, vertical: 9),
         child: Text(
-          '${rate}x',
+          rateLabel(rate),
           style: theme.textTheme.labelMedium!.copyWith(
             color: rate != 1.0 ? AppTheme.accentGreen : null,
             fontFeatures: const [FontFeature('tnum')],

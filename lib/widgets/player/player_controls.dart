@@ -5,6 +5,7 @@ import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import 'player_glass_bar.dart';
 import 'volume_slider.dart';
+import '../../core/utils/rate_label.dart';
 
 class PlayerControls extends ConsumerWidget {
   const PlayerControls({super.key, this.prevTrack, this.nextTrack});
@@ -222,11 +223,11 @@ class PlayerControls extends ConsumerWidget {
                   (s) => PopupMenuItem(
                     value: s,
                     child: Text(
-                      '${s}x',
+                      rateLabel(s),
                       style: TextStyle(
                         fontWeight:
-                            s == rate ? FontWeight.bold : FontWeight.normal,
-                        color: s == rate
+                            sameRate(s, rate) ? FontWeight.bold : FontWeight.normal,
+                        color: sameRate(s, rate)
                             ? Theme.of(context).colorScheme.primary
                             : null,
                       ),
@@ -243,7 +244,7 @@ class PlayerControls extends ConsumerWidget {
                 borderRadius: AppRadius.borderSm,
               ),
               child: Text(
-                '${rate}x',
+                rateLabel(rate),
                 style: Theme.of(context).textTheme.bodyMedium!.copyWith(
                   color: hasSource ? null : AppTheme.muted(context),
                 ),

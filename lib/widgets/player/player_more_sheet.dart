@@ -7,6 +7,7 @@ import '../../providers/player_provider.dart';
 import '../../screens/settings/dj_mix_settings_screen.dart';
 import 'player_controls.dart';
 import 'volume_slider.dart';
+import '../../core/utils/rate_label.dart';
 
 /// プレイリスト再生画面の「その他」シート。
 /// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・DJ ミックス・速度・音量・
@@ -157,11 +158,11 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
               title: Text('速度', style: textTheme.bodyLarge),
               trailing: DropdownButton<double>(
                 value: PlayerMoreSheet.speeds.contains(rate) ? rate : null,
-                hint: Text('${rate}x'),
+                hint: Text(rateLabel(rate)),
                 underline: const SizedBox.shrink(),
                 items: [
                   for (final s in PlayerMoreSheet.speeds)
-                    DropdownMenuItem(value: s, child: Text('${s}x')),
+                    DropdownMenuItem(value: s, child: Text(rateLabel(s))),
                 ],
                 onChanged: hasSource
                     ? (s) {

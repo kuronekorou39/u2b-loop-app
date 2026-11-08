@@ -34,6 +34,7 @@ import 'playlist_item_picker_screen.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
+import '../core/utils/rate_label.dart';
 
 enum _PlaylistMenu { share, saveAll, analyze, sortByCompatibility, delete }
 
@@ -916,7 +917,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       parts.add('AB設定あり');
     }
 
-    if (item.speed != 1.0) parts.add('${item.speed}x');
+    if (item.speed != 1.0) parts.add(rateLabel(item.speed));
     if (ref.watch(bulkAnalysisProvider)?.currentId == item.id) {
       parts.add('テンポ/キーを解析中…');
     } else {

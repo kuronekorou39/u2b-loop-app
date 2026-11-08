@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme/app_theme.dart';
 
@@ -9,7 +12,9 @@ import '../../core/theme/app_theme.dart';
 /// 回せる円盤（[JogWheel]）は入る曲の拍の位置（位相）を手で前後に動かす: 回すと [valueMs]
 /// （入る曲の媒体ミリ秒、+ で曲を先へ）が増減し [onChanged] を呼ぶ（[touching] は
 /// 指で回している間 true）。離すと [onChangeEnd]。1 周 = 1 拍（[periodMs]）。
-/// 円盤の中心に今の量と拍のずれ（保存・戻すのボタンは板の側）。
+/// 円盤の中心は色の点、動かしていれば量（保存・戻すのボタンは板の側）。
+/// 速く回すほど大きく進み（[maxGain] 倍まで）、はじくと勢いで滑ってだんだん止まる。
+/// 動かさずに長押しすると微調整（[fineGain] 倍。軽く振動して知らせる）。
 /// DJ がプラッターの縁を押す／引く動き。拍の間隔（テンポ）はピッチフェーダー（[PitchFader]）
 ///
 /// 表示だけの円盤（[JogWheel.platter]）は曲の再生に合わせて回る（レコードの回転）。
@@ -67,6 +72,20 @@ class JogWheel extends StatefulWidget {
 
   bool get readOnly => onChanged == null;
 
+  /// この速さ（ラジアン/秒）を超えて回すと、速いほど大きく進む
+  static const accelFrom = 6.0;
+
+  /// 速く回したときの最大の倍率
+  static const maxGain = 4.0;
+
+  /// 長押しの微調整の倍率と、入るまでの長さ
+  static const fineGain = 0.2;
+  static const holdForFine = Duration(milliseconds: 500);
+
+  /// はじいて滑らせる最低の速さ（ラジアン/秒）と、滑りの止まりやすさ（1/秒）
+  static const glideFrom = 5.0;
+  static const friction = 3.0;
+
   /// レコードの回転（33⅓ rpm = 1 周 1.8 秒）。表示だけの円盤を再生位置で回すのに使う
   static double platterTurns(Duration position) =>
       position.inMilliseconds / 1800;
@@ -75,36 +94,121 @@ class JogWheel extends StatefulWidget {
   State<JogWheel> createState() => _JogWheelState();
 }
 
-class _JogWheelState extends State<JogWheel> {
+class _JogWheelState extends State<JogWheel>
+    with SingleTickerProviderStateMixin {
   /// 直前の指の角度（中心から見たラジアン）。回転量の差分を取るのに使う
   double? _lastAngle;
+
+  /// 直前の指の動きの時刻（回す速さを測る。指の動きに付いた時刻）
+  Duration? _lastTime;
+
+  /// 直前の指の動きを受けた時刻（離したときに勢いが新しいか見る）
+  final _clock = Stopwatch()..start();
+  Duration? _lastSeen;
+
+  /// 操作中の値（親の値は 1 フレーム遅れて戻るので、手元で積む）
+  double _value = 0;
+
+  /// 回す速さ（ラジアン/秒、符号つき。はじいたときの勢いに使う）
+  double _omega = 0;
+
+  /// 長押しで入る微調整
+  bool _fine = false;
+
+  /// はじいた後の滑り
+  late final Ticker _glide = createTicker(_onGlide);
+  Duration? _glideLast;
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    _glide.dispose();
+    super.dispose();
+  }
 
   double _angleOf(Offset local) {
     final c = widget.size / 2;
     return atan2(local.dy - c, local.dx - c);
   }
 
-  void _onStart(DragStartDetails d) {
-    _lastAngle = _angleOf(d.localPosition);
+  /// 回す速さ（ラジアン/秒）から倍率。ゆっくりなら 1 倍、速く回すほど大きく
+  static double _gainFor(double speed) =>
+      (1 + max(0.0, speed - JogWheel.accelFrom) / JogWheel.accelFrom)
+          .clamp(1.0, JogWheel.maxGain);
+
+  /// 角度 [da] だけ回した分を値に足して知らせる。動かせる端に着いたら true
+  bool _apply(double da, double gain) {
+    final next = (_value + da / (2 * pi) * widget.periodMs * gain)
+        .clamp(-widget.maxMs, widget.maxMs);
+    final hitEnd = next == _value && da != 0;
+    _value = next;
+    widget.onChanged!(next, touching: true);
+    return hitEnd;
   }
 
-  void _onUpdate(DragUpdateDetails d) {
+  /// 指を置いた位置。ドラッグと判定された時点の位置から測ると、判定までの
+  /// 動き（遊びの分）が捨てられる
+  Offset? _downAt;
+
+  void _begin(Offset local, Duration? at) {
+    if (_glide.isActive) _glide.stop();
+    _lastAngle = _angleOf(_downAt ?? local);
+    _lastTime = at;
+    _lastSeen = _clock.elapsed;
+    _value = widget.valueMs;
+    _omega = 0;
+  }
+
+  void _move(Offset local, Duration? at) {
     final last = _lastAngle;
-    final a = _angleOf(d.localPosition);
+    final a = _angleOf(local);
     _lastAngle = a;
+    final prev = _lastTime;
+    final dt = prev == null || at == null
+        ? 0.016
+        : max(0.004, (at - prev).inMicroseconds / 1e6);
+    _lastTime = at;
+    _lastSeen = _clock.elapsed;
     if (last == null) return;
-    // 角度の差（±π に丸める）。1 周 = 1 拍
+    // 角度の差（±π に丸める）
     var da = a - last;
     if (da > pi) da -= 2 * pi;
     if (da < -pi) da += 2 * pi;
-    final next = (widget.valueMs + da / (2 * pi) * widget.periodMs)
-        .clamp(-widget.maxMs, widget.maxMs);
-    widget.onChanged!(next, touching: true);
+    // 速さはならして持つ（指のぶれで勢いが跳ねないように）
+    _omega = _omega * 0.6 + (da / dt) * 0.4;
+    _apply(da, _fine ? JogWheel.fineGain : _gainFor(_omega.abs()));
   }
 
-  void _onEnd() {
+  void _finish({required bool allowGlide}) {
     _lastAngle = null;
-    widget.onChangeEnd!(widget.valueMs);
+    final wasFine = _fine;
+    if (_fine) setState(() => _fine = false);
+    // 最後の動きが新しく、勢いがあれば滑らせる
+    final fresh = _lastSeen != null &&
+        (_clock.elapsed - _lastSeen!).inMilliseconds < 80;
+    if (allowGlide &&
+        !wasFine &&
+        fresh &&
+        _omega.abs() > JogWheel.glideFrom) {
+      _glideLast = null;
+      _glide.start();
+      return;
+    }
+    widget.onChangeEnd!(_value);
+  }
+
+  void _onGlide(Duration elapsed) {
+    final last = _glideLast;
+    _glideLast = elapsed;
+    if (last == null) return;
+    final dt = (elapsed - last).inMicroseconds / 1e6;
+    // だんだん止まる（摩擦）
+    _omega *= exp(-JogWheel.friction * dt);
+    final hitEnd = _apply(_omega * dt, _gainFor(_omega.abs()));
+    if (hitEnd || _omega.abs() < 0.4) {
+      _glide.stop();
+      widget.onChangeEnd!(_value);
+    }
   }
 
   @override
@@ -113,7 +217,7 @@ class _JogWheelState extends State<JogWheel> {
     // 大きい円盤は中の文字も少し大きく
     final style = (widget.size >= 120 ? text.bodyMedium : text.labelSmall)!;
     final readOnly = widget.readOnly;
-    final active = !readOnly && widget.valueMs.abs() >= 1;
+    final active = !readOnly && (widget.valueMs.abs() >= 1 || _fine);
     final turns = readOnly
         ? widget.turns!
         : widget.periodMs > 0
@@ -128,7 +232,11 @@ class _JogWheelState extends State<JogWheel> {
         child: Center(
           child: active
               ? Text(
-                  '${widget.valueMs > 0 ? '+' : '−'}${widget.valueMs.abs().round()}ms',
+                  [
+                    if (_fine) '微調整',
+                    if (widget.valueMs.abs() >= 1)
+                      '${widget.valueMs > 0 ? '+' : '−'}${widget.valueMs.abs().round()}ms',
+                  ].join('\n'),
                   textAlign: TextAlign.center,
                   style: style.copyWith(
                     color: Colors.white,
@@ -151,14 +259,53 @@ class _JogWheelState extends State<JogWheel> {
       // 触れても何も起きない（鳴っている曲を動かさない）
       return AbsorbPointer(child: disc);
     }
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onPanStart: _onStart,
-      onPanUpdate: _onUpdate,
-      onPanEnd: (_) => _onEnd(),
-      onPanCancel: _onEnd,
-      child: disc,
+    // 長押しは GestureDetector に足すとドラッグと取り合いになり、回し始めに 36px の
+    // 遊びが出る。指を置いてからの時間と動きで自分で見る
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: (_) => _onPointerUp(),
+      onPointerCancel: (_) => _onPointerUp(),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (d) => _begin(d.localPosition, d.sourceTimeStamp),
+        onPanUpdate: (d) => _move(d.localPosition, d.sourceTimeStamp),
+        onPanEnd: (_) => _finish(allowGlide: true),
+        onPanCancel: () => _finish(allowGlide: false),
+        child: disc,
+      ),
     );
+  }
+
+  Timer? _holdTimer;
+
+  void _onPointerDown(PointerDownEvent e) {
+    _downAt = e.localPosition;
+    // 滑っている間に触れたら止める（回せばそこから続く）
+    if (_glide.isActive) {
+      _glide.stop();
+      widget.onChangeEnd!(_value);
+    }
+    _holdTimer?.cancel();
+    _holdTimer = Timer(JogWheel.holdForFine, () {
+      if (!mounted) return;
+      HapticFeedback.selectionClick();
+      setState(() => _fine = true);
+    });
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    final down = _downAt;
+    // 動かし始めたら長押しではない（微調整に入った後はそのまま）
+    if (!_fine && down != null && (e.localPosition - down).distance > 8) {
+      _holdTimer?.cancel();
+    }
+  }
+
+  void _onPointerUp() {
+    _holdTimer?.cancel();
+    _downAt = null;
+    if (_fine && _lastAngle == null) setState(() => _fine = false);
   }
 }
 

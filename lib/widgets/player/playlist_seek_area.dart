@@ -53,6 +53,7 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
     this.waveHeight = 72,
     this.mixHeight = 72,
     this.hideDeck = false,
+    this.deckShiftX = 0,
   });
 
   final bool compact;
@@ -72,6 +73,9 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
 
   /// デッキの板を開いていても描かない（全画面でコントロールが隠れている間）
   final bool hideDeck;
+
+  /// 板を横にずらす量（全画面で右の一覧を開いている間、一覧に被らないよう左へ）
+  final double deckShiftX;
 
   /// 曲の波形（プリロード時に先行生成したもの）。無ければ null
   final List<double>? Function(LoopItem item) waveformFor;
@@ -100,7 +104,8 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   ConsumerState<PlaylistSeekArea> createState() => _PlaylistSeekAreaState();
 }
 
-class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
+class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
+    with SingleTickerProviderStateMixin {
   /// 帯に描く範囲の余白。「−」「＋」で段を変える。曲が変わっても持ち越す
   Duration _margin = MixView.defaultMargin;
 
@@ -114,6 +119,10 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   /// 板をこの領域の上に浮かせる（この領域の上端に板の下端を合わせる）
   final _link = LayerLink();
   final _deckPortal = OverlayPortalController();
+
+  /// 板の出し入れ（フェードしながら下から少し持ち上がる。しまうときは逆）
+  late final _deckAnim = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 220));
 
   /// この領域の幅（板の幅に使う。描画後に分かるので 1 フレーム遅れる）
   double _width = 0;
@@ -171,14 +180,22 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   }
 
   void _toggleDeck() {
-    setState(() {
-      _wheelsOpen = !_wheelsOpen;
-      if (_wheelsOpen) {
-        _deckPortal.show();
-      } else {
-        _deckPortal.hide();
-      }
-    });
+    setState(() => _wheelsOpen = !_wheelsOpen);
+    if (_wheelsOpen) {
+      _deckPortal.show();
+      _deckAnim.forward();
+    } else {
+      // 消えきってから外す（途中でまた開いたら外さない）
+      _deckAnim.reverse().whenComplete(() {
+        if (mounted && !_wheelsOpen) _deckPortal.hide();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _deckAnim.dispose();
+    super.dispose();
   }
 
   Widget _body() {
@@ -465,11 +482,43 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
   /// デッキの板（この領域の上に浮かせる）。重ね表示を出していないときは空。
   /// 左（前曲）は再生に合わせて回るだけ、右（次曲）は回して拍の位置を、
   /// フェーダーでテンポを合わせる。切り替わった後は右も回るだけ
+  /// 板の動き: 出し入れ（[_deckAnim]）、全画面でコントロールが隠れている間は
+  /// 一緒にフェードで消す（[PlaylistSeekArea.hideDeck]）、右の一覧を開いている間は
+  /// 左へずらす（[PlaylistSeekArea.deckShiftX]）
+  Widget _deckMotion(Widget deck) {
+    final curved =
+        CurvedAnimation(parent: _deckAnim, curve: Curves.easeOutCubic);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: widget.deckShiftX),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      builder: (context, dx, child) =>
+          Transform.translate(offset: Offset(dx, 0), child: child),
+      child: AnimatedOpacity(
+        opacity: widget.hideDeck ? 0 : 1,
+        duration: const Duration(milliseconds: 300),
+        child: IgnorePointer(
+          ignoring: widget.hideDeck,
+          child: FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween(begin: const Offset(0, 0.06), end: Offset.zero)
+                  .animate(curved),
+              child: ScaleTransition(
+                scale: Tween(begin: 0.96, end: 1.0).animate(curved),
+                alignment: Alignment.bottomCenter,
+                child: deck,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDeck(BuildContext portalContext) {
     final data = _deckData;
-    if (widget.hideDeck || data == null || _width <= 0) {
-      return const SizedBox.shrink();
-    }
+    if (data == null || _width <= 0) return const SizedBox.shrink();
     final pair = data.pair;
     final swapped = data.swapped;
     final engine = ref.read(playlistEngineProvider);
@@ -516,7 +565,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
         targetAnchor: Alignment.topCenter,
         followerAnchor: Alignment.bottomCenter,
         offset: const Offset(0, -MixDeck.liftAbove),
-        child: ConstrainedBox(
+        child: _deckMotion(ConstrainedBox(
           constraints: BoxConstraints(
               maxHeight: room.isFinite && room > 0 ? room : double.infinity),
           child: FittedBox(
@@ -577,7 +626,7 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea> {
                 },
             ),
           ),
-        ),
+        )),
       ),
     );
   }

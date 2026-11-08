@@ -1617,6 +1617,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       mixHeight: height,
       // 全画面でコントロールが隠れている間はデッキも隠す
       hideDeck: _isFullscreen && !_showFullscreenOverlay,
+      // 全画面で右の一覧を開いている間は、残りの真ん中へ寄せる
+      deckShiftX: fullscreen && _showRightDrawer
+          ? -MediaQuery.sizeOf(context).width *
+              FullscreenPlayerView.drawerFraction /
+              2
+          : 0,
       onToggleCompact: () => _toggleCompactSeekbar(fullscreen),
       onRetryWaveform: _retryWaveform,
       onReplayPrevious: _transport.replayPreviousFrom,
