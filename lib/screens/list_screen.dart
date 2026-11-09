@@ -462,6 +462,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
                               ref.read(tagFilterProvider.notifier).state = {
                                 tag.id: true
                               };
+                              // 絞り込んでいると分かるよう、タグの行を出す
+                              // （検索欄にはフォーカスしない）
+                              setState(() => _searchOpen = true);
                               _tabController.animateTo(_tabItems);
                             },
                           ),

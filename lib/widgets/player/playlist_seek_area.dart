@@ -18,6 +18,7 @@ import '../loop/loop_seekbar.dart';
 import 'jog_wheel.dart';
 import 'deck_anchor.dart';
 import 'mix_deck.dart';
+import 'seek_area_switcher.dart';
 import 'mix_lanes_advance.dart';
 import 'mix_view.dart';
 
@@ -67,8 +68,9 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   /// 波形シークバーの高さ（compact でないとき）
   final double waveHeight;
 
-  /// 重ね表示の帯の置き場の高さ。前曲の棒と隙間をここから取り、残りが帯
-  /// （ふつうの表示の波形の高さと同じにしておくと、切り替わっても下部が動かない）
+  /// 重ね表示の帯の置き場の高さ。前曲の棒と隙間をここから取り、残りが帯。
+  /// 波形より高くてよい（波形の上は空いているので、帯は大きく出す）。
+  /// 高さの違いは [SeekAreaSwitcher] が下端を固定したまま伸び縮みさせる
   final double mixHeight;
 
   /// デッキの板を開いていても描かない（全画面でコントロールが隠れている間）
@@ -93,8 +95,9 @@ class PlaylistSeekArea extends ConsumerStatefulWidget {
   /// 前曲の棒の高さ（次曲の棒より細く。帯との隙間は [AppSpacing.xs]）
   static const topBarHeight = 20.0;
 
-  /// ふつうの波形と重ね表示の行き来はフェード（一瞬で入れ替えない。時刻行の開閉ボタンは
-  /// 両方の同じ場所にあるので動いて見えない）。組が次へ進むときは [MixLanesAdvance]
+  /// ふつうの波形と重ね表示の行き来はフェードしながら上へ伸び縮み（[SeekAreaSwitcher]。
+  /// 時刻行の開閉ボタンは両方の同じ場所にあるので動いて見えない）。組が次へ進むときは
+  /// [MixLanesAdvance]
   static const fadeDuration = Duration(milliseconds: 250);
 
   @override
@@ -173,10 +176,8 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
         child: LayoutBuilder(
           builder: (context, constraints) {
             _width = constraints.maxWidth;
-            return AnimatedSwitcher(
+            return SeekAreaSwitcher(
               duration: PlaylistSeekArea.fadeDuration,
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
               child: body,
             );
           },

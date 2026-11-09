@@ -132,7 +132,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   bool _fsCompactSeekbar = true;
 
   /// 全画面の波形の高さ（動画をなるべく隠さない）
-  static const _fullscreenSeekHeight = 72.0;
+  /// 全画面の下の板の波形と重ね表示の高さ
+  static const _fullscreenSeekHeight = (wave: 72.0, mix: 120.0);
   bool _showRightDrawer = false;
   Timer? _overlayHideTimer;
 
@@ -1555,7 +1556,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 普段と同じシークバー（時刻の行で波形の開閉・DJ）。全画面は低めの波形
       seekbar: _isPlaylist
           ? _playlistSeekArea(_fullscreenSeekHeight, fullscreen: true)
-          : _singleSeekbar(_fullscreenSeekHeight, fullscreen: true),
+          : _singleSeekbar(_fullscreenSeekHeight.wave, fullscreen: true),
     );
   }
 
@@ -1588,16 +1589,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  /// 波形・重ね表示の高さ。縦は 120（プレイリスト）。横は脇の高さが足りないので、
-  /// 画面の高さに合わせて低くする（コントローラーがスクロールしないように）
-  double _seekHeight(bool wide) {
-    if (!wide) return 120;
-    // 横は右の列に置く。上にデッキの板の場所を残す
+  /// 波形（wave）と重ね表示（mix）の高さ。重ね表示は 2 曲ぶんなので波形より高く
+  /// （波形の上は空いている）。縦は 120 / 180（プレイリスト）。横は右の列の高さが
+  /// 足りないので、画面の高さに合わせて低くする（コントローラーがスクロールしないように。
+  /// 詰めたコントローラーはシーク領域を除いて 140、時刻行と細いバーで 60 ほど）
+  ({double wave, double mix}) _seekHeight(bool wide) {
+    if (!wide) return (wave: 120, mix: 180);
     final h = MediaQuery.sizeOf(context).height;
-    if (h < 380) return 64;
-    if (h < 440) return 84;
-    if (h < 560) return 104;
-    return 120;
+    if (h < 380) return (wave: 64, mix: 104);
+    if (h < 440) return (wave: 84, mix: 132);
+    if (h < 560) return (wave: 104, mix: 160);
+    return (wave: 120, mix: 180);
   }
 
   /// シークバーの開閉（細いバー ⇄ 波形）。全画面は別に覚える（細いバーで始める）
@@ -1610,11 +1612,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
 
   /// プレイリストのシークバー（波形・重ね表示・DJ）。縦横の画面と全画面で同じもの
-  Widget _playlistSeekArea(double height, {bool fullscreen = false}) {
+  Widget _playlistSeekArea(({double wave, double mix}) height,
+      {bool fullscreen = false}) {
     return PlaylistSeekArea(
       compact: fullscreen ? _fsCompactSeekbar : _compactSeekbar,
-      waveHeight: height,
-      mixHeight: height,
+      waveHeight: height.wave,
+      mixHeight: height.mix,
       // 全画面でコントロールが隠れている間はデッキも隠す
       hideDeck: _isFullscreen && !_showFullscreenOverlay,
       onToggleCompact: () => _toggleCompactSeekbar(fullscreen),
@@ -1823,7 +1826,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ? _buildWideEditPanel(editBlock, subtitle: activeRegion?.name)
               : null,
       controller: SinglePlayerBar(
-        seekbar: _singleSeekbar(wide ? _seekHeight(true) : 72),
+        seekbar: _singleSeekbar(wide ? _seekHeight(true).wave : 72),
         regionsOpen: panelOpen,
         loop: loop,
         onToggleLoop: notifier.toggleEnabled,

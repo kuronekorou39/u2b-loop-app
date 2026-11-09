@@ -37,7 +37,9 @@ class MiniPlayerBar extends ConsumerWidget {
     final position = ref.watch(positionProvider).valueOrNull ?? Duration.zero;
     final duration = ref.watch(durationProvider).valueOrNull ?? Duration.zero;
     final textTheme = Theme.of(context).textTheme;
-    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    // 横向きはナビゲーションバーやノッチが左右に来るので、その分も避ける
+    // （下だけ避けていて、右端がナビゲーションバーの下に入っていた）
+    final vp = MediaQuery.viewPaddingOf(context);
 
     final progress = duration > Duration.zero
         ? position.inMilliseconds / duration.inMilliseconds
@@ -47,7 +49,8 @@ class MiniPlayerBar extends ConsumerWidget {
       onTap: () => _openFullPlayer(ref, miniState),
       child: GlassPanel(
         radius: 18,
-        margin: EdgeInsets.fromLTRB(margin, 0, margin, margin + bottomInset),
+        margin: EdgeInsets.fromLTRB(
+            margin + vp.left, 0, margin + vp.right, margin + vp.bottom),
         padding: const EdgeInsets.fromLTRB(
             AppSpacing.md, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
         child: SizedBox(
