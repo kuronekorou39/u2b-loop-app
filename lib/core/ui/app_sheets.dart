@@ -48,6 +48,46 @@ class SheetAction {
 class AppSheets {
   AppSheets._();
 
+  /// これより低い画面（横向きの電話）は「低い画面」。下から出るシートは高さが足りず
+  /// 2〜3 行しか見えない（ミニプレイヤーが出ていればさらに狭い）ので、真ん中のダイアログで出す
+  static const shortScreenHeight = 500.0;
+
+  /// 下のシートの幅の上限（Material 3 の既定と同じ。タブレットで横いっぱいに広がらない）
+  static const sheetMaxWidth = 640.0;
+
+  /// 低い画面で代わりに出すダイアログの幅の上限
+  static const dialogMaxWidth = 560.0;
+
+  static bool isShortScreen(BuildContext context) =>
+      MediaQuery.sizeOf(context).height < shortScreenHeight;
+
+  /// 下から出るシート。中身は [builder]（上の空きが残るよう高さは画面の 85% まで。
+  /// 下のインセットとミニプレイヤーの分は中身が SafeArea か viewPadding で避ける）。
+  /// 低い画面では真ん中のダイアログで出す（その中では padding / viewPadding は 0 なので、
+  /// 中身はそのまま使える）
+  static Future<T?> show<T>(
+    BuildContext context, {
+    required WidgetBuilder builder,
+    bool showDragHandle = true,
+  }) {
+    if (isShortScreen(context)) {
+      return showDialog<T>(
+        context: context,
+        builder: (_) => SheetDialog(child: Builder(builder: builder)),
+      );
+    }
+    return showModalBottomSheet<T>(
+      context: context,
+      showDragHandle: showDragHandle,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxWidth: sheetMaxWidth,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      ),
+      builder: builder,
+    );
+  }
+
   /// 見出し（[title] / [subtitle]）と行の並びを出す。[note] は末尾の補足文
   static Future<void> actions(
     BuildContext context, {
@@ -56,13 +96,8 @@ class AppSheets {
     String? subtitle,
     String? note,
   }) {
-    return showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-      ),
+    return show<void>(
+      context,
       builder: (ctx) => _ActionSheet(
         title: title,
         subtitle: subtitle,
@@ -71,6 +106,38 @@ class AppSheets {
       ),
     );
   }
+}
+
+/// 低い画面でシートの中身を入れるダイアログ。シートの中身は下のインセットや
+/// ミニプレイヤーの分を SafeArea / viewPadding で避けるが、ダイアログは画面の
+/// 安全な範囲に置かれるので、中では両方とも 0 にして無駄な余白を作らない
+class SheetDialog extends StatelessWidget {
+  const SheetDialog({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxl, vertical: AppSpacing.xl),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppSheets.dialogMaxWidth),
+          child: Builder(
+            builder: (ctx) => MediaQuery(
+              data: MediaQuery.of(ctx).copyWith(
+                  padding: EdgeInsets.zero, viewPadding: EdgeInsets.zero),
+              child: SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.lg),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class _ActionSheet extends StatelessWidget {

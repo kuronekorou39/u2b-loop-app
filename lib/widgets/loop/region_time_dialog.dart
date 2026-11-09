@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_dialogs.dart';
 import '../../core/utils/time_utils.dart';
 
 /// 区間の A・B の時刻を手で打つダイアログ。入力は「1:23.5」でも「83.5」（秒）でもよい。
@@ -64,38 +65,54 @@ class _RegionTimeDialogState extends State<_RegionTimeDialog> {
     }
     final canSave = a.error == null && b.error == null && orderError == null;
 
-    return AlertDialog(
-      title: Text(widget.title),
-      scrollable: true,
+    final fieldA = TextField(
+      controller: _a,
+      autofocus: true,
+      decoration: InputDecoration(
+        labelText: 'A',
+        hintText: '例: 0:10.5',
+        errorText: a.error,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onChanged: (_) => setState(() {}),
+    );
+    final fieldB = TextField(
+      controller: _b,
+      decoration: InputDecoration(
+        labelText: 'B',
+        hintText: '例: 0:45',
+        errorText: b.error ?? orderError,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onChanged: (_) => setState(() {}),
+    );
+    // 低い画面では A・B を横に並べる（縦に積むとキーボードの上に入らない）
+    final compact = AppFormDialog.compactIn(context);
+
+    return AppFormDialog(
+      title: widget.title,
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
-            controller: _a,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: 'A',
-              hintText: '例: 0:10.5',
-              errorText: a.error,
-              isDense: true,
-              border: const OutlineInputBorder(),
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          TextField(
-            controller: _b,
-            decoration: InputDecoration(
-              labelText: 'B',
-              hintText: '例: 0:45',
-              errorText: b.error ?? orderError,
-              isDense: true,
-              border: const OutlineInputBorder(),
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
-          ),
+          if (compact)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: fieldA),
+                const SizedBox(width: AppSpacing.lg),
+                Expanded(child: fieldB),
+              ],
+            )
+          else ...[
+            fieldA,
+            const SizedBox(height: AppSpacing.lg),
+            fieldB,
+          ],
           const SizedBox(height: AppSpacing.sm),
           Text('空欄にすると未設定になります',
               style: Theme.of(context).textTheme.labelSmall),

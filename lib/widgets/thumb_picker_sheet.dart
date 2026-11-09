@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
+import '../core/ui/app_sheets.dart';
 import '../models/loop_item.dart';
 import 'item_thumbnail.dart';
 
@@ -18,9 +19,8 @@ class ThumbPickerSheet {
     required String resetLabel,
     required ValueChanged<String?> onPick,
   }) {
-    return showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
+    return AppSheets.show<void>(
+      context,
       builder: (ctx) {
         final textTheme = Theme.of(ctx).textTheme;
         return SafeArea(

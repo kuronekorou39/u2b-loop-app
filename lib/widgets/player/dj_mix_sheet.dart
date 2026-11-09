@@ -6,6 +6,7 @@ import '../../core/audio/dj_level.dart';
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/transition_effect.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_sheets.dart';
 import '../../providers/player_provider.dart';
 import '../../screens/settings/dj_mix_settings_screen.dart';
 import 'sfx_offset_stepper.dart';
@@ -20,10 +21,8 @@ class DjMixSheet extends ConsumerWidget {
   const DjMixSheet({super.key});
 
   static Future<void> show(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    return AppSheets.show<void>(
+      context,
       builder: (_) => const DjMixSheet(),
     );
   }

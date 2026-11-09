@@ -97,9 +97,8 @@ class TagManagerTab extends ConsumerWidget {
   /// 色を選ぶシート。[current] は選択中の色番号（複数のときは null）
   static Future<int?> pickColor(BuildContext context,
       {required String title, int? current}) {
-    return showModalBottomSheet<int>(
-      context: context,
-      showDragHandle: true,
+    return AppSheets.show<int>(
+      context,
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(

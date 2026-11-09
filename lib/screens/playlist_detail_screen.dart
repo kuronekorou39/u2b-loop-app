@@ -980,8 +980,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ? Set<String>.from(currentSel)
         : regions.map((r) => r.id).toSet();
 
-    showModalBottomSheet(
-      context: context,
+    AppSheets.show<void>(
+      context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => SafeArea(
           child: Column(
@@ -989,8 +989,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.lg),
                 child: Row(
                   children: [
                     Expanded(
@@ -1030,31 +1030,38 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 controlAffinity: ListTileControlAffinity.leading,
               ),
               const Divider(height: 1),
-              // 各区間
-              for (final region in regions)
-                CheckboxListTile(
-                  value: selected.contains(region.id),
-                  onChanged: (v) {
-                    setSheetState(() {
-                      if (v == true) {
-                        selected.add(region.id);
-                      } else {
-                        selected.remove(region.id);
-                      }
-                    });
-                  },
-                  title: Text(region.name,
-                      style: Theme.of(context).textTheme.bodyLarge),
-                  subtitle: region.hasPoints
-                      ? Text(
-                          '${TimeUtils.formatShortMs(region.pointAMs)}'
-                          ' - '
-                          '${TimeUtils.formatShortMs(region.pointBMs)}',
-                          style: Theme.of(context).textTheme.bodySmall)
-                      : null,
-                  dense: true,
-                  controlAffinity: ListTileControlAffinity.leading,
+              // 各区間（多いときは中で流れる）
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final region in regions)
+                      CheckboxListTile(
+                        value: selected.contains(region.id),
+                        onChanged: (v) {
+                          setSheetState(() {
+                            if (v == true) {
+                              selected.add(region.id);
+                            } else {
+                              selected.remove(region.id);
+                            }
+                          });
+                        },
+                        title: Text(region.name,
+                            style: Theme.of(context).textTheme.bodyLarge),
+                        subtitle: region.hasPoints
+                            ? Text(
+                                '${TimeUtils.formatShortMs(region.pointAMs)}'
+                                ' - '
+                                '${TimeUtils.formatShortMs(region.pointBMs)}',
+                                style: Theme.of(context).textTheme.bodySmall)
+                            : null,
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                  ],
                 ),
+              ),
               const SizedBox(height: AppSpacing.md),
             ],
           ),

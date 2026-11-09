@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_sheets.dart';
 import '../../core/utils/time_utils.dart';
 import '../../core/utils/verse_detector.dart';
 import '../../providers/player_provider.dart';
@@ -57,10 +58,8 @@ class FirstVerseSheet extends ConsumerStatefulWidget {
     required int? manualEndMs,
     required int positionMs,
   }) {
-    return showModalBottomSheet<FirstVerseResult>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    return AppSheets.show<FirstVerseResult>(
+      context,
       builder: (_) => FirstVerseSheet(
         title: title,
         waveform: waveform,
@@ -101,8 +100,9 @@ class _FirstVerseSheetState extends ConsumerState<FirstVerseSheet> {
     final textTheme = Theme.of(context).textTheme;
     final manual = _editedEndMs != null;
 
+    // 低い画面（横向き）のダイアログでは縦に入りきらないことがあるので中はスクロール
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
             AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.lg),
         child: Column(

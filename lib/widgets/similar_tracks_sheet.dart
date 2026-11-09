@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/audio/musical_key.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/theme/app_theme.dart';
+import '../core/ui/app_sheets.dart';
 import '../models/loop_item.dart';
 import 'item_thumbnail.dart';
 
@@ -30,9 +31,8 @@ class SimilarTracksSheet extends StatelessWidget {
     required void Function(LoopItem item) onSelect,
   }) {
     final ranked = TrackCompatibility.rank(target, candidates);
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
+    return AppSheets.show<void>(
+      context,
       builder: (_) => SimilarTracksSheet(
         target: target,
         candidates: ranked.take(maxResults).toList(),

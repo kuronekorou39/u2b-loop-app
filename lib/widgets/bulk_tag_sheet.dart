@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_sheets.dart';
 import '../models/loop_item.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
@@ -37,9 +38,8 @@ class BulkTagSheet extends StatefulWidget {
       BuildContext context, WidgetRef ref, List<String> itemIds) {
     final items = ref.read(loopItemsProvider);
     final notifier = ref.read(loopItemsProvider.notifier);
-    return showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
+    return AppSheets.show<void>(
+      context,
       builder: (_) => BulkTagSheet(
         tags: ref.read(tagsProvider),
         selectedItems: items.where((i) => itemIds.contains(i.id)).toList(),

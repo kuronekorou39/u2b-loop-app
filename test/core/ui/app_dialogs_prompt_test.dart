@@ -37,6 +37,25 @@ void main() {
     expect(find.text('14 / 10 文字'), findsOneWidget);
   });
 
+  testWidgets('低い画面でキーボードが出ていても、入力欄とボタンが押せる場所に出る', (tester) async {
+    // 横向きの電話（800×360）でキーボードが 220 出ている
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 220);
+    addTearDown(tester.view.reset);
+    await open(tester, 'abc');
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(Dialog), findsOneWidget);
+    final field = tester.getRect(find.byType(TextField));
+    expect(field.bottom, lessThanOrEqualTo(360 - 220),
+        reason: '入力欄はキーボードにかからない');
+    expect(find.byType(TextField).hitTestable(), findsOneWidget);
+    expect(find.text('OK').hitTestable(), findsOneWidget);
+    // 見出しとボタンは同じ行
+    expect(tester.getCenter(find.text('OK')).dy,
+        closeTo(tester.getCenter(find.text('曲名')).dy, 1));
+  });
+
   testWidgets('上限内に収めれば OK で確定できる', (tester) async {
     final result = await open(tester, 'a' * 15);
     await tester.enterText(find.byType(TextField), 'abc');

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+import 'app_sheets.dart';
+
 /// アプリ共通のダイアログ。
 ///
 /// 以前は名前入力ダイアログが6ファイル12箇所、削除確認が5箇所にコピペされており、
@@ -148,10 +151,8 @@ class _PromptDialogState extends State<_PromptDialog> {
           if (!over) Navigator.pop(context, _controller.text.trim());
         }
 
-        return AlertDialog(
-          title: Text(widget.title),
-          // 横画面でキーボードが出ても溢れないように
-          scrollable: widget.maxLines > 1,
+        return AppFormDialog(
+          title: widget.title,
           content: TextField(
             controller: _controller,
             autofocus: true,
@@ -177,6 +178,77 @@ class _PromptDialogState extends State<_PromptDialog> {
           ],
         );
       },
+    );
+  }
+}
+
+/// 入力欄のあるダイアログの土台。ふつうは [AlertDialog]（中はスクロール）。
+///
+/// 低い画面（横向きの電話、[AppSheets.isShortScreen]）ではキーボードが出ると残りが
+/// 200px ほどしかなく、AlertDialog の見出し・ボタンの行・上下の余白だけで埋まって
+/// 入力欄がつぶれていた。そこでは画面の上に寄せ（キーボードが出ても動かない）、
+/// 見出しとボタンを 1 行にまとめ、残りを全部中身に使う。
+/// 中身の組み方も変えたいとき（欄を横に並べるなど）は [compactIn] で分ける
+class AppFormDialog extends StatelessWidget {
+  const AppFormDialog({
+    super.key,
+    required this.title,
+    required this.content,
+    required this.actions,
+  });
+
+  final String title;
+  final Widget content;
+  final List<Widget> actions;
+
+  /// 低い画面向けの詰めた形で出るか
+  static bool compactIn(BuildContext context) =>
+      AppSheets.isShortScreen(context);
+
+  @override
+  Widget build(BuildContext context) {
+    if (!compactIn(context)) {
+      return AlertDialog(
+        title: Text(title),
+        scrollable: true,
+        content: content,
+        actions: actions,
+      );
+    }
+    return Dialog(
+      alignment: Alignment.topCenter,
+      insetPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xxl, vertical: AppSpacing.lg),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppSheets.dialogMaxWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xxl, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(title,
+                        style: Theme.of(context).textTheme.titleLarge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  for (final a in actions) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    a,
+                  ],
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Flexible(child: SingleChildScrollView(child: content)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

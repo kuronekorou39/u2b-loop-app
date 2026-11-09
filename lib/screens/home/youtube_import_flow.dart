@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../core/utils/add_input.dart';
 import '../../core/utils/app_errors.dart';
@@ -88,75 +89,90 @@ class YouTubeImportFlow {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('追加', style: Theme.of(ctx).textTheme.displaySmall),
-        // 横画面でキーボードが出ても溢れないように
-        scrollable: true,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
+      builder: (ctx) {
+        // 低い画面（横向き）はキーボードの上に 1〜2 行ぶんしか残らないので、
+        // URL 欄は 1 行から始めて、追加ボタンはその右、ローカルの選択はすぐ下
+        final compact = AppFormDialog.compactIn(ctx);
+        final urlField = TextField(
+          controller: urlController,
+          autofocus: true,
+          maxLength: AppLimits.urlMaxLength,
+          decoration: const InputDecoration(
+            hintText: 'YouTube URL / 共有URL',
+            prefixIcon: Icon(Icons.link, size: AppIconSizes.sm),
+            isDense: true,
+            border: OutlineInputBorder(),
+            counterText: '',
           ),
-        ],
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: urlController,
-              autofocus: true,
-              maxLength: AppLimits.urlMaxLength,
-              decoration: const InputDecoration(
-                hintText: 'YouTube URL / 共有URL',
-                prefixIcon: Icon(Icons.link, size: AppIconSizes.sm),
-                isDense: true,
-                border: OutlineInputBorder(),
-                counterText: '',
-              ),
-              style: Theme.of(ctx).textTheme.bodyMedium,
-              maxLines: 3,
-              minLines: 3,
-              onSubmitted: (_) => doAdd(ctx),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                onPressed: () => doAdd(ctx),
-                icon: const Icon(Icons.play_circle_fill),
-                iconSize: 40,
-                color: Theme.of(ctx).colorScheme.primary,
-                tooltip: '追加',
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                const Expanded(child: Divider()),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                  child: Text('または',
-                      style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
-                          color: AppTheme.muted(ctx, alpha: 0.4))),
-                ),
-                const Expanded(child: Divider()),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  addLocalFile();
-                },
-                icon: const Icon(Icons.folder_open, size: AppIconSizes.sm),
-                label: const Text('ローカルファイルを選択'),
-              ),
+          style: Theme.of(ctx).textTheme.bodyMedium,
+          maxLines: 3,
+          minLines: compact ? 1 : 3,
+          onSubmitted: (_) => doAdd(ctx),
+        );
+        final addButton = IconButton(
+          onPressed: () => doAdd(ctx),
+          icon: const Icon(Icons.play_circle_fill),
+          iconSize: 40,
+          color: Theme.of(ctx).colorScheme.primary,
+          tooltip: '追加',
+        );
+        final localButton = OutlinedButton.icon(
+          onPressed: () {
+            Navigator.pop(ctx);
+            addLocalFile();
+          },
+          icon: const Icon(Icons.folder_open, size: AppIconSizes.sm),
+          label: const Text('ローカルファイルを選択'),
+        );
+        return AppFormDialog(
+          title: '追加',
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('キャンセル'),
             ),
           ],
-        ),
-      ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: compact
+                ? [
+                    Row(
+                      children: [
+                        Expanded(child: urlField),
+                        const SizedBox(width: AppSpacing.sm),
+                        addButton,
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Align(alignment: Alignment.centerLeft, child: localButton),
+                  ]
+                : [
+                    urlField,
+                    const SizedBox(height: AppSpacing.md),
+                    Align(alignment: Alignment.centerRight, child: addButton),
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      children: [
+                        const Expanded(child: Divider()),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.lg),
+                          child: Text('または',
+                              style: Theme.of(ctx)
+                                  .textTheme
+                                  .labelMedium
+                                  ?.copyWith(
+                                      color: AppTheme.muted(ctx, alpha: 0.4))),
+                        ),
+                        const Expanded(child: Divider()),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    SizedBox(width: double.infinity, child: localButton),
+                  ],
+          ),
+        );
+      },
     ).then((_) {
       // ダイアログのアニメーション完了後にdispose
       Future.delayed(const Duration(milliseconds: 300), urlController.dispose);
@@ -401,9 +417,8 @@ class YouTubeImportFlow {
       context: context,
       builder: (ctx) {
         final textTheme = Theme.of(ctx).textTheme;
-        return AlertDialog(
-          title: Text('タグを付与', style: textTheme.titleMedium),
-          scrollable: true,
+        return AppFormDialog(
+          title: 'タグを付与',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

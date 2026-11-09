@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
+import '../core/ui/app_sheets.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/utils/app_errors.dart';
 import '../models/loop_item.dart';
@@ -70,10 +71,8 @@ class SaveFlow {
     String? rangeText,
     bool offline = true,
   }) {
-    return showModalBottomSheet<SaveChoice>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
+    return AppSheets.show<SaveChoice>(
+      context,
       builder: (_) => _SaveSheet(
         title: title,
         rangeText: rangeText,

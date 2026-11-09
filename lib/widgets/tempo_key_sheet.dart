@@ -5,6 +5,7 @@ import '../core/audio/key_sections.dart';
 import '../core/audio/musical_key.dart';
 import '../core/audio/tempo_sections.dart';
 import '../core/theme/app_theme.dart';
+import '../core/ui/app_sheets.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
 import '../providers/data_provider.dart';
@@ -23,9 +24,8 @@ class TempoKeySheet extends ConsumerStatefulWidget {
     required LoopItem item,
     required VoidCallback onReanalyze,
   }) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
+    return AppSheets.show<void>(
+      context,
       builder: (_) => TempoKeySheet(item: item, onReanalyze: onReanalyze),
     );
   }

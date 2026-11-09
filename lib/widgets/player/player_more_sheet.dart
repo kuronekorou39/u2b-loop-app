@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_sheets.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../screens/settings/dj_mix_settings_screen.dart';
@@ -49,12 +50,7 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
   static const speeds = PlayerControls.speeds;
 
   static Future<void> show(BuildContext context, PlayerMoreSheet sheet) {
-    return showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => sheet,
-    );
+    return AppSheets.show<void>(context, builder: (_) => sheet);
   }
 
   @override

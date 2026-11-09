@@ -7,6 +7,7 @@ import '../models/loop_item.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
 import '../core/ui/app_dialogs.dart';
+import '../core/ui/app_sheets.dart';
 
 /// 個別アイテムのタグ編集シート（共有ウィジェット）。
 /// 詳細・再生画面からは [show] で開く（タグの付け外しと新規作成の配線を 1 か所に）
@@ -27,8 +28,8 @@ class ItemTagSheet extends StatefulWidget {
   /// [item] のタグを編集するシートを開く。変更はその場で保存される
   static Future<void> show(BuildContext context, WidgetRef ref, LoopItem item) {
     final items = ref.read(loopItemsProvider.notifier);
-    return showModalBottomSheet(
-      context: context,
+    return AppSheets.show<void>(
+      context,
       builder: (_) => ItemTagSheet(
         tags: ref.read(tagsProvider),
         item: item,
@@ -91,7 +92,7 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
     final textTheme = Theme.of(context).textTheme;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

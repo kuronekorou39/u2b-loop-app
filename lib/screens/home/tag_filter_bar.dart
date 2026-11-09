@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_sheets.dart';
 import '../../core/utils/item_filter.dart';
 import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
@@ -12,9 +13,8 @@ import '../../widgets/tag_chip.dart';
 /// [onClosed] はシートを閉じたあと（検索欄のフォーカスを外すなど）
 Future<void> showTagFilterSheet(BuildContext context, WidgetRef ref, List<Tag> tags,
     {VoidCallback? onClosed}) {
-  return showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
+  return AppSheets.show<void>(
+    context,
     builder: (_) => _TagFilterSheet(tags: tags, initial: ref.read(tagFilterProvider)),
   ).then((_) => onClosed?.call());
 }

@@ -1374,13 +1374,19 @@ class PlaylistEngine {
 
   // --- ジョグホイール（入る曲の拍の位置を手で合わせる） ---
 
-  /// ジョグで動かせる幅（入る曲の媒体ミリ秒、片側）。小節頭の取り違えも直せるよう半小節。
-  /// これより広いと自動の拍合わせの寄せ（±半小節）の外に出て、保存の計算が折り返す。
+  /// ジョグで動かせる小節数（片側）。半小節では「もっと回したい」と言われたので
+  /// フレーズの半分まで。入りの場所を何小節か前後にずらす使い方ができる
+  static const jogMaxBars = BeatGrid.barsPerPhrase ~/ 2;
+
+  /// ジョグで動かせる幅（入る曲の媒体ミリ秒、片側）= [jogMaxBars] 小節。
+  /// 保存（ピン）は拍の位相と小節頭を格子に焼き込むので、次回の自動の拍合わせは
+  /// 同じ拍・同じ小節の位置に寄せる。ただし寄せるのは入り口から ±半小節の中なので、
+  /// 何小節も動かした分（小節のまとまり）は次回には残らない（この回だけ）。
   /// 格子が無い・信用できない曲は null（手で合わせても自動が使わない）
   double? jogMaxMs(MixPair pair) {
     final grid = inGridFor(pair.next);
     if (grid == null || !grid.reliable) return null;
-    return grid.periodMs * (BeatGrid.beatsPerBar / 2);
+    return grid.periodMs * BeatGrid.beatsPerBar * jogMaxBars;
   }
 
   /// ジョグ中に見せる拍のずれ（実時間 ms、+ で入る曲が遅れている）。

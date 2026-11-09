@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_sheets.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../loop/loop_panel_parts.dart';
@@ -24,12 +25,7 @@ class SingleMoreSheet extends ConsumerStatefulWidget {
   final ValueChanged<bool> onHideVideoChanged;
 
   static Future<void> show(BuildContext context, SingleMoreSheet sheet) {
-    return showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => sheet,
-    );
+    return AppSheets.show<void>(context, builder: (_) => sheet);
   }
 
   @override
