@@ -1899,18 +1899,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Widget _buildTrackListPanel() => TrackListPanel(list: _buildTrackList());
 
   void _showMoreSheet() {
-    final plState = ref.read(playlistPlayerProvider);
     PlayerMoreSheet.show(
       context,
       PlayerMoreSheet(
-        firstVerseMode: plState.firstVerseMode,
-        onToggleFirstVerse: _toggleFirstVerseMode,
-        onResetFirstVerse: () {
-          final id = plState.currentTrack?.item.id;
-          final saved =
-              id == null ? null : ref.read(loopItemsProvider.notifier).byId(id);
-          return saved != null && saved.hasFirstVerse ? _resetFirstVerse : null;
-        }(),
         onToggleVolumeNorm: _toggleVolumeNorm,
         // AB 編集の UI は全画面には無い（横レイアウトの板）ので、全画面なら解除してから
         onEditAb: () {

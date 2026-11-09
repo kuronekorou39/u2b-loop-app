@@ -6,11 +6,12 @@ import '../../core/ui/app_sheets.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../loop/loop_panel_parts.dart';
+import 'more_tile.dart';
 import 'player_more_sheet.dart';
 
 /// 単体再生画面の「その他」シート。
-/// 下部コントローラーから外した補助機能（音量・ループの間・書き出し・動画の表示切替・
-/// オーディオ出力の確認）をまとめる。速度はピル、±N 秒の秒数は長押し。
+/// 音量とループの間は上に 1 行ずつ、書き出し・動画の表示切替・オーディオ出力は
+/// 四角いタイル。速度はピル、±N 秒の秒数は長押し。
 class SingleMoreSheet extends ConsumerStatefulWidget {
   const SingleMoreSheet({
     super.key,
@@ -46,6 +47,7 @@ class _SingleMoreSheetState extends ConsumerState<SingleMoreSheet> {
       'headphones' => (Icons.headphones, 'ヘッドホン'),
       _ => (Icons.speaker, 'スピーカー'),
     };
+    final gapColor = loop.enabled ? null : AppTheme.muted(context);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return SafeArea(
@@ -56,65 +58,55 @@ class _SingleMoreSheetState extends ConsumerState<SingleMoreSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const VolumeSliderRow(),
-            // ループの間: B で止まって A に戻るまでの待ち
+            // ループの間: B で止まって A に戻るまでの待ち（ループ ON のときだけ動く）
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, 0),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
               child: Row(
                 children: [
-                  Icon(Icons.hourglass_bottom,
-                      size: AppIconSizes.lg,
-                      color: loop.enabled ? null : AppTheme.muted(context)),
-                  const SizedBox(width: AppSpacing.xl),
-                  Text('ループの間', style: textTheme.bodyLarge),
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Icon(Icons.hourglass_bottom,
+                        size: AppIconSizes.lg, color: gapColor),
+                  ),
                   const SizedBox(width: AppSpacing.md),
-                  Text(
-                    loop.enabled ? 'B で止まって A に戻るまでの待ち' : 'ループ ON のとき使えます',
-                    style: textTheme.labelSmall,
+                  Text('ループの間',
+                      style: textTheme.bodyMedium?.copyWith(color: gapColor)),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: LoopGapSlider(
+                      gapSeconds: loop.gapSeconds,
+                      onChanged: loop.enabled
+                          ? ref.read(loopProvider.notifier).setGap
+                          : (_) {},
+                    ),
                   ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl + 36, 0, AppSpacing.xl, 0),
-              child: LoopGapSlider(
-                gapSeconds: loop.gapSeconds,
-                onChanged: loop.enabled
-                    ? ref.read(loopProvider.notifier).setGap
-                    : (_) {},
+            const SizedBox(height: AppSpacing.md),
+            MoreTileGrid(tiles: [
+              MoreTile(
+                icon: Icons.file_download_outlined,
+                label: loop.hasBothPoints ? '区間を書き出し' : '全体を書き出し',
+                enabled: hasSource,
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onExport();
+                },
               ),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.file_download_outlined),
-              title: Text(loop.hasBothPoints ? '区間を書き出し' : '全体を書き出し'),
-              subtitle: Text(loop.hasBothPoints
-                  ? 'A–B の範囲を動画や音声として保存'
-                  : '動画や音声として保存'),
-              trailing: const Icon(Icons.chevron_right),
-              enabled: hasSource,
-              onTap: () {
-                Navigator.pop(context);
-                widget.onExport();
-              },
-            ),
-            const Divider(),
-            SwitchListTile(
-              secondary: const Icon(Icons.videocam_outlined),
-              title: const Text('動画を表示'),
-              subtitle: const Text('オフにすると波形と区間を広く使える'),
-              value: !_hideVideo,
-              onChanged: (v) {
-                setState(() => _hideVideo = !v);
-                widget.onHideVideoChanged(!v);
-              },
-            ),
-            ListTile(
-              leading: Icon(deviceIcon),
-              title: const Text('オーディオ出力'),
-              subtitle: Text(deviceLabel),
-            ),
+              MoreTile(
+                icon: _hideVideo
+                    ? Icons.videocam_off_outlined
+                    : Icons.videocam_outlined,
+                label: '動画',
+                active: !_hideVideo,
+                onTap: () {
+                  setState(() => _hideVideo = !_hideVideo);
+                  widget.onHideVideoChanged(_hideVideo);
+                },
+              ),
+              MoreTile(icon: deviceIcon, label: '出力', value: deviceLabel),
+            ]),
           ],
         ),
       ),

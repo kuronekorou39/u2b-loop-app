@@ -3,25 +3,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_sheets.dart';
+import '../../core/utils/rate_label.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
-import '../../screens/settings/dj_mix_settings_screen.dart';
+import 'more_tile.dart';
 import 'player_controls.dart';
 import 'volume_slider.dart';
-import '../../core/utils/rate_label.dart';
 
 /// プレイリスト再生画面の「その他」シート。
-/// 下部コントローラーから外した補助機能（1番だけ・AB区間・音量正規化・DJ ミックス・速度・音量・
-/// 動画の表示切替）をまとめる。波形の表示切替はシークバー右下のボタン。
+/// 下部コントローラーから外した補助機能（AB区間・DJ ミックス・保存・速度・
+/// 音量正規化・動画の表示切替）を四角いタイルで並べ、音量は一番上に 1 行。
+/// 1 番だけはコントローラーのボタン（長押しで手直し・自動に戻す）なのでここには無い。
+/// 波形の表示切替はシークバー右下のボタン。
 ///
 /// 画面側の状態（動画非表示）は初期値とコールバックで受け取り、
 /// シート内では自前のコピーを持って即時に反映する。
 class PlayerMoreSheet extends ConsumerStatefulWidget {
   const PlayerMoreSheet({
     super.key,
-    required this.firstVerseMode,
-    required this.onToggleFirstVerse,
-    this.onResetFirstVerse,
     required this.onToggleVolumeNorm,
     required this.onEditAb,
     required this.onDjMix,
@@ -30,18 +29,15 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
     required this.onHideVideoChanged,
   });
 
-  final bool firstVerseMode;
-  final VoidCallback onToggleFirstVerse;
-
-  /// この曲の 1 番を手で直してあるときだけ渡す（自動に戻す）
-  final VoidCallback? onResetFirstVerse;
   final VoidCallback onToggleVolumeNorm;
+
+  /// 「AB区間」。このシートを閉じてから呼ばれる
   final VoidCallback onEditAb;
 
-  /// 「DJ ミックス」の行。このシートを閉じてから呼ばれる（呼び先で DjMixSheet を開く）
+  /// 「DJ ミックス」。このシートを閉じてから呼ばれる（呼び先で DjMixSheet を開く）
   final VoidCallback onDjMix;
 
-  /// 「この曲を保存」（アプリ内に保存 / 端末に書き出し）。このシートを閉じてから呼ばれる
+  /// 「保存」（アプリ内に保存 / 端末に書き出し）。このシートを閉じてから呼ばれる
   final VoidCallback? onSave;
   final bool hideVideo;
   final ValueChanged<bool> onHideVideoChanged;
@@ -58,18 +54,15 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
 }
 
 class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
-  late bool _firstVerse = widget.firstVerseMode;
   late bool _hideVideo = widget.hideVideo;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final player = ref.read(playerProvider);
     final hasSource = ref.watch(videoSourceProvider) != null;
     final volumeNorm = ref.watch(volumeNormProvider);
     final rate = ref.watch(rateProvider).valueOrNull ?? 1.0;
     final loop = ref.watch(loopProvider);
+    final mixing = ref.watch(crossfadeProvider) > 0;
 
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
@@ -80,110 +73,111 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SwitchListTile(
-              secondary: const Icon(Icons.looks_one_outlined),
-              title: const Text('1番だけ'),
-              subtitle: const Text('1番が終わるあたりで次の曲へ'),
-              value: _firstVerse,
-              onChanged: (v) {
-                setState(() => _firstVerse = v);
-                widget.onToggleFirstVerse();
-              },
-            ),
-            if (_firstVerse && widget.onResetFirstVerse != null)
-              ListTile(
-                leading: const SizedBox(width: 24),
-                title: const Text('この曲の1番を自動に戻す'),
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onResetFirstVerse!();
-                },
-              ),
-            SwitchListTile(
-              secondary: const Icon(Icons.equalizer),
-              title: const Text('音量正規化'),
-              subtitle: const Text('波形から曲ごとの音量差をならす'),
-              value: volumeNorm,
-              onChanged: (_) => widget.onToggleVolumeNorm(),
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.tune,
-                color: loop.hasBothPoints ? AppTheme.accentGreen : null,
-              ),
-              title: const Text('AB区間を編集'),
-              subtitle: Text(loop.hasBothPoints ? 'この曲の再生範囲を指定中' : '再生範囲を指定する'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                widget.onEditAb();
-              },
-            ),
-            // 聴きながら変えたい DJ の設定。設定画面と同じ値を別のシートで
-            ListTile(
-              leading: Icon(
-                Icons.multitrack_audio,
-                color: ref.watch(crossfadeProvider) > 0
-                    ? AppTheme.accentGreen
-                    : null,
-              ),
-              title: const Text('DJ ミックス'),
-              subtitle: Text(DjMixSettingsScreen.summary(ref),
-                  maxLines: 2, overflow: TextOverflow.ellipsis),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                widget.onDjMix();
-              },
-            ),
-            if (widget.onSave != null)
-              ListTile(
-                leading: const Icon(Icons.download_outlined),
-                title: const Text('この曲を保存'),
-                subtitle: const Text('アプリ内に保存 / 端末に書き出し'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onSave!();
-                },
-              ),
-            const Divider(),
-            // 速度（候補を並べると見づらいのでプルダウン）
-            ListTile(
-              leading: const Icon(Icons.speed),
-              title: Text('速度', style: textTheme.bodyLarge),
-              trailing: DropdownButton<double>(
-                value: PlayerMoreSheet.speeds.contains(rate) ? rate : null,
-                hint: Text(rateLabel(rate)),
-                underline: const SizedBox.shrink(),
-                items: [
-                  for (final s in PlayerMoreSheet.speeds)
-                    DropdownMenuItem(value: s, child: Text(rateLabel(s))),
-                ],
-                onChanged: hasSource
-                    ? (s) {
-                        if (s != null) player.setRate(s);
-                      }
-                    : null,
-              ),
-            ),
             const VolumeSliderRow(),
-            const Divider(),
-            SwitchListTile(
-              secondary: const Icon(Icons.videocam_outlined),
-              title: const Text('動画を表示'),
-              subtitle: const Text('オフにすると曲リストを広く使える'),
-              value: !_hideVideo,
-              onChanged: (v) {
-                setState(() => _hideVideo = !v);
-                widget.onHideVideoChanged(!v);
-              },
-            ),
+            const SizedBox(height: AppSpacing.md),
+            MoreTileGrid(tiles: [
+              MoreTile(
+                icon: Icons.tune,
+                label: 'AB区間',
+                active: loop.hasBothPoints,
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onEditAb();
+                },
+              ),
+              MoreTile(
+                icon: Icons.multitrack_audio,
+                label: 'DJ ミックス',
+                active: mixing,
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onDjMix();
+                },
+              ),
+              if (widget.onSave != null)
+                MoreTile(
+                  icon: Icons.download_outlined,
+                  label: '保存',
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onSave!();
+                  },
+                ),
+              SpeedTile(
+                rate: rate,
+                enabled: hasSource,
+                onChanged: (s) => ref.read(playerProvider).setRate(s),
+              ),
+              MoreTile(
+                icon: Icons.equalizer,
+                label: '音量正規化',
+                active: volumeNorm,
+                onTap: widget.onToggleVolumeNorm,
+              ),
+              MoreTile(
+                icon: _hideVideo
+                    ? Icons.videocam_off_outlined
+                    : Icons.videocam_outlined,
+                label: '動画',
+                active: !_hideVideo,
+                onTap: () {
+                  setState(() => _hideVideo = !_hideVideo);
+                  widget.onHideVideoChanged(_hideVideo);
+                },
+              ),
+            ]),
           ],
         ),
       ),
     );
   }
+}
+
+/// 速度のタイル。今の値を出し、押すとその場に候補のメニュー
+/// （候補を並べると見づらいのでプルダウン）
+class SpeedTile extends StatelessWidget {
+  const SpeedTile({
+    super.key,
+    required this.rate,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  final double rate;
+  final ValueChanged<double> onChanged;
+  final bool enabled;
+
+  Future<void> _open(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox;
+    final overlay =
+        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final rect = Rect.fromPoints(
+      box.localToGlobal(Offset.zero, ancestor: overlay),
+      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+    );
+    final picked = await showMenu<double>(
+      context: context,
+      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
+      initialValue: rate,
+      items: [
+        for (final s in PlayerMoreSheet.speeds)
+          PopupMenuItem(value: s, child: Text(rateLabel(s))),
+      ],
+    );
+    if (picked != null) onChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) => Builder(
+        builder: (ctx) => MoreTile(
+          icon: Icons.speed,
+          label: '速度',
+          value: rateLabel(rate),
+          active: enabled && !sameRate(rate, 1.0),
+          enabled: enabled,
+          onTap: () => _open(ctx),
+        ),
+      );
 }
 
 /// 音量の行: ミュート切替（前の音量を覚える）+ スライダー + %。
