@@ -24,9 +24,9 @@ import 'player_glass_bar.dart';
 /// 縮めて（レターボックス）コントローラーを優先する。曲名行とコントローラーの高さは
 /// 描画後に測って次のフレームで反映する。
 ///
-/// 横画面（[wide]）は左右 2 列。左に動画（大きく）・曲名行、右に [topBar]
-/// （AppBar の代わり）・字幕・[controller]（波形・再生操作・ピル）。[panel] は左の列に
-/// 重ねる。デッキの板も左の列に大きく出す（[DeckAnchorScope]。出している間は動画を暗く）。
+/// 横画面（[wide]）は左右 2 列。左に [topBar]（AppBar の代わり）・動画（大きく）・
+/// 曲名行、右に字幕・[controller]（波形・再生操作・ピル）。[panel] は左の列の
+/// [topBar] より下に重ねる。デッキの板も左の列に大きく出す（[DeckAnchorScope]。出している間は動画を暗く）。
 class PlayerShell extends ConsumerStatefulWidget {
   const PlayerShell({
     super.key,
@@ -109,7 +109,7 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
     );
   }
 
-  /// 横画面: 左の列に動画・曲名行（DJ の板もここ）、右の列に [PlayerShell.topBar]・字幕・
+  /// 横画面: 左の列に [PlayerShell.topBar]・動画・曲名行（DJ の板もここ）、右の列に字幕・
   /// コントローラー。以前は左の列の下に再生操作、右に波形だったが、デッキの板が波形の
   /// 上の狭い所にしか出せなかった
   Widget _buildWide() {
@@ -125,9 +125,6 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
         padding: EdgeInsets.only(top: topInset).add(sides),
         child: LayoutBuilder(builder: (context, c) {
           final leftWidth = c.maxWidth * PlayerShell.wideLeftRatio;
-          anchor.size = Size(
-              math.max(0.0, leftWidth - PlayerShell.margin * 2),
-              math.max(0.0, c.maxHeight - AppSpacing.sm * 2));
           return ValueListenableBuilder<bool>(
             valueListenable: anchor.open,
             builder: (context, deckOpen, _) {
@@ -144,49 +141,65 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                 children: [
                   SizedBox(
                     width: leftWidth,
-                    child: Stack(
-                      fit: StackFit.expand,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // 動画は上に寄せ、曲名行はそのすぐ下
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (video != null)
-                              Flexible(
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                      PlayerShell.margin,
-                                      AppSpacing.sm,
-                                      PlayerShell.margin,
-                                      AppSpacing.sm),
-                                  // 高さは動画に合わせる（余りを抱え込まない）
-                                  child: Align(
-                                    alignment: Alignment.topCenter,
-                                    heightFactor: 1,
-                                    child: AspectRatio(
-                                        aspectRatio: 16 / 9, child: video),
-                                  ),
+                        // 戻る・プレイリスト名・字幕・PiP（動画の上）
+                        ?widget.topBar,
+                        Expanded(
+                          child: LayoutBuilder(builder: (context, lc) {
+                            anchor.size = Size(
+                                math.max(
+                                    0.0, leftWidth - PlayerShell.margin * 2),
+                                math.max(
+                                    0.0, lc.maxHeight - AppSpacing.sm * 2));
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                // 動画は上に寄せ、曲名行はそのすぐ下
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (video != null)
+                                      Flexible(
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                              PlayerShell.margin,
+                                              AppSpacing.sm,
+                                              PlayerShell.margin,
+                                              AppSpacing.sm),
+                                          // 高さは動画に合わせる（余りを抱え込まない）
+                                          child: Align(
+                                            alignment: Alignment.topCenter,
+                                            heightFactor: 1,
+                                            child: AspectRatio(
+                                                aspectRatio: 16 / 9, child: video),
+                                          ),
+                                        ),
+                                      ),
+                                    // パネルや板を出している間は描かない（高さは保つ）
+                                    Visibility(
+                                      visible: !covered,
+                                      maintainState: true,
+                                      maintainAnimation: true,
+                                      maintainSize: true,
+                                      child: widget.header,
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                  ],
                                 ),
-                              ),
-                            // パネルや板を出している間は描かない（高さは保つ）
-                            Visibility(
-                              visible: !covered,
-                              maintainState: true,
-                              maintainAnimation: true,
-                              maintainSize: true,
-                              child: widget.header,
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                          ],
+                                // デッキの板の置き場所（左の列いっぱい）
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: PlayerShell.margin,
+                                      vertical: AppSpacing.sm),
+                                  child: DeckAnchorTarget(anchor: anchor),
+                                ),
+                                _panelSwitcher(),
+                              ],
+                            );
+                          }),
                         ),
-                        // デッキの板の置き場所（左の列いっぱい）
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: PlayerShell.margin,
-                              vertical: AppSpacing.sm),
-                          child: DeckAnchorTarget(anchor: anchor),
-                        ),
-                        _panelSwitcher(),
                       ],
                     ),
                   ),
@@ -194,7 +207,6 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        ?widget.topBar,
                         // 字幕はコントローラーの上の空き
                         const Expanded(
                           child: Align(

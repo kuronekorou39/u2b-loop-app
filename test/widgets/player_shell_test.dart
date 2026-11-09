@@ -62,7 +62,7 @@ void main() {
   }
 
   group('横レイアウト（wide）', () {
-    testWidgets('左に動画（上寄せ）と曲名行、右に topBar とコントローラー（下端）', (tester) async {
+    testWidgets('左に topBar・動画（上寄せ）・曲名行、右にコントローラー（下端）', (tester) async {
       await pump(tester,
           width: 900,
           height: 400,
@@ -75,12 +75,14 @@ void main() {
       final header = tester.getRect(find.byKey(const Key('header')));
       final ctrl = tester.getRect(find.byKey(const Key('ctrl')));
       final split = 900 * PlayerShell.wideLeftRatio;
-      // 左の列: 動画（16:9、列の幅いっぱい）→ 曲名行
+      // 左の列: topBar → 動画（16:9、列の幅いっぱい）→ 曲名行
+      expect(topBar.left, closeTo(0, 0.5));
+      expect(topBar.right, closeTo(split, 0.5));
+      expect(video.top, greaterThanOrEqualTo(topBar.bottom - 0.5));
       expect(video.width / video.height, closeTo(16 / 9, 0.01));
       expect(video.width, closeTo(split - PlayerShell.margin * 2, 0.5));
       expect(header.top, greaterThanOrEqualTo(video.bottom - 0.5));
-      // 右の列: topBar（上）とコントローラー（下端）
-      expect(topBar.left, closeTo(split, 0.5));
+      // 右の列: コントローラー（下端）
       expect(ctrl.left, closeTo(split, 0.5));
       expect(ctrl.bottom, closeTo(400, 0.5));
     });

@@ -88,6 +88,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
   bool get _isSelecting => _selectMode || _selectedIds.isNotEmpty;
 
   String _searchQuery = '';
+
+  /// 縦画面で検索とタグの絞り込みの行を出しているか（既定は隠す。出すと曲タブだけ
+  /// 一覧が下がり、タブを移るたびに高さがずれて見えた）
+  bool _searchOpen = false;
   ItemSortMode _sortMode = ItemSortMode.updatedDesc;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode(skipTraversal: true);
@@ -387,12 +391,24 @@ class _ListScreenState extends ConsumerState<ListScreen>
             child: tabsOrSelection,
           ),
           const SizedBox(height: AppSpacing.md),
-          if (_tab == _tabItems) ...[
-            _buildSearchRow(),
-            // タグがあるあいだは常に出す（選ぶたびに一覧が下がらないように）
-            if (tags.isNotEmpty)
-              SelectedTagBar(tags: tags, onClosed: _searchFocusNode.unfocus),
-          ],
+          // 検索とタグの絞り込み（見出しの検索ボタンで出す）
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _tab == _tabItems && _searchOpen
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildSearchRow(),
+                      // タグがあるあいだは常に出す（選ぶたびに一覧が下がらないように）
+                      if (tags.isNotEmpty)
+                        SelectedTagBar(
+                            tags: tags, onClosed: _searchFocusNode.unfocus),
+                    ],
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
         ],
       ],
     );
@@ -530,9 +546,9 @@ class _ListScreenState extends ConsumerState<ListScreen>
   /// 横画面の 1 行の見出しで、タブに使う幅
   static const _landscapeTabsWidth = 340.0;
 
-  /// 曲タブの検索・並び替えの行（見出しの中。一覧と一緒に上へ抜ける）。
-  /// [inline] は横画面の 1 行に入れるとき（外の余白なし。タグの絞り込みもボタンにして
-  /// この行に入れる。縦は下の [SelectedTagBar] の行）
+  /// 曲タブの検索の行（見出しの中。一覧と一緒に上へ抜ける）。
+  /// [inline] は横画面の 1 行に入れるとき（外の余白なし。タグの絞り込みと並び替えも
+  /// この行に入れる。縦は下の [SelectedTagBar] の行、並び替えは見出しのボタン）
   Widget _buildSearchRow({bool inline = false, List<Tag> tags = const []}) {
     return Padding(
           padding: inline
@@ -559,36 +575,55 @@ class _ListScreenState extends ConsumerState<ListScreen>
                 TagFilterButton(
                     tags: tags, onClosed: _searchFocusNode.unfocus),
               ],
-              const SizedBox(width: AppSpacing.md),
-              PopupMenuButton<ItemSortMode>(
-                tooltip: '並び替え',
-                onSelected: (mode) => setState(() => _sortMode = mode),
-                itemBuilder: (_) => [
-                  for (final mode in ItemSortMode.values)
-                    PopupMenuItem(
-                      value: mode,
-                      child: Row(
-                        children: [
-                          if (_sortMode == mode)
-                            const Icon(Icons.check, size: AppIconSizes.sm)
-                          else
-                            const SizedBox(width: AppIconSizes.sm),
-                          const SizedBox(width: AppSpacing.md),
-                          Text(mode.label,
-                              style: Theme.of(context).textTheme.bodyLarge),
-                        ],
-                      ),
-                    ),
-                ],
-                child: const GlassPill(
+              if (inline) ...[
+                const SizedBox(width: AppSpacing.md),
+                _sortMenu(const GlassPill(
                   onTap: null,
                   padding: EdgeInsets.all(10),
                   child: Icon(Icons.sort, size: AppIconSizes.md),
-                ),
-              ),
+                )),
+              ],
             ],
           ),
         );
+  }
+
+  /// 並び替えのメニュー（[child] を押すと開く）
+  Widget _sortMenu(Widget child) => PopupMenuButton<ItemSortMode>(
+        tooltip: '並び替え',
+        onSelected: (mode) => setState(() => _sortMode = mode),
+        itemBuilder: (_) => [
+          for (final mode in ItemSortMode.values)
+            PopupMenuItem(
+              value: mode,
+              child: Row(
+                children: [
+                  if (_sortMode == mode)
+                    const Icon(Icons.check, size: AppIconSizes.sm)
+                  else
+                    const SizedBox(width: AppIconSizes.sm),
+                  const SizedBox(width: AppSpacing.md),
+                  Text(mode.label,
+                      style: Theme.of(context).textTheme.bodyLarge),
+                ],
+              ),
+            ),
+        ],
+        child: child,
+      );
+
+  /// 縦画面の検索の行の出し入れ。閉じるときは検索語を消す（タグの絞り込みは残す）
+  void _toggleSearch() {
+    setState(() => _searchOpen = !_searchOpen);
+    if (_searchOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    } else {
+      _searchFocusNode.unfocus();
+      _searchController.clear();
+      _searchQuery = '';
+    }
   }
 
   /// 見出しの右側: 表示の切り替え（タブごと）・設定。
@@ -629,7 +664,24 @@ class _ListScreenState extends ConsumerState<ListScreen>
           tooltip: _playlistGrid ? 'リスト表示へ' : 'グリッド表示へ',
         ),
     };
+    final portraitItems = _tab == _tabItems &&
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+    // 閉じていても絞り込み中なら緑（隠れた所で絞っていると分かるように）
+    final filtering = _searchQuery.isNotEmpty ||
+        ref.watch(tagFilterProvider).isNotEmpty;
     return [
+      if (portraitItems) ...[
+        IconButton(
+          icon: Icon(_searchOpen ? Icons.search_off : Icons.search),
+          color: filtering ? AppTheme.accentGreen : null,
+          onPressed: _toggleSearch,
+          tooltip: _searchOpen ? '検索を閉じる' : '検索',
+        ),
+        _sortMenu(const Padding(
+          padding: EdgeInsets.all(AppSpacing.sm),
+          child: Icon(Icons.sort),
+        )),
+      ],
       viewButton,
       IconButton(
         icon: const Icon(Icons.settings, size: AppIconSizes.ml),

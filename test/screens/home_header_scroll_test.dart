@@ -35,8 +35,9 @@ void main() {
   });
   tearDownAll(() => Hive.close());
 
-  Future<void> pump(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(900, 400);
+  Future<void> pump(WidgetTester tester,
+      {Size size = const Size(900, 400)}) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
@@ -111,5 +112,38 @@ void main() {
     final button = tester.getRect(find.byType(TagFilterButton));
     expect(button.center.dy, closeTo(searchRect(tester).center.dy, 1));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('縦画面は検索を隠しておき、見出しの検索ボタンで出す。どのタブも一覧の高さは同じ',
+      (tester) async {
+    await pump(tester, size: const Size(400, 800));
+    expect(find.byType(GlassSearchField), findsNothing);
+    // 曲タブ（初期）とプレイリストタブで一覧の上端が同じ
+    final itemsTop = tester.getRect(find.byType(ListView).first).top;
+    await tester.tap(find.text('プレイリスト'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('検索'), findsNothing, reason: '曲タブだけ');
+    await tester.tap(find.text('曲'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byType(ListView).first).top, itemsTop);
+
+    // 一覧の先頭の曲（並びは更新順なので見えているものから取る）
+    final first = tester
+        .widgetList<Text>(find.descendant(
+            of: find.byType(ListView).first,
+            matching: find.textContaining('曲')))
+        .first
+        .data!;
+    await tester.tap(find.byTooltip('検索'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GlassSearchField), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'ない曲名');
+    await tester.pumpAndSettle();
+    expect(find.text(first), findsNothing);
+    // 閉じると検索語は消える
+    await tester.tap(find.byTooltip('検索を閉じる'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GlassSearchField), findsNothing);
+    expect(find.text(first), findsWidgets);
   });
 }
