@@ -26,7 +26,7 @@ class SingleMoreSheet extends ConsumerStatefulWidget {
   final ValueChanged<bool> onHideVideoChanged;
 
   static Future<void> show(BuildContext context, SingleMoreSheet sheet) {
-    return AppSheets.show<void>(context, builder: (_) => sheet);
+    return AppSheets.popup<void>(context, builder: (_) => sheet);
   }
 
   @override
@@ -88,6 +88,7 @@ class _SingleMoreSheetState extends ConsumerState<SingleMoreSheet> {
               MoreTile(
                 icon: Icons.file_download_outlined,
                 label: loop.hasBothPoints ? '区間を書き出し' : '全体を書き出し',
+                corner: Icons.chevron_right,
                 enabled: hasSource,
                 onTap: () {
                   Navigator.pop(context);

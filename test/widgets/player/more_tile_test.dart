@@ -100,6 +100,66 @@ void main() {
     expect(taps, 0);
   });
 
+  testWidgets('開くタイルは右上に ›、選ぶタイルは ▾。光るのはオンオフだけ', (tester) async {
+    await pump(
+        tester,
+        MoreTileGrid(tiles: [
+          MoreTile(
+              icon: Icons.tune,
+              label: 'AB区間',
+              corner: Icons.chevron_right,
+              onTap: () {}),
+          PickerTile<int>(
+            icon: Icons.campaign,
+            label: '効果音',
+            values: const [1, 2],
+            selected: 2,
+            labelOf: (v) => '値$v',
+            onPicked: (_) {},
+          ),
+        ]),
+        size: const Size(400, 800));
+    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_drop_down), findsOneWidget);
+    expect(find.text('値2'), findsOneWidget);
+    final ab = tileRect(tester, 'AB区間');
+    final mark = tester.getRect(find.byIcon(Icons.chevron_right));
+    expect(mark.right, lessThanOrEqualTo(ab.right));
+    expect(mark.top, greaterThanOrEqualTo(ab.top));
+    expect(mark.center.dx, greaterThan(ab.center.dx), reason: '右上');
+    expect(mark.center.dy, lessThan(ab.center.dy));
+  });
+
+  testWidgets('小さめのタイルは少し横長で、縦の電話では幅が違っても 3 列、横向きでは 5 列', (tester) async {
+    List<Widget> dense() => [
+          for (var i = 1; i <= 10; i++)
+            MoreTile(icon: Icons.star, label: 'ドロップ合わせ$i', dense: true, onTap: () {}),
+        ];
+    // 幅の上限で決めると 4 列になっていた幅（432 の電話のダイアログの中身 = 360）
+    for (final width in [300.0, 360.0]) {
+      await pump(
+          tester,
+          SizedBox(width: width, child: MoreTileGrid(dense: true, tiles: dense())),
+          size: const Size(400, 800));
+      final t1 = tileRect(tester, 'ドロップ合わせ1');
+      final t3 = tileRect(tester, 'ドロップ合わせ3');
+      final t4 = tileRect(tester, 'ドロップ合わせ4');
+      expect(t3.top, t1.top, reason: '$width');
+      expect(t4.top, greaterThan(t1.bottom), reason: '$width');
+      expect(t1.width / t1.height, closeTo(MoreTileGrid.denseAspect, 0.02));
+      expect(tester.takeException(), isNull, reason: '7 文字のラベルが溢れない');
+    }
+    await pump(
+        tester,
+        SizedBox(width: 560, child: MoreTileGrid(dense: true, tiles: dense())),
+        size: const Size(800, 360));
+    final t1 = tileRect(tester, 'ドロップ合わせ1');
+    final t5 = tileRect(tester, 'ドロップ合わせ5');
+    final t6 = tileRect(tester, 'ドロップ合わせ6');
+    expect(t5.top, t1.top);
+    expect(t6.top, greaterThan(t1.bottom));
+  });
+
   testWidgets('速度のタイルは今の値を出し、押すとその場のメニューで選べる', (tester) async {
     double? picked;
     await pump(

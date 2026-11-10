@@ -45,6 +45,7 @@ class FullscreenPlayerView extends StatelessWidget {
     required this.onExit,
     required this.onSubtitleLongPress,
     required this.onRetryWaveform,
+    this.onMore,
     this.onPrev,
     this.onNext,
     this.isPlaylist = false,
@@ -70,6 +71,9 @@ class FullscreenPlayerView extends StatelessWidget {
   final VoidCallback onExit;
   final VoidCallback onSubtitleLongPress;
   final VoidCallback onRetryWaveform;
+
+  /// 「その他」メニュー（下の板の右端、ピンの隣）。null なら出さない
+  final VoidCallback? onMore;
 
   /// プレイリストの前後の曲（[isPlaylist] のときだけ出す。null なら無効）
   final VoidCallback? onPrev;
@@ -395,15 +399,23 @@ class FullscreenPlayerView extends StatelessWidget {
         );
       }),
     ]);
-    // コントロールの固定（留めると自動で消えない）
-    final pin = onToggleOverlayPin == null
-        ? const SizedBox.shrink()
-        : _PanelIcon(
-            icon: overlayPinned ? Icons.push_pin : Icons.push_pin_outlined,
-            on: overlayPinned,
-            tooltip: overlayPinned ? 'コントロールの固定を外す' : 'コントロールを固定する',
-            onPressed: onToggleOverlayPin!,
-          );
+    // 右端: その他メニュー + コントロールの固定（留めると自動で消えない）
+    final pin = Row(mainAxisSize: MainAxisSize.min, children: [
+      if (onMore != null)
+        _PanelIcon(
+          icon: Icons.more_horiz,
+          on: false,
+          tooltip: 'その他',
+          onPressed: onMore!,
+        ),
+      if (onToggleOverlayPin != null)
+        _PanelIcon(
+          icon: overlayPinned ? Icons.push_pin : Icons.push_pin_outlined,
+          on: overlayPinned,
+          tooltip: overlayPinned ? 'コントロールの固定を外す' : 'コントロールを固定する',
+          onPressed: onToggleOverlayPin!,
+        ),
+    ]);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

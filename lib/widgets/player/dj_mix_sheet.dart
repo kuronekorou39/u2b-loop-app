@@ -1,27 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/audio/dj_level.dart';
-
 import '../../core/audio/crossfade_curve.dart';
+import '../../core/audio/dj_level.dart';
 import '../../core/audio/transition_effect.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_sheets.dart';
 import '../../providers/player_provider.dart';
 import '../../screens/settings/dj_mix_settings_screen.dart';
+import 'more_tile.dart';
 import 'sfx_offset_stepper.dart';
 
-/// 再生画面から開く「DJ ミックス」のシート。
+/// 再生画面から開く「DJ ミックス」のポップアップ。
 ///
 /// 設定の DJ ミックスのページと同じ値（クロスフェード / つなぎ方 / ドロップに合わせる /
 /// テンポ合わせ / ベーススワップ / 切り替えの演出）を、聴きながらその場で変えるためのもの。
 /// 変更は次の切り替わりから効く（PlaylistEngine は交差を始めるときに設定を読む）。
-/// クロスフェードがオフのときは他の項目は触れない
+///
+/// スクロールせずに収まるよう、上にレベル、真ん中に小さめのタイル（オンオフは光る、
+/// 候補から選ぶものはプルダウン）、下に効果音のタイミング。
+/// 拍の線・音量の線の表示はデッキの板の下の行にあるのでここには無い。
+/// クロスフェードがオフのときは他の項目は触れない。おまかせ中は手動の項目は触れない
 class DjMixSheet extends ConsumerWidget {
   const DjMixSheet({super.key});
 
   static Future<void> show(BuildContext context) {
-    return AppSheets.show<void>(
+    return AppSheets.popup<void>(
       context,
       builder: (_) => const DjMixSheet(),
     );
@@ -29,15 +33,14 @@ class DjMixSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final textTheme = Theme.of(context).textTheme;
     final crossfade = ref.watch(crossfadeProvider);
     final on = crossfade != 0;
-    final curve = ref.watch(crossfadeCurveProvider);
     final effect = ref.watch(transitionEffectProvider);
-    final sfxLevel = ref.watch(sfxLevelProvider);
     final auto = ref.watch(autoMixProvider);
     final manual = on && !auto;
-    const autoNote = 'おまかせ中は曲に合わせて自動で決まる';
     final sfxOn = on && (auto || effect.usesSfx);
+    final level = ref.watch(djLevelProvider);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return SafeArea(
@@ -46,200 +49,147 @@ class DjMixSheet extends ConsumerWidget {
         padding: EdgeInsets.only(bottom: bottomInset + AppSpacing.md),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 控えめ・普通・ガチ。どれとも一致しなければどれも選ばれていない（カスタム）
-            _SectionLabel(
-              icon: Icons.tune,
-              label:
-                  'つなぎ方のレベル${ref.watch(djLevelProvider) == null ? '（カスタム）' : ''}',
-            ),
-            _Chips<DjLevel?>(
-              values: DjLevel.values,
-              selected: ref.watch(djLevelProvider),
-              label: (l) => l!.label,
-              onSelected: (l) => applyDjLevel(ref, l!),
-            ),
-            const Divider(),
-            const _SectionLabel(
-              icon: Icons.multitrack_audio,
-              label: 'クロスフェード',
-            ),
-            _Chips<int>(
-              values: CrossfadeNotifier.options,
-              selected: crossfade,
-              label: DjMixSettingsScreen.crossfadeLabel,
-              onSelected: (v) => ref.read(crossfadeProvider.notifier).value = v,
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.auto_mode),
-              title: const Text('おまかせ'),
-              value: auto,
-              onChanged: on
-                  ? (v) => ref.read(autoMixProvider.notifier).value = v
-                  : null,
-            ),
-            const Divider(),
-            _SectionLabel(
-              icon: Icons.show_chart,
-              label: 'つなぎ方',
-              hint: manual
-                  ? null
-                  : on
-                      ? autoNote
-                      : 'クロスフェードをオンにすると使えます',
-              enabled: manual,
-            ),
-            _Chips<CrossfadeCurve>(
-              values: CrossfadeCurve.values,
-              selected: curve,
-              label: (c) => c.label,
-              onSelected: manual
-                  ? (v) => ref.read(crossfadeCurveProvider.notifier).value = v
-                  : null,
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.trending_up),
-              title: const Text('ドロップに合わせる'),
-              value: ref.watch(mixPointAlignProvider),
-              onChanged: on
-                  ? (v) => ref.read(mixPointAlignProvider.notifier).value = v
-                  : null,
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.login),
-              title: const Text('出入り口を選ぶ'),
-              value: ref.watch(smartEntryProvider),
-              onChanged: on
-                  ? (v) => ref.read(smartEntryProvider.notifier).value = v
-                  : null,
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.speed),
-              title: const Text('テンポ合わせ'),
-              value: ref.watch(tempoMatchProvider),
-              onChanged: manual
-                  ? (v) => ref.read(tempoMatchProvider.notifier).value = v
-                  : null,
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.align_horizontal_center),
-              title: const Text('拍合わせ'),
-              value: ref.watch(beatMatchProvider),
-              onChanged: manual
-                  ? (v) => ref.read(beatMatchProvider.notifier).value = v
-                  : null,
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.view_week_outlined),
-              title: const Text('拍の線を表示'),
-              value: ref.watch(showBeatLinesProvider),
-              onChanged: (v) =>
-                  ref.read(showBeatLinesProvider.notifier).value = v,
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.ssid_chart),
-              title: const Text('音量の線を表示'),
-              value: ref.watch(showMixCurvesProvider),
-              onChanged: (v) =>
-                  ref.read(showMixCurvesProvider.notifier).value = v,
-            ),
-            const Divider(),
-            SwitchListTile(
-              secondary: const Icon(Icons.graphic_eq),
-              title: const Text('ベーススワップ'),
-              value: ref.watch(bassSwapProvider),
-              onChanged: manual
-                  ? (v) => ref.read(bassSwapProvider.notifier).value = v
-                  : null,
-            ),
-            _SectionLabel(
-              icon: Icons.auto_awesome,
-              label: '切り替えの演出',
-              hint: manual
-                  ? null
-                  : on
-                      ? autoNote
-                      : 'クロスフェードをオンにすると使えます',
-              enabled: manual,
-            ),
-            _Chips<TransitionEffect>(
-              values: TransitionEffect.values,
-              selected: effect,
-              label: (e) => e.label,
-              onSelected: manual
-                  ? (v) =>
-                      ref.read(transitionEffectProvider.notifier).value = v
-                  : null,
-            ),
-            _SectionLabel(
-              icon: Icons.campaign,
-              label: '効果音の音量',
-              hint: sfxOn ? null : '効果音を使う演出で使えます',
-              enabled: sfxOn,
-            ),
-            _Chips<int>(
-              values: SfxLevelNotifier.options,
-              selected: sfxLevel,
-              label: SfxLevelNotifier.label,
-              onSelected: sfxOn
-                  ? (v) => ref.read(sfxLevelProvider.notifier).value = v
-                  : null,
-            ),
-            _SectionLabel(
-              icon: Icons.timer_outlined,
-              label: '効果音のタイミング',
-              hint: sfxOn ? null : '効果音を使う演出で使えます',
-              enabled: sfxOn,
-            ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl, AppSpacing.xs, AppSpacing.xl, AppSpacing.xs),
-              child: SfxOffsetStepper(enabled: sfxOn),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 見出し（アイコン + 名前）。[hint] は触れない理由だけ（説明は出さない）
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({
-    required this.icon,
-    required this.label,
-    this.hint,
-    this.enabled = true,
-  });
-
-  final IconData icon;
-  final String label;
-  final String? hint;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Opacity(
-      opacity: enabled ? 1 : 0.45,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, 0),
-        child: Row(
-          children: [
-            Icon(icon, size: AppIconSizes.lg),
-            const SizedBox(width: AppSpacing.xl),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: Row(
                 children: [
-                  Text(label, style: textTheme.bodyLarge),
-                  if (hint != null)
-                    Text(hint!,
-                        style: textTheme.labelSmall,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
+                  const Icon(Icons.tune, size: AppIconSizes.lg),
+                  const SizedBox(width: AppSpacing.lg),
+                  Expanded(
+                    child: Wrap(
+                      spacing: AppSpacing.sm,
+                      children: [
+                        // 選択中はタイルのオンと同じ緑（赤だと「何かが起きている」ように見える）
+                        for (final l in DjLevel.values)
+                          ChoiceChip(
+                            label: Text(l.label),
+                            selected: l == level,
+                            showCheckmark: false,
+                            selectedColor: AppTheme.accentGreen.withValues(alpha: 0.18),
+                            labelStyle: textTheme.labelMedium?.copyWith(
+                              color: l == level ? AppTheme.accentGreen : null,
+                              fontWeight: l == level ? FontWeight.bold : null,
+                            ),
+                            side: l == level
+                                ? const BorderSide(color: Colors.transparent)
+                                : null,
+                            onSelected: (_) => applyDjLevel(ref, l),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            MoreTileGrid(dense: true, tiles: [
+              PickerTile<int>(
+                icon: Icons.multitrack_audio,
+                label: 'クロスフェード',
+                values: CrossfadeNotifier.options,
+                selected: crossfade,
+                labelOf: DjMixSettingsScreen.crossfadeLabel,
+                onPicked: (v) => ref.read(crossfadeProvider.notifier).value = v,
+                dense: true,
+              ),
+              MoreTile(
+                icon: Icons.auto_mode,
+                label: 'おまかせ',
+                active: auto,
+                enabled: on,
+                dense: true,
+                onTap: () => ref.read(autoMixProvider.notifier).value = !auto,
+              ),
+              PickerTile<CrossfadeCurve>(
+                icon: Icons.show_chart,
+                label: 'つなぎ方',
+                values: CrossfadeCurve.values,
+                selected: ref.watch(crossfadeCurveProvider),
+                labelOf: (c) => c.label,
+                onPicked: (v) =>
+                    ref.read(crossfadeCurveProvider.notifier).value = v,
+                enabled: manual,
+                dense: true,
+              ),
+              _Toggle(
+                icon: Icons.trending_up,
+                label: 'ドロップ合わせ',
+                value: ref.watch(mixPointAlignProvider),
+                onChanged: (v) =>
+                    ref.read(mixPointAlignProvider.notifier).value = v,
+                enabled: on,
+              ),
+              _Toggle(
+                icon: Icons.login,
+                label: '出入り口',
+                value: ref.watch(smartEntryProvider),
+                onChanged: (v) => ref.read(smartEntryProvider.notifier).value = v,
+                enabled: on,
+              ),
+              _Toggle(
+                icon: Icons.speed,
+                label: 'テンポ合わせ',
+                value: ref.watch(tempoMatchProvider),
+                onChanged: (v) => ref.read(tempoMatchProvider.notifier).value = v,
+                enabled: manual,
+              ),
+              _Toggle(
+                icon: Icons.align_horizontal_center,
+                label: '拍合わせ',
+                value: ref.watch(beatMatchProvider),
+                onChanged: (v) => ref.read(beatMatchProvider.notifier).value = v,
+                enabled: manual,
+              ),
+              _Toggle(
+                icon: Icons.graphic_eq,
+                label: 'ベーススワップ',
+                value: ref.watch(bassSwapProvider),
+                onChanged: (v) => ref.read(bassSwapProvider.notifier).value = v,
+                enabled: manual,
+              ),
+              PickerTile<TransitionEffect>(
+                icon: Icons.auto_awesome,
+                label: '演出',
+                values: TransitionEffect.values,
+                selected: effect,
+                labelOf: (e) => e.label,
+                onPicked: (v) =>
+                    ref.read(transitionEffectProvider.notifier).value = v,
+                enabled: manual,
+                dense: true,
+              ),
+              PickerTile<int>(
+                icon: Icons.campaign,
+                label: '効果音',
+                values: SfxLevelNotifier.options,
+                selected: ref.watch(sfxLevelProvider),
+                labelOf: SfxLevelNotifier.label,
+                onPicked: (v) => ref.read(sfxLevelProvider.notifier).value = v,
+                enabled: sfxOn,
+                dense: true,
+              ),
+            ]),
+            const SizedBox(height: AppSpacing.sm),
+            // 効果音のタイミングの補正（−/+ なのでタイルにはしない）
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: Row(
+                children: [
+                  Icon(Icons.timer_outlined,
+                      size: AppIconSizes.lg,
+                      color: sfxOn ? null : AppTheme.muted(context)),
+                  const SizedBox(width: AppSpacing.lg),
+                  Expanded(
+                    child: Text('効果音のずれ',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodyMedium?.copyWith(
+                            color: sfxOn ? null : AppTheme.muted(context))),
+                  ),
+                  SfxOffsetStepper(enabled: sfxOn),
                 ],
               ),
             ),
@@ -250,39 +200,29 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _Chips<T> extends StatelessWidget {
-  const _Chips({
-    required this.values,
-    required this.selected,
+/// オンオフの設定 1 つ分のタイル（押すと反転して保存）
+class _Toggle extends StatelessWidget {
+  const _Toggle({
+    required this.icon,
     required this.label,
-    required this.onSelected,
+    required this.value,
+    required this.onChanged,
+    required this.enabled,
   });
 
-  final List<T> values;
-  final T selected;
-  final String Function(T) label;
-
-  /// null なら全部無効
-  final ValueChanged<T>? onSelected;
+  final IconData icon;
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool enabled;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.xs),
-      child: Wrap(
-        spacing: AppSpacing.sm,
-        children: [
-          for (final v in values)
-            ChoiceChip(
-              label: Text(label(v)),
-              selected: v == selected,
-              onSelected:
-                  onSelected == null ? null : (_) => onSelected!(v),
-              visualDensity: VisualDensity.compact,
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => MoreTile(
+        icon: icon,
+        label: label,
+        active: value,
+        enabled: enabled,
+        dense: true,
+        onTap: () => onChanged(!value),
+      );
 }

@@ -88,6 +88,18 @@ class AppSheets {
     );
   }
 
+  /// ボタンの集まり（その他メニュー・DJ ミックス）。向きに関係なく真ん中のダイアログで出す。
+  /// 中身は [show] の低い画面のときと同じ（padding / viewPadding は 0）
+  static Future<T?> popup<T>(
+    BuildContext context, {
+    required WidgetBuilder builder,
+  }) {
+    return showDialog<T>(
+      context: context,
+      builder: (_) => SheetDialog(child: Builder(builder: builder)),
+    );
+  }
+
   /// 見出し（[title] / [subtitle]）と行の並びを出す。[note] は末尾の補足文
   static Future<void> actions(
     BuildContext context, {

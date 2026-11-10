@@ -1553,6 +1553,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onExit: _exitFullscreen,
       onSubtitleLongPress: _showSubtitleLanguagePicker,
       onRetryWaveform: _retryWaveform,
+      onMore: _isPlaylist ? _showMoreSheet : _showSingleMoreSheet,
       // 普段と同じシークバー（時刻の行で波形の開閉・DJ）。全画面は低めの波形
       seekbar: _isPlaylist
           ? _playlistSeekArea(_fullscreenSeekHeight, fullscreen: true)

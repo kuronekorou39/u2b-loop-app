@@ -4,15 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_sheets.dart';
 import '../../core/utils/rate_label.dart';
-import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../screens/settings/dj_mix_settings_screen.dart';
 import 'more_tile.dart';
 import 'player_controls.dart';
 import 'volume_slider.dart';
 
-/// プレイリスト再生画面の「その他」シート。
-/// 下部コントローラーから外した補助機能（AB区間・DJ ミックス・保存・速度・
-/// 音量正規化・動画の表示切替）を四角いタイルで並べ、音量は一番上に 1 行。
+/// プレイリスト再生画面の「その他」メニュー（向きに関係なく真ん中のポップアップ）。
+/// 下部コントローラーから外した補助機能を四角いタイルで並べ、音量は一番上に 1 行。
+/// 1 行目は別の画面を開くもの（AB区間・DJ ミックス・保存。右上に ›）、
+/// 2 行目はその場で変わるもの（速度はプルダウン、音量正規化・動画はオンオフで緑に光る）。
 /// 1 番だけはコントローラーのボタン（長押しで手直し・自動に戻す）なのでここには無い。
 /// 波形の表示切替はシークバー右下のボタン。
 ///
@@ -46,7 +47,7 @@ class PlayerMoreSheet extends ConsumerStatefulWidget {
   static const speeds = PlayerControls.speeds;
 
   static Future<void> show(BuildContext context, PlayerMoreSheet sheet) {
-    return AppSheets.show<void>(context, builder: (_) => sheet);
+    return AppSheets.popup<void>(context, builder: (_) => sheet);
   }
 
   @override
@@ -61,8 +62,7 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
     final hasSource = ref.watch(videoSourceProvider) != null;
     final volumeNorm = ref.watch(volumeNormProvider);
     final rate = ref.watch(rateProvider).valueOrNull ?? 1.0;
-    final loop = ref.watch(loopProvider);
-    final mixing = ref.watch(crossfadeProvider) > 0;
+    final crossfade = ref.watch(crossfadeProvider);
 
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
@@ -75,11 +75,12 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
           children: [
             const VolumeSliderRow(),
             const SizedBox(height: AppSpacing.md),
+            // 1 行目は別の画面を開くもの（›）、2 行目はその場で変わるもの
             MoreTileGrid(tiles: [
               MoreTile(
                 icon: Icons.tune,
                 label: 'AB区間',
-                active: loop.hasBothPoints,
+                corner: Icons.chevron_right,
                 onTap: () {
                   Navigator.pop(context);
                   widget.onEditAb();
@@ -88,7 +89,8 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
               MoreTile(
                 icon: Icons.multitrack_audio,
                 label: 'DJ ミックス',
-                active: mixing,
+                value: DjMixSettingsScreen.crossfadeLabel(crossfade),
+                corner: Icons.chevron_right,
                 onTap: () {
                   Navigator.pop(context);
                   widget.onDjMix();
@@ -98,6 +100,7 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
                 MoreTile(
                   icon: Icons.download_outlined,
                   label: '保存',
+                  corner: Icons.chevron_right,
                   onTap: () {
                     Navigator.pop(context);
                     widget.onSave!();
@@ -134,7 +137,6 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
 }
 
 /// 速度のタイル。今の値を出し、押すとその場に候補のメニュー
-/// （候補を並べると見づらいのでプルダウン）
 class SpeedTile extends StatelessWidget {
   const SpeedTile({
     super.key,
@@ -147,36 +149,18 @@ class SpeedTile extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final bool enabled;
 
-  Future<void> _open(BuildContext context) async {
-    final box = context.findRenderObject() as RenderBox;
-    final overlay =
-        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-    final rect = Rect.fromPoints(
-      box.localToGlobal(Offset.zero, ancestor: overlay),
-      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
-    );
-    final picked = await showMenu<double>(
-      context: context,
-      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
-      initialValue: rate,
-      items: [
-        for (final s in PlayerMoreSheet.speeds)
-          PopupMenuItem(value: s, child: Text(rateLabel(s))),
-      ],
-    );
-    if (picked != null) onChanged(picked);
-  }
-
   @override
-  Widget build(BuildContext context) => Builder(
-        builder: (ctx) => MoreTile(
-          icon: Icons.speed,
-          label: '速度',
-          value: rateLabel(rate),
-          active: enabled && !sameRate(rate, 1.0),
-          enabled: enabled,
-          onTap: () => _open(ctx),
-        ),
+  Widget build(BuildContext context) => PickerTile<double>(
+        icon: Icons.speed,
+        label: '速度',
+        values: PlayerMoreSheet.speeds,
+        selected: PlayerMoreSheet.speeds
+                .where((s) => sameRate(s, rate))
+                .firstOrNull ??
+            rate,
+        labelOf: rateLabel,
+        enabled: enabled,
+        onPicked: onChanged,
       );
 }
 
