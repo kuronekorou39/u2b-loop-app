@@ -5,8 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_snack_bar.dart';
-import '../models/loop_item.dart';
-import '../providers/easter_egg_provider.dart';
+import '../providers/debug_mode_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/cache_service.dart';
@@ -63,15 +62,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ─── アプリ情報 ───
 
-  void _onVersionTap() {
+  /// バージョン行を続けて 5 回押すとデバッグモード（詳細設定に「デバッグ」の群が出る）
+  /// 戻り値はデバッグモードに入ったか（その回は更新確認の通知で上書きしない）
+  bool _onVersionTap() {
     _versionTapCount++;
-    if (_versionTapCount < 5) return;
+    if (_versionTapCount < 5) return false;
     _versionTapCount = 0;
-    final unlocked = ref.read(easterEggProvider.notifier).unlockStats();
-    if (unlocked) {
-      _toast(AppSnackBar.success('🎉 隠しステータスがアンロックされました！'));
-    }
-    _showStatsScreen();
+    ref.read(debugModeProvider.notifier).enable();
+    _toast(AppSnackBar.success('デバッグモードをオンにしました（詳細設定の中）'));
+    return true;
   }
 
   @override
@@ -153,9 +152,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: 'アップデートを確認',
                   subtitle: 'v$version',
                   onTap: () {
-                    _onVersionTap();
-                    UpdateService.checkForUpdate(context);
+                    if (_onVersionTap()) return;
                     _toast(AppSnackBar.info('最新版を確認中...'));
+                    UpdateService.checkForUpdate(context, manual: true);
                   },
                 );
               },
@@ -163,101 +162,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             SettingsRow(
               icon: Icons.tune,
               title: '詳細設定',
-              subtitle: '表示 · 危険な操作 · 開発者向け',
+              subtitle: ref.watch(debugModeProvider)
+                  ? '表示 · 再生 · 危険な操作 · デバッグ'
+                  : '表示 · 再生 · 危険な操作',
               onTap: () => _push(const AdvancedSettingsScreen()),
             ),
           ],
         ),
       ],
-    );
-  }
-
-  // ─── 隠しステータス画面 ───
-
-  void _showStatsScreen() {
-    final items = AppBoxes.loopItems.values.toList();
-    final playlists = AppBoxes.playlists.values.toList();
-    final tags = AppBoxes.tags.values.toList();
-
-    // 集計
-    final totalItems = items.length;
-    final totalPlaylists = playlists.length;
-    final totalTags = tags.length;
-    final totalPlayCount =
-        items.fold<int>(0, (sum, i) => sum + i.playCount);
-    final totalRegions =
-        items.fold<int>(0, (sum, i) => sum + i.regions.length);
-    final youtubeCount =
-        items.where((i) => i.isYouTube).length;
-    final localCount = items.where((i) => i.isLocal).length;
-
-    // 最もリピートした曲
-    LoopItem? mostPlayed;
-    if (items.isNotEmpty) {
-      mostPlayed = items.reduce(
-          (a, b) => a.playCount >= b.playCount ? a : b);
-    }
-
-    // 最古のアイテム
-    LoopItem? oldest;
-    if (items.isNotEmpty) {
-      oldest = items.reduce(
-          (a, b) => a.createdAt.isBefore(b.createdAt) ? a : b);
-    }
-
-    // 総再生時間の推定（再生カウント × 平均3分）
-    final estimatedMinutes = totalPlayCount * 3;
-
-    final textTheme = Theme.of(context).textTheme;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.analytics_outlined, size: 20),
-            const SizedBox(width: 8),
-            Text('隠しステータス', style: textTheme.titleMedium),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _statLine('登録曲数', '$totalItems 曲（YouTube: $youtubeCount / ローカル: $localCount）'),
-              _statLine('プレイリスト', '$totalPlaylists 個'),
-              _statLine('タグ', '$totalTags 個'),
-              _statLine('AB区間', '$totalRegions 個'),
-              _statLine('総再生回数', '$totalPlayCount 回'),
-              _statLine('推定練習時間', '約${estimatedMinutes ~/ 60}時間${estimatedMinutes % 60}分'),
-              if (mostPlayed != null && mostPlayed.playCount > 0)
-                _statLine('最多リピート', '${mostPlayed.title}（${mostPlayed.playCount}回）'),
-              if (oldest != null)
-                _statLine('最古の登録', '${oldest.createdAt.year}/${oldest.createdAt.month}/${oldest.createdAt.day}'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('閉じる'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statLine(String label, String value) {
-    final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: textTheme.labelSmall),
-          Text(value, style: textTheme.bodyMedium),
-        ],
-      ),
     );
   }
 }

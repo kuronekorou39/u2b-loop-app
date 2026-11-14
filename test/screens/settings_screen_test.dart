@@ -193,6 +193,41 @@ void main() {
     expect(find.textContaining('ブレーキ'), findsOneWidget);
   });
 
+  testWidgets('バージョン行を 5 回押すとデバッグモード。詳細設定にデバッグの群が出て、終了で消える',
+      (tester) async {
+    await pumpPage(tester, const SettingsScreen());
+    expect(find.textContaining('デバッグ'), findsNothing);
+
+    // ふだんは詳細設定にデバッグの群が無い
+    await tester.tap(find.text('詳細設定'));
+    await tester.pumpAndSettle();
+    expect(find.text('テスト版も受け取る'), findsNothing);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    for (var i = 0; i < 5; i++) {
+      await tester.tap(find.text('アップデートを確認'));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.debugMode), true);
+
+    await tester.tap(find.text('詳細設定'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('デバッグモードを終了'), 200,
+        scrollable: find.byType(Scrollable).last);
+    await tester.tap(find.text('テスト版も受け取る'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.betaUpdates), true);
+
+    // 終了すると群が消え、中の設定も切れる
+    await tester.tap(find.text('デバッグモードを終了'));
+    await tester.pumpAndSettle();
+    expect(find.text('テスト版も受け取る'), findsNothing);
+    expect(AppBoxes.settings.get(SettingsKeys.debugMode), false);
+    expect(AppBoxes.settings.get(SettingsKeys.betaUpdates), false);
+  });
+
   testWidgets('バージョンが表示される', (tester) async {
     await pumpPage(tester, const SettingsScreen());
     expect(find.text('v9.9.9'), findsOneWidget);

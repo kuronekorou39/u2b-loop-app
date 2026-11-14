@@ -140,6 +140,9 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
+          # ハイフン付きのタグ（v1.158.0-beta.1）はテスト版 = プレリリース。
+          # アプリの更新確認（releases/latest）には出ず、「テスト版も受け取る」をオンにした端末だけに届く
+          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
           fail_on_unmatched_files: false
           files: |
             u2b-loop-${{ steps.version.outputs.tag }}.apk

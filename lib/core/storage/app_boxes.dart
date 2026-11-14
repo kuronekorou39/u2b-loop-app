@@ -77,6 +77,7 @@ class SettingsKeys {
   /// 全画面のコントロールを出したままにする（上の帯のピン）
   static const fullscreenControlsPinned = 'fullscreen_controls_pinned';
 
-  // 隠しステータスの解放フラグ（設定のバージョン行を 5 回タップ）
-  static const eeStats = 'ee_stats';
+  /// デバッグモード（設定のバージョン行を 5 回タップ）と、その中のテスト版の受け取り
+  static const debugMode = 'debug_mode';
+  static const betaUpdates = 'beta_updates';
 }

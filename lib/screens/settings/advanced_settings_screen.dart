@@ -5,13 +5,15 @@ import '../../core/storage/app_boxes.dart';
 import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../providers/data_provider.dart';
+import '../../providers/debug_mode_provider.dart';
 import '../../providers/glass_provider.dart';
 import '../../providers/perf_overlay_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/settings/hq_audio_log_dialog.dart';
 import '../../widgets/settings/settings_parts.dart';
+import '../../widgets/settings/stats_dialog.dart';
 
-/// 設定「詳細設定」: 表示 / 危険な操作 / 開発者向け（ふだん触らないもの）
+/// 設定「詳細設定」: 表示 / 再生 / 危険な操作。デバッグモードの間は「デバッグ」の群も出る
 class AdvancedSettingsScreen extends ConsumerStatefulWidget {
   const AdvancedSettingsScreen({super.key});
 
@@ -76,9 +78,6 @@ class _AdvancedSettingsScreenState
       await AppBoxes.loopItems.clear();
       await AppBoxes.playlists.clear();
       await AppBoxes.tags.clear();
-      // 隠しステータスの解放もリセット
-      await AppBoxes.settings.delete(SettingsKeys.eeStats);
-
       ref.invalidate(loopItemsProvider);
       ref.invalidate(playlistsProvider);
       ref.invalidate(tagsProvider);
@@ -128,13 +127,6 @@ class _AdvancedSettingsScreenState
                   value: ref.watch(hqAudioProvider),
                   onChanged: (v) => ref.read(hqAudioProvider.notifier).value = v,
                 ),
-                // 高音質が付かない時に、端末だけで原因を追えるように
-                SettingsRow(
-                  icon: Icons.receipt_long,
-                  title: '高音質のログ',
-                  subtitle: '取得と取り付けの記録（直近 80 行）',
-                  onTap: () => HqAudioLogDialog.show(context),
-                ),
               ],
             ),
             // 取り返しのつかない操作は、普段の操作から離してまとめる
@@ -159,19 +151,46 @@ class _AdvancedSettingsScreenState
                 ),
               ],
             ),
-            SettingsGroup(
-              title: '開発者向け',
-              children: [
-                SettingsSwitchRow(
-                  icon: Icons.speed,
-                  title: 'パフォーマンスオーバーレイ',
-                  subtitle: 'FPS・描画負荷を表示',
-                  value: ref.watch(perfOverlayProvider),
-                  onChanged: (_) =>
-                      ref.read(perfOverlayProvider.notifier).toggle(),
-                ),
-              ],
-            ),
+            // バージョン行を 5 回押した端末にだけ出す（ふつうの人が触らないもの）
+            if (ref.watch(debugModeProvider))
+              SettingsGroup(
+                title: 'デバッグ',
+                children: [
+                  // GitHub のプレリリース（-beta のタグ）も更新として知らせる
+                  SettingsSwitchRow(
+                    icon: Icons.science_outlined,
+                    title: 'テスト版も受け取る',
+                    value: ref.watch(betaUpdatesProvider),
+                    onChanged: (v) =>
+                        ref.read(betaUpdatesProvider.notifier).value = v,
+                  ),
+                  SettingsSwitchRow(
+                    icon: Icons.speed,
+                    title: 'パフォーマンスオーバーレイ',
+                    value: ref.watch(perfOverlayProvider),
+                    onChanged: (_) =>
+                        ref.read(perfOverlayProvider.notifier).toggle(),
+                  ),
+                  // 高音質が付かない時に、端末だけで原因を追えるように
+                  SettingsRow(
+                    icon: Icons.receipt_long,
+                    title: '高音質のログ',
+                    onTap: () => HqAudioLogDialog.show(context),
+                  ),
+                  SettingsRow(
+                    icon: Icons.analytics_outlined,
+                    title: '統計',
+                    onTap: () => StatsDialog.show(context),
+                  ),
+                  SettingsRow(
+                    icon: Icons.logout,
+                    title: 'デバッグモードを終了',
+                    showChevron: false,
+                    onTap: () =>
+                        ref.read(debugModeProvider.notifier).disable(),
+                  ),
+                ],
+              ),
           ],
         ),
         if (_busy)
