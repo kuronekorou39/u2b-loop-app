@@ -13,6 +13,7 @@ import '../../providers/glass_provider.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/item_thumbnail.dart';
+import '../../widgets/reorder_handle.dart';
 import '../../widgets/selection_mark.dart';
 import '../../widgets/tag_chip.dart';
 import '../../widgets/thumb_picker_sheet.dart';
@@ -223,13 +224,17 @@ class TagManagerTab extends ConsumerWidget {
             key: ValueKey(tag.id),
             selecting: selecting,
             selected: selected,
-            child: ListTile(
+            // メニューは行の脇に出すので、行の context を取る
+            child: Builder(builder: (rowContext) => ListTile(
             selected: selected,
             // 色の丸は選択中も出したまま（選択の印は右端）
             leading: showThumbs
                 ? _TagThumb(tag: tag, item: thumbOf(tag), size: 48)
                 : _TagDot(tag: tag),
-            title: Text(tag.name, style: textTheme.bodyLarge),
+            title: Text(tag.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodyLarge),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -244,18 +249,10 @@ class TagManagerTab extends ConsumerWidget {
                       IconButton(
                         icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
                         tooltip: 'メニュー',
-                        onPressed: () => _showMenu(context, ref, tag, allItems),
+                        onPressed: () =>
+                            _showMenu(rowContext, ref, tag, allItems),
                       ),
-                      ReorderableDragStartListener(
-                        index: i,
-                        enabled: !selecting,
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.sm),
-                          child: Icon(Icons.drag_handle,
-                              size: AppIconSizes.md,
-                              color: AppTheme.muted(context)),
-                        ),
-                      ),
+                      ReorderHandle(index: i, enabled: !selecting),
                     ],
                   ),
                 ),
@@ -263,7 +260,7 @@ class TagManagerTab extends ConsumerWidget {
             ),
             onTap: () => tap(tag),
             onLongPress: () => onLongPress?.call(tag),
-          ),
+          )),
           );
         },
       ),
@@ -278,6 +275,7 @@ class TagManagerTab extends ConsumerWidget {
     ];
     AppSheets.actions(
       context,
+      anchor: context,
       title: tag.name,
       actions: [
         if (ref.read(tagThumbsProvider) && withThumb.isNotEmpty)

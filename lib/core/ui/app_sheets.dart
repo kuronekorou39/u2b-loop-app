@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'anchored_menu.dart';
 
 /// 下から出るメニュー（アクションシート）の 1 行。
 ///
@@ -100,14 +101,32 @@ class AppSheets {
     );
   }
 
-  /// 見出し（[title] / [subtitle]）と行の並びを出す。[note] は末尾の補足文
+  /// 見出し（[title] / [subtitle]）と行の並びを出す。[note] は末尾の補足文。
+  ///
+  /// 一覧の行の ⋮ から開くときは [anchor] にその行の context を渡す。行のすぐ上か下に
+  /// 小さなメニューで出し、行は明るいまま残す（見れば対象が分かるので見出しは出さない）。
+  /// 行に紐づかないもの・項目が多いものは [anchor] なしで下のシート
   static Future<void> actions(
     BuildContext context, {
     required List<SheetAction> actions,
+    BuildContext? anchor,
     String? title,
     String? subtitle,
     String? note,
   }) {
+    final navigator = Navigator.of(context);
+    final box = anchor != null && anchor.mounted
+        ? anchor.findRenderObject() as RenderBox?
+        : null;
+    if (box != null && box.attached && box.hasSize) {
+      final origin = box.localToGlobal(Offset.zero,
+          ancestor: navigator.context.findRenderObject());
+      return navigator.push<void>(AnchoredMenuRoute<void>(
+        anchorRect: origin & box.size,
+        builder: (ctx) =>
+            _ActionSheet(note: note, actions: actions, popover: true),
+      ));
+    }
     return show<void>(
       context,
       builder: (ctx) => _ActionSheet(
@@ -158,6 +177,7 @@ class _ActionSheet extends StatelessWidget {
     this.title,
     this.subtitle,
     this.note,
+    this.popover = false,
   });
 
   final List<SheetAction> actions;
@@ -165,13 +185,18 @@ class _ActionSheet extends StatelessWidget {
   final String? subtitle;
   final String? note;
 
+  /// 行の脇に出す小さなメニュー（下のインセットを避けない・行を詰める）
+  final bool popover;
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
     return SingleChildScrollView(
-      padding: EdgeInsets.only(bottom: bottom + AppSpacing.md),
+      padding: popover
+          ? const EdgeInsets.symmetric(vertical: AppSpacing.xs)
+          : EdgeInsets.only(bottom: bottom + AppSpacing.md),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -207,6 +232,7 @@ class _ActionSheet extends StatelessWidget {
             else
               ListTile(
                 enabled: a.enabled,
+                visualDensity: popover ? VisualDensity.compact : null,
                 leading: a.icon == null
                     ? null
                     : Icon(a.icon,
@@ -242,8 +268,8 @@ class _ActionSheet extends StatelessWidget {
               ),
           if (note != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl, AppSpacing.md, AppSpacing.xl, 0),
+              padding: EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.md,
+                  AppSpacing.xl, popover ? AppSpacing.md : 0),
               child: Text(note!,
                   style: textTheme.bodySmall?.copyWith(color: dim)),
             ),

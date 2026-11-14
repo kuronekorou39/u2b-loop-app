@@ -84,6 +84,47 @@ void main() {
     });
   }
 
+  testWidgets('リスト: つまみを長押ししてから動かすと並べ替え（選択にはならない）', (tester) async {
+    final (c, longPressed) = await pump(tester, TagViewMode.list);
+    final handles = find.byIcon(Icons.drag_handle);
+    final gesture = await tester.startGesture(tester.getCenter(handles.at(0)));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    expect(longPressed, isEmpty);
+    final to = tester.getCenter(handles.at(2)) + const Offset(0, 20);
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(names(c), ['い', 'う', 'あ', 'え']);
+    expect(longPressed, isEmpty);
+  });
+
+  testWidgets('リスト: ⋮ のメニューは行を隠さずに脇へ出る', (tester) async {
+    await pump(tester, TagViewMode.list);
+    final row = tester.getRect(
+        find.ancestor(of: find.text('い'), matching: find.byType(ListTile)));
+    await tester.tap(find.byIcon(Icons.more_vert).at(1));
+    await tester.pumpAndSettle();
+    final menu = tester.getRect(find.ancestor(
+        of: find.text('名前を変更'),
+        matching: find.byType(SingleChildScrollView)));
+    expect(menu.overlaps(row), isFalse);
+    expect(menu.top, greaterThanOrEqualTo(row.bottom));
+    // 見出しに名前は出さない（行が見えている）
+    expect(find.text('い'), findsOneWidget);
+
+    // 外を押すと閉じる
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(find.text('名前を変更'), findsNothing);
+  });
+
+  testWidgets('リスト: 行の長押しは選択', (tester) async {
+    final (_, longPressed) = await pump(tester, TagViewMode.list);
+    await tester.longPress(find.text('い'));
+    expect(longPressed, ['t1']);
+  });
+
   for (final mode in TagViewMode.values) {
     testWidgets('${mode.label}: 選択に入っても名前の位置と大きさが変わらない', (tester) async {
       await pump(tester, mode);
