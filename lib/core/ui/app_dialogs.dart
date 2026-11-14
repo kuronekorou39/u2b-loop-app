@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import 'app_sheets.dart';
@@ -10,7 +11,10 @@ import 'app_sheets.dart';
 class AppDialogs {
   AppDialogs._();
 
-  /// テキストを入力させる（既定は 1 行）。
+  /// テキストを入力させる。既定（[maxLines] が 1）は改行の入らない 1 つの値だが、
+  /// 長いときは欄の中で折り返して 4 行まで広がる（1 行のまま横に流れると、
+  /// 30 文字を超えたあたりから前後が見えず直しづらい）。Enter は確定。
+  /// [maxLines] を 2 以上にすると改行できる欄（メモなど）
   ///
   /// 戻り値は trim 済みの入力文字列。キャンセル時は null。空文字のときも null
   /// （[allowEmpty] なら '' を返す。メモを消すときなど）。
@@ -131,6 +135,9 @@ class _PromptDialog extends StatefulWidget {
 }
 
 class _PromptDialogState extends State<_PromptDialog> {
+  /// 改行なしの欄が折り返して広がる行数の上限（超えたら欄の中でスクロール）
+  static const _wrapLines = 4;
+
   late final _controller = TextEditingController(text: widget.initialValue);
 
   @override
@@ -151,20 +158,27 @@ class _PromptDialogState extends State<_PromptDialog> {
           if (!over) Navigator.pop(context, _controller.text.trim());
         }
 
+        final singleValue = widget.maxLines == 1;
         return AppFormDialog(
           title: widget.title,
           content: TextField(
             controller: _controller,
             autofocus: true,
-            maxLines: widget.maxLines,
-            minLines: widget.minLines,
+            maxLines: singleValue ? _wrapLines : widget.maxLines,
+            minLines: singleValue ? 1 : widget.minLines,
+            // 複数行の欄でも Enter を改行にしない（貼り付けた改行も入れない）
+            keyboardType: singleValue ? TextInputType.text : null,
+            textInputAction: singleValue ? TextInputAction.done : null,
+            inputFormatters: singleValue
+                ? [FilteringTextInputFormatter.deny(RegExp(r'[\r\n]'))]
+                : null,
             decoration: InputDecoration(
               hintText: widget.hintText,
               isDense: true,
               border: const OutlineInputBorder(),
               errorText: over ? '$length / $maxLength 文字' : null,
             ),
-            onSubmitted: widget.maxLines == 1 ? (_) => submit() : null,
+            onSubmitted: singleValue ? (_) => submit() : null,
           ),
           actions: [
             TextButton(

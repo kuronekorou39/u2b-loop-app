@@ -30,7 +30,9 @@ import 'settings_screen.dart';
 
 /// ホーム。3 つのタブ（タグ / 曲 / プレイリスト）と、曲タブの検索・絞り込み・並び替え。
 /// 「表示」（リスト / グリッド）と「複数選択」はどのタブにもある（選べるものはタブごと:
-/// タグは色変更と削除、曲はプレイリスト追加・タグ・削除、プレイリストは複製と削除）。
+/// タグは検索・色変更・削除、曲はプレイリスト追加・タグ・削除、プレイリストは複製と削除）。
+/// 曲とプレイリストは長押しで選択に入り、タグはタップで選ぶ（長押しは並べ替え）。
+/// 外して 0 件になったら選択は終わる。
 ///
 /// 中身はタブごとに分かれている: タグ [TagManagerTab]、プレイリスト [PlaylistTab]、
 /// 曲の一覧 [ItemCollectionView]、取り込み [YouTubeImportFlow]、
@@ -251,10 +253,30 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   // --- 複数選択（タブ共通） ---
 
+  /// 選択の切り替え。外して 0 件になったら選択をやめる
   void _toggleSelectId(String id) {
     setState(() {
-      if (!_selectedIds.remove(id)) _selectedIds.add(id);
+      if (!_selectedIds.remove(id)) {
+        _selectedIds.add(id);
+      } else if (_selectedIds.isEmpty) {
+        _selectMode = false;
+      }
     });
+  }
+
+  /// 選んだタグで曲を絞り込む（曲タブへ移る）。いまの絞り込みは消さずに「含む」として足す
+  void _searchBySelectedTags() {
+    final ids = ref
+        .read(tagsProvider)
+        .where((t) => _selectedIds.contains(t.id))
+        .map((t) => t.id)
+        .toList();
+    ref.read(tagFilterProvider.notifier).update(
+        (s) => {...s, for (final id in ids) id: true});
+    _clearSelection();
+    // 絞り込んでいると分かるよう、タグの行を出す（検索欄にはフォーカスしない）
+    setState(() => _searchOpen = true);
+    _tabController.animateTo(_tabItems);
   }
 
   void _startSelectId(String id) {
@@ -456,17 +478,6 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             selecting: _isSelecting,
                             selectedIds: _selectedIds,
                             onToggleSelect: (t) => _toggleSelectId(t.id),
-                            onLongPress: (t) => _startSelectId(t.id),
-                            onTagTap: (tag) {
-                              // 曲タブに移動してこのタグでフィルター
-                              ref.read(tagFilterProvider.notifier).state = {
-                                tag.id: true
-                              };
-                              // 絞り込んでいると分かるよう、タグの行を出す
-                              // （検索欄にはフォーカスしない）
-                              setState(() => _searchOpen = true);
-                              _tabController.animateTo(_tabItems);
-                            },
                           ),
                           _buildItemsTab(items, filterTagIds),
                           PlaylistTab(
@@ -710,6 +721,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
     final actions = switch (_tab) {
       _tabTags => [
+          _selectionAction(Icons.search, '検索', _searchBySelectedTags),
           _selectionAction(Icons.palette_outlined, '色', () async {
             await TagManagerTab.recolorTags(context, ref, selectedTags());
           }),

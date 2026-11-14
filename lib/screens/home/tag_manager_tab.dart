@@ -37,29 +37,27 @@ enum TagViewMode {
 }
 
 /// ホームの「タグ」タブ。タグの一覧（リスト / グリッド大 / グリッド小）と、名前・色の変更、削除、並べ替え。
-/// 並べ替えはリストなら右の ≡ をドラッグ、グリッドなら長押ししたまま動かす
-/// （動かさずに離すと長押し = 複数選択）。曲に付いたタグもこの並びで出る
+/// 曲に付いたタグもこの並びで出る
 ///
-/// 行をタップすると [onTagTap]（曲タブへ移ってそのタグで絞り込む）。
-/// 複数選択中（[selecting]）はタップで選択の切替、操作はホームの選択バー側
+/// タップは選択の切り替え（[onToggleSelect]）、長押ししたまま動かすと並べ替え
+/// （リストは右の ≡ なら触れてすぐ動かせる）。長押しで選択には入らない。
+/// 選んだタグでの検索・色・削除はホームの選択バー側（[selecting] は 1 件以上選んでいる間）
 class TagManagerTab extends ConsumerWidget {
   const TagManagerTab({
     super.key,
-    required this.onTagTap,
     this.viewMode = TagViewMode.list,
     this.selecting = false,
     this.selectedIds = const {},
     this.onToggleSelect,
-    this.onLongPress,
   });
-
-  final ValueChanged<Tag> onTagTap;
 
   final TagViewMode viewMode;
   final bool selecting;
   final Set<String> selectedIds;
   final ValueChanged<Tag>? onToggleSelect;
-  final ValueChanged<Tag>? onLongPress;
+
+  /// リストの行の右端の余白（つまみの列の当たり判定はここまで含める）
+  static const _rowEndPadding = AppSpacing.xxl;
 
   /// FAB の「タグを作成」
   static Future<void> createTag(BuildContext context, WidgetRef ref) async {
@@ -179,13 +177,7 @@ class TagManagerTab extends ConsumerWidget {
     final showThumbs = ref.watch(tagThumbsProvider);
     LoopItem? thumbOf(Tag tag) => showThumbs ? tag.thumbItemOf(allItems) : null;
 
-    void tap(Tag tag) {
-      if (selecting) {
-        onToggleSelect?.call(tag);
-      } else {
-        onTagTap(tag);
-      }
-    }
+    void tap(Tag tag) => onToggleSelect?.call(tag);
 
     if (viewMode != TagViewMode.list) {
       return Column(
@@ -201,7 +193,6 @@ class TagManagerTab extends ConsumerWidget {
               selectedIds: selectedIds,
               countOf: countOf,
               onTap: tap,
-              onLongPress: (tag) => onLongPress?.call(tag),
               onReorder: ref.read(tagsProvider.notifier).reorder,
             ),
           ),
@@ -225,8 +216,14 @@ class TagManagerTab extends ConsumerWidget {
             selecting: selecting,
             selected: selected,
             // メニューは行の脇に出すので、行の context を取る
-            child: Builder(builder: (rowContext) => ListTile(
+            // 行の長押しは並べ替え（選択はタップ）
+            child: Builder(builder: (rowContext) => Stack(children: [
+            ReorderableDelayedDragStartListener(
+            index: i,
+            child: ListTile(
             selected: selected,
+            contentPadding: const EdgeInsetsDirectional.only(
+                start: AppSpacing.xl, end: _rowEndPadding),
             // 色の丸は選択中も出したまま（選択の印は右端）
             leading: showThumbs
                 ? _TagThumb(tag: tag, item: thumbOf(tag), size: 48)
@@ -252,15 +249,25 @@ class TagManagerTab extends ConsumerWidget {
                         onPressed: () =>
                             _showMenu(rowContext, ref, tag, allItems),
                       ),
-                      ReorderHandle(index: i, enabled: !selecting),
+                      const ReorderHandleIcon(),
                     ],
                   ),
                 ),
               ],
             ),
             onTap: () => tap(tag),
-            onLongPress: () => onLongPress?.call(tag),
           )),
+            // つまみの列（≡ から行の右端まで、行の高さいっぱい）はまるごと並べ替え。
+            // ≡ の右や上下に、長押しで選択になる隙間を残さない
+            if (!selecting)
+              Positioned(
+                top: 0,
+                bottom: 0,
+                right: 0,
+                width: ReorderHandleIcon.width + _rowEndPadding,
+                child: ReorderHandle.area(index: i),
+              ),
+          ])),
           );
         },
       ),
@@ -378,7 +385,7 @@ class _TagOrderHintState extends State<_TagOrderHint> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Text('リストは右の ≡、グリッドは長押ししたまま動かして並べ替え',
+                  Text('タップで選択、長押ししたまま動かして並べ替え',
                       style: textTheme.labelSmall),
                 ],
               ),
@@ -466,7 +473,7 @@ class _TagDot extends StatelessWidget {
 }
 
 /// タグのグリッド。長押ししたまま動かすと並べ替え（動かしている間は並びを先に見せる）。
-/// 動かさずに離したら [onLongPress]（複数選択）
+/// 動かさずに離しても何もしない（選択はタップ）
 class _TagGrid extends StatefulWidget {
   const _TagGrid({
     required this.tags,
@@ -477,7 +484,6 @@ class _TagGrid extends StatefulWidget {
     required this.selectedIds,
     required this.countOf,
     required this.onTap,
-    required this.onLongPress,
     required this.onReorder,
   });
 
@@ -493,7 +499,6 @@ class _TagGrid extends StatefulWidget {
   final Set<String> selectedIds;
   final int Function(Tag) countOf;
   final ValueChanged<Tag> onTap;
-  final ValueChanged<Tag> onLongPress;
   final void Function(int oldIndex, int newIndex) onReorder;
 
   @override
@@ -520,11 +525,7 @@ class _TagGridState extends State<_TagGrid> {
     final oldIndex = widget.tags.indexWhere((t) => t.id == tag.id);
     final newIndex = preview.indexWhere((t) => t.id == tag.id);
     if (oldIndex < 0 || newIndex < 0) return;
-    if (oldIndex == newIndex) {
-      widget.onLongPress(tag);
-    } else {
-      widget.onReorder(oldIndex, newIndex);
-    }
+    if (oldIndex != newIndex) widget.onReorder(oldIndex, newIndex);
   }
 
   @override

@@ -35,6 +35,7 @@ void main() {
   Future<(ProviderContainer, List<String>)> pump(
       WidgetTester tester, TagViewMode mode,
       {bool selecting = false}) async {
+    // タップで選択が切り替わったタグ（長押しでは呼ばれない）
     final longPressed = <String>[];
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -46,8 +47,7 @@ void main() {
             viewMode: mode,
             selecting: selecting,
             selectedIds: const {'t0'},
-            onTagTap: (_) {},
-            onLongPress: (t) => longPressed.add(t.id),
+            onToggleSelect: (t) => longPressed.add(t.id),
           ),
         ),
       ),
@@ -72,7 +72,7 @@ void main() {
       expect(longPressed, isEmpty);
     });
 
-    testWidgets('${mode.label}: 動かさずに離すと長押し（並びは変えない）', (tester) async {
+    testWidgets('${mode.label}: 長押しして動かさずに離しても何も起きない', (tester) async {
       final (c, longPressed) = await pump(tester, mode);
       final gesture =
           await tester.startGesture(tester.getCenter(find.text('い')));
@@ -80,7 +80,14 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(names(c), ['あ', 'い', 'う', 'え']);
-      expect(longPressed, ['t1']);
+      expect(longPressed, isEmpty);
+    });
+
+    testWidgets('${mode.label}: タップは選択の切り替え', (tester) async {
+      final (_, toggled) = await pump(tester, mode);
+      await tester.tap(find.text('い'));
+      await tester.pumpAndSettle();
+      expect(toggled, ['t1']);
     });
   }
 
@@ -119,10 +126,47 @@ void main() {
     expect(find.text('名前を変更'), findsNothing);
   });
 
-  testWidgets('リスト: 行の長押しは選択', (tester) async {
-    final (_, longPressed) = await pump(tester, TagViewMode.list);
-    await tester.longPress(find.text('い'));
-    expect(longPressed, ['t1']);
+  testWidgets('リスト: つまみの列は右端も上下の端も並べ替え（選択にならない）', (tester) async {
+    final (c, longPressed) = await pump(tester, TagViewMode.list);
+    final row = tester.getRect(
+        find.ancestor(of: find.text('あ'), matching: find.byType(ListTile)));
+    for (final from in [
+      Offset(row.right - 2, row.center.dy),
+      Offset(row.right - 30, row.top + 2),
+      Offset(row.right - 30, row.bottom - 2),
+    ]) {
+      final gesture = await tester.startGesture(from);
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+    expect(longPressed, isEmpty);
+    expect(names(c), ['あ', 'い', 'う', 'え']);
+
+    // メニューのボタンは今まで通り押せる
+    await tester.tap(find.byIcon(Icons.more_vert).first);
+    await tester.pumpAndSettle();
+    expect(find.text('名前を変更'), findsOneWidget);
+  });
+
+  testWidgets('リスト: タップは選択の切り替え、行の長押しは並べ替え', (tester) async {
+    final (c, toggled) = await pump(tester, TagViewMode.list);
+    await tester.tap(find.text('い'));
+    await tester.pumpAndSettle();
+    expect(toggled, ['t1']);
+    toggled.clear();
+
+    final gesture = await tester.startGesture(tester.getCenter(find.text('あ')));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    final to = tester.getCenter(find.text('う')) + const Offset(0, 20);
+    await gesture.moveTo(to - const Offset(0, 30));
+    await tester.pump();
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(names(c), ['い', 'う', 'あ', 'え']);
+    expect(toggled, isEmpty);
   });
 
   for (final mode in TagViewMode.values) {

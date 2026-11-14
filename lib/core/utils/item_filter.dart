@@ -15,8 +15,10 @@ enum ItemSortMode {
 
 /// ホームの曲一覧の絞り込みと並び替え（画面から切り出した純粋関数）。
 ///
-/// タグの絞り込みは 3 状態: `true` = 含む（指定したタグを**すべて**持つ）、
-/// `false` = 除外（1 つでも持っていれば外す）、無指定 = 見ない。
+/// タグの絞り込みは 3 状態: `true` = 含む、`false` = 除外、無指定 = 見ない。
+/// 含むは OR（指定したタグを**どれか 1 つ**でも持てば出す。タグを足すほど曲が増える）、
+/// 除外は AND（除外したタグを**どれも**持たない曲だけ = 1 つでも持っていれば外す）。
+/// 両方あるときは除外が勝つ。
 /// [untaggedId] はタグの無い曲を指す特別なキー。
 class ItemFilter {
   ItemFilter._();
@@ -39,11 +41,10 @@ class ItemFilter {
       // 除外（1 つでも該当すれば外す）
       if (excludeUntagged && i.tagIds.isEmpty) return false;
       if (exclude.any(i.tagIds.contains)) return false;
-      // 包含
+      // 含む（どれか 1 つ）
       if (include.isEmpty && !includeUntagged) return true;
       if (includeUntagged && i.tagIds.isEmpty) return true;
-      if (include.isNotEmpty) return include.every(i.tagIds.contains);
-      return false;
+      return include.any(i.tagIds.contains);
     }).toList();
   }
 

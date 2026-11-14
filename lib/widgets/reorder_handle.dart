@@ -24,7 +24,33 @@ class ReorderHandle extends ReorderableDragStartListener {
           ),
         );
 
+  /// 見えない当たり判定だけ（行の右端の列をまるごと並べ替えにするとき、行の上に重ねる）。
+  /// 見た目の ≡ は [ReorderHandleIcon]
+  const ReorderHandle.area({super.key, required super.index, super.enabled})
+      : super(
+          child: const SizedBox.expand(
+              child: ColoredBox(color: Color(0x00000000))),
+        );
+
   @override
   MultiDragGestureRecognizer createRecognizer() =>
       DelayedMultiDragGestureRecognizer(delay: Duration.zero, debugOwner: this);
+}
+
+/// つまみの見た目だけ（当たり判定は [ReorderHandle.area] を行に重ねる）
+class ReorderHandleIcon extends StatelessWidget {
+  const ReorderHandleIcon({super.key});
+
+  /// アイコンの左右の余白
+  static const sidePadding = AppSpacing.sm;
+
+  /// 余白を含めた幅
+  static const width = AppIconSizes.md + sidePadding * 2;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(sidePadding),
+        child: Icon(Icons.drag_handle,
+            size: AppIconSizes.md, color: AppTheme.muted(context)),
+      );
 }

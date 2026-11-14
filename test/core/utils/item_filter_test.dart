@@ -36,9 +36,14 @@ void main() {
       expect(ItemFilter.byTags(all, {}), all);
     });
 
-    test('含む（true）は指定したタグをすべて持つもの', () {
+    test('含む（true）は指定したタグをどれか 1 つでも持つもの（OR）', () {
       expect(ids(ItemFilter.byTags(all, {'r': true})), ['rock', 'rockjazz']);
-      expect(ids(ItemFilter.byTags(all, {'r': true, 'j': true})), ['rockjazz']);
+      expect(ids(ItemFilter.byTags(all, {'r': true, 'j': true})),
+          ['rock', 'rockjazz', 'jazz']);
+    });
+
+    test('除外を 2 つ指定したら、どちらも持たないものだけ（AND）', () {
+      expect(ids(ItemFilter.byTags(all, {'r': false, 'j': false})), ['none']);
     });
 
     test('除外（false）は 1 つでも持っていれば外す。除外だけなら残りは全部', () {
