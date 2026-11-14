@@ -185,6 +185,15 @@ class _ListScreenState extends ConsumerState<ListScreen>
         _selectMode = false;
         _selectedIds.clear();
       }
+      // 曲タブを離れるとき、検索語もタグの絞り込みも無ければ検索の行は閉じる
+      // （使っていない行を、戻ってきたときに出したままにしない）
+      if (_tabController.index != _tabItems &&
+          _searchOpen &&
+          _searchQuery.isEmpty &&
+          ref.read(tagFilterProvider).isEmpty) {
+        _searchOpen = false;
+        _searchFocusNode.unfocus();
+      }
       // タブを移ったら見出しは出す（隠れたままだとタブが押せない）
       if (_headerHidden > 0) _animateHeaderTo(0);
       setState(() {});

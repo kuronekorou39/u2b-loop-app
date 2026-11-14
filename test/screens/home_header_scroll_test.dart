@@ -146,4 +146,31 @@ void main() {
     expect(find.byType(GlassSearchField), findsNothing);
     expect(find.text(first), findsWidgets);
   });
+
+  testWidgets('検索を開いたまま条件なしで別のタブへ行くと、戻ったとき検索の行は閉じている。条件があれば残る',
+      (tester) async {
+    await pump(tester, size: const Size(400, 800));
+    await tester.tap(find.byTooltip('検索'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GlassSearchField), findsOneWidget);
+
+    // 検索語があるうちは、行って戻っても出たまま
+    await tester.enterText(find.byType(TextField), '曲1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('プレイリスト'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('曲'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GlassSearchField), findsOneWidget);
+
+    // 条件を消してから行って戻ると閉じている
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('タグ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('曲'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GlassSearchField), findsNothing);
+    expect(find.byTooltip('検索'), findsOneWidget);
+  });
 }

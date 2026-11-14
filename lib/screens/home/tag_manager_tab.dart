@@ -224,10 +224,17 @@ class TagManagerTab extends ConsumerWidget {
             selected: selected,
             contentPadding: const EdgeInsetsDirectional.only(
                 start: AppSpacing.xl, end: _rowEndPadding),
-            // 色の丸は選択中も出したまま（選択の印は右端）
-            leading: showThumbs
-                ? _TagThumb(tag: tag, item: thumbOf(tag), size: 48)
-                : _TagDot(tag: tag),
+            // 色のタグ記号を頭に（サムネに重ねると見づらい）。選択中も出したまま
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _TagDot(tag: tag),
+                if (showThumbs) ...[
+                  const SizedBox(width: AppSpacing.lg),
+                  _TagThumb(tag: tag, item: thumbOf(tag), size: 48),
+                ],
+              ],
+            ),
             title: Text(tag.name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -405,7 +412,8 @@ class _TagOrderHintState extends State<_TagOrderHint> {
   }
 }
 
-/// タグのサムネ（正方形）。右下にタグの色の丸。サムネが無ければ薄い色の面にラベルのアイコン
+/// タグのサムネ（正方形）。タグの色は左の [_TagDot] で見せる（サムネには重ねない）。
+/// サムネが無ければ薄い色の面
 class _TagThumb extends StatelessWidget {
   const _TagThumb({required this.tag, required this.item, required this.size});
 
@@ -415,38 +423,14 @@ class _TagThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dot = size * 0.32;
     return SizedBox(
       width: size,
       height: size,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: AppRadius.borderMd,
-              child: item != null
-                  ? ItemThumbnail(item: item!)
-                  : ColoredBox(
-                      color: tag.color.withValues(alpha: 0.25),
-                      child: Icon(Icons.label, size: AppIconSizes.md, color: tag.color),
-                    ),
-            ),
-          ),
-          if (item != null)
-            Positioned(
-              right: 2,
-              bottom: 2,
-              child: Container(
-                width: dot,
-                height: dot,
-                decoration: BoxDecoration(
-                  color: tag.color,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-              ),
-            ),
-        ],
+      child: ClipRRect(
+        borderRadius: AppRadius.borderMd,
+        child: item != null
+            ? ItemThumbnail(item: item!)
+            : ColoredBox(color: tag.color.withValues(alpha: 0.15)),
       ),
     );
   }
@@ -584,8 +568,8 @@ class _TagGridState extends State<_TagGrid> {
   }
 
   /// 色つきのチップ（名前・曲数）。2 列も 4 列もタグの色を薄く敷いたガラス面。
-  /// 2 列は左に色の丸（サムネを出すならサムネ）。4 列は左端の色の帯で、サムネがあれば
-  /// 背景に暗くして敷く（文字は白）。
+  /// 2 列は左に色のタグ記号（サムネを出すならその右にサムネ）。4 列は左端の色の帯と
+  /// 曲数の頭の色の印で、サムネがあれば背景に暗くして敷く（文字は白）。
   /// 選択中は緑の枠とチェックを上に重ねるだけ（中身の大きさ・位置は変えない）
   Widget _chip(BuildContext context, Tag tag) {
     final textTheme = Theme.of(context).textTheme;
@@ -607,9 +591,21 @@ class _TagGridState extends State<_TagGrid> {
             overflow: TextOverflow.ellipsis,
             style: (small ? textTheme.labelSmall : textTheme.labelMedium)
                 ?.copyWith(fontWeight: FontWeight.w600, color: nameColor)),
-        Text('${widget.countOf(tag)} 曲',
-            maxLines: 1,
-            style: textTheme.labelSmall?.copyWith(color: countColor)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 小さいチップは色が帯だけだと分かりづらいので、曲数の頭にも色の印
+            if (small) ...[
+              Icon(Icons.label, size: 12, color: tag.color),
+              const SizedBox(width: 3),
+            ],
+            Flexible(
+              child: Text('${widget.countOf(tag)} 曲',
+                  maxLines: 1,
+                  style: textTheme.labelSmall?.copyWith(color: countColor)),
+            ),
+          ],
+        ),
       ],
     );
 
@@ -632,7 +628,7 @@ class _TagGridState extends State<_TagGrid> {
               ],
               Row(
                 children: [
-                  Container(width: 4, color: tag.color),
+                  Container(width: 6, color: tag.color),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
@@ -655,10 +651,11 @@ class _TagGridState extends State<_TagGrid> {
         onTap: () => widget.onTap(tag),
         child: Row(
           children: [
-            if (widget.showThumbs)
-              _TagThumb(tag: tag, item: thumb, size: 40)
-            else
-              _TagDot(tag: tag),
+            _TagDot(tag: tag),
+            if (widget.showThumbs) ...[
+              const SizedBox(width: AppSpacing.sm),
+              _TagThumb(tag: tag, item: thumb, size: 40),
+            ],
             const SizedBox(width: AppSpacing.md),
             Expanded(child: text),
           ],
