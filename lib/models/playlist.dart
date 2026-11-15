@@ -32,6 +32,9 @@ class Playlist {
   /// タグに当てはまるが、ユーザーが外した曲（もう自動では入れない）
   Set<String> excludedItemIds;
 
+  /// 一覧の並び順（手で並べ替えたときに振る。null = まだ決めていない）
+  int? order;
+
   Playlist({
     required this.id,
     required this.name,
@@ -44,6 +47,7 @@ class Playlist {
     List<String>? tagIds,
     Set<String>? tagItemIds,
     Set<String>? excludedItemIds,
+    this.order,
   })  : itemIds = itemIds ?? [],
         createdAt = createdAt ?? DateTime.now(),
         regionSelections = regionSelections ?? {},
@@ -51,6 +55,17 @@ class Playlist {
         tagIds = tagIds ?? [],
         tagItemIds = tagItemIds ?? {},
         excludedItemIds = excludedItemIds ?? {};
+
+  /// 一覧の並び: 並び順の決まっていないもの（新しく作ったもの）を新しい順に先頭へ、
+  /// その後ろに並び順どおり
+  static int compare(Playlist a, Playlist b) {
+    final ao = a.order, bo = b.order;
+    if (ao == null && bo == null) return b.createdAt.compareTo(a.createdAt);
+    if (ao == null) return -1;
+    if (bo == null) return 1;
+    if (ao != bo) return ao.compareTo(bo);
+    return b.createdAt.compareTo(a.createdAt);
+  }
 
   /// [item] が自動で入れるタグに当てはまるか
   bool matchesTags(LoopItem item) =>
@@ -127,6 +142,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       tagIds: (fields[8] as List?)?.cast<String>(),
       tagItemIds: (fields[9] as List?)?.cast<String>().toSet(),
       excludedItemIds: (fields[10] as List?)?.cast<String>().toSet(),
+      order: fields[11] as int?,
     );
   }
 
@@ -144,6 +160,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       8: obj.tagIds.isNotEmpty ? obj.tagIds : null,
       9: obj.tagItemIds.isNotEmpty ? obj.tagItemIds.toList() : null,
       10: obj.excludedItemIds.isNotEmpty ? obj.excludedItemIds.toList() : null,
+      11: obj.order,
     });
   }
 }

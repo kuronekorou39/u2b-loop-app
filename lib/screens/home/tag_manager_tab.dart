@@ -10,6 +10,7 @@ import '../../models/loop_item.dart';
 import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
 import '../../providers/glass_provider.dart';
+import '../../widgets/drag_reorder_grid.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/item_thumbnail.dart';
@@ -475,7 +476,7 @@ class _TagDot extends StatelessWidget {
 
 /// タグのグリッド。タップも長押しも選択。並べ替えモード（[reordering]）の間だけ、
 /// 長押ししたまま動かすと並べ替え（動かしている間は並びを先に見せる）
-class _TagGrid extends StatefulWidget {
+class _TagGrid extends StatelessWidget {
   const _TagGrid({
     required this.tags,
     required this.small,
@@ -506,43 +507,13 @@ class _TagGrid extends StatefulWidget {
   final ValueChanged<Tag>? onToggle;
   final void Function(int oldIndex, int newIndex) onReorder;
 
-  /// 並べ替えモードでタイルが持ち上がるまでの時間（一覧のスクロールと取り合わない
-  /// 範囲で、ふつうの長押しより短く）
-  static const _dragDelay = Duration(milliseconds: 250);
-
-  @override
-  State<_TagGrid> createState() => _TagGridState();
-}
-
-class _TagGridState extends State<_TagGrid> {
-  /// ドラッグ中の並び（離すまで保存しない）
-  List<Tag>? _preview;
-
-  void _moveOver(String draggedId, Tag target) {
-    final preview = _preview;
-    if (preview == null || draggedId == target.id) return;
-    final from = preview.indexWhere((t) => t.id == draggedId);
-    final to = preview.indexWhere((t) => t.id == target.id);
-    if (from < 0 || to < 0) return;
-    setState(() => preview.insert(to, preview.removeAt(from)));
-  }
-
-  void _endDrag(Tag tag) {
-    final preview = _preview;
-    setState(() => _preview = null);
-    if (preview == null) return;
-    final oldIndex = widget.tags.indexWhere((t) => t.id == tag.id);
-    final newIndex = preview.indexWhere((t) => t.id == tag.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    if (oldIndex != newIndex) widget.onReorder(oldIndex, newIndex);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final tags = _preview ?? widget.tags;
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-    final small = widget.small;
-    return GridView.builder(
+    return DragReorderGrid<Tag>(
+      items: tags,
+      idOf: (t) => t.id,
+      reordering: reordering,
       padding: EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
@@ -551,48 +522,8 @@ class _TagGridState extends State<_TagGrid> {
         crossAxisSpacing: small ? AppSpacing.sm : AppSpacing.md,
         mainAxisSpacing: small ? AppSpacing.sm : AppSpacing.md,
       ),
-      itemCount: tags.length,
-      // 並びが変わっても同じタグの部品を使い続ける（動かしているタグが作り直されると
-      // ドラッグの終わりが届かない）
-      findChildIndexCallback: (key) {
-        final i = tags.indexWhere((t) => ValueKey(t.id) == key);
-        return i < 0 ? null : i;
-      },
-      itemBuilder: (context, i) {
-        final tag = tags[i];
-        if (!widget.reordering) {
-          return KeyedSubtree(key: ValueKey(tag.id), child: _chip(context, tag));
-        }
-        return DragTarget<String>(
-          key: ValueKey(tag.id),
-          onWillAcceptWithDetails: (d) {
-            _moveOver(d.data, tag);
-            return true;
-          },
-          builder: (context, _, _) => LayoutBuilder(
-            builder: (context, constraints) {
-              final chip = _chip(context, tag);
-              return LongPressDraggable<String>(
-                data: tag.id,
-                delay: _TagGrid._dragDelay,
-                onDragStarted: () =>
-                    setState(() => _preview = List.of(widget.tags)),
-                onDragEnd: (_) => _endDrag(tag),
-                feedback: Material(
-                  type: MaterialType.transparency,
-                  child: SizedBox(
-                    width: constraints.maxWidth,
-                    height: constraints.maxHeight,
-                    child: Transform.scale(scale: 1.06, child: chip),
-                  ),
-                ),
-                childWhenDragging: Opacity(opacity: 0.3, child: chip),
-                child: chip,
-              );
-            },
-          ),
-        );
-      },
+      itemBuilder: _chip,
+      onReorder: onReorder,
     );
   }
 
@@ -602,16 +533,14 @@ class _TagGridState extends State<_TagGrid> {
   /// 選択中は緑の枠とチェックを上に重ねるだけ（中身の大きさ・位置は変えない）
   Widget _chip(BuildContext context, Tag tag) {
     final textTheme = Theme.of(context).textTheme;
-    final selected = widget.selectedIds.contains(tag.id);
-    final small = widget.small;
+    final selected = selectedIds.contains(tag.id);
     final radius = small ? 10.0 : 14.0;
-    final thumb = widget.thumbOf(tag);
+    final thumb = thumbOf(tag);
     // 4 列でサムネを背景に敷いたときは暗い膜の上なので白文字
     final onImage = small && thumb != null;
     final nameColor = onImage ? Colors.white : null;
     final countColor = onImage ? Colors.white70 : AppTheme.muted(context);
-    final onToggle = widget.onToggle;
-    final toggle = onToggle == null ? null : () => onToggle(tag);
+    final toggle = onToggle == null ? null : () => onToggle!(tag);
 
     final text = Column(
       mainAxisSize: MainAxisSize.min,
@@ -631,7 +560,7 @@ class _TagGridState extends State<_TagGrid> {
               const SizedBox(width: 3),
             ],
             Flexible(
-              child: Text('${widget.countOf(tag)} 曲',
+              child: Text('${countOf(tag)} 曲',
                   maxLines: 1,
                   style: textTheme.labelSmall?.copyWith(color: countColor)),
             ),
@@ -685,7 +614,7 @@ class _TagGridState extends State<_TagGrid> {
         child: Row(
           children: [
             _TagDot(tag: tag),
-            if (widget.showThumbs) ...[
+            if (showThumbs) ...[
               const SizedBox(width: AppSpacing.sm),
               _TagThumb(tag: tag, item: thumb, size: 40),
             ],
@@ -695,7 +624,7 @@ class _TagGridState extends State<_TagGrid> {
         ),
       );
     }
-    if (!widget.selecting) return surface;
+    if (!selecting) return surface;
     return SelectionDim(
       selecting: true,
       selected: selected,

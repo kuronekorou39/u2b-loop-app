@@ -238,6 +238,7 @@ class BackupService {
         'tagIds': pl.tagIds,
         'tagItemIds': pl.tagItemIds.toList(),
         'excludedItemIds': pl.excludedItemIds.toList(),
+        'order': pl.order,
       };
 
   static Playlist playlistFromJson(Map<String, dynamic> j) {
@@ -260,6 +261,7 @@ class BackupService {
       tagIds: (j['tagIds'] as List?)?.cast<String>(),
       tagItemIds: (j['tagItemIds'] as List?)?.cast<String>().toSet(),
       excludedItemIds: (j['excludedItemIds'] as List?)?.cast<String>().toSet(),
+      order: j['order'] as int?,
     );
   }
 

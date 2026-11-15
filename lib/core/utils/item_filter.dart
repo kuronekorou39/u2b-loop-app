@@ -1,15 +1,13 @@
 import '../../models/loop_item.dart';
 
-/// ホームの曲一覧の並び順
-enum ItemSortMode {
-  updatedDesc('更新日（新→古）'),
-  updatedAsc('更新日（古→新）'),
-  createdDesc('作成日（新→古）'),
-  titleAsc('タイトル（A→Z）'),
-  titleDesc('タイトル（Z→A）'),
-  playCountDesc('再生回数（多→少）');
+/// ホームの曲一覧を並べる項目（昇順・降順は別に選ぶ）
+enum ItemSortField {
+  updated('更新日'),
+  created('作成日'),
+  title('タイトル'),
+  playCount('再生回数');
 
-  const ItemSortMode(this.label);
+  const ItemSortField(this.label);
   final String label;
 }
 
@@ -59,23 +57,17 @@ class ItemFilter {
         .toList();
   }
 
-  static List<LoopItem> sorted(List<LoopItem> items, ItemSortMode mode) {
-    final out = List<LoopItem>.from(items);
-    switch (mode) {
-      case ItemSortMode.updatedDesc:
-        out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      case ItemSortMode.updatedAsc:
-        out.sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
-      case ItemSortMode.titleAsc:
-        out.sort((a, b) => a.title.compareTo(b.title));
-      case ItemSortMode.titleDesc:
-        out.sort((a, b) => b.title.compareTo(a.title));
-      case ItemSortMode.createdDesc:
-        out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      case ItemSortMode.playCountDesc:
-        out.sort((a, b) => b.playCount.compareTo(a.playCount));
-    }
-    return out;
+  /// [descending] = 降順（新しい順・多い順・Z→A）
+  static List<LoopItem> sorted(List<LoopItem> items, ItemSortField field,
+      {bool descending = true}) {
+    final int Function(LoopItem, LoopItem) ascending = switch (field) {
+      ItemSortField.updated => (a, b) => a.updatedAt.compareTo(b.updatedAt),
+      ItemSortField.created => (a, b) => a.createdAt.compareTo(b.createdAt),
+      ItemSortField.title => (a, b) => a.title.compareTo(b.title),
+      ItemSortField.playCount => (a, b) => a.playCount.compareTo(b.playCount),
+    };
+    return List<LoopItem>.from(items)
+      ..sort(descending ? (a, b) => ascending(b, a) : ascending);
   }
 
   /// タグ → 検索 → 並び替え の順に適用
@@ -83,7 +75,9 @@ class ItemFilter {
     List<LoopItem> items, {
     Map<String, bool> tagFilter = const {},
     String query = '',
-    ItemSortMode sort = ItemSortMode.updatedDesc,
+    ItemSortField sort = ItemSortField.updated,
+    bool descending = true,
   }) =>
-      sorted(bySearch(byTags(items, tagFilter), query), sort);
+      sorted(bySearch(byTags(items, tagFilter), query), sort,
+          descending: descending);
 }

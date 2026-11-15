@@ -11,7 +11,9 @@ import '../../models/loop_item.dart';
 import '../../models/playlist.dart';
 import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
+import '../../widgets/drag_reorder_grid.dart';
 import '../../widgets/now_playing_mark.dart';
+import '../../widgets/reorder_handle.dart';
 import '../../widgets/selection_mark.dart';
 import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_controls.dart';
@@ -24,13 +26,16 @@ import '../playlist_item_picker_screen.dart';
 import 'home_parts.dart';
 
 /// ホームの「プレイリスト」タブ。一覧（リスト / カードのグリッド）・再生・複製・削除。
-/// 複数選択中（[selecting]）はタップで選択の切替、操作はホームの選択バー側
+/// 複数選択中（[selecting]）はタップで選択の切替、操作はホームの選択バー側。
+/// 並べ替えモード（[reordering]。ホームの見出しのボタンでオンオフ）の間は、リストは
+/// 再生・⋮ の場所が ≡ になり、グリッドはカードを長押しして動かす（開かない・選択しない）
 class PlaylistTab extends ConsumerWidget {
   const PlaylistTab({
     super.key,
     this.grid = false,
     this.selecting = false,
     this.selectedIds = const {},
+    this.reordering = false,
     this.onToggleSelect,
     this.onLongPress,
   });
@@ -38,8 +43,12 @@ class PlaylistTab extends ConsumerWidget {
   final bool grid;
   final bool selecting;
   final Set<String> selectedIds;
+  final bool reordering;
   final ValueChanged<Playlist>? onToggleSelect;
   final ValueChanged<Playlist>? onLongPress;
+
+  /// 並べ替えモードで ≡ を置く列の幅（触れてすぐ動かせる範囲。行の右端まで）
+  static const double _handleColumnWidth = 72;
 
   /// 空で作ったときの名前（名前は後から変えられるので、作るときには聞かない）
   static const newPlaylistName = '新しいプレイリスト';
@@ -165,7 +174,9 @@ class PlaylistTab extends ConsumerWidget {
               if (pl.tagIds.contains(t.id)) t
           ];
 
+    final reorder = ref.read(playlistsProvider.notifier).reorder;
     void tap(Playlist pl) {
+      if (reordering) return;
       if (selecting) {
         onToggleSelect?.call(pl);
       } else {
@@ -176,22 +187,30 @@ class PlaylistTab extends ConsumerWidget {
 
     if (grid) {
       return _buildGrid(
-          context, ref, playlists, items, countOf, thumbOf, tagsOf, tap);
+          context, ref, playlists, items, countOf, thumbOf, tagsOf, tap, reorder);
     }
 
     final textTheme = Theme.of(context).textTheme;
     return HomeListSurface(
-      child: ListView.builder(
+      child: ReorderableListView.builder(
         padding: HomeListSurface.listPadding,
+        buildDefaultDragHandles: false,
         itemCount: playlists.length,
+        onReorderItem: reorder,
         itemBuilder: (context, i) {
           final pl = playlists[i];
           final count = countOf(pl);
           final autoTags = tagsOf(pl);
           final selected = selectedIds.contains(pl.id);
           return SelectionDim(
+            key: ValueKey(pl.id),
             selecting: selecting,
             selected: selected,
+            // 並べ替えモードは行の長押しでも持ち上がる（ふだんの長押しは選択）
+            child: Stack(children: [
+            ReorderableDelayedDragStartListener(
+            index: i,
+            enabled: reordering,
             child: ListTile(
             selected: selected,
             leading: ClipRRect(
@@ -235,7 +254,9 @@ class PlaylistTab extends ConsumerWidget {
             trailing: SelectionTrailing(
                 selecting: selecting,
                 selected: selected,
-                child: Row(
+                child: reordering
+                    ? const ReorderHandleIcon()
+                    : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (count > 0)
@@ -253,9 +274,19 @@ class PlaylistTab extends ConsumerWidget {
                     ],
                   ),
             ),
-            onTap: () => tap(pl),
-            onLongPress: () => onLongPress?.call(pl),
-          ),
+            onTap: reordering ? null : () => tap(pl),
+            onLongPress: reordering ? null : () => onLongPress?.call(pl),
+          )),
+            // ≡ の列（行の右端まで、行の高さいっぱい）は触れてすぐ動かせる
+            if (reordering)
+              Positioned(
+                top: 0,
+                bottom: 0,
+                right: 0,
+                width: _handleColumnWidth,
+                child: ReorderHandle.area(index: i),
+              ),
+          ]),
           );
         },
       ),
@@ -272,10 +303,15 @@ class PlaylistTab extends ConsumerWidget {
     LoopItem? Function(Playlist) thumbOf,
     List<Tag> Function(Playlist) tagsOf,
     void Function(Playlist) tap,
+    void Function(int, int) reorder,
   ) {
     final textTheme = Theme.of(context).textTheme;
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-    return GridView.builder(
+    return DragReorderGrid<Playlist>(
+      items: playlists,
+      idOf: (pl) => pl.id,
+      reordering: reordering,
+      onReorder: reorder,
       padding: EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -284,9 +320,7 @@ class PlaylistTab extends ConsumerWidget {
         crossAxisSpacing: AppSpacing.md + 2,
         mainAxisSpacing: AppSpacing.md + 2,
       ),
-      itemCount: playlists.length,
-      itemBuilder: (context, i) {
-        final pl = playlists[i];
+      itemBuilder: (context, pl) {
         final count = countOf(pl);
         final autoTags = tagsOf(pl);
         final selected = selectedIds.contains(pl.id);
@@ -297,8 +331,8 @@ class PlaylistTab extends ConsumerWidget {
           radius: 16,
           padding: const EdgeInsets.all(AppSpacing.md),
           tint: selected ? AppTheme.accentGreen.withValues(alpha: 0.15) : null,
-          onTap: () => tap(pl),
-          onLongPress: () => onLongPress?.call(pl),
+          onTap: reordering ? null : () => tap(pl),
+          onLongPress: reordering ? null : () => onLongPress?.call(pl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -311,7 +345,7 @@ class PlaylistTab extends ConsumerWidget {
                     children: [
                       _Thumb(item: thumbOf(pl)),
                       NowPlayingMark(playlistId: pl.id, size: 20),
-                      if (!selecting && count > 0)
+                      if (!selecting && !reordering && count > 0)
                         Positioned(
                           right: 4,
                           bottom: 4,

@@ -78,17 +78,26 @@ void main() {
     final c = item('c', updated: t0.add(const Duration(days: 2)), created: t0.add(const Duration(days: 1)));
 
     test('更新日・作成日・タイトル・再生回数', () {
-      expect(ids(ItemFilter.sorted([a, b, c], ItemSortMode.updatedDesc)), ['c', 'b', 'a']);
-      expect(ids(ItemFilter.sorted([a, b, c], ItemSortMode.updatedAsc)), ['a', 'b', 'c']);
-      expect(ids(ItemFilter.sorted([a, b, c], ItemSortMode.createdDesc)), ['a', 'c', 'b']);
-      expect(ids(ItemFilter.sorted([c, a, b], ItemSortMode.titleAsc)), ['a', 'b', 'c']);
-      expect(ids(ItemFilter.sorted([a, b, c], ItemSortMode.titleDesc)), ['c', 'b', 'a']);
-      expect(ids(ItemFilter.sorted([a, b, c], ItemSortMode.playCountDesc)), ['b', 'a', 'c']);
+      List<String> sorted(List<LoopItem> src, ItemSortField field,
+              {bool descending = true}) =>
+          ids(ItemFilter.sorted(src, field, descending: descending));
+      expect(sorted([a, b, c], ItemSortField.updated), ['c', 'b', 'a']);
+      expect(sorted([a, b, c], ItemSortField.updated, descending: false),
+          ['a', 'b', 'c']);
+      expect(sorted([a, b, c], ItemSortField.created), ['a', 'c', 'b']);
+      expect(sorted([a, b, c], ItemSortField.created, descending: false),
+          ['b', 'c', 'a']);
+      expect(sorted([c, a, b], ItemSortField.title, descending: false),
+          ['a', 'b', 'c']);
+      expect(sorted([a, b, c], ItemSortField.title), ['c', 'b', 'a']);
+      expect(sorted([a, b, c], ItemSortField.playCount), ['b', 'a', 'c']);
+      expect(sorted([a, b, c], ItemSortField.playCount, descending: false),
+          ['c', 'a', 'b']);
     });
 
     test('元のリストは並べ替えない', () {
       final src = [b, a];
-      ItemFilter.sorted(src, ItemSortMode.titleAsc);
+      ItemFilter.sorted(src, ItemSortField.title, descending: false);
       expect(ids(src), ['b', 'a']);
     });
   });

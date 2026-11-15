@@ -177,6 +177,58 @@ void main() {
     expect(find.byIcon(Icons.drag_handle), findsNothing);
   });
 
+  testWidgets('並べ替えモードはプレイリストタブにもある（曲タブには無い）。タブを離れると切れる',
+      (tester) async {
+    await AppBoxes.playlists.put('p1', Playlist(id: 'p1', name: 'リストA'));
+    addTearDown(() => AppBoxes.playlists.delete('p1'));
+    await pump(tester, size: const Size(400, 800));
+    expect(find.byTooltip('並べ替え'), findsNothing);
+    await tester.tap(find.text('プレイリスト'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
+    await tester.tap(find.byTooltip('並べ替え'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.drag_handle), findsOneWidget);
+    expect(find.byTooltip('並べ替えを終える'), findsOneWidget);
+
+    // タグタブへ移ると切れている（タグ側もオンにならない）
+    await tester.tap(find.text('タグ'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('並べ替え'), findsOneWidget);
+    await tester.tap(find.text('プレイリスト'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
+  });
+
+  testWidgets('並び替えのメニュー: ボタンの下に出る。項目と昇順・降順を別々に選ぶ', (tester) async {
+    await pump(tester, size: const Size(400, 800));
+    List<String> shown() => [
+          for (final t in tester.widgetList<Text>(find.descendant(
+              of: find.byType(ListView).first,
+              matching: find.textContaining('曲'))))
+            t.data!
+        ];
+    final button = tester.getRect(find.byTooltip('並び替え'));
+    await tester.tap(find.byTooltip('並び替え'));
+    await tester.pumpAndSettle();
+    // 項目 4 つ + 昇順・降順
+    for (final label in ['更新日', '作成日', 'タイトル', '再生回数', '昇順', '降順']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    expect(tester.getRect(find.text('更新日')).top,
+        greaterThanOrEqualTo(button.bottom));
+    await tester.tap(find.text('タイトル'));
+    await tester.pumpAndSettle();
+    // 向きは降順のまま
+    expect(shown().first, '曲9');
+
+    await tester.tap(find.byTooltip('並び替え'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('昇順'));
+    await tester.pumpAndSettle();
+    expect(shown().take(3), ['曲0', '曲1', '曲10']);
+  });
+
   testWidgets('検索を開いたまま条件なしで別のタブへ行くと、戻ったとき検索の行は閉じている。条件があれば残る',
       (tester) async {
     await pump(tester, size: const Size(400, 800));

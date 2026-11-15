@@ -928,8 +928,21 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
 
   PlaylistsNotifier(this._box, {List<LoopItem> Function()? items})
       : _items = items ?? (() => const []),
-        super(_box.values.toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
+        super(_box.values.toList()..sort(app.Playlist.compare));
+
+  /// 並べ替え。[newIndex] は動かした後の位置（ReorderableListView の onReorderItem と同じ）。
+  /// 一覧の並びどおりに 0, 1, 2… を振って保存する
+  void reorder(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= state.length) return;
+    final list = List.of(state);
+    final moved = list.removeAt(oldIndex);
+    list.insert(newIndex.clamp(0, list.length), moved);
+    for (var i = 0; i < list.length; i++) {
+      list[i].order = i;
+    }
+    _box.putAll({for (final pl in list) pl.id: pl});
+    state = list;
+  }
 
   /// 自動で入れるタグに合わせて、全プレイリストの中身を直す
   void syncTagItems(List<LoopItem> items) {
@@ -959,8 +972,7 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
   }
 
   void _refresh() {
-    state = _box.values.toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    state = _box.values.toList()..sort(app.Playlist.compare);
   }
 
   /// box を直接書き換えた側から一覧の再読込を促すための入口

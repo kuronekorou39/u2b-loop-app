@@ -52,6 +52,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
     with TickerProviderStateMixin {
   static const _tabTags = 0;
   static const _tabItems = 1;
+  static const _tabPlaylists = 2;
   // 2 = プレイリスト（switch の既定）
 
   late final TabController _tabController;
@@ -67,12 +68,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
   bool _playlistGrid = AppBoxes.settings
       .get(SettingsKeys.homePlaylistGrid, defaultValue: false) as bool;
 
-  /// タグ一覧の並べ替えモード（見出しのボタンでオンオフ。タブを離れたら切る）
-  bool _tagReordering = false;
+  /// 並べ替えモードにしているタブ（タグ・プレイリスト。null = オフ）。
+  /// 見出しのボタンでオンオフし、タブを離れたら切る
+  int? _reorderingTab;
 
-  void _toggleTagReordering() {
+  void _toggleReordering() {
     setState(() {
-      _tagReordering = !_tagReordering;
+      _reorderingTab = _reorderingTab == _tab ? null : _tab;
       // 選択とは同時に使わない
       _selectMode = false;
       _selectedIds.clear();
@@ -106,7 +108,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
   /// 縦画面で検索とタグの絞り込みの行を出しているか（既定は隠す。出すと曲タブだけ
   /// 一覧が下がり、タブを移るたびに高さがずれて見えた）
   bool _searchOpen = false;
-  ItemSortMode _sortMode = ItemSortMode.updatedDesc;
+  ItemSortField _sortField = ItemSortField.updated;
+  bool _sortDescending = true;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode(skipTraversal: true);
 
@@ -197,7 +200,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
         _selectMode = false;
         _selectedIds.clear();
       }
-      if (_tabController.index != _tabTags) _tagReordering = false;
+      if (_tabController.index != _reorderingTab) _reorderingTab = null;
       // 曲タブを離れるとき、検索語もタグの絞り込みも無ければ検索の行は閉じる
       // （使っていない行を、戻ってきたときに出したままにしない）
       if (_tabController.index != _tabItems &&
@@ -357,7 +360,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final filterTagIds = ref.watch(tagFilterProvider);
 
     final items = ItemFilter.apply(allItems,
-        tagFilter: filterTagIds, query: _searchQuery, sort: _sortMode);
+        tagFilter: filterTagIds,
+        query: _searchQuery,
+        sort: _sortField,
+        descending: _sortDescending);
 
     // いまのタブで選べるものの ID（「全選択」に使う）
     final selectableIds = switch (_tab) {
@@ -457,13 +463,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
       ],
     );
     return PopScope(
-      canPop: !_isSelecting && !_tagReordering,
+      canPop: !_isSelecting && _reorderingTab == null,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (_isSelecting) {
           _clearSelection();
-        } else if (_tagReordering) {
-          setState(() => _tagReordering = false);
+        } else if (_reorderingTab != null) {
+          setState(() => _reorderingTab = null);
         }
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -505,13 +511,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             selecting: _isSelecting,
                             selectedIds: _selectedIds,
                             onToggleSelect: (t) => _toggleSelectId(t.id),
-                            reordering: _tagReordering,
+                            reordering: _reorderingTab == _tabTags,
                           ),
                           _buildItemsTab(items, filterTagIds),
                           PlaylistTab(
                             grid: _playlistGrid,
                             selecting: _isSelecting,
                             selectedIds: _selectedIds,
+                            reordering: _reorderingTab == _tabPlaylists,
                             onToggleSelect: (p) => _toggleSelectId(p.id),
                             onLongPress: (p) => _startSelectId(p.id),
                           ),
@@ -630,29 +637,40 @@ class _ListScreenState extends ConsumerState<ListScreen>
         );
   }
 
-  /// 並び替えのメニュー（[child] を押すと開く）
-  Widget _sortMenu(Widget child) => PopupMenuButton<ItemSortMode>(
-        tooltip: '並び替え',
-        onSelected: (mode) => setState(() => _sortMode = mode),
-        itemBuilder: (_) => [
-          for (final mode in ItemSortMode.values)
-            PopupMenuItem(
-              value: mode,
-              child: Row(
-                children: [
-                  if (_sortMode == mode)
-                    const Icon(Icons.check, size: AppIconSizes.sm)
-                  else
-                    const SizedBox(width: AppIconSizes.sm),
-                  const SizedBox(width: AppSpacing.md),
-                  Text(mode.label,
-                      style: Theme.of(context).textTheme.bodyLarge),
-                ],
-              ),
-            ),
-        ],
-        child: child,
-      );
+  /// 並び替えのメニュー（[child] を押すと開く。ボタンを隠さないよう下に出す）。
+  /// 上が項目、下が昇順・降順（値は項目なら [ItemSortField]、向きなら降順かの bool）
+  Widget _sortMenu(Widget child) {
+    PopupMenuItem<Object> row(Object value, String label, bool checked) =>
+        PopupMenuItem(
+          value: value,
+          child: Row(
+            children: [
+              if (checked)
+                const Icon(Icons.check, size: AppIconSizes.sm)
+              else
+                const SizedBox(width: AppIconSizes.sm),
+              const SizedBox(width: AppSpacing.md),
+              Text(label, style: Theme.of(context).textTheme.bodyLarge),
+            ],
+          ),
+        );
+    return PopupMenuButton<Object>(
+      tooltip: '並び替え',
+      position: PopupMenuPosition.under,
+      onSelected: (value) => setState(() {
+        if (value is ItemSortField) _sortField = value;
+        if (value is bool) _sortDescending = value;
+      }),
+      itemBuilder: (_) => [
+        for (final field in ItemSortField.values)
+          row(field, field.label, _sortField == field),
+        const PopupMenuDivider(),
+        row(false, '昇順', !_sortDescending),
+        row(true, '降順', _sortDescending),
+      ],
+      child: child,
+    );
+  }
 
   /// 縦画面の検索の行の出し入れ。閉じるときは検索語を消す（タグの絞り込みは残す）
   void _toggleSearch() {
@@ -675,6 +693,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       _tabTags => PopupMenuButton<TagViewMode>(
           icon: Icon(_tagViewMode.icon),
           tooltip: '表示の切り替え',
+          position: PopupMenuPosition.under,
           initialValue: _tagViewMode,
           onSelected: _setTagViewMode,
           itemBuilder: (_) => [
@@ -689,6 +708,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       _tabItems => PopupMenuButton<ItemViewMode>(
           icon: Icon(_itemViewMode.icon),
           tooltip: '表示の切り替え',
+          position: PopupMenuPosition.under,
           initialValue: _itemViewMode,
           onSelected: _setItemViewMode,
           itemBuilder: (_) => [
@@ -724,13 +744,13 @@ class _ListScreenState extends ConsumerState<ListScreen>
           child: Icon(Icons.sort),
         )),
       ],
-      // タグの並べ替えモード（オンの間は緑）
-      if (_tab == _tabTags)
+      // タグ・プレイリストの並べ替えモード（オンの間は緑）
+      if (_tab == _tabTags || _tab == _tabPlaylists)
         IconButton(
           icon: const Icon(Icons.swap_vert),
-          color: _tagReordering ? AppTheme.accentGreen : null,
-          onPressed: _toggleTagReordering,
-          tooltip: _tagReordering ? '並べ替えを終える' : '並べ替え',
+          color: _reorderingTab == _tab ? AppTheme.accentGreen : null,
+          onPressed: _toggleReordering,
+          tooltip: _reorderingTab == _tab ? '並べ替えを終える' : '並べ替え',
         ),
       viewButton,
       IconButton(
