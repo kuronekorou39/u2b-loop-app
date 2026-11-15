@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
@@ -71,7 +73,8 @@ class GlassSearchField extends StatelessWidget {
   }
 }
 
-/// ガラスのセグメント（タブ）。TabController に追従し、タップで animateTo
+/// ガラスのセグメント（タブ）。TabController に追従し、タップで animateTo。
+/// 選択の印は緑の板 1 枚で、タブの間を横に滑る（スワイプ中は指に付いてくる）
 class GlassSegmentedTabs extends StatelessWidget {
   const GlassSegmentedTabs({
     super.key,
@@ -82,6 +85,15 @@ class GlassSegmentedTabs extends StatelessWidget {
   final TabController controller;
   final List<String> labels;
 
+  static const double _height = 36;
+
+  /// タップで移るときの動き: 出だしが速く、終わりですっと止まる
+  static const _tapDuration = Duration(milliseconds: 280);
+  static const _tapCurve = Curves.easeOutCubic;
+
+  /// 動いている間、板が横に伸びる割合（タブ 1 つの幅に対して。道のりの真ん中で最大）
+  static const double _stretch = 0.22;
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -89,28 +101,72 @@ class GlassSegmentedTabs extends StatelessWidget {
     return GlassPanel(
       radius: 999,
       padding: const EdgeInsets.all(AppSpacing.xs),
-      child: AnimatedBuilder(
-        animation: controller.animation ?? controller,
-        builder: (context, _) {
-          final current = controller.animation?.value ?? controller.index.toDouble();
-          return Row(
-            children: [
-              for (var i = 0; i < labels.length; i++)
-                Expanded(
-                  child: _Segment(
-                    label: labels[i],
-                    // 隣へ動いている途中は両方を薄く
-                    on: (1 - (current - i).abs()).clamp(0.0, 1.0),
-                    style: textTheme.labelMedium!,
-                    dim: dim,
-                    onTap: () => controller.animateTo(i),
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final segmentWidth = constraints.maxWidth / labels.length;
+          return AnimatedBuilder(
+            animation: controller.animation ?? controller,
+            builder: (context, _) {
+              final current =
+                  controller.animation?.value ?? controller.index.toDouble();
+              final extra =
+                  segmentWidth * _stretch * math.sin(math.pi * _progress(current));
+              final width = segmentWidth + extra;
+              final left = (current * segmentWidth - extra / 2)
+                  .clamp(0.0, math.max(0.0, constraints.maxWidth - width))
+                  .toDouble();
+              return SizedBox(
+                height: _height,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: left,
+                      width: width,
+                      top: 0,
+                      bottom: 0,
+                      child: DecoratedBox(
+                        key: const ValueKey('segment-indicator'),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentGreen.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        for (var i = 0; i < labels.length; i++)
+                          Expanded(
+                            child: _Segment(
+                              label: labels[i],
+                              // 板が重なっている分だけ緑に
+                              on: (1 - (current - i).abs()).clamp(0.0, 1.0),
+                              style: textTheme.labelMedium!,
+                              dim: dim,
+                              onTap: () => controller.animateTo(i,
+                                  duration: _tapDuration, curve: _tapCurve),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
-            ],
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  /// 今の移動の進み具合（0〜1）。タップで離れたタブへ飛ぶときは道のり全体で 1 回、
+  /// スワイプ中は隣のタブまでを 1 回と数える
+  double _progress(double current) {
+    final from = controller.previousIndex;
+    final to = controller.index;
+    if (controller.indexIsChanging && from != to) {
+      return ((current - from) / (to - from)).clamp(0.0, 1.0);
+    }
+    return current - current.floorToDouble();
   }
 }
 
@@ -135,11 +191,7 @@ class _Segment extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
       child: Container(
-        height: 36,
-        decoration: BoxDecoration(
-          color: AppTheme.accentGreen.withValues(alpha: 0.18 * on),
-          borderRadius: BorderRadius.circular(999),
-        ),
+        height: GlassSegmentedTabs._height,
         alignment: Alignment.center,
         child: Text(
           label,
