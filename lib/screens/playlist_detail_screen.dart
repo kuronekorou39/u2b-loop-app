@@ -7,6 +7,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/audio/track_compatibility.dart';
 import '../core/constants.dart';
+import '../widgets/reorder_handle.dart';
+import '../widgets/selection_mark.dart';
 import '../core/storage/app_boxes.dart';
 import 'home/item_views.dart';
 import '../core/theme/app_theme.dart';
@@ -51,13 +53,20 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
-  /// 編集モード: 並べ替え（右の ≡）と外す（⊖・スワイプ。確認なし、通知の「元に戻す」で戻せる）。
-  /// ふだんは並べ替え・スワイプを出さない（意図せず順番を変えたり外したりしないように）。
+  /// 並べ替えモード（見出しのボタンでオンオフ）: ⋮ の場所に ≡ が出て触れてすぐ動かせ、
+  /// 行の長押しでも持ち上がる。ふだんは並べ替えを出さない（意図せず順番を変えないように）。
   /// 変更はその場で保存するので「保存」は無い
-  bool _editing = false;
+  bool _reordering = false;
 
-  /// 削除ボタンで外している途中の曲（横に抜けて縮むアニメーションのあとで外す）
-  final _removing = <String>{};
+  /// 複数選択（行の長押しで入る。タップで切り替え、0 件になったら抜ける）。
+  /// 見出しが「全選択・外す・やめる」に入れ替わる
+  final _selectedIds = <String>{};
+
+  void _toggleSelect(String itemId) {
+    setState(() {
+      if (!_selectedIds.remove(itemId)) _selectedIds.add(itemId);
+    });
+  }
 
   /// 曲の一覧をリスト小（曲名 1 行だけ）で出す。ふだんはリスト大（曲名 2 行 + 情報 + タグ）
   bool _compact = AppBoxes.settings
@@ -68,11 +77,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     AppBoxes.settings.put(SettingsKeys.playlistDetailCompact, _compact);
   }
 
-  /// 削除ボタン: スワイプで外したときと同じく、横に抜けて縮んでから外す
-  void _removeWithAnimation(String itemId) {
-    if (_removing.contains(itemId)) return;
-    setState(() => _removing.add(itemId));
-  }
   void _renamePlaylist(Playlist pl) async {
     final newName = await AppDialogs.prompt(context,
         title: 'プレイリスト名変更',
@@ -227,21 +231,33 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
-  /// スワイプで外したあと「元に戻す」で同じ位置に戻せる
-  void _removeItem(Playlist pl, String itemId) {
+  void _removeItem(Playlist pl, String itemId) => _removeItems(pl, {itemId});
+
+  /// 確認なしで外す。通知の「元に戻す」で同じ位置に戻せる
+  Future<void> _removeItems(Playlist pl, Set<String> ids) async {
+    if (ids.isEmpty) return;
     final itemIds = List<String>.from(pl.itemIds);
-    final regions = pl.regionSelections[itemId];
-    final title = ref
-            .read(loopItemsProvider)
-            .where((i) => i.id == itemId)
-            .firstOrNull
-            ?.title ??
-        '曲';
-    ref.read(playlistsProvider.notifier).removeItem(pl.id, itemId);
+    final regions = {for (final id in ids) id: ?pl.regionSelections[id]};
+    final String what;
+    if (ids.length == 1) {
+      final title = ref
+              .read(loopItemsProvider)
+              .where((i) => i.id == ids.first)
+              .firstOrNull
+              ?.title ??
+          '曲';
+      what = '「$title」';
+    } else {
+      what = '${ids.length} 曲';
+    }
+    final notifier = ref.read(playlistsProvider.notifier);
+    for (final id in ids) {
+      await notifier.removeItem(pl.id, id);
+    }
     AppToast.instance
       ..hide()
       ..show(AppSnackBar.action(
-        '「$title」をプレイリストから外しました',
+        '$whatをプレイリストから外しました',
         label: '元に戻す',
         onPressed: () {
           final current = ref
@@ -251,8 +267,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           if (current == null) return;
           current.itemIds = itemIds;
           // 戻した曲は手で足した曲として残す（タグで自動に外した印は消す）
-          current.excludedItemIds.remove(itemId);
-          if (regions != null) current.regionSelections[itemId] = regions;
+          current.excludedItemIds.removeAll(ids);
+          current.regionSelections.addAll(regions);
           ref.read(playlistsProvider.notifier).update(current);
         },
       ));
@@ -422,16 +438,36 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     // 横画面は AppBar を置かず、左の列の上に「プレイリスト」の行（戻る・編集・その他）を
     // 置く。右の曲の一覧は画面の上まで使う
     final split = DetailSplit.of(MediaQuery.sizeOf(context));
+    // 選んでいる曲（一覧から消えた曲は数えない）
+    final selectedIds = {
+      for (final i in items)
+        if (_selectedIds.contains(i.id)) i.id
+    };
+    final selecting = selectedIds.isNotEmpty;
+    final screenTitle = selecting ? '${selectedIds.length} 曲を選択' : 'プレイリスト';
     final actions = <Widget>[
-      // 編集モードは「完了」だけ（同じ場所に「編集」と入れ替わる）
-      if (_editing)
-        TextButton.icon(
-          onPressed: () => setState(() => _editing = false),
-          icon: const Icon(Icons.check, size: AppIconSizes.sm),
-          label: const Text('完了'),
-          style: TextButton.styleFrom(foregroundColor: AppTheme.accentGreen),
-        )
-      else if (items.isNotEmpty) ...[
+      // 複数選択中は選択の操作だけ
+      if (selecting) ...[
+        IconButton(
+          icon: const Icon(Icons.select_all),
+          tooltip: '全選択',
+          onPressed: () =>
+              setState(() => _selectedIds.addAll(items.map((i) => i.id))),
+        ),
+        IconButton(
+          icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent),
+          tooltip: 'プレイリストから外す',
+          onPressed: () {
+            setState(_selectedIds.clear);
+            _removeItems(pl, selectedIds);
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.close),
+          tooltip: '選択をやめる',
+          onPressed: () => setState(_selectedIds.clear),
+        ),
+      ] else if (items.isNotEmpty) ...[
         // 今の表示のアイコン（ホームの曲一覧と同じ）。押すとリスト大 ⇔ リスト小
         IconButton(
           icon: Icon(
@@ -440,13 +476,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               '表示: ${(_compact ? ItemViewMode.list : ItemViewMode.titles).label}',
           onPressed: _toggleCompact,
         ),
+        // 並べ替えモード（オンの間は緑。同じボタンで抜ける）
         IconButton(
-          icon: const Icon(Icons.edit_note),
-          tooltip: '編集（並べ替え・外す）',
-          onPressed: () => setState(() => _editing = true),
+          icon: const Icon(Icons.swap_vert),
+          color: _reordering ? AppTheme.accentGreen : null,
+          tooltip: _reordering ? '並べ替えを終える' : '並べ替え',
+          onPressed: () => setState(() => _reordering = !_reordering),
         ),
       ],
-      if (!_editing)
+      if (!selecting)
         PopupMenuButton<_PlaylistMenu>(
           tooltip: 'その他',
           onSelected: (m) => switch (m) {
@@ -583,23 +621,35 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       Text('${items.length} 曲',
           style: textTheme.bodyMedium
               ?.copyWith(color: AppTheme.muted(context))),
-      // 自動で入れるタグ（タップで変更）
-      if ([
-        for (final t in tags)
-          if (pl.tagIds.contains(t.id)) t
-      ] case final autoTags when autoTags.isNotEmpty) ...[
-        const SizedBox(height: AppSpacing.sm),
-        InkWell(
-          borderRadius: AppRadius.borderSm,
-          onTap: () => _showTagPicker(pl),
-          child: Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [for (final t in autoTags) TagChip(tag: t)],
-          ),
-        ),
-      ],
+      // 自動で入れるタグ（タップで変更）。無いときも同じ場所に入口を出す
+      // （0 件にしたあと、どこから付け直すのか分からなくなる）
+      const SizedBox(height: AppSpacing.sm),
+      InkWell(
+        borderRadius: AppRadius.borderSm,
+        onTap: () => _showTagPicker(pl),
+        child: switch ([
+          for (final t in tags)
+            if (pl.tagIds.contains(t.id)) t
+        ]) {
+          [] => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.label_outline,
+                    size: AppIconSizes.s, color: AppTheme.muted(context)),
+                const SizedBox(width: AppSpacing.xs),
+                Text('タグを紐づける',
+                    style: textTheme.labelSmall
+                        ?.copyWith(color: AppTheme.muted(context))),
+              ],
+            ),
+          final autoTags => Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [for (final t in autoTags) TagChip(tag: t)],
+            ),
+        },
+      ),
     ];
     // 再生・シャッフル（横画面の左の列が狭いときは折り返す）
     final buttons = Wrap(
@@ -686,7 +736,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     final splitHeader = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DetailSplitTopBar(title: 'プレイリスト', actions: actions),
+        DetailSplitTopBar(title: screenTitle, actions: actions),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Column(
@@ -704,15 +754,22 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
 
     return PopScope(
-      // 編集モード中の「戻る」は編集を終えるだけ（画面は閉じない）
-      canPop: !_editing,
+      // 選択中・並べ替えモード中の「戻る」はそれを終えるだけ（画面は閉じない）
+      canPop: !_reordering && !selecting,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _editing) setState(() => _editing = false);
+        if (didPop) return;
+        setState(() {
+          if (selecting) {
+            _selectedIds.clear();
+          } else {
+            _reordering = false;
+          }
+        });
       },
       child: GlassScaffold(
       // ガラス風: 背景（サムネの色味）を AppBar の裏まで通す
       tone: tone,
-      title: Text('プレイリスト', style: textTheme.titleMedium),
+      title: Text(screenTitle, style: textTheme.titleMedium),
       showAppBar: !split,
       actions: actions,
       // 本文の上端は bodyBuilder の context から（AppBar の高さが入る）
@@ -765,53 +822,30 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         item.tagIds.contains(t.id) && t.id != onlyAutoTag)
                     .toList();
                 final isDisabled = pl.disabledItemIds.contains(item.id);
-                return Dismissible(
+                final isSelected = selectedIds.contains(item.id);
+                return KeyedSubtree(
                   key: ValueKey('${pl.id}_${item.id}_$i'),
-                  // スワイプで外すのは編集モードだけ（確認なし。通知の「元に戻す」で戻せる）
-                  direction: _editing
-                      ? DismissDirection.endToStart
-                      : DismissDirection.none,
-                  background: Container(
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16),
-                    color: Colors.red,
-                    child:
-                        const Icon(Icons.delete_outline, color: Colors.white),
-                  ),
-                  onDismissed: (_) => _removeItem(pl, item.id),
-                  child: _SlideAway(
-                    active: _removing.contains(item.id),
-                    onDone: () {
-                      _removing.remove(item.id);
-                      _removeItem(pl, item.id);
-                    },
-                    // 編集モードは行の長押しでも持ち上げて並べ替えられる
+                  child: SelectionDim(
+                    selecting: selecting,
+                    selected: isSelected,
+                    // 並べ替えモードは行の長押しでも持ち上げて並べ替えられる
                     child: ReorderableDelayedDragStartListener(
                       index: i,
-                      enabled: _editing,
+                      enabled: _reordering,
                       child: Opacity(
                     opacity: isDisabled || item.isUnplayable ? 0.4 : 1.0,
                     child: ListTile(
-                      // 編集モードは左端につまみ（≡）
+                      selected: isSelected,
                       leading: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (_editing)
-                            ReorderableDragStartListener(
-                              index: i,
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                    right: AppSpacing.md,
-                                    top: AppSpacing.sm,
-                                    bottom: AppSpacing.sm),
-                                child: Icon(Icons.drag_handle,
-                                    color: AppTheme.muted(context)),
-                              ),
-                            ),
                           GestureDetector(
-                        onTap: () => ref
-                            .read(playlistsProvider.notifier)
-                            .toggleItemEnabled(pl.id, item.id),
+                        // サムネのタップで有効・無効（選択中・並べ替え中は行の操作に任せる）
+                        onTap: selecting || _reordering
+                            ? null
+                            : () => ref
+                                .read(playlistsProvider.notifier)
+                                .toggleItemEnabled(pl.id, item.id),
                         child: Stack(
                           children: [
                             ClipRRect(
@@ -863,32 +897,49 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                   style: textTheme.labelSmall)
                               : null)
                           : _buildSubtitle(item, itemTags, pl),
-                      // ふだんは ⋮、編集モードは同じ場所が ⊖（外す）。右に余白は取らない
-                      // （曲名を広く出す）
-                      trailing: _editing
-                          ? IconButton(
-                              icon: const Icon(Icons.remove_circle_outline,
-                                  size: AppIconSizes.md, color: Colors.redAccent),
-                              tooltip: 'プレイリストから外す',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => _removeWithAnimation(item.id),
-                            )
-                          : IconButton(
-                              icon: const Icon(Icons.more_vert,
-                                  size: AppIconSizes.md),
-                              tooltip: 'メニュー',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => _showItemMenu(pl, item, i),
-                            ),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  DetailScreen(itemId: item.id)),
-                        );
-                      },
+                      // ふだんは ⋮、並べ替えモードは同じ場所が ≡（触れてすぐ動かせる）、
+                      // 選択中は選択の印。右に余白は取らない（曲名を広く出す）
+                      trailing: SelectionTrailing(
+                        selecting: selecting,
+                        selected: isSelected,
+                        child: _reordering
+                            ? SizedBox(
+                                width: _trailingButtonSize,
+                                height: _trailingButtonSize,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    const ReorderHandleIcon(),
+                                    Positioned.fill(
+                                        child: ReorderHandle.area(index: i)),
+                                  ],
+                                ),
+                              )
+                            : IconButton(
+                                icon: const Icon(Icons.more_vert,
+                                    size: AppIconSizes.md),
+                                tooltip: 'メニュー',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _showItemMenu(pl, item, i),
+                              ),
+                      ),
+                      // タップ = 開く（選択中は選択の切り替え）、長押し = 選択。
+                      // 並べ替えモード中はどちらもしない
+                      onTap: _reordering
+                          ? null
+                          : () {
+                              if (selecting) {
+                                _toggleSelect(item.id);
+                                return;
+                              }
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        DetailScreen(itemId: item.id)),
+                              );
+                            },
                       onLongPress:
-                          _editing ? null : () => _showItemMenu(pl, item, i),
+                          _reordering ? null : () => _toggleSelect(item.id),
                     ),
                   ),
                     ),
@@ -911,6 +962,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     ),
     );
   }
+
+  /// 行の右端のボタン（⋮・≡）の大きさ（VisualDensity.compact の IconButton と同じ）
+  static const double _trailingButtonSize = 40;
 
   /// 「全体」を表す特殊ID（区間選択で全体再生を選ぶ用）
   static const _fullTrackId = '__full__';
@@ -1198,69 +1252,6 @@ class _BulkAnalysisCard extends ConsumerWidget {
                 : () => ref.read(bulkAnalysisProvider.notifier).stop(),
             child: Text(s.stopping ? 'この曲で止めます' : '中止'),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 削除ボタンで外す行: スワイプで外したとき（Dismissible）と同じく、赤い面の上を左へ抜け、
-/// 縮んでから [onDone]（そこで実際に外す）。[active] になったら始める
-class _SlideAway extends StatefulWidget {
-  const _SlideAway({required this.active, required this.onDone, required this.child});
-
-  final bool active;
-  final VoidCallback onDone;
-  final Widget child;
-
-  @override
-  State<_SlideAway> createState() => _SlideAwayState();
-}
-
-class _SlideAwayState extends State<_SlideAway> with SingleTickerProviderStateMixin {
-  late final _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 380),
-  );
-  // 前半で横に抜け、後半で縮む
-  late final _slide = Tween(begin: Offset.zero, end: const Offset(-1, 0)).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0, 0.55, curve: Curves.easeIn)));
-  late final _size = Tween(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.55, 1, curve: Curves.easeOut)));
-
-  @override
-  void didUpdateWidget(_SlideAway old) {
-    super.didUpdateWidget(old);
-    if (widget.active && !old.active) {
-      _controller.forward().then((_) {
-        if (mounted) widget.onDone();
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!widget.active && !_controller.isAnimating) return widget.child;
-    return SizeTransition(
-      sizeFactor: _size,
-      alignment: Alignment.topCenter,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 16),
-              color: Colors.red,
-              child: const Icon(Icons.delete_outline, color: Colors.white),
-            ),
-          ),
-          SlideTransition(position: _slide, child: widget.child),
         ],
       ),
     );

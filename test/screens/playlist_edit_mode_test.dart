@@ -73,6 +73,7 @@ void main() {
     await AppBoxes.playlists.put(
         'p', Playlist(id: 'p', name: 'リスト', itemIds: ['a', 'b', 'c'], tagIds: ['r']));
     await pump(tester);
+    expect(find.text('タグを紐づける'), findsNothing);
     // 見出しに 1 つ（自動で入れるタグ）。行にはロックを出さず、ジャズだけ
     expect(find.text('ロック'), findsOneWidget);
     expect(find.text('ジャズ'), findsOneWidget);
@@ -89,45 +90,65 @@ void main() {
 
   testWidgets('ふだんは ⋮ だけ（≡ も ⊖ も無く、右に余白を取らない）', (tester) async {
     await pump(tester);
+    // タグが無いプレイリストにも、紐づける入口がある
+    await tester.tap(find.text('タグを紐づける'));
+    await tester.pumpAndSettle();
+    expect(find.text('タグで自動追加'), findsOneWidget);
+    await tester.tap(find.text('キャンセル'));
+    await tester.pumpAndSettle();
     expect(find.byIcon(Icons.drag_handle), findsNothing);
     expect(find.byTooltip('プレイリストから外す'), findsNothing);
     expect(find.byTooltip('メニュー'), findsNWidgets(3));
   });
 
-  testWidgets('編集モード: ⋮ が ⊖ に、≡ は左端。⊖ は確認なしでアニメーションのあと外し、「元に戻す」で戻る',
+  testWidgets('並べ替えモード: 同じボタンでオンオフ。⋮ の場所が ≡ になり、触れてすぐ動かせる',
       (tester) async {
     await pump(tester);
-    await tester.tap(find.byTooltip('編集（並べ替え・外す）'));
+    final menu = tester.getCenter(find.byTooltip('メニュー').first);
+    final button = tester.getCenter(find.byTooltip('並べ替え'));
+    await tester.tap(find.byTooltip('並べ替え'));
     await tester.pumpAndSettle();
-    expect(find.text('完了'), findsOneWidget);
+    // ボタンは同じ場所で緑になる
+    expect(tester.getCenter(find.byTooltip('並べ替えを終える')), button);
+    expect(
+        tester
+            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.swap_vert))
+            .color,
+        isNotNull);
     expect(find.byTooltip('メニュー'), findsNothing);
-    // ≡ は行の左端（サムネより左）
-    final handle = tester.getCenter(find.byIcon(Icons.drag_handle).first);
-    expect(handle.dx, lessThan(tester.getCenter(find.text('曲 a')).dx));
-    expect(handle.dx, lessThan(200));
+    final handles = find.byIcon(Icons.drag_handle);
+    expect(tester.getCenter(handles.first), menu);
 
-    await tester.tap(find.byTooltip('プレイリストから外す').at(1));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(ids(), ['a', 'b', 'c'], reason: '抜けるアニメーションの間はまだ外さない');
+    // タップしても開かない
+    await tester.tap(find.text('曲 b'));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing, reason: '確認は出さない');
-    expect(ids(), ['a', 'c']);
-    expect(find.text('「曲 b」をプレイリストから外しました'), findsOneWidget);
+    expect(find.byType(PlaylistDetailScreen), findsOneWidget);
+    expect(find.byTooltip('並べ替えを終える'), findsOneWidget);
 
-    await tester.tap(find.text('元に戻す'));
+    // ≡ は長押しを待たずに動かせる
+    final from = tester.getCenter(handles.at(0));
+    final to = tester.getCenter(handles.at(2)) + const Offset(0, 40);
+    final g = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 20));
+    for (var k = 1; k <= 10; k++) {
+      await g.moveTo(Offset.lerp(from, to, k / 10)!);
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await g.up();
     await tester.pumpAndSettle();
-    expect(ids(), ['a', 'b', 'c']);
+    expect(ids().last, 'a');
 
-    // 戻るキーは編集モードを抜けるだけ
+    // 戻るキーは並べ替えモードを抜けるだけ
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('完了'), findsNothing);
+    expect(find.byTooltip('並べ替え'), findsOneWidget);
     expect(find.byType(PlaylistDetailScreen), findsOneWidget);
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
   });
 
-  testWidgets('編集モードは行の長押しで持ち上げて並べ替えられる（ふだんは長押しでメニュー）', (tester) async {
+  testWidgets('並べ替えモードは行の長押しでも持ち上げて並べ替えられる', (tester) async {
     await pump(tester);
-    await tester.tap(find.byTooltip('編集（並べ替え・外す）'));
+    await tester.tap(find.byTooltip('並べ替え'));
     await tester.pumpAndSettle();
     final from = tester.getCenter(find.text('曲 a'));
     final to = tester.getCenter(find.text('曲 c'));
@@ -140,6 +161,55 @@ void main() {
     await g.up();
     await tester.pumpAndSettle();
     expect(ids().last, 'a');
+  });
+
+  testWidgets('長押しで選択に入る。タップで切り替え、まとめて外せて「元に戻す」で戻る', (tester) async {
+    await pump(tester);
+    final name = tester.getRect(find.text('曲 a'));
+    await tester.longPress(find.text('曲 a'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 曲を選択'), findsOneWidget);
+    expect(find.byTooltip('並べ替え'), findsNothing);
+    expect(find.byTooltip('その他'), findsNothing);
+    // 選択に入っても曲名は動かない
+    expect(tester.getRect(find.text('曲 a')), name);
+
+    // 選択中のタップは開かずに切り替え
+    await tester.tap(find.text('曲 c'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 曲を選択'), findsOneWidget);
+    expect(find.byType(PlaylistDetailScreen), findsOneWidget);
+
+    await tester.tap(find.byTooltip('プレイリストから外す'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing, reason: '確認は出さない');
+    expect(ids(), ['b']);
+    expect(find.text('2 曲をプレイリストから外しました'), findsOneWidget);
+    expect(find.text('プレイリスト'), findsOneWidget, reason: '選択は終わる');
+
+    await tester.tap(find.text('元に戻す'));
+    await tester.pumpAndSettle();
+    expect(ids(), ['a', 'b', 'c']);
+  });
+
+  testWidgets('選択: 全選択、外して 0 件になれば抜ける、戻るキーは選択をやめるだけ', (tester) async {
+    await pump(tester);
+    await tester.longPress(find.text('曲 b'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('全選択'));
+    await tester.pumpAndSettle();
+    expect(find.text('3 曲を選択'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaylistDetailScreen), findsOneWidget);
+    expect(find.byTooltip('並べ替え'), findsOneWidget);
+
+    await tester.longPress(find.text('曲 b'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('曲 b'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('並べ替え'), findsOneWidget);
+    expect(ids(), ['a', 'b', 'c']);
   });
 
   testWidgets('共有と削除はメニューの中', (tester) async {

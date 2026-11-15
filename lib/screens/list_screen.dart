@@ -67,6 +67,18 @@ class _ListScreenState extends ConsumerState<ListScreen>
   bool _playlistGrid = AppBoxes.settings
       .get(SettingsKeys.homePlaylistGrid, defaultValue: false) as bool;
 
+  /// タグ一覧の並べ替えモード（見出しのボタンでオンオフ。タブを離れたら切る）
+  bool _tagReordering = false;
+
+  void _toggleTagReordering() {
+    setState(() {
+      _tagReordering = !_tagReordering;
+      // 選択とは同時に使わない
+      _selectMode = false;
+      _selectedIds.clear();
+    });
+  }
+
   void _setItemViewMode(ItemViewMode mode) {
     setState(() => _itemViewMode = mode);
     AppBoxes.settings.put(SettingsKeys.homeItemView, mode.name);
@@ -185,6 +197,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
         _selectMode = false;
         _selectedIds.clear();
       }
+      if (_tabController.index != _tabTags) _tagReordering = false;
       // 曲タブを離れるとき、検索語もタグの絞り込みも無ければ検索の行は閉じる
       // （使っていない行を、戻ってきたときに出したままにしない）
       if (_tabController.index != _tabItems &&
@@ -444,9 +457,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
       ],
     );
     return PopScope(
-      canPop: !_isSelecting,
+      canPop: !_isSelecting && !_tagReordering,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _isSelecting) _clearSelection();
+        if (didPop) return;
+        if (_isSelecting) {
+          _clearSelection();
+        } else if (_tagReordering) {
+          setState(() => _tagReordering = false);
+        }
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: theme.brightness == Brightness.dark
@@ -487,6 +505,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                             selecting: _isSelecting,
                             selectedIds: _selectedIds,
                             onToggleSelect: (t) => _toggleSelectId(t.id),
+                            reordering: _tagReordering,
                           ),
                           _buildItemsTab(items, filterTagIds),
                           PlaylistTab(
@@ -705,6 +724,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
           child: Icon(Icons.sort),
         )),
       ],
+      // タグの並べ替えモード（オンの間は緑）
+      if (_tab == _tabTags)
+        IconButton(
+          icon: const Icon(Icons.swap_vert),
+          color: _tagReordering ? AppTheme.accentGreen : null,
+          onPressed: _toggleTagReordering,
+          tooltip: _tagReordering ? '並べ替えを終える' : '並べ替え',
+        ),
       viewButton,
       IconButton(
         icon: const Icon(Icons.settings, size: AppIconSizes.ml),

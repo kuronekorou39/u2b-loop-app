@@ -147,6 +147,36 @@ void main() {
     expect(find.text(first), findsWidgets);
   });
 
+  testWidgets('タグの並べ替えモード: タグタブの見出しのボタンでオンオフ。タブを離れると切れる', (tester) async {
+    await AppBoxes.tags.put('t1', Tag(id: 't1', name: 'ロック'));
+    addTearDown(() => AppBoxes.tags.delete('t1'));
+    await pump(tester, size: const Size(400, 800));
+    expect(find.byTooltip('並べ替え'), findsNothing, reason: 'タグタブだけ');
+    await tester.tap(find.text('タグ'));
+    await tester.pumpAndSettle();
+    final button = tester.getCenter(find.byTooltip('並べ替え'));
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
+
+    await tester.tap(find.byTooltip('並べ替え'));
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(find.byTooltip('並べ替えを終える')), button);
+    expect(find.byIcon(Icons.drag_handle), findsOneWidget);
+    // 同じボタンで抜ける
+    await tester.tap(find.byTooltip('並べ替えを終える'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
+
+    // オンのまま別のタブへ行って戻ると切れている
+    await tester.tap(find.byTooltip('並べ替え'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('曲'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('タグ'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('並べ替え'), findsOneWidget);
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
+  });
+
   testWidgets('検索を開いたまま条件なしで別のタブへ行くと、戻ったとき検索の行は閉じている。条件があれば残る',
       (tester) async {
     await pump(tester, size: const Size(400, 800));

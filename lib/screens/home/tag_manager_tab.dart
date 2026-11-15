@@ -39,8 +39,10 @@ enum TagViewMode {
 /// ホームの「タグ」タブ。タグの一覧（リスト / グリッド大 / グリッド小）と、名前・色の変更、削除、並べ替え。
 /// 曲に付いたタグもこの並びで出る
 ///
-/// タップは選択の切り替え（[onToggleSelect]）、長押ししたまま動かすと並べ替え
-/// （リストは右の ≡ なら触れてすぐ動かせる）。長押しで選択には入らない。
+/// タップも長押しも選択の切り替え（[onToggleSelect]。タグは開く先が無いのでタップも選択）。
+/// 並べ替えは並べ替えモード（[reordering]。ホームの見出しのボタンでオンオフ）の中だけ:
+/// リストは ⋮ の場所に ≡ が出て触れてすぐ動かせ、行の長押しでも持ち上がる。グリッドは
+/// タイルを長押しして動かす。モード中はタップしても選択しない。
 /// 選んだタグでの検索・色・削除はホームの選択バー側（[selecting] は 1 件以上選んでいる間）
 class TagManagerTab extends ConsumerWidget {
   const TagManagerTab({
@@ -49,15 +51,22 @@ class TagManagerTab extends ConsumerWidget {
     this.selecting = false,
     this.selectedIds = const {},
     this.onToggleSelect,
+    this.reordering = false,
   });
 
   final TagViewMode viewMode;
   final bool selecting;
+
+  /// 並べ替えモード
+  final bool reordering;
   final Set<String> selectedIds;
   final ValueChanged<Tag>? onToggleSelect;
 
   /// リストの行の右端の余白（つまみの列の当たり判定はここまで含める）
   static const _rowEndPadding = AppSpacing.xxl;
+
+  /// リストの行の右端のボタン（⋮。並べ替えモードでは同じ場所に ≡）の大きさ
+  static const _trailingButtonSize = kMinInteractiveDimension;
 
   /// FAB の「タグを作成」
   static Future<void> createTag(BuildContext context, WidgetRef ref) async {
@@ -177,7 +186,10 @@ class TagManagerTab extends ConsumerWidget {
     final showThumbs = ref.watch(tagThumbsProvider);
     LoopItem? thumbOf(Tag tag) => showThumbs ? tag.thumbItemOf(allItems) : null;
 
-    void tap(Tag tag) => onToggleSelect?.call(tag);
+    // 並べ替えモード中は選択しない
+    final toggle = reordering ? null : onToggleSelect;
+    VoidCallback? toggleOf(Tag tag) =>
+        toggle == null ? null : () => toggle(tag);
 
     if (viewMode != TagViewMode.list) {
       return Column(
@@ -192,7 +204,8 @@ class TagManagerTab extends ConsumerWidget {
               selecting: selecting,
               selectedIds: selectedIds,
               countOf: countOf,
-              onTap: tap,
+              reordering: reordering,
+              onToggle: toggle,
               onReorder: ref.read(tagsProvider.notifier).reorder,
             ),
           ),
@@ -216,10 +229,11 @@ class TagManagerTab extends ConsumerWidget {
             selecting: selecting,
             selected: selected,
             // メニューは行の脇に出すので、行の context を取る
-            // 行の長押しは並べ替え（選択はタップ）
+            // 並べ替えモードは行の長押しでも持ち上がる（ふだんの長押しは選択）
             child: Builder(builder: (rowContext) => Stack(children: [
             ReorderableDelayedDragStartListener(
             index: i,
+            enabled: reordering,
             child: ListTile(
             selected: selected,
             contentPadding: const EdgeInsetsDirectional.only(
@@ -243,35 +257,38 @@ class TagManagerTab extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('${countOf(tag)} 曲', style: textTheme.bodySmall),
-                // 選択の印はメニューと ≡ の場所に（隠すだけで場所は残す）
+                // 選択の印はメニューの場所に（隠すだけで場所は残す）。
+                // 並べ替えモードは同じ場所が ≡
                 SelectionTrailing(
                   selecting: selecting,
                   selected: selected,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
-                        tooltip: 'メニュー',
-                        onPressed: () =>
-                            _showMenu(rowContext, ref, tag, allItems),
-                      ),
-                      const ReorderHandleIcon(),
-                    ],
-                  ),
+                  child: reordering
+                      ? const SizedBox(
+                          width: _trailingButtonSize,
+                          height: _trailingButtonSize,
+                          child: Center(child: ReorderHandleIcon()),
+                        )
+                      : IconButton(
+                          icon:
+                              const Icon(Icons.more_vert, size: AppIconSizes.md),
+                          tooltip: 'メニュー',
+                          onPressed: () =>
+                              _showMenu(rowContext, ref, tag, allItems),
+                        ),
                 ),
               ],
             ),
-            onTap: () => tap(tag),
+            onTap: toggleOf(tag),
+            onLongPress: toggleOf(tag),
           )),
             // つまみの列（≡ から行の右端まで、行の高さいっぱい）はまるごと並べ替え。
-            // ≡ の右や上下に、長押しで選択になる隙間を残さない
-            if (!selecting)
+            // ≡ の右や上下に、すぐには動かせない隙間を残さない
+            if (reordering)
               Positioned(
                 top: 0,
                 bottom: 0,
                 right: 0,
-                width: ReorderHandleIcon.width + _rowEndPadding,
+                width: _trailingButtonSize + _rowEndPadding,
                 child: ReorderHandle.area(index: i),
               ),
           ])),
@@ -392,7 +409,7 @@ class _TagOrderHintState extends State<_TagOrderHint> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Text('タップで選択、長押ししたまま動かして並べ替え',
+                  Text('タップか長押しで選択。並べ替えは右上の ⇅ から',
                       style: textTheme.labelSmall),
                 ],
               ),
@@ -456,8 +473,8 @@ class _TagDot extends StatelessWidget {
   }
 }
 
-/// タグのグリッド。長押ししたまま動かすと並べ替え（動かしている間は並びを先に見せる）。
-/// 動かさずに離しても何もしない（選択はタップ）
+/// タグのグリッド。タップも長押しも選択。並べ替えモード（[reordering]）の間だけ、
+/// 長押ししたまま動かすと並べ替え（動かしている間は並びを先に見せる）
 class _TagGrid extends StatefulWidget {
   const _TagGrid({
     required this.tags,
@@ -467,7 +484,8 @@ class _TagGrid extends StatefulWidget {
     required this.selecting,
     required this.selectedIds,
     required this.countOf,
-    required this.onTap,
+    required this.reordering,
+    required this.onToggle,
     required this.onReorder,
   });
 
@@ -482,8 +500,15 @@ class _TagGrid extends StatefulWidget {
   final bool selecting;
   final Set<String> selectedIds;
   final int Function(Tag) countOf;
-  final ValueChanged<Tag> onTap;
+  final bool reordering;
+
+  /// 選択の切り替え（並べ替えモード中は null）
+  final ValueChanged<Tag>? onToggle;
   final void Function(int oldIndex, int newIndex) onReorder;
+
+  /// 並べ替えモードでタイルが持ち上がるまでの時間（一覧のスクロールと取り合わない
+  /// 範囲で、ふつうの長押しより短く）
+  static const _dragDelay = Duration(milliseconds: 250);
 
   @override
   State<_TagGrid> createState() => _TagGridState();
@@ -535,6 +560,9 @@ class _TagGridState extends State<_TagGrid> {
       },
       itemBuilder: (context, i) {
         final tag = tags[i];
+        if (!widget.reordering) {
+          return KeyedSubtree(key: ValueKey(tag.id), child: _chip(context, tag));
+        }
         return DragTarget<String>(
           key: ValueKey(tag.id),
           onWillAcceptWithDetails: (d) {
@@ -546,6 +574,7 @@ class _TagGridState extends State<_TagGrid> {
               final chip = _chip(context, tag);
               return LongPressDraggable<String>(
                 data: tag.id,
+                delay: _TagGrid._dragDelay,
                 onDragStarted: () =>
                     setState(() => _preview = List.of(widget.tags)),
                 onDragEnd: (_) => _endDrag(tag),
@@ -581,6 +610,8 @@ class _TagGridState extends State<_TagGrid> {
     final onImage = small && thumb != null;
     final nameColor = onImage ? Colors.white : null;
     final countColor = onImage ? Colors.white70 : AppTheme.muted(context);
+    final onToggle = widget.onToggle;
+    final toggle = onToggle == null ? null : () => onToggle(tag);
 
     final text = Column(
       mainAxisSize: MainAxisSize.min,
@@ -615,7 +646,8 @@ class _TagGridState extends State<_TagGrid> {
         radius: radius,
         padding: EdgeInsets.zero,
         tint: tag.color.withValues(alpha: 0.12),
-        onTap: () => widget.onTap(tag),
+        onTap: toggle,
+        onLongPress: toggle,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(radius),
           child: Stack(
@@ -648,7 +680,8 @@ class _TagGridState extends State<_TagGrid> {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         tint: tag.color.withValues(alpha: 0.12),
-        onTap: () => widget.onTap(tag),
+        onTap: toggle,
+        onLongPress: toggle,
         child: Row(
           children: [
             _TagDot(tag: tag),
