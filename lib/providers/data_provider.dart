@@ -958,16 +958,6 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
     _refresh();
   }
 
-  /// 外した曲（タグに当てはまるのに自動で入れないことにした曲）を戻す
-  Future<void> restoreExcluded(String playlistId) async {
-    final pl = _box.get(playlistId);
-    if (pl == null) return;
-    pl.excludedItemIds.clear();
-    pl.syncTagItems(_items());
-    await _box.put(playlistId, pl);
-    _refresh();
-  }
-
   void _refresh() {
     state = _box.values.toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));

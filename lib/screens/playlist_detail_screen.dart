@@ -7,6 +7,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/audio/track_compatibility.dart';
 import '../core/constants.dart';
+import '../core/storage/app_boxes.dart';
+import 'home/item_views.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
@@ -56,6 +58,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
   /// 削除ボタンで外している途中の曲（横に抜けて縮むアニメーションのあとで外す）
   final _removing = <String>{};
+
+  /// 曲の一覧をリスト小（曲名 1 行だけ）で出す。ふだんはリスト大（曲名 2 行 + 情報 + タグ）
+  bool _compact = AppBoxes.settings
+      .get(SettingsKeys.playlistDetailCompact, defaultValue: false) as bool;
+
+  void _toggleCompact() {
+    setState(() => _compact = !_compact);
+    AppBoxes.settings.put(SettingsKeys.playlistDetailCompact, _compact);
+  }
 
   /// 削除ボタン: スワイプで外したときと同じく、横に抜けて縮んでから外す
   void _removeWithAnimation(String itemId) {
@@ -353,14 +364,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
     final result = await showPlaylistTagsDialog(context,
         tags: tags,
-        selected: pl.tagIds.toSet(),
-        countOf: countOf,
-        excludedCount: pl.excludedItemIds.length);
+        selected: pl.tagIds.toSet(), countOf: countOf);
     if (result == null || !mounted) return;
     final notifier = ref.read(playlistsProvider.notifier);
     final before = pl.itemIds.length;
-    await notifier.setTags(pl.id, result.tagIds);
-    if (result.restoreExcluded) await notifier.restoreExcluded(pl.id);
+    await notifier.setTags(pl.id, result);
     if (!mounted) return;
     final after = ref
             .read(playlistsProvider)
@@ -371,7 +379,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         before;
     final added = after - before;
     AppToast.instance.show(AppSnackBar.success(
-        result.tagIds.isEmpty
+        result.isEmpty
             ? 'タグでの自動追加をやめました'
             : added > 0
                 ? '$added 曲が入りました'
@@ -423,12 +431,21 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           label: const Text('完了'),
           style: TextButton.styleFrom(foregroundColor: AppTheme.accentGreen),
         )
-      else if (items.isNotEmpty)
+      else if (items.isNotEmpty) ...[
+        // 今の表示のアイコン（ホームの曲一覧と同じ）。押すとリスト大 ⇔ リスト小
+        IconButton(
+          icon: Icon(
+              (_compact ? ItemViewMode.list : ItemViewMode.titles).icon),
+          tooltip:
+              '表示: ${(_compact ? ItemViewMode.list : ItemViewMode.titles).label}',
+          onPressed: _toggleCompact,
+        ),
         IconButton(
           icon: const Icon(Icons.edit_note),
           tooltip: '編集（並べ替え・外す）',
           onPressed: () => setState(() => _editing = true),
         ),
+      ],
       if (!_editing)
         PopupMenuButton<_PlaylistMenu>(
           tooltip: 'その他',
@@ -579,12 +596,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             spacing: AppSpacing.xs,
             runSpacing: AppSpacing.xs,
             crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Icon(Icons.autorenew,
-                  size: AppIconSizes.s,
-                  color: AppTheme.muted(context)),
-              for (final t in autoTags) TagChip(tag: t),
-            ],
+            children: [for (final t in autoTags) TagChip(tag: t)],
           ),
         ),
       ],
@@ -744,8 +756,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               },
               itemBuilder: (context, i) {
                 final item = items[i];
-                final itemTags =
-                    tags.where((t) => item.tagIds.contains(t.id)).toList();
+                // 自動で入れるタグが 1 つだけなら、どの曲にも付いているので出さない
+                // （2 つ以上なら、どれで入ったかが分かるように出す）
+                final onlyAutoTag =
+                    pl.tagIds.length == 1 ? pl.tagIds.first : null;
+                final itemTags = tags
+                    .where((t) =>
+                        item.tagIds.contains(t.id) && t.id != onlyAutoTag)
+                    .toList();
                 final isDisabled = pl.disabledItemIds.contains(item.id);
                 return Dismissible(
                   key: ValueKey('${pl.id}_${item.id}_$i'),
@@ -830,7 +848,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       // 同じサウンドトラックの曲などはサムネで見分けにくいので 2 行まで
                       title: Text(
                         item.title,
-                        maxLines: 2,
+                        maxLines: _compact ? 1 : 2,
                         overflow: TextOverflow.ellipsis,
                         style: textTheme.bodyLarge?.copyWith(
                           decoration: isDisabled
@@ -838,7 +856,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                               : null,
                         ),
                       ),
-                      subtitle: _buildSubtitle(item, itemTags, pl),
+                      // リスト小は曲名だけ（再生できない知らせは残す）
+                      subtitle: _compact
+                          ? (item.isUnplayable
+                              ? Text('再生できないので飛ばします',
+                                  style: textTheme.labelSmall)
+                              : null)
+                          : _buildSubtitle(item, itemTags, pl),
                       // ふだんは ⋮、編集モードは同じ場所が ⊖（外す）。右に余白は取らない
                       // （曲名を広く出す）
                       trailing: _editing

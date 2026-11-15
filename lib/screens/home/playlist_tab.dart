@@ -65,17 +65,17 @@ class PlaylistTab extends ConsumerWidget {
         countOf: (tag) => allItems
             .where((i) => i.isReady && i.tagIds.contains(tag.id))
             .length);
-    if (result == null || result.tagIds.isEmpty) return;
+    if (result == null || result.isEmpty) return;
     // 名前は選んだタグの名前から（タグ一覧の並び）
     final name = AppLimits.clip(
         [
           for (final t in tags)
-            if (result.tagIds.contains(t.id)) t.name
+            if (result.contains(t.id)) t.name
         ].join('・'),
         AppLimits.playlistNameMaxLength);
     final id = IdGenerator.next();
     await notifier.add(Playlist(id: id, name: name));
-    await notifier.setTags(id, result.tagIds);
+    await notifier.setTags(id, result);
   }
 
   /// 作り方を選ぶ。false = 空で作る、true = タグから作る、null = やめた
@@ -216,15 +216,16 @@ class PlaylistTab extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('$count 曲', style: textTheme.bodySmall),
+                      // 自動で入れるタグ（2 つ目からは +N）
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Wrap(
-                          spacing: AppSpacing.xs,
-                          runSpacing: 2,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            _AutoMark(),
-                            for (final t in autoTags) TagChip(tag: t),
+                            Flexible(child: TagChip(tag: autoTags.first)),
+                            if (autoTags.length > 1)
+                              Text(' +${autoTags.length - 1}',
+                                  style: textTheme.labelSmall),
                           ],
                         ),
                       ),
@@ -368,8 +369,6 @@ class PlaylistTab extends ConsumerWidget {
                     Text('$count 曲', style: textTheme.labelSmall),
                     if (autoTags.isNotEmpty) ...[
                       const SizedBox(width: AppSpacing.sm),
-                      _AutoMark(),
-                      const SizedBox(width: 2),
                       Flexible(child: TagChip(tag: autoTags.first, small: true)),
                       if (autoTags.length > 1)
                         Text(' +${autoTags.length - 1}',
@@ -430,13 +429,6 @@ class PlaylistTab extends ConsumerWidget {
       ),
     );
   }
-}
-
-/// 「タグで自動に入る」の印（プレイリスト詳細と同じ記号）
-class _AutoMark extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) =>
-      Icon(Icons.autorenew, size: 13, color: AppTheme.muted(context));
 }
 
 /// プレイリストのサムネ（先頭曲など）。無ければ薄い面にアイコン。

@@ -361,27 +361,19 @@ Future<PlaylistAddChoice?> showPlaylistAddDialog(BuildContext context) {
   );
 }
 
-/// 「タグで自動追加」の結果
-typedef PlaylistTagsResult = ({List<String> tagIds, bool restoreExcluded});
-
 /// プレイリストに自動で入れるタグを選ぶダイアログ（複数選べる。どれか 1 つが付いた曲が入る）。
-/// タグが多くても中で縦に流れる。[countOf] はそのタグが付いた曲数。
-/// [excludedCount] は外した曲の数（1 以上なら「戻す」を出す）
-Future<PlaylistTagsResult?> showPlaylistTagsDialog(
+/// 選んであるタグを上に集める。タグが多くても中で縦に流れる。[countOf] はそのタグが
+/// 付いた曲数。戻り値は選んだタグの ID（タグ一覧の並び）
+Future<List<String>?> showPlaylistTagsDialog(
   BuildContext context, {
   required List<Tag> tags,
   required Set<String> selected,
   required int Function(Tag tag) countOf,
-  int excludedCount = 0,
 }) {
-  return showDialog<PlaylistTagsResult>(
+  return showDialog<List<String>>(
     context: context,
-    builder: (_) => _PlaylistTagsDialog(
-      tags: tags,
-      initial: selected,
-      countOf: countOf,
-      excludedCount: excludedCount,
-    ),
+    builder: (_) =>
+        _PlaylistTagsDialog(tags: tags, initial: selected, countOf: countOf),
   );
 }
 
@@ -390,13 +382,11 @@ class _PlaylistTagsDialog extends StatefulWidget {
     required this.tags,
     required this.initial,
     required this.countOf,
-    required this.excludedCount,
   });
 
   final List<Tag> tags;
   final Set<String> initial;
   final int Function(Tag tag) countOf;
-  final int excludedCount;
 
   @override
   State<_PlaylistTagsDialog> createState() => _PlaylistTagsDialogState();
@@ -404,14 +394,34 @@ class _PlaylistTagsDialog extends StatefulWidget {
 
 class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
   late final Set<String> _selected = {...widget.initial};
-  bool _restoreExcluded = false;
+
+  /// 上に集めるタグ（並び順）。開いたとき選んであったもの + 開いている間にオンにしたもの。
+  /// オフにしても開いている間はここから抜かない（押した行が逃げないように）
+  late final List<String> _top = [
+    for (final t in widget.tags)
+      if (widget.initial.contains(t.id)) t.id
+  ];
+
+  void _toggle(Tag tag) {
+    setState(() {
+      if (!_selected.remove(tag.id)) {
+        _selected.add(tag.id);
+        if (!_top.contains(tag.id)) _top.add(tag.id);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4);
-    // タグ一覧の並び（ユーザーが決めた順）のまま
-    final tags = widget.tags;
+    // 上に集めたタグ、その下に残りをタグ一覧の並び（ユーザーが決めた順）で
+    final byId = {for (final t in widget.tags) t.id: t};
+    final tags = [
+      for (final id in _top) ?byId[id],
+      for (final t in widget.tags)
+        if (!_top.contains(t.id)) t,
+    ];
     return AlertDialog(
       title: Text('タグで自動追加', style: textTheme.displaySmall),
       contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
@@ -434,30 +444,29 @@ class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
                         final tag = tags[i];
                         final on = _selected.contains(tag.id);
                         return CheckboxListTile(
+                          key: ValueKey(tag.id),
                           value: on,
-                          onChanged: (_) => setState(() => on
-                              ? _selected.remove(tag.id)
-                              : _selected.add(tag.id)),
+                          onChanged: (_) => _toggle(tag),
                           secondary: Icon(Icons.label,
                               size: AppIconSizes.md, color: tag.color),
-                          title: Text(tag.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.bodyLarge),
-                          subtitle: Text('${widget.countOf(tag)} 曲',
-                              style: textTheme.labelSmall),
+                          // 名前の右に曲数
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(tag.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textTheme.bodyLarge),
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Text('${widget.countOf(tag)} 曲',
+                                  style: textTheme.labelSmall),
+                            ],
+                          ),
                         );
                       },
                     ),
                   ),
-                  if (widget.excludedCount > 0)
-                    CheckboxListTile(
-                      value: _restoreExcluded,
-                      onChanged: (v) =>
-                          setState(() => _restoreExcluded = v ?? false),
-                      title: Text('外した ${widget.excludedCount} 曲を戻す',
-                          style: textTheme.bodyMedium),
-                    ),
                 ],
               ),
       ),
@@ -467,11 +476,11 @@ class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
           child: const Text('キャンセル'),
         ),
         TextButton(
-          onPressed: () => Navigator.pop<PlaylistTagsResult>(context, (
-            // タグ一覧の並びで保存
-            tagIds: [for (final t in tags) if (_selected.contains(t.id)) t.id],
-            restoreExcluded: _restoreExcluded,
-          )),
+          // タグ一覧の並びで保存
+          onPressed: () => Navigator.pop<List<String>>(context, [
+            for (final t in widget.tags)
+              if (_selected.contains(t.id)) t.id
+          ]),
           child: const Text('OK'),
         ),
       ],

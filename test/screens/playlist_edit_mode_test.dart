@@ -54,6 +54,39 @@ void main() {
 
   List<String> ids() => AppBoxes.playlists.get('p')!.itemIds;
 
+  testWidgets('表示の切り替え: リスト小は曲名だけ。自動で入れるタグが 1 つなら行には出さない',
+      (tester) async {
+    await AppBoxes.tags.put('r', Tag(id: 'r', name: 'ロック'));
+    await AppBoxes.tags.put('j', Tag(id: 'j', name: 'ジャズ'));
+    addTearDown(() => AppBoxes.tags.clear());
+    addTearDown(
+        () => AppBoxes.settings.delete(SettingsKeys.playlistDetailCompact));
+    await AppBoxes.loopItems.put(
+        'a',
+        LoopItem(
+            id: 'a',
+            title: '曲 a',
+            uri: 'u',
+            sourceType: 'local',
+            speed: 1.5,
+            tagIds: ['r', 'j']));
+    await AppBoxes.playlists.put(
+        'p', Playlist(id: 'p', name: 'リスト', itemIds: ['a', 'b', 'c'], tagIds: ['r']));
+    await pump(tester);
+    // 見出しに 1 つ（自動で入れるタグ）。行にはロックを出さず、ジャズだけ
+    expect(find.text('ロック'), findsOneWidget);
+    expect(find.text('ジャズ'), findsOneWidget);
+    expect(find.textContaining('1.5'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('表示: リスト大'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('表示: リスト小'), findsOneWidget);
+    expect(find.text('ジャズ'), findsNothing);
+    expect(find.textContaining('1.5'), findsNothing);
+    expect(find.text('曲 a'), findsOneWidget);
+    expect(AppBoxes.settings.get(SettingsKeys.playlistDetailCompact), isTrue);
+  });
+
   testWidgets('ふだんは ⋮ だけ（≡ も ⊖ も無く、右に余白を取らない）', (tester) async {
     await pump(tester);
     expect(find.byIcon(Icons.drag_handle), findsNothing);

@@ -73,6 +73,8 @@ class SettingsKeys {
   static const homeTagGrid = 'home_tag_grid';
   static const homeTagView = 'home_tag_view';
   static const homePlaylistGrid = 'home_playlist_grid';
+  /// プレイリスト詳細の曲の一覧をリスト小（曲名だけ）で出すか
+  static const playlistDetailCompact = 'playlist_detail_compact';
   static const tagOrderHintSeen = 'tag_order_hint_seen';
   /// 全画面のコントロールを出したままにする（上の帯のピン）
   static const fullscreenControlsPinned = 'fullscreen_controls_pinned';
