@@ -26,6 +26,10 @@ class TagChip extends StatelessWidget {
   /// 除外フィルタ（赤い取り消し線）
   final bool excluded;
 
+  /// チップの幅の上限（長い名前は … で切る。上限を越えた昔のタグ名でも行を押し広げない）
+  static const double maxWidth = 150;
+  static const double maxWidthSmall = 100;
+
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -45,6 +49,7 @@ class TagChip extends StatelessWidget {
           decorationColor: fg,
         );
     final chip = Container(
+      constraints: BoxConstraints(maxWidth: small ? maxWidthSmall : maxWidth),
       padding: EdgeInsets.symmetric(
           horizontal: small ? 7 : 9, vertical: small ? 2 : 3),
       decoration: BoxDecoration(
@@ -54,7 +59,10 @@ class TagChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(tag.name, style: textStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+          Flexible(
+            child: Text(tag.name,
+                style: textStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
           if (onDeleted != null) ...[
             const SizedBox(width: 2),
             // × は見た目より広く押せるように、透明な余白を足す

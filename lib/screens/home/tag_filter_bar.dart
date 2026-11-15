@@ -72,6 +72,8 @@ class _TagFilterSheetState extends ConsumerState<_TagFilterSheet> {
       leading: leading,
       title: Text(
         title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodyLarge!.copyWith(
               color: titleColor,
               decoration: state == false ? TextDecoration.lineThrough : null,

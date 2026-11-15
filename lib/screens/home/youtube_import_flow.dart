@@ -12,6 +12,7 @@ import '../../providers/data_provider.dart';
 import '../../services/playlist_service.dart';
 import '../../services/share_service.dart';
 import '../../widgets/share_import_dialog.dart';
+import '../../widgets/tag_chip.dart';
 import 'playlist_video_select_page.dart';
 
 /// ホームの「追加」から始まる取り込みの流れ。
@@ -413,6 +414,8 @@ class YouTubeImportFlow {
   /// インポート時にタグを付与するか選択するダイアログ
   Future<String?> _showImportTagDialog(String playlistTitle) async {
     final tags = ref.read(tagsProvider);
+    // プレイリスト名はタグ名の上限より長いことがある
+    final newTagName = AppLimits.clip(playlistTitle, AppLimits.tagNameMaxLength);
     return showDialog<String>(
       context: context,
       builder: (ctx) {
@@ -435,7 +438,14 @@ class YouTubeImportFlow {
                   children: [
                     for (final tag in tags)
                       ActionChip(
-                        label: Text(tag.name, style: textTheme.labelMedium),
+                        label: ConstrainedBox(
+                          constraints:
+                              const BoxConstraints(maxWidth: TagChip.maxWidth),
+                          child: Text(tag.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: textTheme.labelMedium),
+                        ),
                         onPressed: () => Navigator.pop(ctx, tag.id),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize:
@@ -448,11 +458,13 @@ class YouTubeImportFlow {
               OutlinedButton.icon(
                 onPressed: () async {
                   final tag =
-                      await ref.read(tagsProvider.notifier).create(playlistTitle);
+                      await ref.read(tagsProvider.notifier).create(newTagName);
                   if (ctx.mounted) Navigator.pop(ctx, tag.id);
                 },
                 icon: const Icon(Icons.add, size: AppIconSizes.s),
-                label: Text('「$playlistTitle」タグを作成',
+                label: Text('「$newTagName」タグを作成',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: textTheme.labelMedium),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: Theme.of(ctx).dividerColor),

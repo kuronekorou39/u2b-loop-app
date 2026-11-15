@@ -849,7 +849,11 @@ class TagsNotifier extends StateNotifier<List<Tag>> {
     final id = IdGenerator.next();
     // 新しいタグは末尾に
     final last = state.map((t) => t.order ?? -1).fold(-1, (a, b) => a > b ? a : b);
-    final tag = Tag(id: id, name: name.trim(), order: last + 1);
+    // 入力欄を通らない作り方（取り込み元のプレイリスト名など）でも上限を越えない
+    final tag = Tag(
+        id: id,
+        name: AppLimits.clip(name, AppLimits.tagNameMaxLength),
+        order: last + 1);
     await _box.put(id, tag);
     _refresh();
     return tag;
@@ -867,7 +871,7 @@ class TagsNotifier extends StateNotifier<List<Tag>> {
   Future<void> rename(String id, String newName) async {
     final tag = _box.get(id);
     if (tag != null) {
-      tag.name = newName.trim();
+      tag.name = AppLimits.clip(newName, AppLimits.tagNameMaxLength);
       await _box.put(id, tag);
       _refresh();
     }

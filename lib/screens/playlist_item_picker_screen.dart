@@ -440,7 +440,10 @@ class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
                               : _selected.add(tag.id)),
                           secondary: Icon(Icons.label,
                               size: AppIconSizes.md, color: tag.color),
-                          title: Text(tag.name, style: textTheme.bodyLarge),
+                          title: Text(tag.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: textTheme.bodyLarge),
                           subtitle: Text('${widget.countOf(tag)} 曲',
                               style: textTheme.labelSmall),
                         );

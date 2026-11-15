@@ -147,7 +147,10 @@ class _BulkTagSheetState extends State<BulkTagSheet> {
               children: [
                 for (final tag in _tags)
                   CheckboxListTile(
-                    title: Text(tag.name, style: textTheme.bodyLarge),
+                    title: Text(tag.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: textTheme.bodyLarge),
                     subtitle: Text(
                       '${widget.allItems.where((i) => i.tagIds.contains(tag.id)).length} 曲',
                       style: textTheme.labelSmall

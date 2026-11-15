@@ -9,6 +9,7 @@ import '../../core/ui/app_snack_bar.dart';
 import '../../core/utils/id_generator.dart';
 import '../../models/loop_item.dart';
 import '../../models/playlist.dart';
+import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
 import '../../widgets/now_playing_mark.dart';
 import '../../widgets/selection_mark.dart';
@@ -16,8 +17,10 @@ import '../../widgets/empty_hint.dart';
 import '../../widgets/glass_controls.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/item_thumbnail.dart';
+import '../../widgets/tag_chip.dart';
 import '../player_screen.dart';
 import '../playlist_detail_screen.dart';
+import '../playlist_item_picker_screen.dart';
 import 'home_parts.dart';
 
 /// ホームの「プレイリスト」タブ。一覧（リスト / カードのグリッド）・再生・複製・削除。
@@ -38,17 +41,73 @@ class PlaylistTab extends ConsumerWidget {
   final ValueChanged<Playlist>? onToggleSelect;
   final ValueChanged<Playlist>? onLongPress;
 
-  /// FAB の「プレイリストを作成」
+  /// 空で作ったときの名前（名前は後から変えられるので、作るときには聞かない）
+  static const newPlaylistName = '新しいプレイリスト';
+
+  /// FAB の「プレイリストを作成」。空で作るか、タグから作るかを選ぶ
   static Future<void> createPlaylist(BuildContext context, WidgetRef ref) async {
-    final name = await AppDialogs.prompt(context,
-        title: 'プレイリスト作成',
-        hintText: 'プレイリスト名',
-        confirmLabel: '作成',
-        maxLength: AppLimits.playlistNameMaxLength);
-    if (name == null) return;
-    await ref
-        .read(playlistsProvider.notifier)
-        .add(Playlist(id: IdGenerator.next(), name: name));
+    final fromTags = await _showCreateDialog(context);
+    if (fromTags == null || !context.mounted) return;
+    final notifier = ref.read(playlistsProvider.notifier);
+    if (!fromTags) {
+      await notifier.add(Playlist(id: IdGenerator.next(), name: newPlaylistName));
+      return;
+    }
+    final tags = ref.read(tagsProvider);
+    if (tags.isEmpty) {
+      AppToast.instance.show(AppSnackBar.info('タグがありません'));
+      return;
+    }
+    final allItems = ref.read(loopItemsProvider);
+    final result = await showPlaylistTagsDialog(context,
+        tags: tags,
+        selected: const {},
+        countOf: (tag) => allItems
+            .where((i) => i.isReady && i.tagIds.contains(tag.id))
+            .length);
+    if (result == null || result.tagIds.isEmpty) return;
+    // 名前は選んだタグの名前から（タグ一覧の並び）
+    final name = AppLimits.clip(
+        [
+          for (final t in tags)
+            if (result.tagIds.contains(t.id)) t.name
+        ].join('・'),
+        AppLimits.playlistNameMaxLength);
+    final id = IdGenerator.next();
+    await notifier.add(Playlist(id: id, name: name));
+    await notifier.setTags(id, result.tagIds);
+  }
+
+  /// 作り方を選ぶ。false = 空で作る、true = タグから作る、null = やめた
+  static Future<bool?> _showCreateDialog(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('プレイリストを作成', style: textTheme.displaySmall),
+        contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.playlist_add, color: AppTheme.accentGreen),
+                title: Text('空で作る', style: textTheme.bodyLarge),
+                onTap: () => Navigator.pop(ctx, false),
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.label_outline, color: AppTheme.accentGreen),
+                title: Text('タグから作る', style: textTheme.bodyLarge),
+                onTap: () => Navigator.pop(ctx, true),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// まとめて削除（確認つき）。戻り値は消したか
@@ -82,6 +141,7 @@ class PlaylistTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final playlists = ref.watch(playlistsProvider);
     final items = ref.watch(loopItemsProvider);
+    final tags = ref.watch(tagsProvider);
 
     if (playlists.isEmpty) {
       return const EmptyHint(
@@ -97,6 +157,14 @@ class PlaylistTab extends ConsumerWidget {
       return id == null ? null : items.where((item) => item.id == id).firstOrNull;
     }
 
+    // 自動で入れるタグ（タグ一覧の並び）
+    List<Tag> tagsOf(Playlist pl) => pl.tagIds.isEmpty
+        ? const []
+        : [
+            for (final t in tags)
+              if (pl.tagIds.contains(t.id)) t
+          ];
+
     void tap(Playlist pl) {
       if (selecting) {
         onToggleSelect?.call(pl);
@@ -107,7 +175,8 @@ class PlaylistTab extends ConsumerWidget {
     }
 
     if (grid) {
-      return _buildGrid(context, ref, playlists, items, countOf, thumbOf, tap);
+      return _buildGrid(
+          context, ref, playlists, items, countOf, thumbOf, tagsOf, tap);
     }
 
     final textTheme = Theme.of(context).textTheme;
@@ -118,6 +187,7 @@ class PlaylistTab extends ConsumerWidget {
         itemBuilder: (context, i) {
           final pl = playlists[i];
           final count = countOf(pl);
+          final autoTags = tagsOf(pl);
           final selected = selectedIds.contains(pl.id);
           return SelectionDim(
             selecting: selecting,
@@ -138,8 +208,28 @@ class PlaylistTab extends ConsumerWidget {
                 ),
               ),
             ),
-            title: Text(pl.name),
-            subtitle: Text('$count 曲', style: textTheme.bodySmall),
+            title: Text(pl.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+            subtitle: autoTags.isEmpty
+                ? Text('$count 曲', style: textTheme.bodySmall)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('$count 曲', style: textTheme.bodySmall),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Wrap(
+                          spacing: AppSpacing.xs,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _AutoMark(),
+                            for (final t in autoTags) TagChip(tag: t),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
             // 選択の印は右端の再生・メニューの場所に（隠すだけで場所は残す）
             trailing: SelectionTrailing(
                 selecting: selecting,
@@ -179,6 +269,7 @@ class PlaylistTab extends ConsumerWidget {
     List<LoopItem> items,
     int Function(Playlist) countOf,
     LoopItem? Function(Playlist) thumbOf,
+    List<Tag> Function(Playlist) tagsOf,
     void Function(Playlist) tap,
   ) {
     final textTheme = Theme.of(context).textTheme;
@@ -188,7 +279,7 @@ class PlaylistTab extends ConsumerWidget {
           AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 220,
-        childAspectRatio: 16 / 14,
+        childAspectRatio: 16 / 14.5,
         crossAxisSpacing: AppSpacing.md + 2,
         mainAxisSpacing: AppSpacing.md + 2,
       ),
@@ -196,6 +287,7 @@ class PlaylistTab extends ConsumerWidget {
       itemBuilder: (context, i) {
         final pl = playlists[i];
         final count = countOf(pl);
+        final autoTags = tagsOf(pl);
         final selected = selectedIds.contains(pl.id);
         return SelectionDim(
           selecting: selecting,
@@ -268,7 +360,24 @@ class PlaylistTab extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.labelMedium
                       ?.copyWith(fontWeight: FontWeight.w600)),
-              Text('$count 曲', style: textTheme.labelSmall),
+              // 曲数の右に、自動で入れるタグ（入りきらない分は +N）
+              SizedBox(
+                height: _gridInfoHeight,
+                child: Row(
+                  children: [
+                    Text('$count 曲', style: textTheme.labelSmall),
+                    if (autoTags.isNotEmpty) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      _AutoMark(),
+                      const SizedBox(width: 2),
+                      Flexible(child: TagChip(tag: autoTags.first, small: true)),
+                      if (autoTags.length > 1)
+                        Text(' +${autoTags.length - 1}',
+                            style: textTheme.labelSmall),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -276,6 +385,9 @@ class PlaylistTab extends ConsumerWidget {
       },
     );
   }
+
+  /// グリッドの曲数の行の高さ（タグのチップがあっても無くても同じ）
+  static const double _gridInfoHeight = 18;
 
   void _showMenu(BuildContext context, WidgetRef ref, Playlist pl) {
     AppSheets.actions(
@@ -318,6 +430,13 @@ class PlaylistTab extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 「タグで自動に入る」の印（プレイリスト詳細と同じ記号）
+class _AutoMark extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) =>
+      Icon(Icons.autorenew, size: 13, color: AppTheme.muted(context));
 }
 
 /// プレイリストのサムネ（先頭曲など）。無ければ薄い面にアイコン。

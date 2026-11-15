@@ -15,8 +15,11 @@ import '../../core/utils/rate_label.dart';
 /// 曲一覧の表示モード: リスト / 曲名（曲名を 3 行まで出すリスト）/ グリッド大 / グリッド小（列数は幅で決まる）。
 /// 候補が 4 つなので、AppBar では押して回すのではなくプルダウンで選ぶ
 enum ItemViewMode {
-  list(Icons.view_list, 'リスト'),
-  titles(Icons.subject, '曲名'),
+  /// 曲名を 3 行まで + 情報 + タグ（保存名は旧「曲名」のまま）
+  titles(Icons.view_list, 'リスト大'),
+
+  /// 曲名 1 行だけ（情報もタグも出さず、たくさん並べる）
+  list(Icons.view_headline, 'リスト小'),
   grid2(Icons.grid_view, 'グリッド大'),
   grid4(Icons.apps, 'グリッド小');
 
@@ -63,9 +66,9 @@ class ItemCollectionView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (viewMode) {
-      ItemViewMode.list => _buildList(context, titleLines: 1),
       // 同じサウンドトラックの曲などサムネで見分けにくいときに、曲名を長く出す
-      ItemViewMode.titles => _buildList(context, titleLines: 3),
+      ItemViewMode.titles => _buildList(context, titleLines: 3, detailed: true),
+      ItemViewMode.list => _buildList(context, titleLines: 1, detailed: false),
       // サムネ + 曲名 + 情報 + タグが収まる高さ（ガラス面の余白ぶん縦長）
       ItemViewMode.grid2 =>
         _buildGrid(context, maxExtent: 220, ratio: 16 / 15.5, compact: false),
@@ -263,7 +266,9 @@ class ItemCollectionView extends StatelessWidget {
 
   // === List ===
 
-  Widget _buildList(BuildContext context, {required int titleLines}) {
+  /// [detailed] が false なら曲名だけ（取得中・失敗・再生できないの知らせは出す）
+  Widget _buildList(BuildContext context,
+      {required int titleLines, required bool detailed}) {
     return HomeListSurface(
       child: ListView.builder(
         padding: HomeListSurface.listPadding,
@@ -271,14 +276,15 @@ class ItemCollectionView extends StatelessWidget {
         itemBuilder: (context, i) => SelectionDim(
           selecting: selecting,
           selected: selectedIds.contains(items[i].id),
-          child: _buildTile(context, items[i], titleLines: titleLines),
+          child: _buildTile(context, items[i],
+              titleLines: titleLines, detailed: detailed),
         ),
       ),
     );
   }
 
   Widget _buildTile(BuildContext context, LoopItem item,
-      {required int titleLines}) {
+      {required int titleLines, required bool detailed}) {
     final textTheme = Theme.of(context).textTheme;
     final selected = selectedIds.contains(item.id);
     return ListTile(
@@ -337,7 +343,7 @@ class ItemCollectionView extends StatelessWidget {
             ? textTheme.bodyLarge?.copyWith(color: AppTheme.muted(context))
             : textTheme.bodyLarge,
       ),
-      subtitle: _buildSubtitle(context, item),
+      subtitle: _buildSubtitle(context, item, detailed: detailed),
       // 選択の印は右端のメニューの場所に（メニューは隠すだけで場所は残す）
       trailing: SelectionTrailing(
         selecting: selecting,
@@ -374,7 +380,8 @@ class ItemCollectionView extends StatelessWidget {
     return parts.join('  ');
   }
 
-  Widget? _buildSubtitle(BuildContext context, LoopItem item) {
+  Widget? _buildSubtitle(BuildContext context, LoopItem item,
+      {required bool detailed}) {
     final textTheme = Theme.of(context).textTheme;
     if (item.isFetching) {
       return Text('情報を取得中...',
@@ -390,6 +397,7 @@ class ItemCollectionView extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: textTheme.labelSmall?.copyWith(color: Colors.orange.shade300));
     }
+    if (!detailed) return null;
 
     final info = <String>[
       ?regionInfoText(item),

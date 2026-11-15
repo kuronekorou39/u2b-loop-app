@@ -115,7 +115,10 @@ class _ItemTagSheetState extends State<ItemTagSheet> {
                 children: [
                   for (final tag in _tags)
                     CheckboxListTile(
-                      title: Text(tag.name, style: textTheme.bodyLarge),
+                      title: Text(tag.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: textTheme.bodyLarge),
                       value: _activeTagIds.contains(tag.id),
                       onChanged: (_) => _toggle(tag.id),
                     ),
