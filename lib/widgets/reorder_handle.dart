@@ -37,6 +37,26 @@ class ReorderHandle extends ReorderableDragStartListener {
       DelayedMultiDragGestureRecognizer(delay: Duration.zero, debugOwner: this);
 }
 
+/// 並べ替えモードで、行やタイルが持ち上がるまでの時間。触れてほぼすぐ持てる長さで、
+/// 触れてすぐ指を動かしたとき（一覧を送るとき）は持ち上げない
+const reorderTouchDelay = Duration(milliseconds: 100);
+
+/// 並べ替えモードの行。行のどこに触れても、ほぼすぐ（[reorderTouchDelay]）持ち上がる。
+/// 長押しは待たない。触れてすぐ指を動かせば一覧が送られる
+class ReorderRowListener extends ReorderableDragStartListener {
+  const ReorderRowListener({
+    super.key,
+    required super.index,
+    required super.child,
+    super.enabled,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() =>
+      DelayedMultiDragGestureRecognizer(
+          delay: reorderTouchDelay, debugOwner: this);
+}
+
 /// つまみの見た目だけ（当たり判定は [ReorderHandle.area] を行に重ねる）
 class ReorderHandleIcon extends StatelessWidget {
   const ReorderHandleIcon({super.key});

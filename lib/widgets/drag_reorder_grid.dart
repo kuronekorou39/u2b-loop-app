@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// 並べ替えモードのあるグリッド。[reordering] の間だけ、タイルを長押ししたまま
+import 'reorder_handle.dart';
+
+/// 並べ替えモードのあるグリッド。[reordering] の間だけ、タイルに触れるとほぼすぐ持ち上がり、
 /// 動かすと並べ替えられる（動かしている間は並びを先に見せ、離したときに [onReorder]）。
 /// ふだんは [itemBuilder] のタイルをそのまま並べるだけ（タップ・長押しはタイル側）
 class DragReorderGrid<T> extends StatefulWidget {
@@ -24,10 +26,6 @@ class DragReorderGrid<T> extends StatefulWidget {
   /// [newIndex] は動かした後の位置（ReorderableListView の onReorderItem と同じ）
   final void Function(int oldIndex, int newIndex) onReorder;
   final EdgeInsetsGeometry? padding;
-
-  /// タイルが持ち上がるまでの時間（一覧のスクロールと取り合わない範囲で、
-  /// ふつうの長押しより短く）
-  static const dragDelay = Duration(milliseconds: 250);
 
   @override
   State<DragReorderGrid<T>> createState() => _DragReorderGridState<T>();
@@ -90,7 +88,7 @@ class _DragReorderGridState<T> extends State<DragReorderGrid<T>> {
               final tile = widget.itemBuilder(context, item);
               return LongPressDraggable<String>(
                 data: id,
-                delay: DragReorderGrid.dragDelay,
+                delay: reorderTouchDelay,
                 onDragStarted: () =>
                     setState(() => _preview = List.of(widget.items)),
                 onDragEnd: (_) => _endDrag(id),

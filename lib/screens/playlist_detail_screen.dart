@@ -828,8 +828,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   child: SelectionDim(
                     selecting: selecting,
                     selected: isSelected,
-                    // 並べ替えモードは行の長押しでも持ち上げて並べ替えられる
-                    child: ReorderableDelayedDragStartListener(
+                    // 並べ替えモードは行に触れるとほぼすぐ持ち上がる
+                    child: ReorderRowListener(
                       index: i,
                       enabled: _reordering,
                       child: Opacity(
@@ -950,8 +950,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               ),
             ),
         )),
-      // キーボードが出ている間は出さない（list_screen と同じ理由）
-      floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+      // キーボードが出ている間は出さない（list_screen と同じ理由）。並べ替えモード中も
+      floatingActionButton:
+          MediaQuery.viewInsetsOf(context).bottom > 0 || _reordering
           ? null
           : GreenButton(
               icon: Icons.playlist_add,

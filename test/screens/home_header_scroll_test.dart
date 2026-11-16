@@ -186,10 +186,13 @@ void main() {
     await tester.tap(find.text('プレイリスト'));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.drag_handle), findsNothing);
+    expect(find.byTooltip('プレイリストを作成'), findsOneWidget);
     await tester.tap(find.byTooltip('並べ替え'));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.drag_handle), findsOneWidget);
     expect(find.byTooltip('並べ替えを終える'), findsOneWidget);
+    // モード中は ＋ を出さない
+    expect(find.byTooltip('プレイリストを作成'), findsNothing);
 
     // タグタブへ移ると切れている（タグ側もオンにならない）
     await tester.tap(find.text('タグ'));

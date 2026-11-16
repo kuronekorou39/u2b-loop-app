@@ -534,7 +534,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
           // 逃げ、閉じるときは先に定位置へ飛んでキーボードの裏に隠れ、キーボードが
           // 下がりきってから下から現れる、という動きに見える
           floatingActionButton:
-              _isSelecting || keyboardOpen ? null : _buildFab(),
+              // 選択中・並べ替えモード中は出さない
+              _isSelecting || keyboardOpen || _reorderingTab != null
+                  ? null
+                  : _buildFab(),
         ),
       ),
     );

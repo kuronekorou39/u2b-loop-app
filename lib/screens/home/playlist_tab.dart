@@ -206,9 +206,9 @@ class PlaylistTab extends ConsumerWidget {
             key: ValueKey(pl.id),
             selecting: selecting,
             selected: selected,
-            // 並べ替えモードは行の長押しでも持ち上がる（ふだんの長押しは選択）
+            // 並べ替えモードは行に触れるとほぼすぐ持ち上がる（ふだんの長押しは選択）
             child: Stack(children: [
-            ReorderableDelayedDragStartListener(
+            ReorderRowListener(
             index: i,
             enabled: reordering,
             child: ListTile(
@@ -254,23 +254,37 @@ class PlaylistTab extends ConsumerWidget {
             trailing: SelectionTrailing(
                 selecting: selecting,
                 selected: selected,
-                child: reordering
-                    ? const ReorderHandleIcon()
-                    : Row(
+                // 並べ替えモードは ⋮ とまったく同じ場所が ≡。再生は隠すだけで場所は残す
+                // （名前の折り返しが変わらないように）
+                child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (count > 0)
-                        GreenButton(
-                          icon: Icons.play_arrow_rounded,
-                          label: '再生',
-                          size: 34,
-                          onPressed: () => _play(context, pl, items),
+                        Visibility(
+                          visible: !reordering,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: GreenButton(
+                            icon: Icons.play_arrow_rounded,
+                            label: '再生',
+                            size: 34,
+                            onPressed: () => _play(context, pl, items),
+                          ),
                         ),
-                      IconButton(
-                        icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
-                        tooltip: 'メニュー',
-                        onPressed: () => _showMenu(context, ref, pl),
-                      ),
+                      if (reordering)
+                        const SizedBox(
+                          width: kMinInteractiveDimension,
+                          height: kMinInteractiveDimension,
+                          child: Center(child: ReorderHandleIcon()),
+                        )
+                      else
+                        IconButton(
+                          icon:
+                              const Icon(Icons.more_vert, size: AppIconSizes.md),
+                          tooltip: 'メニュー',
+                          onPressed: () => _showMenu(context, ref, pl),
+                        ),
                     ],
                   ),
             ),

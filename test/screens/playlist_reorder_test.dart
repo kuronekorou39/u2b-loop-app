@@ -107,11 +107,16 @@ void main() {
     await pump(tester);
     expect(find.byIcon(Icons.drag_handle), findsNothing);
     expect(find.byIcon(Icons.more_vert), findsNWidgets(4));
+    final menu = tester.getCenter(find.byIcon(Icons.more_vert).first);
+    final name = tester.getRect(find.text('え'));
 
     final c = await pump(tester, reordering: true);
     expect(find.byIcon(Icons.more_vert), findsNothing);
     final handles = find.byIcon(Icons.drag_handle);
     expect(handles, findsNWidgets(4));
+    // ≡ は ⋮ とまったく同じ場所。名前も動かない
+    expect(tester.getCenter(handles.first), menu);
+    expect(tester.getRect(find.text('え')), name);
 
     final from = tester.getCenter(handles.at(0));
     final to = tester.getCenter(handles.at(2)) + const Offset(0, 20);
@@ -126,6 +131,23 @@ void main() {
     await tester.tap(find.text('い'));
     await tester.pumpAndSettle();
     expect(find.byType(PlaylistDetailScreen), findsNothing);
+  });
+
+  testWidgets('並べ替えモードは長押しを待たずに持てる（リストの行・グリッドのカード）', (tester) async {
+    for (final grid in [false, true]) {
+      final c = await pump(tester, grid: grid, reordering: true);
+      expect(names(c), ['え', 'う', 'い', 'あ']);
+      final from = tester.getCenter(find.text('え'));
+      final to = tester.getCenter(find.text('い')) + const Offset(0, 20);
+      final gesture = await tester.startGesture(from);
+      // 長押し（0.5 秒）よりずっと短い
+      await tester.pump(const Duration(milliseconds: 150));
+      await slide(tester, gesture, from, to);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(names(c), ['う', 'い', 'え', 'あ'], reason: 'grid=$grid');
+      c.read(playlistsProvider.notifier).reorder(2, 0);
+    }
   });
 
   testWidgets('グリッド: 並べ替えモードは長押しで動かす。ふだんは動かない', (tester) async {

@@ -230,9 +230,9 @@ class TagManagerTab extends ConsumerWidget {
             selecting: selecting,
             selected: selected,
             // メニューは行の脇に出すので、行の context を取る
-            // 並べ替えモードは行の長押しでも持ち上がる（ふだんの長押しは選択）
+            // 並べ替えモードは行に触れるとほぼすぐ持ち上がる（ふだんの長押しは選択）
             child: Builder(builder: (rowContext) => Stack(children: [
-            ReorderableDelayedDragStartListener(
+            ReorderRowListener(
             index: i,
             enabled: reordering,
             child: ListTile(
