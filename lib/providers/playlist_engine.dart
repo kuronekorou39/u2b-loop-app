@@ -869,7 +869,7 @@ class PlaylistEngine {
     final current = _ref.read(playlistPlayerProvider).currentTrack?.item;
     if (manualBeats > 0 && current != null && _ref.read(autoMixProvider)) {
       final pro = _ref.read(djProProvider);
-      return TransitionPlanner.plan(current, next.item,
+      final planned = TransitionPlanner.plan(current, next.item,
           pro: pro,
           outTailMid: pro ? _tailMid(current) : null,
           inHeadMid: pro ? _headMid(next.item) : null,
@@ -877,15 +877,43 @@ class PlaylistEngine {
           inAtMs: inAtMs(next),
           lastStyle: _lastStyle,
           seed: TransitionPlanner.seedFor(current.id, next.item.id));
+      // 長さの設定が 32 拍より長ければ、長いつなぎをその分伸ばす
+      return _fitToTracks(
+          TransitionPlanner.stretch(planned, manualBeats), current, next.item);
     }
-    return TransitionRecipe(
-      beats: manualBeats,
-      curve: _ref.read(crossfadeCurveProvider),
-      bassSwap: _ref.read(bassSwapProvider),
-      effect: _ref.read(transitionEffectProvider),
-      beatMatch: _ref.read(beatMatchProvider),
-      tempoMatch: _ref.read(tempoMatchProvider),
-    );
+    return _fitToTracks(
+        TransitionRecipe(
+          beats: manualBeats,
+          curve: _ref.read(crossfadeCurveProvider),
+          bassSwap: _ref.read(bassSwapProvider),
+          effect: _ref.read(transitionEffectProvider),
+          beatMatch: _ref.read(beatMatchProvider),
+          tempoMatch: _ref.read(tempoMatchProvider),
+        ),
+        current,
+        next.item);
+  }
+
+  /// 重ねてよい長さは、短いほうの曲（曲でない部分を除く）のこの割合まで
+  static const _maxOverlapRatio = 1 / 3;
+
+  /// つなぎが曲に対して長すぎるとき、収まるまで半分にする（長いつなぎを短い曲に使うと、
+  /// 曲の頭から重なったり、交差そのものが始まらなかったりする）。長さが分からない曲は見ない
+  TransitionRecipe _fitToTracks(
+      TransitionRecipe recipe, LoopItem? out, LoopItem next) {
+    double? playable(LoopItem? item) {
+      final d = item?.durationMs;
+      if (item == null || d == null) return null;
+      return (d - item.introSkipMs - (item.outroSkipMs ?? 0)).toDouble();
+    }
+
+    final lengths = [playable(out), playable(next)].whereType<double>();
+    if (lengths.isEmpty || recipe.beats <= 0) return recipe;
+    final fitted = TransitionPlanner.fitBeats(
+        recipe.beats,
+        60000 / _referenceBpm(),
+        lengths.reduce(min) * _maxOverlapRatio);
+    return fitted == recipe.beats ? recipe : recipe.copyWith(beats: fitted);
   }
 
   /// 直前のつなぎのガチのタイプ（切り替わったときに覚える）
@@ -1730,9 +1758,8 @@ class _CrossfadeSession {
   Timer? _brakeTimer;
   bool _tricksStarted = false;
 
-  /// トリック中の出る曲・入る曲の音量比（null = 曲線のまま）
+  /// トリック中の出る曲の音量比（null = 曲線のまま）
   double? _outOverride;
-  double? _inOverride;
 
   /// 効果音とトリックを予定する。[wallToCutMs] は切替点までの実時間
   void startTricks({required int wallToCutMs}) {
@@ -1772,34 +1799,9 @@ class _CrossfadeSession {
         _after(toCut - durMs, () => _startBrake(durMs));
       case TransitionEffect.loopRoll:
         _after(toCut - (beatRealMs * loopRollBeats).round(), _startLoopRoll);
-      case TransitionEffect.tease:
-        _scheduleTease(toCut);
       default:
         break;
     }
-  }
-
-  /// 焦らし: [TransitionEffect.teaseSteps] の拍で、次の曲と前の曲をはっきり出し入れする。
-  /// 交差の途中から始めた（もう過ぎた段取りがある）ときは、過ぎた最後の状態から
-  void _scheduleTease(int toCut) {
-    bool? current;
-    for (final (beats, inOn) in TransitionEffect.teaseSteps) {
-      final at = toCut - (beats * beatRealMs).round();
-      if (at <= 0) {
-        current = inOn;
-      } else {
-        _after(at, () => _setTease(inOn));
-      }
-    }
-    if (current != null) _setTease(current);
-  }
-
-  void _setTease(bool inOn) {
-    _outOverride = inOn ? 0 : 1;
-    _inOverride = inOn ? 1 : 0;
-    outVolume = volume * _outOverride!;
-    outPlayer.setVolume(outVolume);
-    inPlayer.setVolume(inVolume * _inOverride!);
   }
 
   void _after(int ms, void Function() fn) {
@@ -2058,7 +2060,7 @@ class _CrossfadeSession {
     final levels = effect.cutsHard ? CrossfadeCurve.cut.levels(t) : curve.levels(t);
     outVolume = volume * (_outOverride ?? levels.out);
     outPlayer.setVolume(outVolume);
-    inPlayer.setVolume(inVolume * (_inOverride ?? levels.in_));
+    inPlayer.setVolume(inVolume * levels.in_);
 
     final posMs = pos.inMicroseconds / 1000;
     final cutMs = cut.inMicroseconds / 1000;

@@ -13,7 +13,12 @@ import '../../widgets/settings/settings_parts.dart';
 class DjMixSettingsScreen extends ConsumerWidget {
   const DjMixSettingsScreen({super.key});
 
-  static String crossfadeLabel(int beats) => beats == 0 ? 'オフ' : '$beats拍';
+  /// 長いもの（32 拍から）は小節で数える（8 小節・16 小節・32 小節）
+  static String crossfadeLabel(int beats) => beats == 0
+      ? 'オフ'
+      : beats >= 32
+          ? '${beats ~/ 4}小節'
+          : '$beats拍';
 
   /// 段階の表示（どれとも一致しなければ「カスタム」）
   static String levelLabel(DjLevel? level) => level?.label ?? 'カスタム';

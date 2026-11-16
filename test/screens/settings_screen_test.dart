@@ -57,20 +57,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('トップは四角い大きなボタン 7 つ（縦の電話は 2 列）で、スクロールせずに全部見える',
-      (tester) async {
-    await pumpPage(tester, const SettingsScreen());
+  const tileLabels = [
+    'ダークモード', 'DJ ミックス', 'スキップ秒数', 'オフライン保存',
+    'バックアップ', 'アップデート', '詳細設定',
+  ];
 
-    const order = [
-      'ダークモード', 'DJ ミックス', '早送り・巻き戻し', 'オフライン保存',
-      'バックアップ', 'アップデートを確認', '詳細設定',
+  /// 画面の大きさ（論理ピクセル）を指定して設定のトップを出し、ボタンの矩形を返す
+  Future<List<Rect>> pumpTop(WidgetTester tester, Size size) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const ProviderScope(
+      child: MaterialApp(home: SettingsScreen()),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '$size');
+    return [
+      for (final t in tileLabels)
+        tester.getRect(
+            find.ancestor(of: find.text(t), matching: find.byType(MoreTile)))
     ];
-    Rect tile(String label) => tester.getRect(
-        find.ancestor(of: find.text(label), matching: find.byType(MoreTile)));
-    final rects = [for (final t in order) tile(t)];
+  }
+
+  testWidgets('トップは四角い大きなボタン 7 つ。縦の電話は 2 列で、矢印は付けない', (tester) async {
+    final rects = await pumpTop(tester, const Size(412, 915));
     for (var i = 0; i < rects.length; i++) {
       expect(rects[i].width, closeTo(rects[i].height, 0.5), reason: '正方形');
-      expect(rects[i].width, greaterThan(150), reason: 'デカいボタン');
+      expect(rects[i].width, greaterThan(140), reason: 'デカいボタン');
       // 2 列: 偶数番目が左、奇数番目がその右の同じ行
       if (i.isOdd) {
         expect(rects[i].top, rects[i - 1].top);
@@ -80,36 +93,53 @@ void main() {
         expect(rects[i].left, rects[0].left);
       }
     }
-    // 左右の余白が同じ（真ん中に寄っている）。画面は 1080/2.5 = 432
-    expect(rects[0].left, closeTo(432 - rects[1].right, 0.5));
-    // 最後のボタンが画面（2700/2.5 = 1080）に収まっている
-    expect(rects.last.bottom, lessThan(1080));
     expect(find.byType(MoreTile), findsNWidgets(7));
     // 矢印は付けない。ふだん触らないものはトップに出さない
     expect(find.byIcon(Icons.chevron_right), findsNothing);
     expect(find.text('クロスフェード'), findsNothing);
     expect(find.text('すべてのデータを削除'), findsNothing);
-    expect(tester.takeException(), isNull);
   });
 
-  testWidgets('広い画面は 3 列で、真ん中に寄せる（大きくなりすぎない）', (tester) async {
-    tester.view.physicalSize = const Size(1400, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(const ProviderScope(
-      child: MaterialApp(home: SettingsScreen()),
-    ));
-    await tester.pumpAndSettle();
-    Rect tile(String label) => tester.getRect(
-        find.ancestor(of: find.text(label), matching: find.byType(MoreTile)));
-    final first = tile('ダークモード');
-    final third = tile('早送り・巻き戻し');
-    final fourth = tile('オフライン保存');
-    expect(third.top, first.top);
-    expect(fourth.top, greaterThan(first.bottom));
-    expect(first.left, closeTo(1400 - third.right, 0.5));
-    expect(first.left, greaterThan(200));
-    expect(tester.takeException(), isNull);
+  testWidgets('縦でも横でも、スクロールせずに全部が画面に収まり、端に余白がある', (tester) async {
+    for (final size in const [
+      Size(412, 915), // 縦の電話
+      Size(360, 640), // 小さい縦の電話
+      Size(915, 412), // 横向きの電話
+      Size(800, 360), // 小さい横向きの電話
+      Size(1400, 900), // 広い画面
+    ]) {
+      final rects = await pumpTop(tester, size);
+      expect(find.byType(Scrollable), findsNothing, reason: '$size');
+      final left = rects.map((r) => r.left).reduce((a, b) => a < b ? a : b);
+      final right = rects.map((r) => r.right).reduce((a, b) => a > b ? a : b);
+      final bottom = rects.map((r) => r.bottom).reduce((a, b) => a > b ? a : b);
+      // 左右は同じだけ空け、端まで詰めない
+      expect(left, greaterThanOrEqualTo(24), reason: '$size');
+      expect(left, closeTo(size.width - right, 0.5), reason: '$size');
+      // 下も空ける（曲数の行もその中に収まる）
+      expect(bottom, lessThanOrEqualTo(size.height - 24), reason: '$size');
+      expect(
+          tester.getRect(find.textContaining('プレイリスト 0')).bottom,
+          lessThanOrEqualTo(size.height - 24),
+          reason: '$size');
+      // 大きくなりすぎない
+      expect(rects.first.width, lessThanOrEqualTo(SettingsScreen.maxTileSide),
+          reason: '$size');
+      for (final r in rects) {
+        expect(r.width, closeTo(r.height, 0.5), reason: '$size');
+        expect(r.width, greaterThan(80), reason: '$size');
+      }
+    }
+  });
+
+  test('並べ方: ボタンがいちばん大きくなる列数を選ぶ', () {
+    // 縦長は 2 列 × 4 行
+    expect(SettingsScreen.gridFor(const Size(360, 700), 7).columns, 2);
+    // 横長で低いと 1 行
+    expect(SettingsScreen.gridFor(const Size(860, 200), 7).columns, 7);
+    // 上限より大きくはしない
+    expect(SettingsScreen.gridFor(const Size(2000, 2000), 7).side,
+        SettingsScreen.maxTileSide);
   });
 
   testWidgets('ダークモードはボタンを押すたびに切り替わる', (tester) async {
@@ -129,7 +159,7 @@ void main() {
     await pumpPage(tester, const SettingsScreen());
 
     expect(find.text('5秒'), findsOneWidget); // 既定値（説明文）
-    await tester.tap(find.text('早送り・巻き戻し'));
+    await tester.tap(find.text('スキップ秒数'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('10秒'));
     await tester.pumpAndSettle();
@@ -256,7 +286,7 @@ void main() {
     await tester.pumpAndSettle();
 
     for (var i = 0; i < 5; i++) {
-      await tester.tap(find.text('アップデートを確認'));
+      await tester.tap(find.text('アップデート'));
       await tester.pump();
     }
     await tester.pumpAndSettle();

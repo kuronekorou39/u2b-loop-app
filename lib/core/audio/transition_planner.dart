@@ -69,9 +69,6 @@ enum MixStyle {
   /// 盛り上げる: 次の曲の立ち上がりに向けて上げる（効果音はたまに、控えめに）
   lift('盛り上げ'),
 
-  /// 焦らす: 次の曲をちらっと出しては戻し、小節の頭で切り替える（たまに）
-  tease('焦らし'),
-
   /// テンポが合わないので、前の曲を止める・刻むで切り替える
   cut('切り替え');
 
@@ -124,8 +121,30 @@ class TransitionPlanner {
   /// 塗りつぶさない（「大きくして紛らわせてるだけ」に聞こえた）
   static const proSfxDb = -4;
 
-  /// ガチ: 焦らしを選ぶ割合（[seed] をこれで割った余りが 0 のとき）。遊びなのでたまに
-  static const teaseEvery = 4;
+  /// 長さの設定（[CrossfadeNotifier] の拍数）がこれを超えると、おまかせの長いつなぎを伸ばす
+  static const stretchBaseBeats = 32;
+
+  /// 伸ばすのはこの拍数以上のつなぎだけ（短く切り替える・ドロップ合わせ・キーや歌が
+  /// ぶつかる組は、わざと短くしているので伸ばさない）
+  static const stretchMinBeats = 16;
+
+  /// おまかせのつなぎを、長さの設定に合わせて伸ばす。設定が 64 拍なら 2 倍、128 拍なら 4 倍
+  /// （溶かす 32 → 64 / 128、ブレンド 16 → 32 / 64）。32 拍以下の設定では変えない
+  static TransitionRecipe stretch(TransitionRecipe recipe, int settingBeats) {
+    final scale = settingBeats ~/ stretchBaseBeats;
+    if (scale <= 1 || recipe.beats < stretchMinBeats) return recipe;
+    return recipe.copyWith(beats: recipe.beats * scale);
+  }
+
+  /// つなぎが曲に対して長すぎるとき、収まるまで半分にする（フレーズの区切りは保つ）。
+  /// [maxMs] は重ねてよい長さ。[minBeats] より短くはしない
+  static int fitBeats(int beats, double beatMs, double maxMs, {int minBeats = 4}) {
+    var b = beats;
+    while (b > minBeats && b * beatMs > maxMs) {
+      b ~/= 2;
+    }
+    return b;
+  }
 
   /// [pro] はガチ。[outTailMid] / [inHeadMid] は前の曲の終わり・次の曲の始まりの
   /// 中音の平均（帯域の波形から。無ければ null で歌のぶつかりは見ない）。
@@ -224,12 +243,11 @@ class TransitionPlanner {
     return recipe.copyWith(reason: facts.join(' · '));
   }
 
-  /// ガチ: テンポが分かっていて拍が安定した 2 曲を、溶かす・盛り上げ・焦らし・切り替えから選ぶ。
+  /// ガチ: テンポが分かっていて拍が安定した 2 曲を、溶かす・盛り上げ・切り替えから選ぶ。
   ///
   /// 1. 曲の組み合わせで候補を絞る（盛り上がる組は盛り上げ、そうでなければ溶かす。
   ///    キーが合わない・歌がぶつかる組は長く重ねられないので溶かすを外す）
-  /// 2. ときどき（[teaseEvery] 回に 1 回くらい）焦らし
-  /// 3. 直前と同じタイプなら、ほかの候補に替える
+  /// 2. 直前と同じタイプなら、ほかの候補に替える
   static TransitionRecipe _planPro({
     required List<String> facts,
     required double tempoDiff,
@@ -264,11 +282,9 @@ class TransitionPlanner {
     final candidates = <MixStyle>[
       if (up) MixStyle.lift,
       if (canMelt) MixStyle.melt,
-      MixStyle.tease,
       if (!up) MixStyle.lift,
     ];
     var style = candidates.first;
-    if (seed % teaseEvery == 0 && lastStyle != MixStyle.tease) style = MixStyle.tease;
     if (style == lastStyle) {
       style = candidates.firstWhere((c) => c != lastStyle, orElse: () => style);
     }
@@ -280,10 +296,6 @@ class TransitionPlanner {
         if (fadesOut) facts.add('フェードアウト');
         return done(_make('溶かす', proLongBeats, CrossfadeCurve.melt,
             bass: true, effect: TransitionEffect.none, match: true, style: style));
-      case MixStyle.tease:
-        // 拍ごとにはっきり出し入れするので、重ならない（キー・歌がぶつからない）
-        return done(_make('焦らし', TransitionEffect.teaseBeats, CrossfadeCurve.cut,
-            bass: false, effect: TransitionEffect.tease, match: true, style: style));
       case MixStyle.lift || MixStyle.cut:
         // 効果音は 2 回に 1 回くらい。鳴らさない回はこもらせて抜くだけ
         final sfx = seed % 3 != 1;

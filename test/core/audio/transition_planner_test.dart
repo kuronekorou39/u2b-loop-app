@@ -164,7 +164,7 @@ void main() {
   });
 
   group('ガチ', () {
-    // seed: 焦らしは seed % 4 == 0、盛り上げの効果音は seed % 3 != 1
+    // seed: 盛り上げの効果音は seed % 3 != 1
     TransitionRecipe pro(LoopItem a, LoopItem b,
             {int seed = 1, MixStyle? last, double? outMid, double? inMid}) =>
         TransitionPlanner.plan(a, b,
@@ -190,19 +190,44 @@ void main() {
       expect(quiet.effect.usesSfx, isFalse);
     });
 
-    test('ときどき焦らし（16 拍、はっきり出し入れするので低音の入れ替えなし）', () {
-      final r = pro(item(bpm: 126), item(bpm: 128), seed: 4);
-      expect(r.style, MixStyle.tease);
-      expect(r.effect, TransitionEffect.tease);
-      expect(r.beats, TransitionEffect.teaseBeats);
-      expect(r.bassSwap, isFalse);
-      expect(r.beatMatch, isTrue);
+    test('次の曲を出し入れする演出（焦らし）は選ばない', () {
+      for (var seed = 0; seed < 12; seed++) {
+        final r = pro(item(bpm: 126), item(bpm: 128), seed: seed);
+        expect(r.style, MixStyle.melt, reason: 'seed=$seed');
+      }
+      expect(TransitionEffect.values.map((e) => e.name), isNot(contains('tease')));
+      // 以前の設定に残っていても既定に戻る
+      expect(TransitionEffect.fromName('tease'), TransitionEffect.defaultEffect);
+    });
+
+    test('長さの設定が 32 拍より長ければ、長いつなぎをその分伸ばす（短いつなぎはそのまま）', () {
+      final melt = pro(item(bpm: 126), item(bpm: 128));
+      expect(TransitionPlanner.stretch(melt, 32).beats, 32);
+      expect(TransitionPlanner.stretch(melt, 16).beats, 32);
+      expect(TransitionPlanner.stretch(melt, 64).beats, 64);
+      expect(TransitionPlanner.stretch(melt, 128).beats, 128);
+      // ブレンド（16 拍）も同じ倍率
+      final blend = TransitionPlanner.plan(item(bpm: 128), item(bpm: 128));
+      expect(blend.beats, 16);
+      expect(TransitionPlanner.stretch(blend, 128).beats, 64);
+      // わざと短くしている組（テンポが合わない）は伸ばさない
+      final cut = pro(item(bpm: 90), item(bpm: 128));
+      expect(cut.beats, lessThan(16));
+      expect(TransitionPlanner.stretch(cut, 128).beats, cut.beats);
+    });
+
+    test('曲に対して長すぎるつなぎは、収まるまで半分にする', () {
+      // 120 BPM = 1 拍 500ms。128 拍 = 64 秒
+      expect(TransitionPlanner.fitBeats(128, 500, 70000), 128);
+      expect(TransitionPlanner.fitBeats(128, 500, 60000), 64);
+      expect(TransitionPlanner.fitBeats(128, 500, 20000), 32);
+      expect(TransitionPlanner.fitBeats(128, 500, 100), 4, reason: '下限');
     });
 
     test('直前と同じタイプは続けない', () {
       expect(pro(item(bpm: 126), item(bpm: 128), last: MixStyle.melt).style,
           isNot(MixStyle.melt));
-      expect(pro(item(bpm: 126), item(bpm: 128), seed: 4, last: MixStyle.tease).style,
+      expect(pro(item(bpm: 126), item(bpm: 128), last: MixStyle.lift).style,
           MixStyle.melt);
     });
 

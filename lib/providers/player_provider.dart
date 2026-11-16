@@ -265,8 +265,9 @@ final crossfadeProvider =
 class CrossfadeNotifier extends StateNotifier<int> {
   static const _key = SettingsKeys.crossfadeBeats;
 
-  /// 選べる拍数。0はオフ。4 拍 = 1 小節
-  static const options = [0, 4, 8, 16, 32];
+  /// 選べる拍数。0はオフ。4 拍 = 1 小節。64・128 拍（16・32 小節）は長くかけて移るとき
+  /// （おまかせでは、長いつなぎをその分伸ばす。[TransitionPlanner.stretch]）
+  static const options = [0, 4, 8, 16, 32, 64, 128];
 
   /// v1.94 までの秒数設定からの移行先（オンだった人は 8 拍 = 2 小節）
   static const migratedBeats = 8;

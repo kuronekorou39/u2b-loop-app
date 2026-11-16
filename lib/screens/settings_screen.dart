@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -11,16 +13,40 @@ import '../providers/theme_provider.dart';
 import '../services/cache_service.dart';
 import '../services/update_service.dart';
 import '../widgets/player/more_tile.dart';
-import '../widgets/settings/settings_parts.dart';
+import '../widgets/glass_scaffold.dart';
 import 'settings/advanced_settings_screen.dart';
 import 'settings/backup_settings_screen.dart';
 import 'settings/dj_mix_settings_screen.dart';
 import 'settings/storage_settings_screen.dart';
 
 /// 設定のトップ。四角い大きなボタン（[MoreTile]）を敷き詰め、残りは各ページへ。
-/// 今の値は短いものだけボタンに出す
+/// 今の値は短いものだけボタンに出す。縦でも横でもスクロールせずに全部収め、
+/// 画面の端まで詰めない（[gridFor]）
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
+
+  /// ボタンの間隔
+  static const gridGap = AppSpacing.lg;
+
+  /// ボタンの 1 辺の上限（広い画面で大きくなりすぎないように）
+  static const maxTileSide = 168.0;
+
+  /// [count] 個の正方形のボタンを [area] に全部収める並べ方。
+  /// 列数を 1 から順に試し、ボタンがいちばん大きくなる列数にする
+  /// （縦の電話は 2 列 × 4 行、横向きの電話は 1〜2 行になる）
+  static ({int columns, double side}) gridFor(Size area, int count) {
+    var best = (columns: 1, side: 0.0);
+    for (var columns = 1; columns <= count; columns++) {
+      final rows = (count / columns).ceil();
+      final side = min((area.width - gridGap * (columns - 1)) / columns,
+          (area.height - gridGap * (rows - 1)) / rows);
+      if (side > best.side) best = (columns: columns, side: side);
+    }
+    return (
+      columns: best.columns,
+      side: best.side.clamp(0.0, maxTileSide).floorToDouble(),
+    );
+  }
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -107,7 +133,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
       MoreTile(
         icon: Icons.forward_10,
-        label: '早送り・巻き戻し',
+        label: 'スキップ秒数',
         value: '$seekStep秒',
         onTap: _pickSeekStep,
       ),
@@ -131,7 +157,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         future: _packageInfo,
         builder: (_, snap) => MoreTile(
           icon: Icons.system_update,
-          label: 'アップデートを確認',
+          label: 'アップデート',
           value: 'v${snap.data?.version ?? '…'}',
           onTap: () {
             if (_onVersionTap()) return;
@@ -147,38 +173,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     ];
 
-    return SettingsPage(
-      title: '設定',
-      children: [
-        // 四角い大きなボタンを敷き詰める（狭い画面は 2 列、広ければ 3 列。真ん中に寄せる）
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _gridMaxWidth),
-            child: LayoutBuilder(
-              builder: (context, c) => GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                crossAxisCount: c.maxWidth < _threeColumnsWidth ? 2 : 3,
-                mainAxisSpacing: AppSpacing.lg,
-                crossAxisSpacing: AppSpacing.lg,
-                children: tiles,
-              ),
-            ),
+    return GlassScaffold(
+      title: Text('設定', style: textTheme.titleMedium),
+      bodyBuilder: (context) {
+        final padding = MediaQuery.paddingOf(context);
+        final viewPadding = MediaQuery.viewPaddingOf(context);
+        return Padding(
+          // 画面の端まで詰めない
+          padding: EdgeInsets.fromLTRB(
+            _margin + viewPadding.left,
+            padding.top + _margin,
+            _margin + viewPadding.right,
+            padding.bottom + _margin,
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.xl),
-          child: Text('曲 $items · プレイリスト $playlists · タグ $tags',
-              textAlign: TextAlign.center, style: textTheme.labelSmall),
-        ),
-      ],
+          child: LayoutBuilder(builder: (context, c) {
+            final grid = SettingsScreen.gridFor(
+                Size(c.maxWidth, c.maxHeight - _footerHeight), tiles.length);
+            return Column(
+              children: [
+                // 左右は真ん中に寄せる。最後の行は左から
+                SizedBox(
+                  width: grid.side * grid.columns +
+                      SettingsScreen.gridGap * (grid.columns - 1),
+                  child: Wrap(
+                    spacing: SettingsScreen.gridGap,
+                    runSpacing: SettingsScreen.gridGap,
+                    children: [
+                      for (final tile in tiles)
+                        SizedBox.square(dimension: grid.side, child: tile),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: _footerHeight,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Text('曲 $items · プレイリスト $playlists · タグ $tags',
+                        style: textTheme.labelSmall),
+                  ),
+                ),
+              ],
+            );
+          }),
+        );
+      },
     );
   }
 
-  /// この幅から 3 列（それより狭い縦の電話は 2 列）
-  static const double _threeColumnsWidth = 480;
+  /// ボタンの集まりの外の余白（上下左右）
+  static const double _margin = AppSpacing.xxl;
 
-  /// タイルを敷く幅の上限（広い画面で大きくなりすぎないように）
-  static const double _gridMaxWidth = 760;
+  /// ボタンの下の「曲 N · …」の行に取っておく高さ
+  static const double _footerHeight = 36;
 }
