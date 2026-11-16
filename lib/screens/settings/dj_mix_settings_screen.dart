@@ -18,35 +18,6 @@ class DjMixSettingsScreen extends ConsumerWidget {
   /// 段階の表示（どれとも一致しなければ「カスタム」）
   static String levelLabel(DjLevel? level) => level?.label ?? 'カスタム';
 
-  /// 設定トップの説明文に出す要約
-  static String summary(WidgetRef ref) {
-    final fade = ref.watch(crossfadeProvider);
-    if (fade == 0) return 'クロスフェード オフ';
-    final level = levelLabel(ref.watch(djLevelProvider));
-    if (ref.watch(autoMixProvider)) {
-      return [
-        level,
-        'クロスフェード ${crossfadeLabel(fade)}',
-        'おまかせ（曲に合わせて選ぶ）',
-        if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
-        if (ref.watch(smartEntryProvider)) '出入り口を選ぶ',
-      ].join(' · ');
-    }
-    final parts = <String>[
-      level,
-      'クロスフェード ${crossfadeLabel(fade)}',
-      ref.watch(crossfadeCurveProvider).label,
-      if (ref.watch(mixPointAlignProvider)) 'ドロップに合わせる',
-      if (ref.watch(smartEntryProvider)) '出入り口を選ぶ',
-      if (ref.watch(tempoMatchProvider)) 'テンポ合わせ',
-      if (ref.watch(beatMatchProvider)) '拍合わせ',
-      if (ref.watch(bassSwapProvider)) 'ベーススワップ',
-      if (ref.watch(transitionEffectProvider) != TransitionEffect.none)
-        ref.watch(transitionEffectProvider).label,
-    ];
-    return parts.join(' · ');
-  }
-
   Future<void> _pickCrossfade(BuildContext context, WidgetRef ref) async {
     final current = ref.read(crossfadeProvider);
     final picked = await showDialog<int>(

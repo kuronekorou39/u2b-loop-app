@@ -10,14 +10,15 @@ import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/cache_service.dart';
 import '../services/update_service.dart';
+import '../widgets/player/more_tile.dart';
 import '../widgets/settings/settings_parts.dart';
 import 'settings/advanced_settings_screen.dart';
 import 'settings/backup_settings_screen.dart';
 import 'settings/dj_mix_settings_screen.dart';
 import 'settings/storage_settings_screen.dart';
 
-/// 設定のトップ。スクロール無しで収まる数だけ置き、残りは各ページへ。
-/// 各行の説明文に今の設定を要約して、開かなくても状態が分かるようにする
+/// 設定のトップ。四角い大きなボタン（[MoreTile]）を敷き詰め、残りは各ページへ。
+/// 今の値は短いものだけボタンに出す
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -28,12 +29,21 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _versionTapCount = 0;
 
+  // 描き直すたびに取り直さない
+  Future<int> _cacheSize = CacheService().totalCacheSize();
+  final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();
+
   void _toast(AppToastMessage bar) {
     if (mounted) AppToast.instance.show(bar);
   }
 
-  void _push(Widget page) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  /// ページを開く。戻ってきたら保存の容量を取り直す（中で消したり保存先を変えたりする）
+  Future<void> _push(Widget page) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    if (!mounted) return;
+    setState(() {
+      _cacheSize = CacheService().totalCacheSize();
+    });
   }
 
   Future<void> _pickSeekStep() async {
@@ -82,94 +92,93 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final playlists = AppBoxes.playlists.length;
     final tags = AppBoxes.tags.length;
 
+    final tiles = <Widget>[
+      MoreTile(
+        icon: isDark ? Icons.dark_mode : Icons.light_mode,
+        label: 'ダークモード',
+        active: isDark,
+        onTap: () => ref.read(themeProvider.notifier).value = !isDark,
+      ),
+      MoreTile(
+        icon: Icons.multitrack_audio,
+        label: 'DJ ミックス',
+        value: DjMixSettingsScreen.crossfadeLabel(ref.watch(crossfadeProvider)),
+        onTap: () => _push(const DjMixSettingsScreen()),
+      ),
+      MoreTile(
+        icon: Icons.forward_10,
+        label: '早送り・巻き戻し',
+        value: '$seekStep秒',
+        onTap: _pickSeekStep,
+      ),
+      FutureBuilder<int>(
+        future: _cacheSize,
+        builder: (_, snap) => MoreTile(
+          icon: Icons.sd_storage,
+          label: 'オフライン保存',
+          value: snap.hasData
+              ? '${(snap.data! / 1024 / 1024).toStringAsFixed(1)} MB'
+              : '計算中…',
+          onTap: () => _push(const StorageSettingsScreen()),
+        ),
+      ),
+      MoreTile(
+        icon: Icons.backup_outlined,
+        label: 'バックアップ',
+        onTap: () => _push(const BackupSettingsScreen()),
+      ),
+      FutureBuilder<PackageInfo>(
+        future: _packageInfo,
+        builder: (_, snap) => MoreTile(
+          icon: Icons.system_update,
+          label: 'アップデートを確認',
+          value: 'v${snap.data?.version ?? '…'}',
+          onTap: () {
+            if (_onVersionTap()) return;
+            _toast(AppSnackBar.info('最新版を確認中...'));
+            UpdateService.checkForUpdate(context, manual: true);
+          },
+        ),
+      ),
+      MoreTile(
+        icon: Icons.tune,
+        label: '詳細設定',
+        onTap: () => _push(const AdvancedSettingsScreen()),
+      ),
+    ];
+
     return SettingsPage(
       title: '設定',
       children: [
+        // 四角い大きなボタンを敷き詰める（狭い画面は 2 列、広ければ 3 列。真ん中に寄せる）
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _gridMaxWidth),
+            child: LayoutBuilder(
+              builder: (context, c) => GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                crossAxisCount: c.maxWidth < _threeColumnsWidth ? 2 : 3,
+                mainAxisSpacing: AppSpacing.lg,
+                crossAxisSpacing: AppSpacing.lg,
+                children: tiles,
+              ),
+            ),
+          ),
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md, 0, AppSpacing.md, AppSpacing.lg),
+          padding: const EdgeInsets.only(top: AppSpacing.xl),
           child: Text('曲 $items · プレイリスト $playlists · タグ $tags',
-              style: textTheme.labelSmall),
-        ),
-        SettingsGroup(
-          children: [
-            SettingsSwitchRow(
-              icon: isDark ? Icons.dark_mode : Icons.light_mode,
-              title: 'ダークモード',
-              value: isDark,
-              onChanged: (v) => ref.read(themeProvider.notifier).value = v,
-            ),
-          ],
-        ),
-        SettingsGroup(
-          children: [
-            SettingsRow(
-              icon: Icons.multitrack_audio,
-              title: 'DJ ミックス',
-              subtitle: DjMixSettingsScreen.summary(ref),
-              onTap: () => _push(const DjMixSettingsScreen()),
-            ),
-            SettingsRow(
-              icon: Icons.forward_10,
-              title: '早送り・巻き戻し',
-              subtitle: '$seekStep秒',
-              onTap: _pickSeekStep,
-            ),
-          ],
-        ),
-        SettingsGroup(
-          children: [
-            FutureBuilder<int>(
-              future: CacheService().totalCacheSize(),
-              builder: (_, snap) {
-                final mb = ((snap.data ?? 0) / 1024 / 1024).toStringAsFixed(1);
-                final keep = StorageSettingsScreen.keepOfflineVideos;
-                return SettingsRow(
-                  icon: Icons.sd_storage,
-                  title: 'オフライン保存',
-                  subtitle:
-                      '${keep ? '端末に残す' : '一時領域'} · ${snap.hasData ? '$mb MB' : '計算中…'}',
-                  onTap: () => _push(const StorageSettingsScreen()),
-                );
-              },
-            ),
-            SettingsRow(
-              icon: Icons.backup_outlined,
-              title: 'バックアップ',
-              subtitle: '書き出し / 復元',
-              onTap: () => _push(const BackupSettingsScreen()),
-            ),
-          ],
-        ),
-        SettingsGroup(
-          children: [
-            FutureBuilder<PackageInfo>(
-              future: PackageInfo.fromPlatform(),
-              builder: (_, snap) {
-                final version = snap.data?.version ?? '…';
-                return SettingsRow(
-                  icon: Icons.system_update,
-                  title: 'アップデートを確認',
-                  subtitle: 'v$version',
-                  onTap: () {
-                    if (_onVersionTap()) return;
-                    _toast(AppSnackBar.info('最新版を確認中...'));
-                    UpdateService.checkForUpdate(context, manual: true);
-                  },
-                );
-              },
-            ),
-            SettingsRow(
-              icon: Icons.tune,
-              title: '詳細設定',
-              subtitle: ref.watch(debugModeProvider)
-                  ? '表示 · 再生 · 危険な操作 · デバッグ'
-                  : '表示 · 再生 · 危険な操作',
-              onTap: () => _push(const AdvancedSettingsScreen()),
-            ),
-          ],
+              textAlign: TextAlign.center, style: textTheme.labelSmall),
         ),
       ],
     );
   }
+
+  /// この幅から 3 列（それより狭い縦の電話は 2 列）
+  static const double _threeColumnsWidth = 480;
+
+  /// タイルを敷く幅の上限（広い画面で大きくなりすぎないように）
+  static const double _gridMaxWidth = 760;
 }

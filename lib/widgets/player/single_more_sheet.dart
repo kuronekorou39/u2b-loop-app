@@ -88,7 +88,6 @@ class _SingleMoreSheetState extends ConsumerState<SingleMoreSheet> {
               MoreTile(
                 icon: Icons.file_download_outlined,
                 label: loop.hasBothPoints ? '区間を書き出し' : '全体を書き出し',
-                corner: Icons.chevron_right,
                 enabled: hasSource,
                 onTap: () {
                   Navigator.pop(context);

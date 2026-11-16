@@ -12,6 +12,7 @@ import 'package:u2b_loop_app/models/playlist.dart';
 import 'package:u2b_loop_app/models/tag.dart';
 import 'package:u2b_loop_app/screens/settings/dj_mix_settings_screen.dart';
 import 'package:u2b_loop_app/screens/settings_screen.dart';
+import 'package:u2b_loop_app/widgets/player/more_tile.dart';
 import 'package:u2b_loop_app/widgets/settings/settings_parts.dart';
 
 /// 設定画面を実際に描画して、トップの並び・各ページへの遷移・値の保存を確認する。
@@ -56,24 +57,72 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('トップは 7 行で、スクロールせずに全部見える', (tester) async {
+  testWidgets('トップは四角い大きなボタン 7 つ（縦の電話は 2 列）で、スクロールせずに全部見える',
+      (tester) async {
     await pumpPage(tester, const SettingsScreen());
 
     const order = [
       'ダークモード', 'DJ ミックス', '早送り・巻き戻し', 'オフライン保存',
       'バックアップ', 'アップデートを確認', '詳細設定',
     ];
-    final ys = [for (final t in order) tester.getTopLeft(find.text(t)).dy];
-    for (var i = 1; i < ys.length; i++) {
-      expect(ys[i], greaterThan(ys[i - 1]),
-          reason: '「${order[i]}」が「${order[i - 1]}」より上にある');
+    Rect tile(String label) => tester.getRect(
+        find.ancestor(of: find.text(label), matching: find.byType(MoreTile)));
+    final rects = [for (final t in order) tile(t)];
+    for (var i = 0; i < rects.length; i++) {
+      expect(rects[i].width, closeTo(rects[i].height, 0.5), reason: '正方形');
+      expect(rects[i].width, greaterThan(150), reason: 'デカいボタン');
+      // 2 列: 偶数番目が左、奇数番目がその右の同じ行
+      if (i.isOdd) {
+        expect(rects[i].top, rects[i - 1].top);
+        expect(rects[i].left, greaterThan(rects[i - 1].right));
+      } else if (i > 0) {
+        expect(rects[i].top, greaterThan(rects[i - 2].bottom));
+        expect(rects[i].left, rects[0].left);
+      }
     }
-    // 最後の行が画面（2280/2.5 = 912）に収まっている
-    expect(tester.getBottomLeft(find.text('詳細設定')).dy, lessThan(912));
-    // 行数は 7（ふだん触らないものはトップに出さない）
-    expect(find.byType(SettingsRow), findsNWidgets(7));
+    // 左右の余白が同じ（真ん中に寄っている）。画面は 1080/2.5 = 432
+    expect(rects[0].left, closeTo(432 - rects[1].right, 0.5));
+    // 最後のボタンが画面（2700/2.5 = 1080）に収まっている
+    expect(rects.last.bottom, lessThan(1080));
+    expect(find.byType(MoreTile), findsNWidgets(7));
+    // 矢印は付けない。ふだん触らないものはトップに出さない
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
     expect(find.text('クロスフェード'), findsNothing);
     expect(find.text('すべてのデータを削除'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('広い画面は 3 列で、真ん中に寄せる（大きくなりすぎない）', (tester) async {
+    tester.view.physicalSize = const Size(1400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const ProviderScope(
+      child: MaterialApp(home: SettingsScreen()),
+    ));
+    await tester.pumpAndSettle();
+    Rect tile(String label) => tester.getRect(
+        find.ancestor(of: find.text(label), matching: find.byType(MoreTile)));
+    final first = tile('ダークモード');
+    final third = tile('早送り・巻き戻し');
+    final fourth = tile('オフライン保存');
+    expect(third.top, first.top);
+    expect(fourth.top, greaterThan(first.bottom));
+    expect(first.left, closeTo(1400 - third.right, 0.5));
+    expect(first.left, greaterThan(200));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ダークモードはボタンを押すたびに切り替わる', (tester) async {
+    await pumpPage(tester, const SettingsScreen());
+    MoreTile dark() => tester.widget<MoreTile>(find.ancestor(
+        of: find.text('ダークモード'), matching: find.byType(MoreTile)));
+    final before = dark().active!;
+    await tester.tap(find.text('ダークモード'));
+    await tester.pumpAndSettle();
+    expect(dark().active, !before);
+    await tester.tap(find.text('ダークモード'));
+    await tester.pumpAndSettle();
+    expect(dark().active, before);
   });
 
   testWidgets('スキップ秒数をトップから変えられる', (tester) async {
@@ -92,7 +141,6 @@ void main() {
 
   testWidgets('DJ ミックスの行から DJ ミックスのページへ', (tester) async {
     await pumpPage(tester, const SettingsScreen());
-    expect(find.text('クロスフェード オフ'), findsOneWidget);
     await tester.tap(find.text('DJ ミックス'));
     await tester.pumpAndSettle();
     expect(find.byType(DjMixSettingsScreen), findsOneWidget);
@@ -182,15 +230,17 @@ void main() {
         reason: '効果音のタイミング・入り口を選ぶの行が増えた');
   });
 
-  testWidgets('トップの DJ ミックスの行に今の設定が要約される', (tester) async {
+  testWidgets('トップの DJ ミックスのボタンに今のクロスフェードが出る', (tester) async {
     AppBoxes.settings.put(SettingsKeys.crossfadeBeats, 16);
-    // 前のテストでオフにしたベーススワップを戻す（オンのときだけ要約に出る）
+    // 前のテストでオフにしたベーススワップを戻す
     AppBoxes.settings.put(SettingsKeys.bassSwap, true);
     await pumpPage(tester, const SettingsScreen());
-    expect(find.textContaining('クロスフェード 16拍'), findsOneWidget);
-    expect(find.textContaining('次曲先行'), findsOneWidget);
-    expect(find.textContaining('ベーススワップ'), findsOneWidget);
-    expect(find.textContaining('ブレーキ'), findsOneWidget);
+    expect(
+        tester
+            .widget<MoreTile>(find.ancestor(
+                of: find.text('DJ ミックス'), matching: find.byType(MoreTile)))
+            .value,
+        '16拍');
   });
 
   testWidgets('バージョン行を 5 回押すとデバッグモード。詳細設定にデバッグの群が出て、終了で消える',

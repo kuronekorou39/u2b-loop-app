@@ -1266,6 +1266,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       bottomInset: bottomInset,
       preloadingIndex: _transport.preloadingIndex,
       preloadedIndex: _transport.preloadedIndex,
+      playlistId: widget.playlistId,
       onSelect: _transport.selectTrack,
       onMenu: _showTrackMenu,
     );

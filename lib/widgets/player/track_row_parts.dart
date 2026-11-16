@@ -82,13 +82,20 @@ class TrackTitleText extends StatelessWidget {
 
 /// トラック行に並べるタグチップ（最大2件）。タグ無しなら空リスト。
 /// Row の children に `...` で展開して使う。
+/// [hiddenTagId] は出さないタグ（プレイリストが自動で入れるタグが 1 つだけのとき、
+/// どの曲にも付いているそのタグ）
 List<Widget> trackTagChips(
   BuildContext context,
   PlaylistTrack track,
-  Map<String, Tag> tagMap,
-) {
+  Map<String, Tag> tagMap, {
+  String? hiddenTagId,
+}) {
   // タグ一覧の並び（ユーザーが決めた順）で先頭 2 件
-  final itemTags = (track.item.tagIds.map((id) => tagMap[id]).whereType<Tag>().toList()
+  final itemTags = (track.item.tagIds
+          .where((id) => id != hiddenTagId)
+          .map((id) => tagMap[id])
+          .whereType<Tag>()
+          .toList()
         ..sort(Tag.compare))
       .take(2)
       .toList();

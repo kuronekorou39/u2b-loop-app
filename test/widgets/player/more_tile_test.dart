@@ -5,7 +5,7 @@ import 'package:u2b_loop_app/widgets/player/more_tile.dart';
 import 'package:u2b_loop_app/widgets/player/player_more_sheet.dart';
 
 /// 「その他」メニューのタイル: 幅に合わせて列が決まり（縦 3 列・低い画面は 1 行）、
-/// オンオフで場所が動かず色だけ変わる、速度のタイルはその場のメニューで選ぶ
+/// オンオフで場所が動かず（面は塗り分けない）、速度のタイルはその場のメニューで選ぶ
 void main() {
   Future<void> pump(WidgetTester tester, Widget child, {required Size size}) async {
     tester.view.physicalSize = size;
@@ -54,7 +54,8 @@ void main() {
     expect(t1.width, lessThanOrEqualTo(MoreTileGrid.maxExtentShort));
   });
 
-  testWidgets('オンオフで場所は動かず、オンのとき緑', (tester) async {
+  testWidgets('オンオフで場所は動かず、面の色も変えない。「オン」「オフ」と書き、オフの間だけアイコンが灰色',
+      (tester) async {
     var on = false;
     await pump(
         tester,
@@ -72,13 +73,51 @@ void main() {
         size: const Size(400, 800));
     Color iconColor() =>
         tester.widget<Icon>(find.byIcon(Icons.videocam_outlined)).color!;
+    Color fillOf(String label) => tester
+        .widget<Material>(find
+            .descendant(
+                of: find.ancestor(
+                    of: find.text(label), matching: find.byType(MoreTile)),
+                matching: find.byType(Material))
+            .first)
+        .color!;
     final before = tileRect(tester, '動画');
     expect(iconColor(), isNot(AppTheme.accentGreen));
+    expect(find.text('オフ'), findsOneWidget);
+    expect(fillOf('動画'), fillOf('ほか'));
+    // オンオフでないタイルのアイコンは緑、値は出ない
+    expect(tester.widget<Icon>(find.byIcon(Icons.star)).color,
+        AppTheme.accentGreen);
     await tester.tap(find.text('動画'));
     await tester.pumpAndSettle();
     expect(on, isTrue);
     expect(iconColor(), AppTheme.accentGreen);
+    expect(find.text('オン'), findsOneWidget);
+    expect(fillOf('動画'), fillOf('ほか'));
     expect(tileRect(tester, '動画'), before);
+  });
+
+  testWidgets('アイコンはタイルに合わせて大きく、中身は真ん中。小さいタイルでも溢れない', (tester) async {
+    for (final side in [80.0, 110.0, 180.0, 300.0]) {
+      await pump(
+          tester,
+          SizedBox(
+            width: side,
+            height: side,
+            child: MoreTile(
+                icon: Icons.star, label: 'ラベル', value: '値', onTap: () {}),
+          ),
+          size: const Size(400, 800));
+      expect(tester.takeException(), isNull, reason: '$side');
+      final tile = tester.getRect(find.byType(MoreTile));
+      final icon = tester.getRect(find.byIcon(Icons.star));
+      expect(icon.center.dx, closeTo(tile.center.dx, 0.5));
+      expect(tester.getRect(find.text('ラベル')).center.dx,
+          closeTo(tile.center.dx, 0.5));
+      if (side >= 110 && side <= 180) {
+        expect(icon.width, greaterThanOrEqualTo(side * 0.3), reason: '$side');
+      }
+    }
   });
 
   testWidgets('押せないタイルは onTap が呼ばれず、値は薄い色のまま出る', (tester) async {
@@ -100,14 +139,13 @@ void main() {
     expect(taps, 0);
   });
 
-  testWidgets('開くタイルは右上に ›、選ぶタイルは ▾。光るのはオンオフだけ', (tester) async {
+  testWidgets('開くタイルにも選ぶタイルにも矢印は付けない。選ぶタイルは今の値を出す', (tester) async {
     await pump(
         tester,
         MoreTileGrid(tiles: [
           MoreTile(
               icon: Icons.tune,
               label: 'AB区間',
-              corner: Icons.chevron_right,
               onTap: () {}),
           PickerTile<int>(
             icon: Icons.campaign,
@@ -119,15 +157,9 @@ void main() {
           ),
         ]),
         size: const Size(400, 800));
-    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_drop_down), findsOneWidget);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    expect(find.byIcon(Icons.arrow_drop_down), findsNothing);
     expect(find.text('値2'), findsOneWidget);
-    final ab = tileRect(tester, 'AB区間');
-    final mark = tester.getRect(find.byIcon(Icons.chevron_right));
-    expect(mark.right, lessThanOrEqualTo(ab.right));
-    expect(mark.top, greaterThanOrEqualTo(ab.top));
-    expect(mark.center.dx, greaterThan(ab.center.dx), reason: '右上');
-    expect(mark.center.dy, lessThan(ab.center.dy));
   });
 
   testWidgets('小さめのタイルは少し横長で、縦の電話では幅が違っても 3 列、横向きでは 5 列', (tester) async {

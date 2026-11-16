@@ -75,12 +75,11 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
           children: [
             const VolumeSliderRow(),
             const SizedBox(height: AppSpacing.md),
-            // 1 行目は別の画面を開くもの（›）、2 行目はその場で変わるもの
+            // 1 行目は別の画面を開くもの、2 行目はその場で変わるもの
             MoreTileGrid(tiles: [
               MoreTile(
                 icon: Icons.tune,
                 label: 'AB区間',
-                corner: Icons.chevron_right,
                 onTap: () {
                   Navigator.pop(context);
                   widget.onEditAb();
@@ -90,7 +89,6 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
                 icon: Icons.multitrack_audio,
                 label: 'DJ ミックス',
                 value: DjMixSettingsScreen.crossfadeLabel(crossfade),
-                corner: Icons.chevron_right,
                 onTap: () {
                   Navigator.pop(context);
                   widget.onDjMix();
@@ -100,7 +98,6 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
                 MoreTile(
                   icon: Icons.download_outlined,
                   label: '保存',
-                  corner: Icons.chevron_right,
                   onTap: () {
                     Navigator.pop(context);
                     widget.onSave!();

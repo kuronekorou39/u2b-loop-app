@@ -30,7 +30,11 @@ class TrackList extends ConsumerWidget {
     this.bottomInset = 0,
     this.preloadingIndex,
     this.preloadedIndex,
+    this.playlistId,
   });
+
+  /// 鳴らしているプレイリスト（タグの出し方を決めるのに使う。無ければ全部出す）
+  final String? playlistId;
 
   /// 通常の行の高さ
   static const rowHeight = 64.0;
@@ -52,6 +56,17 @@ class TrackList extends ConsumerWidget {
     final playing = ref.watch(playingProvider).valueOrNull ?? false;
     final allTags = ref.watch(tagsProvider);
     final tagMap = {for (final t in allTags) t.id: t};
+    // プレイリストが自動で入れるタグが 1 つだけなら、どの曲にも付いているので出さない
+    // （プレイリスト詳細と同じ決まり）
+    final autoTagIds = playlistId == null
+        ? const <String>[]
+        : ref
+                .watch(playlistsProvider)
+                .where((p) => p.id == playlistId)
+                .firstOrNull
+                ?.tagIds ??
+            const <String>[];
+    final hiddenTagId = autoTagIds.length == 1 ? autoTagIds.first : null;
     // タグ変更時にトラック一覧を再描画するために監視
     ref.watch(loopItemsProvider);
 
@@ -65,6 +80,7 @@ class TrackList extends ConsumerWidget {
         index: i,
         track: plState.tracks[i],
         tagMap: tagMap,
+        hiddenTagId: hiddenTagId,
         isCurrent: i == currentIdx,
         playing: playing,
         isPreloading: preloadingIndex == i,
@@ -84,6 +100,7 @@ class _TrackRow extends StatelessWidget {
     required this.index,
     required this.track,
     required this.tagMap,
+    required this.hiddenTagId,
     required this.isCurrent,
     required this.playing,
     required this.isPreloading,
@@ -96,6 +113,7 @@ class _TrackRow extends StatelessWidget {
   final int index;
   final PlaylistTrack track;
   final Map<String, Tag> tagMap;
+  final String? hiddenTagId;
   final bool isCurrent;
 
   /// 再生中か（一時停止中は再生中の行のバーを下げて止める）
@@ -222,7 +240,8 @@ class _TrackRow extends StatelessWidget {
               ),
             ),
             // タグ: 右端に配置
-            ...trackTagChips(context, track, tagMap),
+            ...trackTagChips(context, track, tagMap,
+                hiddenTagId: hiddenTagId),
             // メニューは長押しでも開くが、入口が見えるように ⋮ も置く
             IconButton(
               icon: Icon(Icons.more_vert,

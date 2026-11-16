@@ -5,15 +5,16 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_sheets.dart';
 
-/// 「その他」メニューの四角いボタン（アイコン + 一言 + 任意の今の値）。
+/// 四角い大きなボタン（大きなアイコン + 一言 + 任意の今の値。中身は真ん中に寄せる）。
+/// 再生画面の「その他」・DJ ミックス・設定のトップで使う。
 ///
-/// 見た目の決まり（混ぜると「光る理由が分からない」と言われた）:
-/// - 押すとオンオフが切り替わるもの → オンのとき緑に光る（[active]）
-/// - 別の画面やシートを開くもの → 右上に「›」（[corner] に [Icons.chevron_right]）、光らない
-/// - 候補から選ぶもの → 右上に「▾」と今の値（[PickerTile]）、光らない
-/// 以前は ListTile の一覧で、横向きの電話では 2〜3 行しか見えなかった。
-/// タイルなら縦でも横でも同じ組み方で、幅に合わせて列数が変わるだけ。
-/// 押しても場所は動かない。
+/// 見た目の決まり:
+/// - タイルの面はどれも同じ色（オンオフで面を塗り分けない。塗ると「どれが何の色か
+///   分からない」と言われた）。右上の矢印（› ▾）も付けない
+/// - アイコンはアクセントの緑。オンオフが切り替わるもの（[active] を渡す）は、
+///   ラベルの下に「オン」「オフ」と書き、オフの間だけアイコンが灰色になる
+/// - 今の値があるもの（速度の 1.0x など）はラベルの下に小さく書く
+/// アイコンと文字はタイルの大きさに合わせて大きくなる。押しても場所は動かない。
 class MoreTile extends StatelessWidget {
   const MoreTile({
     super.key,
@@ -21,96 +22,110 @@ class MoreTile extends StatelessWidget {
     required this.label,
     this.value,
     this.onTap,
-    this.active = false,
+    this.active,
     this.enabled = true,
-    this.corner,
     this.dense = false,
   });
 
   final IconData icon;
   final String label;
 
-  /// 今の値（速度の 1.0x、出力の「スピーカー」など）。ラベルの下に小さく
+  /// 今の値（速度の 1.0x、出力の「スピーカー」など）。ラベルの下に小さく。
+  /// [active] を渡して値が無ければ「オン」「オフ」
   final String? value;
 
   /// null なら情報だけ（押せない）
   final VoidCallback? onTap;
 
-  /// オン（緑に光る）。オンオフが切り替わるものだけに使う
-  final bool active;
+  /// オンオフが切り替わるものだけに渡す（null = オンオフではない）
+  final bool? active;
   final bool enabled;
 
-  /// 右上の小さな印（開く「›」・選ぶ「▾」）
-  final IconData? corner;
-
-  /// 小さめ（DJ ミックスのように数が多いとき）。アイコンと文字を一回り小さく、
+  /// 小さめ（DJ ミックスのように数が多いとき）。文字を一回り小さく、
   /// 値が無ければラベルは 2 行まで
   final bool dense;
+
+  /// アイコンの大きさ（タイルの短い辺に対する割合）と、その下限・上限
+  static const iconScale = 0.36;
+  static const iconMin = 20.0;
+  static const iconMax = 72.0;
+
+  /// この大きさ以上のタイル（設定のトップ）は文字も大きく
+  static const largeSide = 140.0;
+
+  /// アイコン以外（余白・ラベル・値）に取っておく高さ。小さいタイルで溢れないように
+  static const _textReserve = 62.0;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
-    const green = AppTheme.accentGreen;
-    // 押せないときも、オンかどうかは薄く残す
-    final fg = enabled
-        ? (active ? green : onSurface)
-        : (active ? green.withValues(alpha: 0.45) : AppTheme.muted(context));
-    final fill = active
-        ? green.withValues(alpha: enabled ? 0.16 : 0.07)
-        : onSurface.withValues(alpha: enabled ? 0.08 : 0.04);
+    final muted = AppTheme.muted(context);
+    final off = active == false;
+    final iconColor = enabled
+        ? (off ? muted : AppTheme.accentGreen)
+        : (off ? muted.withValues(alpha: 0.4) : AppTheme.accentGreen.withValues(alpha: 0.4));
+    final textColor = enabled ? onSurface : muted;
+    final shown = value ?? (active == null ? null : (active! ? 'オン' : 'オフ'));
     final radius = BorderRadius.circular(dense ? AppRadius.lg : AppRadius.xl);
-    final labelStyle = (dense ? theme.textTheme.labelSmall : theme.textTheme.labelMedium)!
-        .copyWith(color: fg, fontWeight: active ? FontWeight.bold : null);
     return Material(
-      color: fill,
+      color: onSurface.withValues(alpha: enabled ? 0.08 : 0.04),
       borderRadius: radius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: enabled ? onTap : null,
         borderRadius: radius,
-        child: Stack(
-          children: [
-            Padding(
-              // 小さめは 7 文字のラベル（ベーススワップ）が 1 行に入るよう横の余白を詰める
-              padding: EdgeInsets.all(dense ? AppSpacing.xs : AppSpacing.sm),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon,
-                      size: dense ? AppIconSizes.ml : AppIconSizes.xl, color: fg),
-                  SizedBox(height: dense ? AppSpacing.xs : AppSpacing.sm),
+        child: LayoutBuilder(builder: (context, c) {
+          final side = c.biggest.shortestSide;
+          final large = side >= largeSide;
+          final iconSize = (side * iconScale)
+              .clamp(iconMin, iconMax)
+              .clamp(iconMin, (side - _textReserve).clamp(iconMin, iconMax))
+              .toDouble();
+          final labelStyle = (dense
+                  ? theme.textTheme.labelSmall
+                  : large
+                      ? theme.textTheme.bodyLarge
+                      : theme.textTheme.labelMedium)!
+              .copyWith(color: textColor, fontWeight: FontWeight.w600);
+          final valueStyle = (large
+                  ? theme.textTheme.labelMedium
+                  : theme.textTheme.labelSmall)!
+              .copyWith(color: AppTheme.muted(context, alpha: enabled ? 0.8 : 0.5));
+          return Padding(
+            // 小さめは 7 文字のラベル（ベーススワップ）が 1 行に入るよう横の余白を詰める
+            padding: EdgeInsets.all(dense ? AppSpacing.xs : AppSpacing.sm),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon, size: iconSize, color: iconColor),
+                SizedBox(
+                    height: dense
+                        ? AppSpacing.xs
+                        : large
+                            ? AppSpacing.md
+                            : AppSpacing.sm),
+                Text(
+                  label,
+                  style: labelStyle,
+                  textAlign: TextAlign.center,
+                  maxLines: dense && shown == null ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (shown != null)
                   Text(
-                    label,
-                    style: labelStyle,
+                    shown,
+                    style: valueStyle,
                     textAlign: TextAlign.center,
-                    maxLines: dense && value == null ? 2 : 1,
+                    // 長い値（フィルタースイープ）は小さめのとき 2 行まで
+                    maxLines: dense ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (value != null)
-                    Text(
-                      value!,
-                      style: theme.textTheme.labelSmall!.copyWith(
-                        color: enabled ? AppTheme.muted(context, alpha: 0.8) : fg,
-                      ),
-                      textAlign: TextAlign.center,
-                      // 長い値（フィルタースイープ）は小さめのとき 2 行まで
-                      maxLines: dense ? 2 : 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
+              ],
             ),
-            if (corner != null)
-              Positioned(
-                top: AppSpacing.xs,
-                right: AppSpacing.xs,
-                child: Icon(corner,
-                    size: AppIconSizes.s,
-                    color: AppTheme.muted(context, alpha: enabled ? 0.7 : 0.4)),
-              ),
-          ],
-        ),
+          );
+        }),
       ),
     );
   }
@@ -165,7 +180,6 @@ class PickerTile<T> extends StatelessWidget {
           icon: icon,
           label: label,
           value: labelOf(selected),
-          corner: Icons.arrow_drop_down,
           enabled: enabled,
           dense: dense,
           onTap: () => _open(ctx),
