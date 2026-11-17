@@ -4,7 +4,7 @@ import '../../core/storage/app_boxes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/loop_item.dart';
 
-/// 登録データの統計（詳細設定 > デバッグ）
+/// 登録データの統計（設定 > デバッグ）
 class StatsDialog {
   StatsDialog._();
 

@@ -131,7 +131,8 @@ class MoreTile extends StatelessWidget {
   }
 }
 
-/// [context] のウィジェットの上に重ねて出すメニューの位置（showMenu の position）
+/// [context] のウィジェットのすぐ下に出すメニューの位置（showMenu の position）。
+/// ボタンに被せない（下に入らなければ showMenu が画面内に押し戻す）
 RelativeRect anchoredMenuPosition(BuildContext context) {
   final box = context.findRenderObject() as RenderBox;
   final overlay =
@@ -140,8 +141,44 @@ RelativeRect anchoredMenuPosition(BuildContext context) {
     box.localToGlobal(Offset.zero, ancestor: overlay),
     box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
   );
-  return RelativeRect.fromRect(rect, Offset.zero & overlay.size);
+  final below = Rect.fromLTRB(rect.left, rect.bottom, rect.right, rect.bottom);
+  return RelativeRect.fromRect(below, Offset.zero & overlay.size);
 }
+
+/// [context] のボタンの下に候補を出して選ばせる。今の値には ✓
+/// （showMenu の initialValue は今の値をボタンに重ねる位置にずらすので使わない）
+Future<T?> showAnchoredPicker<T>(
+  BuildContext context, {
+  required List<T> values,
+  required T selected,
+  required String Function(T) labelOf,
+}) =>
+    showMenu<T>(
+      context: context,
+      position: anchoredMenuPosition(context),
+      items: [
+        for (final v in values)
+          PopupMenuItem(
+            value: v,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: AppIconSizes.lg,
+                  child: v == selected
+                      ? const Icon(Icons.check,
+                          size: AppIconSizes.md, color: AppTheme.accentGreen)
+                      : null,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Text(labelOf(v),
+                    style: v == selected
+                        ? const TextStyle(fontWeight: FontWeight.bold)
+                        : null),
+              ],
+            ),
+          ),
+      ],
+    );
 
 /// 候補から選ぶタイル。今の値を出し、押すとその場に候補のメニュー
 /// （候補を並べると見づらいのでプルダウン）
@@ -168,14 +205,8 @@ class PickerTile<T> extends StatelessWidget {
   final bool dense;
 
   Future<void> _open(BuildContext context) async {
-    final picked = await showMenu<T>(
-      context: context,
-      position: anchoredMenuPosition(context),
-      initialValue: selected,
-      items: [
-        for (final v in values) PopupMenuItem(value: v, child: Text(labelOf(v))),
-      ],
-    );
+    final picked = await showAnchoredPicker<T>(context,
+        values: values, selected: selected, labelOf: labelOf);
     if (picked != null) onPicked(picked);
   }
 

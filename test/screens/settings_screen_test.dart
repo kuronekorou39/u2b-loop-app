@@ -58,7 +58,8 @@ void main() {
   }
 
   const tileLabels = [
-    'DJ ミックス', 'オフライン保存', 'バックアップ', '詳細設定',
+    // 縦の電話で「DJ ミックス・表示と再生」「保存データ・バックアップ」の 2 行
+    'DJ ミックス', '表示・再生', '保存データ', 'バックアップ',
   ];
 
   /// 画面の大きさ（論理ピクセル）を指定して設定のトップを出し、ボタンの矩形を返す
@@ -222,6 +223,9 @@ void main() {
         expect(r.bottom, lessThanOrEqualTo(size.height), reason: '$size $label');
         expect(r.right, lessThanOrEqualTo(size.width), reason: '$size $label');
       }
+      // オンオフは見た目で（「オン」「オフ」の文字は出さない）
+      expect(find.text('オン'), findsNothing, reason: '$size');
+      expect(find.text('オフ'), findsOneWidget, reason: '長さの値だけ');
       final slider = tester.getRect(find.byType(Slider));
       final groups = tester.getRect(find.text('つなぎ'));
       if (size.width > size.height) {
@@ -265,6 +269,14 @@ void main() {
     expect(find.text('+20ms'), findsOneWidget);
     AppBoxes.settings.put(SettingsKeys.sfxOffsetMs, 0);
 
+    // レベルはプリセットなので、選ばれていないものも灰色にしない
+    final onSurface = Theme.of(tester.element(find.text('控えめ'))).colorScheme.onSurface;
+    for (final l in const ['控えめ', '普通', 'ガチ']) {
+      final color = tester.widget<Text>(find.text(l)).style?.color;
+      expect(color == onSurface || color == AppTheme.accentGreen, isTrue,
+          reason: l);
+    }
+
     // 既定はおまかせ。手動の項目はおまかせを切ったときだけ
     expect(AppBoxes.settings.get(SettingsKeys.autoMix, defaultValue: true), true);
     expect(enabledOf(tester, 'テンポ'), isFalse);
@@ -288,9 +300,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.bassSwap), false);
 
-    // つなぎ方と演出はボタンの上のメニューで選ぶ
+    // つなぎ方と演出はボタンの下のメニューで選ぶ（ボタンに被せない）
+    final button = tester.getRect(find
+        .ancestor(of: find.text('つなぎ方'), matching: find.byType(InkWell))
+        .first);
     await tester.tap(find.text('つなぎ方'));
     await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('次曲先行').last).top,
+        greaterThanOrEqualTo(button.bottom));
     await tester.tap(find.text('次曲先行').last);
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
@@ -331,17 +348,10 @@ void main() {
         '16拍');
   });
 
-  testWidgets('バージョン行を 5 回押すとデバッグモード。詳細設定にデバッグの群が出て、終了で消える',
+  testWidgets('更新の札を 5 回押すとデバッグモード。トップにデバッグのボタンが出て、終了で消える',
       (tester) async {
     await pumpPage(tester, const SettingsScreen());
     expect(find.textContaining('デバッグ'), findsNothing);
-
-    // ふだんは詳細設定にデバッグの群が無い
-    await tester.tap(find.text('詳細設定'));
-    await tester.pumpAndSettle();
-    expect(find.text('テスト版も受け取る'), findsNothing);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
 
     for (var i = 0; i < 5; i++) {
       await tester.tap(find.text('  ·  更新を確認'));
@@ -349,21 +359,49 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.debugMode), true);
+    // 表示・再生の中ではなく、トップの別のボタン
+    expect(find.byType(MoreTile), findsNWidgets(5));
 
-    await tester.tap(find.text('詳細設定'));
+    await tester.tap(find.text('デバッグ'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('デバッグモードを終了'), 200,
-        scrollable: find.byType(Scrollable).last);
     await tester.tap(find.text('テスト版も受け取る'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.betaUpdates), true);
 
-    // 終了すると群が消え、中の設定も切れる
+    // 終了するとトップに戻り、ボタンが消え、中の設定も切れる
     await tester.tap(find.text('デバッグモードを終了'));
     await tester.pumpAndSettle();
-    expect(find.text('テスト版も受け取る'), findsNothing);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(find.text('デバッグ'), findsNothing);
+    expect(find.byType(MoreTile), findsNWidgets(4));
     expect(AppBoxes.settings.get(SettingsKeys.debugMode), false);
     expect(AppBoxes.settings.get(SettingsKeys.betaUpdates), false);
+  });
+
+  testWidgets('各ページの行には説明文を出さない（値だけ）', (tester) async {
+    await pumpPage(tester, const SettingsScreen());
+    await tester.tap(find.text('表示・再生'));
+    await tester.pumpAndSettle();
+    expect(find.text('画面のぼかし'), findsOneWidget);
+    expect(find.textContaining('重い端末'), findsNothing);
+    expect(find.textContaining('kbps'), findsNothing);
+    // 消す操作は保存データへ
+    expect(find.text('すべてのデータを削除'), findsNothing);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('保存データ'));
+    await tester.pumpAndSettle();
+    expect(find.text('すべてのデータを削除'), findsOneWidget);
+    expect(find.textContaining('タップで'), findsNothing);
+    expect(find.textContaining('残ります'), findsNothing);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('バックアップ'));
+    await tester.pumpAndSettle();
+    expect(find.text('バックアップを書き出す'), findsOneWidget);
+    expect(find.textContaining('置き換わ'), findsNothing);
   });
 
   testWidgets('バージョンが表示される', (tester) async {

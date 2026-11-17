@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/storage/app_boxes.dart';
 
-/// パフォーマンスオーバーレイ（FPS・描画負荷）の表示設定。詳細設定 > 開発者向け
+/// パフォーマンスオーバーレイ（FPS・描画負荷）の表示設定。設定 > デバッグ
 final perfOverlayProvider =
     StateNotifierProvider<PerfOverlayNotifier, bool>(
         (ref) => PerfOverlayNotifier());

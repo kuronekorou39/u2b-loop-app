@@ -16,6 +16,7 @@ import '../widgets/player/more_tile.dart';
 import '../widgets/glass_scaffold.dart';
 import 'settings/advanced_settings_screen.dart';
 import 'settings/backup_settings_screen.dart';
+import 'settings/debug_settings_screen.dart';
 import 'settings/dj_mix_settings_screen.dart';
 import 'settings/storage_settings_screen.dart';
 
@@ -78,14 +79,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ─── アプリ情報 ───
 
-  /// バージョン行を続けて 5 回押すとデバッグモード（詳細設定に「デバッグ」の群が出る）
+  /// アップデートの札を続けて 5 回押すとデバッグモード（トップに「デバッグ」のボタンが出る）
   /// 戻り値はデバッグモードに入ったか（その回は更新確認の通知で上書きしない）
   bool _onVersionTap() {
     _versionTapCount++;
     if (_versionTapCount < 5) return false;
     _versionTapCount = 0;
     ref.read(debugModeProvider.notifier).enable();
-    _toast(AppSnackBar.success('デバッグモードをオンにしました（詳細設定の中）'));
+    _toast(AppSnackBar.success('デバッグモードをオンにしました'));
     return true;
   }
 
@@ -97,6 +98,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final playlists = AppBoxes.playlists.length;
     final tags = AppBoxes.tags.length;
 
+    // 縦の電話（2 列）で「DJ ミックス・表示と再生」「保存データ・バックアップ」と
+    // 設定する系とデータの系が行で分かれる並び。デバッグモードの間だけ最後にデバッグ
     final tiles = <Widget>[
       MoreTile(
         icon: Icons.multitrack_audio,
@@ -104,11 +107,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         value: DjMixSettingsScreen.crossfadeLabel(ref.watch(crossfadeProvider)),
         onTap: () => _push(const DjMixSettingsScreen()),
       ),
+      MoreTile(
+        icon: Icons.tune,
+        label: AdvancedSettingsScreen.title,
+        onTap: () => _push(const AdvancedSettingsScreen()),
+      ),
       FutureBuilder<int>(
         future: _cacheSize,
         builder: (_, snap) => MoreTile(
           icon: Icons.sd_storage,
-          label: 'オフライン保存',
+          label: StorageSettingsScreen.title,
           value: snap.hasData
               ? '${(snap.data! / 1024 / 1024).toStringAsFixed(1)} MB'
               : '計算中…',
@@ -120,11 +128,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         label: 'バックアップ',
         onTap: () => _push(const BackupSettingsScreen()),
       ),
-      MoreTile(
-        icon: Icons.tune,
-        label: '詳細設定',
-        onTap: () => _push(const AdvancedSettingsScreen()),
-      ),
+      if (ref.watch(debugModeProvider))
+        MoreTile(
+          icon: Icons.bug_report_outlined,
+          label: 'デバッグ',
+          onTap: () => _push(const DebugSettingsScreen()),
+        ),
     ];
 
     return GlassScaffold(

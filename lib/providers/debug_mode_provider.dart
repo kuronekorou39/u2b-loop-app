@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/storage/app_boxes.dart';
 import 'perf_overlay_provider.dart';
 
-/// デバッグモード（設定のバージョン行を 5 回タップで出す）。
-/// オンの間だけ、詳細設定に「デバッグ」の群（テスト版の受け取り・計測・ログなど、
+/// デバッグモード（設定の下の「v… · 更新を確認」を 5 回タップで出す）。
+/// オンの間だけ、設定のトップに「デバッグ」のボタン（テスト版の受け取り・計測・ログなど、
 /// ふつうの人が触らないもの）が出る
 final debugModeProvider =
     StateNotifierProvider<DebugModeNotifier, bool>((ref) => DebugModeNotifier(ref));

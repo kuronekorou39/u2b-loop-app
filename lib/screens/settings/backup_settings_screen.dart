@@ -14,7 +14,8 @@ import '../../providers/data_provider.dart';
 import '../../services/backup_service.dart';
 import '../../widgets/settings/settings_parts.dart';
 
-/// 設定「バックアップ」: 書き出し / 復元
+/// 設定「バックアップ」: 書き出し（曲・プレイリスト・タグ・AB 区間を 1 つのファイルに）/ 復元
+/// （置き換わることは復元前の確認に書く）
 class BackupSettingsScreen extends ConsumerStatefulWidget {
   const BackupSettingsScreen({super.key});
 
@@ -197,13 +198,11 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                 SettingsRow(
                   icon: Icons.upload_file,
                   title: 'バックアップを書き出す',
-                  subtitle: '曲・プレイリスト・タグ・AB 区間を 1 つのファイルに',
                   onTap: _busy ? null : _exportData,
                 ),
                 SettingsRow(
                   icon: Icons.download,
                   title: 'バックアップから復元',
-                  subtitle: '今のデータは置き換わります',
                   onTap: _busy ? null : _importData,
                 ),
               ],

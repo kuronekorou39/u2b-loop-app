@@ -175,35 +175,51 @@ class DjMixSheet extends ConsumerWidget {
   }
 }
 
-/// つなぎ方のレベル（控えめ・普通・ガチ）を選ぶ 3 つの札。
-/// どれとも一致しなければどれも選ばれていない（カスタム）。設定の DJ ミックスのページと共用
+/// つなぎ方のレベル（控えめ・普通・ガチ）の 3 つのボタン。設定の DJ ミックスのページと共用。
+///
+/// 下の個々の設定をまとめて変えるプリセットなので、どれも同じように押せる見た目にする
+/// （選ばれていないものを灰色にしない）。今の設定と一致するものだけ緑の枠と文字。
+/// どれとも一致しなければ（カスタム）どれにも枠を付けない
 class DjLevelChips extends ConsumerWidget {
   const DjLevelChips({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     final level = ref.watch(djLevelProvider);
-    return Wrap(
-      spacing: AppSpacing.sm,
+    final radius = BorderRadius.circular(AppRadius.lg);
+    return Row(
       children: [
-        // 選択中はオンと同じ緑（赤だと「何かが起きている」ように見える）
-        for (final l in DjLevel.values)
-          ChoiceChip(
-            label: Text(l.label),
-            selected: l == level,
-            showCheckmark: false,
-            selectedColor: AppTheme.accentGreen.withValues(alpha: 0.18),
-            labelStyle: textTheme.labelMedium?.copyWith(
-              color: l == level ? AppTheme.accentGreen : null,
-              fontWeight: l == level ? FontWeight.bold : null,
+        for (final (i, l) in DjLevel.values.indexed) ...[
+          if (i > 0) const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Material(
+              color: onSurface.withValues(alpha: 0.08),
+              shape: RoundedRectangleBorder(
+                borderRadius: radius,
+                side: l == level
+                    ? const BorderSide(color: AppTheme.accentGreen, width: 1.5)
+                    : BorderSide.none,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => applyDjLevel(ref, l),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  child: Text(
+                    l.label,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: l == level ? AppTheme.accentGreen : onSurface,
+                    ),
+                  ),
+                ),
+              ),
             ),
-            side: l == level
-                ? const BorderSide(color: Colors.transparent)
-                : null,
-            onSelected: (_) => applyDjLevel(ref, l),
-            visualDensity: VisualDensity.compact,
           ),
+        ],
       ],
     );
   }

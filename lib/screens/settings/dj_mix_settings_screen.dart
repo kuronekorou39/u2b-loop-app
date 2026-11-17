@@ -187,7 +187,7 @@ class _MainControls extends ConsumerWidget {
   }
 }
 
-/// 横長の大きなオンオフ（おまかせ）。面は塗り分けず、オフはアイコンが灰色
+/// 横長の大きなオンオフ（おまかせ）。右端にスイッチ。面は塗り分けず、オフはアイコンと名前が灰色
 class _WideToggle extends StatelessWidget {
   const _WideToggle({
     required this.icon,
@@ -237,14 +237,16 @@ class _WideToggle extends StatelessWidget {
                   label,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: enabled ? onSurface : muted,
+                    // オフは名前を灰色に
+                    color: enabled && value ? onSurface : muted,
                   ),
                 ),
               ),
-              Text(
-                value ? 'オン' : 'オフ',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: muted.withValues(alpha: alpha),
+              IgnorePointer(
+                child: Switch(
+                  value: value,
+                  onChanged: enabled ? onChanged : null,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
             ],
@@ -255,7 +257,7 @@ class _WideToggle extends StatelessWidget {
   }
 }
 
-/// 丸いアイコンのボタンを群ごとに並べる。幅に余裕があれば群を横に並べる
+/// 上下のスイッチと丸いボタンを群ごとに並べる。幅に余裕があれば群を横に並べる
 class _IconGroups extends ConsumerWidget {
   const _IconGroups();
 
@@ -293,8 +295,7 @@ class _IconGroups extends ConsumerWidget {
         icon: icon,
         label: label,
         tooltip: tooltip,
-        value: value ? 'オン' : 'オフ',
-        active: value,
+        switchValue: value,
         enabled: enabled,
         onTap: (_) => set(!value),
       );
@@ -316,15 +317,8 @@ class _IconGroups extends ConsumerWidget {
       value: labelOf(selected),
       enabled: enabled,
       onTap: (ctx) async {
-        final picked = await showMenu<T>(
-          context: ctx,
-          position: anchoredMenuPosition(ctx),
-          initialValue: selected,
-          items: [
-            for (final v in values)
-              PopupMenuItem(value: v, child: Text(labelOf(v))),
-          ],
-        );
+        final picked = await showAnchoredPicker<T>(ctx,
+            values: values, selected: selected, labelOf: labelOf);
         if (picked != null) onPicked(picked);
       },
     );
@@ -416,7 +410,7 @@ class _IconGroups extends ConsumerWidget {
             onPicked: (v) => ref.read(sfxLevelProvider.notifier).value = v,
             enabled: sfxOn,
           ),
-          // 効果音が拍より遅れて / 早く聞こえるときに 10ms 刻みで詰める（ボタンの上に −/+）
+          // 効果音が拍より遅れて / 早く聞こえるときに 10ms 刻みで詰める（ボタンの下に −/+）
           _Cell(
             icon: Icons.timer_outlined,
             label: 'タイミング',
@@ -519,78 +513,141 @@ class _IconGroups extends ConsumerWidget {
   }
 }
 
-/// 丸いアイコンのボタン（アイコン + 短い名前 + 今の値）。
-/// 面は塗り分けず、オフ（[active] == false）はアイコンが灰色。長押しで正式な名前
+/// 群の中の 1 つ。オンオフは上下のスイッチ（つまみに アイコン、上がオン）+ 短い名前、
+/// それ以外は丸いボタン（アイコン + 短い名前 + 今の値）。高さはどちらも同じ。
+/// オフは名前を灰色にするだけ（「オン」「オフ」の文字は出さない）。
+/// 使えないとき（クロスフェードがオフ、おまかせ中の手動の項目）は全体を薄く。長押しで正式な名前
 class _Cell extends StatelessWidget {
   const _Cell({
     required this.icon,
     required this.label,
     required this.tooltip,
-    required this.value,
     required this.enabled,
     required this.onTap,
-    this.active,
-  });
+    this.value,
+    this.switchValue,
+  }) : assert((value == null) != (switchValue == null));
 
   final IconData icon;
   final String label;
   final String tooltip;
-  final String value;
-  final bool? active;
+
+  /// 今の値（丸いボタン）
+  final String? value;
+
+  /// オンオフ（上下のスイッチ）
+  final bool? switchValue;
   final bool enabled;
 
-  /// 押したボタンの context を渡す（メニューをその上に出す）
+  /// 押したボタンの context を渡す（メニューをその下に出す）
   final void Function(BuildContext) onTap;
 
   static const circle = 44.0;
+
+  /// 上下のスイッチの大きさ（丸いボタン + 値の行と同じ高さ）
+  static const switchWidth = 30.0;
+  static const switchHeight = 60.0;
+  static const knob = 24.0;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
     final muted = AppTheme.muted(context);
-    final alpha = enabled ? 1.0 : 0.4;
-    final iconColor = (active == false ? muted : AppTheme.accentGreen)
-        .withValues(alpha: alpha);
+    final sw = switchValue;
+    final labelStyle = theme.textTheme.labelSmall?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: sw == false ? muted : onSurface,
+    );
     return Tooltip(
       message: tooltip,
-      child: InkWell(
-        onTap: enabled ? () => onTap(context) : null,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: circle,
-                height: circle,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: onSurface.withValues(alpha: enabled ? 0.08 : 0.04),
-                ),
-                child: Icon(icon, size: AppIconSizes.lg, color: iconColor),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: enabled ? onSurface : muted,
-                ),
-              ),
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: muted.withValues(alpha: alpha * 0.9),
-                ),
-              ),
-            ],
+      child: Opacity(
+        opacity: enabled ? 1 : 0.4,
+        child: InkWell(
+          onTap: enabled ? () => onTap(context) : null,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (sw != null)
+                  _VerticalSwitch(icon: icon, value: sw)
+                else
+                  Container(
+                    width: circle,
+                    height: circle,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: onSurface.withValues(alpha: 0.08),
+                    ),
+                    child: Icon(icon,
+                        size: AppIconSizes.lg, color: AppTheme.accentGreen),
+                  ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: labelStyle),
+                if (value != null)
+                  Text(
+                    value!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: muted.withValues(alpha: 0.9),
+                    ),
+                  ),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 上下のスイッチ（見た目だけ。押すのは [_Cell] の全体）。オンはつまみが上で緑
+class _VerticalSwitch extends StatelessWidget {
+  const _VerticalSwitch({required this.icon, required this.value});
+
+  final IconData icon;
+  final bool value;
+
+  static const _duration = Duration(milliseconds: 150);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    const pad = (_Cell.switchWidth - _Cell.knob) / 2;
+    return AnimatedContainer(
+      duration: _duration,
+      width: _Cell.switchWidth,
+      height: _Cell.switchHeight,
+      padding: const EdgeInsets.all(pad),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_Cell.switchWidth / 2),
+        color: value
+            ? AppTheme.accentGreen.withValues(alpha: 0.35)
+            : onSurface.withValues(alpha: 0.12),
+      ),
+      child: AnimatedAlign(
+        duration: _duration,
+        curve: Curves.easeOut,
+        alignment: value ? Alignment.topCenter : Alignment.bottomCenter,
+        child: AnimatedContainer(
+          duration: _duration,
+          width: _Cell.knob,
+          height: _Cell.knob,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: value
+                ? AppTheme.accentGreen
+                : onSurface.withValues(alpha: 0.45),
+          ),
+          child: Icon(icon,
+              size: AppIconSizes.xs, color: theme.colorScheme.surface),
         ),
       ),
     );
