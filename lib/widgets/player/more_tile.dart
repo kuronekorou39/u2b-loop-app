@@ -131,6 +131,18 @@ class MoreTile extends StatelessWidget {
   }
 }
 
+/// [context] のウィジェットの上に重ねて出すメニューの位置（showMenu の position）
+RelativeRect anchoredMenuPosition(BuildContext context) {
+  final box = context.findRenderObject() as RenderBox;
+  final overlay =
+      Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+  final rect = Rect.fromPoints(
+    box.localToGlobal(Offset.zero, ancestor: overlay),
+    box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+  );
+  return RelativeRect.fromRect(rect, Offset.zero & overlay.size);
+}
+
 /// 候補から選ぶタイル。今の値を出し、押すとその場に候補のメニュー
 /// （候補を並べると見づらいのでプルダウン）
 class PickerTile<T> extends StatelessWidget {
@@ -156,16 +168,9 @@ class PickerTile<T> extends StatelessWidget {
   final bool dense;
 
   Future<void> _open(BuildContext context) async {
-    final box = context.findRenderObject() as RenderBox;
-    final overlay =
-        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-    final rect = Rect.fromPoints(
-      box.localToGlobal(Offset.zero, ancestor: overlay),
-      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
-    );
     final picked = await showMenu<T>(
       context: context,
-      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
+      position: anchoredMenuPosition(context),
       initialValue: selected,
       items: [
         for (final v in values) PopupMenuItem(value: v, child: Text(labelOf(v))),

@@ -20,6 +20,8 @@ import 'settings/dj_mix_settings_screen.dart';
 import 'settings/storage_settings_screen.dart';
 
 /// 設定のトップ。四角い大きなボタン（[MoreTile]）を敷き詰め、残りは各ページへ。
+/// アップデートは次の画面へ進むボタンではない（その場で確認する。ふだんは起動時に自動）ので、
+/// ボタンの並びには入れず、下の真ん中に小さな札（バージョン + 更新を確認）で置く。
 /// 今の値は短いものだけボタンに出す。縦でも横でもスクロールせずに全部収め、
 /// 画面の端まで詰めない（[gridFor]）
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -33,13 +35,15 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
   /// [count] 個の正方形のボタンを [area] に全部収める並べ方。
   /// 列数を 1 から順に試し、ボタンがいちばん大きくなる列数にする
-  /// （縦の電話は 2 列 × 3 行、横向きの電話は 1 行になる）
+  /// （縦の電話は 2 列 × 2 行、横向きの電話は 1 行になる）
   static ({int columns, double side}) gridFor(Size area, int count) {
     var best = (columns: 1, side: 0.0);
     for (var columns = 1; columns <= count; columns++) {
       final rows = (count / columns).ceil();
-      final side = min((area.width - gridGap * (columns - 1)) / columns,
-          (area.height - gridGap * (rows - 1)) / rows);
+      final side = min(
+        (area.width - gridGap * (columns - 1)) / columns,
+        (area.height - gridGap * (rows - 1)) / rows,
+      );
       if (side > best.side) best = (columns: columns, side: side);
     }
     return (
@@ -116,19 +120,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         label: 'バックアップ',
         onTap: () => _push(const BackupSettingsScreen()),
       ),
-      FutureBuilder<PackageInfo>(
-        future: _packageInfo,
-        builder: (_, snap) => MoreTile(
-          icon: Icons.system_update,
-          label: 'アップデート',
-          value: 'v${snap.data?.version ?? '…'}',
-          onTap: () {
-            if (_onVersionTap()) return;
-            _toast(AppSnackBar.info('最新版を確認中...'));
-            UpdateService.checkForUpdate(context, manual: true);
-          },
-        ),
-      ),
       MoreTile(
         icon: Icons.tune,
         label: '詳細設定',
@@ -141,10 +132,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // ダーク / ライトの切り替えは右上に（ボタンの並びには入れない。ラベルなし）。
       // スキップ秒数は再生画面の ±N 秒ボタンの長押しで選ぶ
       actions: [
-        IconButton(
-          icon: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
-          tooltip: isDark ? 'ライトモードにする' : 'ダークモードにする',
-          onPressed: () => ref.read(themeProvider.notifier).value = !isDark,
+        // 右端に寄せすぎない（ボタンの並びの右端あたりに）
+        Padding(
+          padding: const EdgeInsets.only(right: AppSpacing.lg),
+          child: IconButton(
+            icon: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
+            tooltip: isDark ? 'ライトモードにする' : 'ダークモードにする',
+            onPressed: () => ref.read(themeProvider.notifier).value = !isDark,
+          ),
         ),
       ],
       bodyBuilder: (context) {
@@ -158,35 +153,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _margin + viewPadding.right,
             padding.bottom + _margin,
           ),
-          child: LayoutBuilder(builder: (context, c) {
-            final grid = SettingsScreen.gridFor(
-                Size(c.maxWidth, c.maxHeight - _footerHeight), tiles.length);
-            return Column(
-              children: [
-                // 左右は真ん中に寄せる。最後の行は左から
-                SizedBox(
-                  width: grid.side * grid.columns +
-                      SettingsScreen.gridGap * (grid.columns - 1),
-                  child: Wrap(
-                    spacing: SettingsScreen.gridGap,
-                    runSpacing: SettingsScreen.gridGap,
-                    children: [
-                      for (final tile in tiles)
-                        SizedBox.square(dimension: grid.side, child: tile),
-                    ],
-                  ),
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final grid = SettingsScreen.gridFor(
+                Size(c.maxWidth, c.maxHeight - _footerHeight),
+                tiles.length,
+              );
+              // 本文は Stack の中で幅が緩いので、幅いっぱいに取ってから真ん中に寄せる
+              return SizedBox(
+                width: c.maxWidth,
+                child: Column(
+                  children: [
+                    // 左右は真ん中に寄せる。最後の行は左から
+                    SizedBox(
+                      width:
+                          grid.side * grid.columns +
+                          SettingsScreen.gridGap * (grid.columns - 1),
+                      child: Wrap(
+                        spacing: SettingsScreen.gridGap,
+                        runSpacing: SettingsScreen.gridGap,
+                        children: [
+                          for (final tile in tiles)
+                            SizedBox.square(dimension: grid.side, child: tile),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      height: _footerHeight,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          _updateChip(textTheme),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            '曲 $items · プレイリスト $playlists · タグ $tags',
+                            style: textTheme.labelSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(
-                  height: _footerHeight,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Text('曲 $items · プレイリスト $playlists · タグ $tags',
-                        style: textTheme.labelSmall),
-                  ),
-                ),
-              ],
-            );
-          }),
+              );
+            },
+          ),
         );
       },
     );
@@ -195,6 +205,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// ボタンの集まりの外の余白（上下左右）
   static const double _margin = AppSpacing.xxl;
 
-  /// ボタンの下の「曲 N · …」の行に取っておく高さ
-  static const double _footerHeight = 36;
+  /// ボタンの下（アップデートの札と「曲 N · …」の行）に取っておく高さ
+  static const double _footerHeight = 76;
+
+  /// 「v1.2.3 · 更新を確認」の札。押すとその場で確認（5 回続けて押すとデバッグモード）
+  Widget _updateChip(TextTheme textTheme) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return FutureBuilder<PackageInfo>(
+      future: _packageInfo,
+      builder: (context, snap) => Material(
+        color: onSurface.withValues(alpha: 0.08),
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            if (_onVersionTap()) return;
+            _toast(AppSnackBar.info('最新版を確認中...'));
+            UpdateService.checkForUpdate(context, manual: true);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.md,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.system_update,
+                  size: AppIconSizes.md,
+                  color: AppTheme.accentGreen,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Text(
+                  'v${snap.data?.version ?? '…'}',
+                  style: textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text('  ·  更新を確認', style: textTheme.labelMedium),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

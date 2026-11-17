@@ -1,15 +1,27 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/dj_level.dart';
 import '../../core/audio/transition_effect.dart';
+import '../../core/theme/app_theme.dart';
 import '../../providers/player_provider.dart';
+import '../../widgets/glass_scaffold.dart';
+import '../../widgets/player/dj_mix_sheet.dart';
 import '../../widgets/player/first_verse_sheet.dart';
+import '../../widgets/player/more_tile.dart';
 import '../../widgets/player/sfx_offset_stepper.dart';
-import '../../widgets/settings/settings_parts.dart';
 
-/// 設定「DJ ミックス」: クロスフェードと、その中でだけ効く 5 つ
+/// 設定「DJ ミックス」。縦でも横でもスクロールせずに全部収める。
+///
+/// よく触るもの（クロスフェードの長さ・レベル・おまかせ）は大きく、残りは
+/// 群（つなぎ / 演出・効果音 / 表示）ごとに丸いアイコンのボタンを 1 列に並べる。
+/// ボタンはアイコン + 短い名前 + 今の値（オンオフは「オン」「オフ」とアイコンの灰色）。
+/// 候補から選ぶものはボタンの上にメニューを出す。
+/// 使えないもの（クロスフェードがオフ、おまかせ中の手動の項目）は薄くするだけで並びは動かさない。
+/// 縦は上から順に、横は左に大きいもの・右にアイコンの群
 class DjMixSettingsScreen extends ConsumerWidget {
   const DjMixSettingsScreen({super.key});
 
@@ -17,344 +29,592 @@ class DjMixSettingsScreen extends ConsumerWidget {
   static String crossfadeLabel(int beats) => beats == 0
       ? 'オフ'
       : beats >= 32
-          ? '${beats ~/ 4}小節'
-          : '$beats拍';
+      ? '${beats ~/ 4}小節'
+      : '$beats拍';
 
   /// 段階の表示（どれとも一致しなければ「カスタム」）
   static String levelLabel(DjLevel? level) => level?.label ?? 'カスタム';
 
-  Future<void> _pickCrossfade(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(crossfadeProvider);
-    final picked = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('クロスフェード'),
-        children: [
-          RadioGroup<int>(
-            groupValue: current,
-            onChanged: (v) => Navigator.pop(ctx, v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final s in CrossfadeNotifier.options)
-                  RadioListTile<int>(value: s, title: Text(crossfadeLabel(s))),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (picked != null) ref.read(crossfadeProvider.notifier).value = picked;
-  }
+  /// 横に 2 列で並べる幅（これより狭いか縦長なら上下に積む）
+  static const wideMinWidth = 600.0;
 
-  Future<void> _pickLevel(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(djLevelProvider);
-    final picked = await showDialog<DjLevel>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('つなぎ方のレベル'),
-        children: [
-          RadioGroup<DjLevel?>(
-            groupValue: current,
-            onChanged: (v) => Navigator.pop(ctx, v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final l in DjLevel.values)
-                  RadioListTile<DjLevel?>(value: l, title: Text(l.label)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (picked != null) applyDjLevel(ref, picked);
-  }
+  /// 横のときの左の列（大きいもの）の幅
+  static const _leftMin = 260.0;
+  static const _leftMax = 360.0;
 
-  Future<void> _pickCurve(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(crossfadeCurveProvider);
-    final picked = await showDialog<CrossfadeCurve>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('つなぎ方'),
-        children: [
-          RadioGroup<CrossfadeCurve>(
-            groupValue: current,
-            onChanged: (v) => Navigator.pop(ctx, v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final c in CrossfadeCurve.values)
-                  RadioListTile<CrossfadeCurve>(value: c, title: Text(c.label)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (picked != null) ref.read(crossfadeCurveProvider.notifier).value = picked;
-  }
+  /// 中身の幅の上限（広い画面で間延びしないように）
+  static const _maxContentWidth = 960.0;
 
-  Future<void> _pickEffect(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(transitionEffectProvider);
-    final picked = await showDialog<TransitionEffect>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('切り替えの演出'),
-        children: [
-          RadioGroup<TransitionEffect>(
-            groupValue: current,
-            onChanged: (v) => Navigator.pop(ctx, v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final e in TransitionEffect.values)
-                  RadioListTile<TransitionEffect>(value: e, title: Text(e.label)),
-              ],
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final textTheme = Theme.of(context).textTheme;
+    return GlassScaffold(
+      title: Text('DJ ミックス', style: textTheme.titleMedium),
+      bodyBuilder: (context) {
+        final padding = MediaQuery.paddingOf(context);
+        final viewPadding = MediaQuery.viewPaddingOf(context);
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.xl + viewPadding.left,
+            padding.top + AppSpacing.md,
+            AppSpacing.xl + viewPadding.right,
+            padding.bottom + AppSpacing.xl,
+          ),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _maxContentWidth),
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  final wide =
+                      c.maxWidth >= wideMinWidth && c.maxWidth > c.maxHeight;
+                  if (!wide) {
+                    return const Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _MainControls(),
+                        SizedBox(height: AppSpacing.xxl),
+                        _IconGroups(),
+                      ],
+                    );
+                  }
+                  final left = (c.maxWidth * 0.38)
+                      .clamp(_leftMin, _leftMax)
+                      .toDouble();
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(width: left, child: const _MainControls()),
+                      const SizedBox(width: AppSpacing.xxl),
+                      const Expanded(child: _IconGroups()),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
-    if (picked != null) {
-      ref.read(transitionEffectProvider.notifier).value = picked;
+  }
+}
+
+/// 大きく出すもの: クロスフェードの長さ（つまみ）・レベル・おまかせ
+class _MainControls extends ConsumerWidget {
+  const _MainControls();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final textTheme = Theme.of(context).textTheme;
+    final crossfade = ref.watch(crossfadeProvider);
+    final on = crossfade != 0;
+    final auto = ref.watch(autoMixProvider);
+    const options = CrossfadeNotifier.options;
+    // 候補に無い値（古い版で保存したもの）はいちばん近い段に
+    var index = options.indexOf(crossfade);
+    if (index < 0) {
+      var best = 0;
+      for (var i = 1; i < options.length; i++) {
+        if ((options[i] - crossfade).abs() <
+            (options[best] - crossfade).abs()) {
+          best = i;
+        }
+      }
+      index = best;
     }
-  }
-
-  Future<void> _pickSfxLevel(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(sfxLevelProvider);
-    final picked = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('効果音の音量'),
-        children: [
-          RadioGroup<int>(
-            groupValue: current,
-            onChanged: (v) => Navigator.pop(ctx, v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final db in SfxLevelNotifier.options)
-                  RadioListTile<int>(
-                      value: db, title: Text(SfxLevelNotifier.label(db))),
-              ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // プレイリストで次曲がプリロード済みのとき、B点/終端の手前から重ねて鳴らす長さ
+        Row(
+          children: [
+            Tooltip(
+              message: 'クロスフェード',
+              child: Icon(
+                Icons.multitrack_audio,
+                size: AppIconSizes.lg,
+                color: on ? AppTheme.accentGreen : AppTheme.muted(context),
+              ),
             ),
+            Expanded(
+              child: Slider(
+                value: index.toDouble(),
+                min: 0,
+                max: (options.length - 1).toDouble(),
+                divisions: options.length - 1,
+                label: DjMixSettingsScreen.crossfadeLabel(options[index]),
+                onChanged: (v) => ref.read(crossfadeProvider.notifier).value =
+                    options[v.round()],
+              ),
+            ),
+            // 幅を固定してつまみの長さが値で変わらないように
+            SizedBox(
+              width: 64,
+              child: Text(
+                DjMixSettingsScreen.crossfadeLabel(crossfade),
+                textAlign: TextAlign.end,
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        // 控えめ・普通・ガチ。選ぶと下の個々の設定がまとめて変わる（変えるとどれも選ばれない）
+        const Row(
+          children: [
+            Tooltip(
+              message: 'つなぎ方のレベル',
+              child: Icon(Icons.tune, size: AppIconSizes.lg),
+            ),
+            SizedBox(width: AppSpacing.lg),
+            Expanded(child: DjLevelChips()),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        // 2 曲の解析結果（テンポ・ビートの安定・ドロップ・音量の流れ）からレシピを選ぶ
+        _WideToggle(
+          icon: Icons.auto_mode,
+          label: 'おまかせ',
+          value: auto,
+          enabled: on,
+          onChanged: (v) => ref.read(autoMixProvider.notifier).value = v,
+        ),
+      ],
+    );
+  }
+}
+
+/// 横長の大きなオンオフ（おまかせ）。面は塗り分けず、オフはアイコンが灰色
+class _WideToggle extends StatelessWidget {
+  const _WideToggle({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool value;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final muted = AppTheme.muted(context);
+    final radius = BorderRadius.circular(AppRadius.xl);
+    final alpha = enabled ? 1.0 : 0.4;
+    return Material(
+      color: onSurface.withValues(alpha: enabled ? 0.08 : 0.04),
+      borderRadius: radius,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: enabled ? () => onChanged(!value) : null,
+        borderRadius: radius,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xl,
+            vertical: AppSpacing.lg,
           ),
-        ],
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: AppIconSizes.xl,
+                color: (value ? AppTheme.accentGreen : muted).withValues(
+                  alpha: alpha,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: enabled ? onSurface : muted,
+                  ),
+                ),
+              ),
+              Text(
+                value ? 'オン' : 'オフ',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: muted.withValues(alpha: alpha),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
-    if (picked != null) ref.read(sfxLevelProvider.notifier).value = picked;
   }
+}
+
+/// 丸いアイコンのボタンを群ごとに並べる。幅に余裕があれば群を横に並べる
+class _IconGroups extends ConsumerWidget {
+  const _IconGroups();
+
+  /// ボタン 1 つの幅の上限。これに満たない幅では 1 行に 6 つ（いちばん多い群）
+  static const maxCellWidth = 64.0;
+
+  /// 詰めるときの下限（5 文字の「タイミング」が入る幅）
+  static const minCellWidth = 56.0;
+
+  /// 群と群の間
+  static const groupGap = AppSpacing.xl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final crossfade = ref.watch(crossfadeProvider);
     final on = crossfade != 0;
-    const needsFade = 'クロスフェードをオンにすると使えます';
     final curve = ref.watch(crossfadeCurveProvider);
     final effect = ref.watch(transitionEffectProvider);
-    final sfxLevel = ref.watch(sfxLevelProvider);
     final auto = ref.watch(autoMixProvider);
     // 手動の項目はおまかせを切ったときだけ
     final manual = on && !auto;
-    const autoNote = 'おまかせ中は曲に合わせて自動で決まる';
-    // おまかせはライザーなどを選ぶことがあるので、効果音の音量は常に触れる
+    // おまかせはライザーなどを選ぶことがあるので、効果音は常に触れる
     final sfxOn = on && (auto || effect.usesSfx);
 
-    return SettingsPage(
-      title: 'DJ ミックス',
-      children: [
-        SettingsGroup(
-          children: [
-            // 控えめ・普通・ガチ。選ぶと下の個々の設定がまとめて変わる（変えるとカスタム）
-            SettingsRow(
-              icon: Icons.tune,
-              title: 'つなぎ方のレベル',
-              trailing: Text(levelLabel(ref.watch(djLevelProvider)),
-                  style: Theme.of(context).textTheme.bodyMedium),
-              onTap: () => _pickLevel(context, ref),
-            ),
-            // プレイリストで次曲がプリロード済みのとき、B点/終端の手前から重ねて鳴らす
-            SettingsRow(
-              icon: Icons.multitrack_audio,
-              title: 'クロスフェード',
-              trailing: Text(crossfadeLabel(crossfade),
-                  style: Theme.of(context).textTheme.bodyMedium),
-              onTap: () => _pickCrossfade(context, ref),
-            ),
+    _Cell toggle(
+      IconData icon,
+      String label,
+      String tooltip,
+      ProviderListenable<bool> provider, {
+      required bool enabled,
+      required void Function(bool) set,
+    }) {
+      final value = ref.watch(provider);
+      return _Cell(
+        icon: icon,
+        label: label,
+        tooltip: tooltip,
+        value: value ? 'オン' : 'オフ',
+        active: value,
+        enabled: enabled,
+        onTap: (_) => set(!value),
+      );
+    }
+
+    _Cell picker<T>(
+      IconData icon,
+      String label,
+      String tooltip, {
+      required List<T> values,
+      required T selected,
+      required String Function(T) labelOf,
+      required void Function(T) onPicked,
+      required bool enabled,
+    }) => _Cell(
+      icon: icon,
+      label: label,
+      tooltip: tooltip,
+      value: labelOf(selected),
+      enabled: enabled,
+      onTap: (ctx) async {
+        final picked = await showMenu<T>(
+          context: ctx,
+          position: anchoredMenuPosition(ctx),
+          initialValue: selected,
+          items: [
+            for (final v in values)
+              PopupMenuItem(value: v, child: Text(labelOf(v))),
           ],
-        ),
-        SettingsGroup(
-          title: 'クロスフェード中の振る舞い',
+        );
+        if (picked != null) onPicked(picked);
+      },
+    );
+
+    final groups = <(String, List<_Cell>)>[
+      (
+        'つなぎ',
+        [
+          // 対称な等パワーだけだと中間がぼやけるので、DJ らしい非対称やカットも選べる
+          picker<CrossfadeCurve>(
+            Icons.show_chart,
+            'つなぎ方',
+            'つなぎ方',
+            values: CrossfadeCurve.values,
+            selected: curve,
+            labelOf: (c) => c.label,
+            onPicked: (v) =>
+                ref.read(crossfadeCurveProvider.notifier).value = v,
+            enabled: manual,
+          ),
+          // 波形から求めたドロップが切り替わりに来るよう次曲の開始位置をずらす
+          toggle(
+            Icons.trending_up,
+            'ドロップ',
+            'ドロップに合わせる',
+            mixPointAlignProvider,
+            enabled: on,
+            set: (v) => ref.read(mixPointAlignProvider.notifier).value = v,
+          ),
+          // 次曲の静かなイントロを飛ばす・前曲の静かで長いアウトロを待たない
+          toggle(
+            Icons.login,
+            '出入り口',
+            '出入り口を選ぶ',
+            smartEntryProvider,
+            enabled: on,
+            set: (v) => ref.read(smartEntryProvider.notifier).value = v,
+          ),
+          // 次曲の速度を ±8% まで寄せ、交差後に元へ戻す
+          toggle(
+            Icons.speed,
+            'テンポ',
+            'テンポ合わせ',
+            tempoMatchProvider,
+            enabled: manual,
+            set: (v) => ref.read(tempoMatchProvider.notifier).value = v,
+          ),
+          // 重ね始めの拍の頭を揃え、交差中は速度を微調整して合わせ続ける
+          toggle(
+            Icons.align_horizontal_center,
+            '拍合わせ',
+            '拍合わせ',
+            beatMatchProvider,
+            enabled: manual,
+            set: (v) => ref.read(beatMatchProvider.notifier).value = v,
+          ),
+          // 低音の衝突（混ざる部分がぼやける主因）を避ける
+          toggle(
+            Icons.graphic_eq,
+            '低音入替',
+            'ベーススワップ',
+            bassSwapProvider,
+            enabled: manual,
+            set: (v) => ref.read(bassSwapProvider.notifier).value = v,
+          ),
+        ],
+      ),
+      (
+        '演出・効果音',
+        [
+          picker<TransitionEffect>(
+            Icons.auto_awesome,
+            '演出',
+            '切り替えの演出',
+            values: TransitionEffect.values,
+            selected: effect,
+            labelOf: (e) => e.label,
+            onPicked: (v) =>
+                ref.read(transitionEffectProvider.notifier).value = v,
+            enabled: manual,
+          ),
+          picker<int>(
+            Icons.campaign,
+            '効果音',
+            '効果音の音量',
+            values: SfxLevelNotifier.options,
+            selected: ref.watch(sfxLevelProvider),
+            labelOf: SfxLevelNotifier.label,
+            onPicked: (v) => ref.read(sfxLevelProvider.notifier).value = v,
+            enabled: sfxOn,
+          ),
+          // 効果音が拍より遅れて / 早く聞こえるときに 10ms 刻みで詰める（ボタンの上に −/+）
+          _Cell(
+            icon: Icons.timer_outlined,
+            label: 'タイミング',
+            tooltip: '効果音のタイミング',
+            value: SfxOffsetNotifier.label(ref.watch(sfxOffsetMsProvider)),
+            enabled: sfxOn,
+            onTap: (ctx) => showMenu<void>(
+              context: ctx,
+              position: anchoredMenuPosition(ctx),
+              items: [const _StepperEntry()],
+            ),
+          ),
+        ],
+      ),
+      (
+        '表示',
+        [
+          // 重ね表示に拍の線（1 拍目は濃く）と拍のずれ
+          toggle(
+            Icons.view_week_outlined,
+            '拍の線',
+            '拍の線を表示',
+            showBeatLinesProvider,
+            enabled: true,
+            set: (v) => ref.read(showBeatLinesProvider.notifier).value = v,
+          ),
+          // プレイリストの波形（拡大できない）にも小節頭・4 小節ごとの線と変わり目の印
+          toggle(
+            Icons.view_column_outlined,
+            '一覧の線',
+            'プレイリストの波形に拍の線',
+            playlistBeatLinesProvider,
+            enabled: true,
+            set: (v) => ref.read(playlistBeatLinesProvider.notifier).value = v,
+          ),
+          // 音量曲線（つなぎ方の 2 本の線）。デッキの板からも切り替えられる
+          toggle(
+            Icons.ssid_chart,
+            '音量の線',
+            '音量の線を表示',
+            showMixCurvesProvider,
+            enabled: true,
+            set: (v) => ref.read(showMixCurvesProvider.notifier).value = v,
+          ),
+          // 1番モードで「1 番の終わり」を自動で探す範囲。曲ごとの手直しは再生画面の「1番」の長押し
+          _Cell(
+            icon: Icons.looks_one_outlined,
+            label: '1番',
+            tooltip: '1番を探す範囲',
+            value: VerseRangeNotifier.label(
+              ref.watch(verseSearchRangeProvider),
+            ),
+            enabled: true,
+            onTap: (ctx) => VerseRangeDialog.show(ctx),
+          ),
+        ],
+      ),
+    ];
+
+    final textTheme = Theme.of(context).textTheme;
+    return LayoutBuilder(
+      builder: (context, c) {
+        // 後ろの 2 群（3 + 4）が 1 行に入るなら少し詰めても入れる（横向きの電話で 2 行に収める）。
+        // 入らなければ、いちばん多い群（6）が 1 行に入る幅
+        final most = groups.map((g) => g.$2.length).reduce(max);
+        final pairCount = groups[1].$2.length + groups[2].$2.length;
+        final pair = (c.maxWidth - groupGap) / pairCount;
+        final cell = min(
+          maxCellWidth,
+          pair >= minCellWidth ? pair : c.maxWidth / most,
+        ).floorToDouble();
+        return Wrap(
+          spacing: groupGap,
+          runSpacing: AppSpacing.lg,
           children: [
-            // 2 曲の解析結果（テンポ・ビートの安定・ドロップ・音量の流れ）からレシピを選ぶ
-            SettingsSwitchRow(
-              icon: Icons.auto_mode,
-              title: 'おまかせ',
-              subtitle: on ? null : needsFade,
-              value: auto,
-              onChanged: on
-                  ? (v) => ref.read(autoMixProvider.notifier).value = v
-                  : null,
-            ),
-            // 対称な等パワーだけだと中間がぼやけるので、DJ らしい非対称やカットも選べる
-            SettingsRow(
-              icon: Icons.show_chart,
-              title: 'つなぎ方',
-              subtitle: manual
-                  ? curve.label
-                  : on
-                      ? autoNote
-                      : needsFade,
-              enabled: manual,
-              onTap: () => _pickCurve(context, ref),
-            ),
-            // 波形から求めたドロップが切り替わりに来るよう次曲の開始位置をずらし、出る曲はアウトロで切る
-            SettingsSwitchRow(
-              icon: Icons.trending_up,
-              title: 'ドロップに合わせる',
-              subtitle: on ? null : needsFade,
-              value: ref.watch(mixPointAlignProvider),
-              onChanged: on
-                  ? (v) => ref.read(mixPointAlignProvider.notifier).value = v
-                  : null,
-            ),
-            // 前曲が盛り上がったまま終わるなら、次曲の静かなイントロを飛ばして同じくらい鳴る段落から。
-            // 前曲の静かで長いアウトロは待たず、最後の盛り上がりの終わりで切る
-            SettingsSwitchRow(
-              icon: Icons.login,
-              title: '出入り口を選ぶ',
-              subtitle: on ? null : needsFade,
-              value: ref.watch(smartEntryProvider),
-              onChanged: on
-                  ? (v) => ref.read(smartEntryProvider.notifier).value = v
-                  : null,
-            ),
-            // 前後の曲の BPM が解析済みのときに次曲の速度を ±8% まで寄せ、交差後に元へ戻す
-            SettingsSwitchRow(
-              icon: Icons.speed,
-              title: 'テンポ合わせ',
-              subtitle: manual
-                  ? null
-                  : on
-                      ? autoNote
-                      : needsFade,
-              value: ref.watch(tempoMatchProvider),
-              onChanged: manual
-                  ? (v) => ref.read(tempoMatchProvider.notifier).value = v
-                  : null,
-            ),
-            // 解析した拍の格子で、重ね始めの拍の頭を揃え、交差中は速度を微調整して合わせ続ける
-            SettingsSwitchRow(
-              icon: Icons.align_horizontal_center,
-              title: '拍合わせ',
-              subtitle: manual
-                  ? null
-                  : on
-                      ? autoNote
-                      : needsFade,
-              value: ref.watch(beatMatchProvider),
-              onChanged: manual
-                  ? (v) => ref.read(beatMatchProvider.notifier).value = v
-                  : null,
-            ),
-            // 重ね表示に拍の線（1 拍目は濃く）と拍のずれ。拍合わせが合っているかを目で確かめる
-            SettingsSwitchRow(
-              icon: Icons.view_week_outlined,
-              title: '拍の線を表示',
-              value: ref.watch(showBeatLinesProvider),
-              onChanged: (v) =>
-                  ref.read(showBeatLinesProvider.notifier).value = v,
-            ),
-            // プレイリストの波形（拡大できない）にも小節頭・4 小節ごとの線と変わり目の印
-            SettingsSwitchRow(
-              icon: Icons.view_column_outlined,
-              title: 'プレイリストの波形に拍の線',
-              value: ref.watch(playlistBeatLinesProvider),
-              onChanged: (v) =>
-                  ref.read(playlistBeatLinesProvider.notifier).value = v,
-            ),
-            // 音量曲線（つなぎ方の 2 本の線）。デッキの板からも切り替えられる
-            SettingsSwitchRow(
-              icon: Icons.ssid_chart,
-              title: '音量の線を表示',
-              value: ref.watch(showMixCurvesProvider),
-              onChanged: (v) =>
-                  ref.read(showMixCurvesProvider.notifier).value = v,
-            ),
+            for (final (title, cells) in groups)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: textTheme.labelMedium?.copyWith(
+                      color: AppTheme.muted(context),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final x in cells) SizedBox(width: cell, child: x),
+                    ],
+                  ),
+                ],
+              ),
           ],
-        ),
-        SettingsGroup(
-          title: '低音と演出',
-          children: [
-            // 低音の衝突（混ざる部分がぼやける主因）を避ける DJ の定石
-            SettingsSwitchRow(
-              icon: Icons.graphic_eq,
-              title: 'ベーススワップ',
-              subtitle: manual
-                  ? null
-                  : on
-                      ? autoNote
-                      : needsFade,
-              value: ref.watch(bassSwapProvider),
-              onChanged: manual
-                  ? (v) => ref.read(bassSwapProvider.notifier).value = v
-                  : null,
-            ),
-            // 出る曲にかける演出。ベーススワップの位置から切替点までの間にかける
-            SettingsRow(
-              icon: Icons.auto_awesome,
-              title: '切り替えの演出',
-              subtitle: manual
-                  ? effect.label
-                  : on
-                      ? autoNote
-                      : needsFade,
-              enabled: manual,
-              onTap: () => _pickEffect(context, ref),
-            ),
-            // 効果音（ライザー / インパクト / スピンバック）の曲に対する大きさ
-            SettingsRow(
-              icon: Icons.campaign,
-              title: '効果音の音量',
-              subtitle: sfxOn
-                  ? null
-                  : on
-                      ? '効果音を使う演出で使えます'
-                      : needsFade,
-              enabled: sfxOn,
-              trailing: Text(SfxLevelNotifier.label(sfxLevel),
-                  style: Theme.of(context).textTheme.bodyMedium),
-              onTap: () => _pickSfxLevel(context, ref),
-            ),
-            // 効果音が拍より遅れて / 早く聞こえるときに 10ms 刻みで詰める
-            SettingsRow(
-              icon: Icons.timer_outlined,
-              title: '効果音のタイミング',
-              subtitle: sfxOn
-                  ? SfxOffsetNotifier.describe(ref.watch(sfxOffsetMsProvider))
-                  : on
-                      ? '効果音を使う演出で使えます'
-                      : needsFade,
-              enabled: sfxOn,
-              trailing: SfxOffsetStepper(enabled: sfxOn),
-            ),
-          ],
-        ),
-        SettingsGroup(
-          title: '1番だけ',
-          children: [
-            // 1番モードで「1 番の終わり」を自動で探す範囲。曲ごとの手直しは再生画面の「1番」の長押し
-            SettingsRow(
-              icon: Icons.looks_one_outlined,
-              title: '1番を探す範囲',
-              subtitle: VerseRangeNotifier.label(
-                  ref.watch(verseSearchRangeProvider)),
-              onTap: () => VerseRangeDialog.show(context),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
+}
+
+/// 丸いアイコンのボタン（アイコン + 短い名前 + 今の値）。
+/// 面は塗り分けず、オフ（[active] == false）はアイコンが灰色。長押しで正式な名前
+class _Cell extends StatelessWidget {
+  const _Cell({
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+    required this.value,
+    required this.enabled,
+    required this.onTap,
+    this.active,
+  });
+
+  final IconData icon;
+  final String label;
+  final String tooltip;
+  final String value;
+  final bool? active;
+  final bool enabled;
+
+  /// 押したボタンの context を渡す（メニューをその上に出す）
+  final void Function(BuildContext) onTap;
+
+  static const circle = 44.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final muted = AppTheme.muted(context);
+    final alpha = enabled ? 1.0 : 0.4;
+    final iconColor = (active == false ? muted : AppTheme.accentGreen)
+        .withValues(alpha: alpha);
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: enabled ? () => onTap(context) : null,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: circle,
+                height: circle,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: onSurface.withValues(alpha: enabled ? 0.08 : 0.04),
+                ),
+                child: Icon(icon, size: AppIconSizes.lg, color: iconColor),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? onSurface : muted,
+                ),
+              ),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: muted.withValues(alpha: alpha * 0.9),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 効果音のタイミングのメニューの中身（−/+ を押してもメニューは閉じない）
+class _StepperEntry extends PopupMenuEntry<void> {
+  const _StepperEntry();
+
+  @override
+  double get height => kMinInteractiveDimension;
+
+  @override
+  bool represents(void value) => false;
+
+  @override
+  State<_StepperEntry> createState() => _StepperEntryState();
+}
+
+class _StepperEntryState extends State<_StepperEntry> {
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
+    child: SfxOffsetStepper(),
+  );
 }

@@ -7,13 +7,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:u2b_loop_app/core/storage/app_boxes.dart';
+import 'package:u2b_loop_app/core/theme/app_theme.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist.dart';
 import 'package:u2b_loop_app/models/tag.dart';
 import 'package:u2b_loop_app/screens/settings/dj_mix_settings_screen.dart';
 import 'package:u2b_loop_app/screens/settings_screen.dart';
 import 'package:u2b_loop_app/widgets/player/more_tile.dart';
-import 'package:u2b_loop_app/widgets/settings/settings_parts.dart';
 
 /// 設定画面を実際に描画して、トップの並び・各ページへの遷移・値の保存を確認する。
 /// トップはスクロール無しで収まる数だけ置き、残りは各ページ（DJ ミックス など）にある
@@ -58,7 +58,7 @@ void main() {
   }
 
   const tileLabels = [
-    'DJ ミックス', 'オフライン保存', 'バックアップ', 'アップデート', '詳細設定',
+    'DJ ミックス', 'オフライン保存', 'バックアップ', '詳細設定',
   ];
 
   /// 画面の大きさ（論理ピクセル）を指定して設定のトップを出し、ボタンの矩形を返す
@@ -78,7 +78,7 @@ void main() {
     ];
   }
 
-  testWidgets('トップは四角い大きなボタン 5 つ。縦の電話は 2 列で、矢印は付けない', (tester) async {
+  testWidgets('トップは四角い大きなボタン 4 つ。縦の電話は 2 列で、矢印は付けない', (tester) async {
     final rects = await pumpTop(tester, const Size(412, 915));
     for (var i = 0; i < rects.length; i++) {
       expect(rects[i].width, closeTo(rects[i].height, 0.5), reason: '正方形');
@@ -92,7 +92,11 @@ void main() {
         expect(rects[i].left, rects[0].left);
       }
     }
-    expect(find.byType(MoreTile), findsNWidgets(5));
+    expect(find.byType(MoreTile), findsNWidgets(4));
+    // アップデートはボタンではなく、下の真ん中の札
+    final chip = tester.getRect(find.text('  ·  更新を確認'));
+    expect(chip.top, greaterThan(rects.last.bottom));
+    expect(chip.center.dx, closeTo(412 / 2, 60));
     // スキップ秒数は再生画面の ±N 秒ボタンの長押しで選ぶ（ここには置かない）
     expect(find.textContaining('スキップ'), findsNothing);
     // 矢印は付けない。ふだん触らないものはトップに出さない
@@ -134,12 +138,12 @@ void main() {
   });
 
   test('並べ方: ボタンがいちばん大きくなる列数を選ぶ', () {
-    // 縦長は 2 列 × 3 行
-    expect(SettingsScreen.gridFor(const Size(360, 700), 5).columns, 2);
+    // 縦長は 2 列 × 2 行
+    expect(SettingsScreen.gridFor(const Size(360, 700), 4).columns, 2);
     // 横長で低いと 1 行
-    expect(SettingsScreen.gridFor(const Size(860, 200), 5).columns, 5);
+    expect(SettingsScreen.gridFor(const Size(860, 200), 4).columns, 4);
     // 上限より大きくはしない
-    expect(SettingsScreen.gridFor(const Size(2000, 2000), 5).side,
+    expect(SettingsScreen.gridFor(const Size(2000, 2000), 4).side,
         SettingsScreen.maxTileSide);
   });
 
@@ -153,6 +157,8 @@ void main() {
     // 見出しの右上（ボタンの並びより上）
     final rect = tester.getRect(button);
     expect(rect.center.dx, greaterThan(432 * 0.8));
+    // 右端に付けすぎない
+    expect(rect.right, lessThanOrEqualTo(432 - AppSpacing.lg));
     expect(
         rect.bottom,
         lessThanOrEqualTo(
@@ -168,30 +174,74 @@ void main() {
 
   testWidgets('横向きの電話では、ボタンが画面の幅をほぼ使う（余白が大きく余らない）', (tester) async {
     final rects = await pumpTop(tester, const Size(915, 412));
-    // 1 行に 5 つ
+    // 1 行に 4 つ
     expect(rects.every((r) => r.top == rects.first.top), isTrue);
     expect(rects.first.left, lessThanOrEqualTo(40));
     expect(rects.last.right, greaterThanOrEqualTo(915 - 40));
   });
 
-  testWidgets('DJ ミックスの行から DJ ミックスのページへ', (tester) async {
+  testWidgets('DJ ミックスのボタンから DJ ミックスのページへ', (tester) async {
     await pumpPage(tester, const SettingsScreen());
     await tester.tap(find.text('DJ ミックス'));
     await tester.pumpAndSettle();
     expect(find.byType(DjMixSettingsScreen), findsOneWidget);
-    expect(find.text('クロスフェード'), findsOneWidget);
+    expect(find.byType(Slider), findsOneWidget);
     expect(find.text('つなぎ方'), findsOneWidget);
   });
 
-  testWidgets('クロスフェード秒数を DJ ミックスのページで変えられる', (tester) async {
+  /// DJ ミックスのページのボタンが押せるか
+  bool enabledOf(WidgetTester tester, String label) => tester
+          .widget<InkWell>(find
+              .ancestor(of: find.text(label), matching: find.byType(InkWell))
+              .first)
+          .onTap !=
+      null;
+
+  testWidgets('DJ ミックスは縦でも横でもスクロールせずに全部収まる。横は左右 2 列', (tester) async {
+    for (final size in const [
+      Size(412, 915), // 縦の電話
+      Size(360, 640), // 小さい縦の電話
+      Size(915, 412), // 横向きの電話
+      Size(800, 360), // 小さい横向きの電話
+      Size(1400, 900), // 広い画面
+    ]) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const ProviderScope(
+        child: MaterialApp(home: DjMixSettingsScreen()),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: '$size');
+      expect(find.byType(Scrollable), findsNothing, reason: '$size');
+      for (final label in const [
+        'おまかせ', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '低音入替',
+        '演出', '効果音', 'タイミング', '拍の線', '一覧の線', '音量の線', '1番',
+      ]) {
+        final r = tester.getRect(find.text(label));
+        expect(r.bottom, lessThanOrEqualTo(size.height), reason: '$size $label');
+        expect(r.right, lessThanOrEqualTo(size.width), reason: '$size $label');
+      }
+      final slider = tester.getRect(find.byType(Slider));
+      final groups = tester.getRect(find.text('つなぎ'));
+      if (size.width > size.height) {
+        // 横: 大きいものは左、アイコンの群は右
+        expect(groups.left, greaterThan(slider.right), reason: '$size');
+      } else {
+        expect(groups.top, greaterThan(slider.bottom), reason: '$size');
+      }
+    }
+  });
+
+  testWidgets('クロスフェードの長さはつまみで変える', (tester) async {
     await pumpPage(tester, const DjMixSettingsScreen());
-
-    expect(find.text('オフ'), findsOneWidget); // 既定値
-    await tester.tap(find.text('クロスフェード'));
+    final slider = tester.widget<Slider>(find.byType(Slider));
+    expect(slider.value, 0, reason: '既定はオフ');
+    // オフの間は他は触れない
+    expect(enabledOf(tester, 'テンポ'), isFalse);
+    expect(enabledOf(tester, 'ドロップ'), isFalse);
+    slider.onChanged!(2);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('8拍'));
-    await tester.pumpAndSettle();
-
     expect(find.text('8拍'), findsOneWidget);
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8,
         reason: 'PlaylistEngine が読む設定値に保存されること');
@@ -202,67 +252,70 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8,
         reason: '前のテストでオンにした値を引き継ぐ（メモリ box は setUpAll で1回だけ開く）');
 
-    Switch switchOf(String title) => tester.widget<Switch>(find.descendant(
-        of: find.widgetWithText(SettingsSwitchRow, title),
-        matching: find.byType(Switch)));
+    // 効果音のタイミングはボタンの上に −/+。押してもメニューは閉じない
+    await tester.tap(find.text('タイミング'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('10ms 遅く'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('10ms 遅く'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.sfxOffsetMs), 20);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(find.text('+20ms'), findsOneWidget);
+    AppBoxes.settings.put(SettingsKeys.sfxOffsetMs, 0);
 
     // 既定はおまかせ。手動の項目はおまかせを切ったときだけ
-    expect(switchOf('おまかせ').value, isTrue);
-    expect(switchOf('テンポ合わせ').onChanged, isNull);
+    expect(AppBoxes.settings.get(SettingsKeys.autoMix, defaultValue: true), true);
+    expect(enabledOf(tester, 'テンポ'), isFalse);
+    expect(enabledOf(tester, 'ドロップ'), isTrue);
     await tester.tap(find.text('おまかせ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
 
-    expect(switchOf('テンポ合わせ').onChanged, isNotNull);
-    await tester.tap(find.text('テンポ合わせ'));
+    expect(enabledOf(tester, 'テンポ'), isTrue);
+    await tester.tap(find.text('テンポ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.tempoMatch), false,
         reason: '既定オンなので1回タップでオフになり、PlaylistEngine が読む値に保存される');
 
-    await tester.tap(find.text('ドロップに合わせる'));
+    await tester.tap(find.text('ドロップ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.mixPointAlign), false);
 
     // ベーススワップは既定オン
-    expect(switchOf('ベーススワップ').value, isTrue);
-    await tester.tap(find.text('ベーススワップ'));
+    await tester.tap(find.text('低音入替'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.bassSwap), false);
 
-    // つなぎ方と演出はダイアログで選ぶ
+    // つなぎ方と演出はボタンの上のメニューで選ぶ
     await tester.tap(find.text('つなぎ方'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('次曲先行'));
+    await tester.tap(find.text('次曲先行').last);
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
     expect(find.text('次曲先行'), findsOneWidget);
 
     // 演出の既定はフィルタースイープ
     expect(find.text('フィルタースイープ'), findsOneWidget);
-    // 行が増えてページが長くなったので、見えるところまで送ってから押す
-    await tester.ensureVisible(find.text('切り替えの演出'));
+    await tester.tap(find.text('演出'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('切り替えの演出'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('ブレーキ'));
+    await tester.tap(find.text('ブレーキ').last);
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'brake');
 
-    // クロスフェードをオフにすると触れなくなる
-    // 演出を選ぶために下へ送ったので、上端の行まで戻す
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, 3000));
+    // クロスフェードをオフにすると触れなくなる（表示の群はそのまま）
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(0);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('クロスフェード'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('オフ'));
-    await tester.pumpAndSettle();
-    expect(switchOf('テンポ合わせ').onChanged, isNull);
-    expect(switchOf('ドロップに合わせる').onChanged, isNull);
-    expect(switchOf('ベーススワップ').onChanged, isNull);
-    expect(switchOf('拍合わせ').onChanged, isNull);
-    expect(switchOf('出入り口を選ぶ').onChanged, isNull);
-    expect(find.text('クロスフェードをオンにすると使えます'), findsNWidgets(10),
-        reason: '効果音のタイミング・入り口を選ぶの行が増えた');
+    for (final label in const [
+      'おまかせ', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '低音入替',
+      '演出', '効果音', 'タイミング',
+    ]) {
+      expect(enabledOf(tester, label), isFalse, reason: label);
+    }
+    for (final label in const ['拍の線', '一覧の線', '音量の線', '1番']) {
+      expect(enabledOf(tester, label), isTrue, reason: label);
+    }
   });
 
   testWidgets('トップの DJ ミックスのボタンに今のクロスフェードが出る', (tester) async {
@@ -291,7 +344,7 @@ void main() {
     await tester.pumpAndSettle();
 
     for (var i = 0; i < 5; i++) {
-      await tester.tap(find.text('アップデート'));
+      await tester.tap(find.text('  ·  更新を確認'));
       await tester.pump();
     }
     await tester.pumpAndSettle();

@@ -40,7 +40,6 @@ class DjMixSheet extends ConsumerWidget {
     final auto = ref.watch(autoMixProvider);
     final manual = on && !auto;
     final sfxOn = on && (auto || effect.usesSfx);
-    final level = ref.watch(djLevelProvider);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return SafeArea(
@@ -50,37 +49,13 @@ class DjMixSheet extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 控えめ・普通・ガチ。どれとも一致しなければどれも選ばれていない（カスタム）
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppSpacing.xl),
               child: Row(
                 children: [
-                  const Icon(Icons.tune, size: AppIconSizes.lg),
-                  const SizedBox(width: AppSpacing.lg),
-                  Expanded(
-                    child: Wrap(
-                      spacing: AppSpacing.sm,
-                      children: [
-                        // 選択中はタイルのオンと同じ緑（赤だと「何かが起きている」ように見える）
-                        for (final l in DjLevel.values)
-                          ChoiceChip(
-                            label: Text(l.label),
-                            selected: l == level,
-                            showCheckmark: false,
-                            selectedColor: AppTheme.accentGreen.withValues(alpha: 0.18),
-                            labelStyle: textTheme.labelMedium?.copyWith(
-                              color: l == level ? AppTheme.accentGreen : null,
-                              fontWeight: l == level ? FontWeight.bold : null,
-                            ),
-                            side: l == level
-                                ? const BorderSide(color: Colors.transparent)
-                                : null,
-                            onSelected: (_) => applyDjLevel(ref, l),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                      ],
-                    ),
-                  ),
+                  Icon(Icons.tune, size: AppIconSizes.lg),
+                  SizedBox(width: AppSpacing.lg),
+                  Expanded(child: DjLevelChips()),
                 ],
               ),
             ),
@@ -196,6 +171,40 @@ class DjMixSheet extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// つなぎ方のレベル（控えめ・普通・ガチ）を選ぶ 3 つの札。
+/// どれとも一致しなければどれも選ばれていない（カスタム）。設定の DJ ミックスのページと共用
+class DjLevelChips extends ConsumerWidget {
+  const DjLevelChips({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final textTheme = Theme.of(context).textTheme;
+    final level = ref.watch(djLevelProvider);
+    return Wrap(
+      spacing: AppSpacing.sm,
+      children: [
+        // 選択中はオンと同じ緑（赤だと「何かが起きている」ように見える）
+        for (final l in DjLevel.values)
+          ChoiceChip(
+            label: Text(l.label),
+            selected: l == level,
+            showCheckmark: false,
+            selectedColor: AppTheme.accentGreen.withValues(alpha: 0.18),
+            labelStyle: textTheme.labelMedium?.copyWith(
+              color: l == level ? AppTheme.accentGreen : null,
+              fontWeight: l == level ? FontWeight.bold : null,
+            ),
+            side: l == level
+                ? const BorderSide(color: Colors.transparent)
+                : null,
+            onSelected: (_) => applyDjLevel(ref, l),
+            visualDensity: VisualDensity.compact,
+          ),
+      ],
     );
   }
 }
