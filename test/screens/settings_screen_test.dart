@@ -58,8 +58,7 @@ void main() {
   }
 
   const tileLabels = [
-    'ダークモード', 'DJ ミックス', 'スキップ秒数', 'オフライン保存',
-    'バックアップ', 'アップデート', '詳細設定',
+    'DJ ミックス', 'オフライン保存', 'バックアップ', 'アップデート', '詳細設定',
   ];
 
   /// 画面の大きさ（論理ピクセル）を指定して設定のトップを出し、ボタンの矩形を返す
@@ -79,7 +78,7 @@ void main() {
     ];
   }
 
-  testWidgets('トップは四角い大きなボタン 7 つ。縦の電話は 2 列で、矢印は付けない', (tester) async {
+  testWidgets('トップは四角い大きなボタン 5 つ。縦の電話は 2 列で、矢印は付けない', (tester) async {
     final rects = await pumpTop(tester, const Size(412, 915));
     for (var i = 0; i < rects.length; i++) {
       expect(rects[i].width, closeTo(rects[i].height, 0.5), reason: '正方形');
@@ -93,7 +92,9 @@ void main() {
         expect(rects[i].left, rects[0].left);
       }
     }
-    expect(find.byType(MoreTile), findsNWidgets(7));
+    expect(find.byType(MoreTile), findsNWidgets(5));
+    // スキップ秒数は再生画面の ±N 秒ボタンの長押しで選ぶ（ここには置かない）
+    expect(find.textContaining('スキップ'), findsNothing);
     // 矢印は付けない。ふだん触らないものはトップに出さない
     expect(find.byIcon(Icons.chevron_right), findsNothing);
     expect(find.text('クロスフェード'), findsNothing);
@@ -133,40 +134,44 @@ void main() {
   });
 
   test('並べ方: ボタンがいちばん大きくなる列数を選ぶ', () {
-    // 縦長は 2 列 × 4 行
-    expect(SettingsScreen.gridFor(const Size(360, 700), 7).columns, 2);
+    // 縦長は 2 列 × 3 行
+    expect(SettingsScreen.gridFor(const Size(360, 700), 5).columns, 2);
     // 横長で低いと 1 行
-    expect(SettingsScreen.gridFor(const Size(860, 200), 7).columns, 7);
+    expect(SettingsScreen.gridFor(const Size(860, 200), 5).columns, 5);
     // 上限より大きくはしない
-    expect(SettingsScreen.gridFor(const Size(2000, 2000), 7).side,
+    expect(SettingsScreen.gridFor(const Size(2000, 2000), 5).side,
         SettingsScreen.maxTileSide);
   });
 
-  testWidgets('ダークモードはボタンを押すたびに切り替わる', (tester) async {
+  testWidgets('ダーク / ライトの切り替えは右上のボタン（ラベルなし）。押すたびに切り替わる',
+      (tester) async {
     await pumpPage(tester, const SettingsScreen());
-    MoreTile dark() => tester.widget<MoreTile>(find.ancestor(
-        of: find.text('ダークモード'), matching: find.byType(MoreTile)));
-    final before = dark().active!;
-    await tester.tap(find.text('ダークモード'));
+    expect(find.text('ダークモード'), findsNothing);
+    final before = AppBoxes.settings.get(SettingsKeys.darkMode);
+    final button = find.byTooltip('ライトモードにする');
+    expect(button, findsOneWidget);
+    // 見出しの右上（ボタンの並びより上）
+    final rect = tester.getRect(button);
+    expect(rect.center.dx, greaterThan(432 * 0.8));
+    expect(
+        rect.bottom,
+        lessThanOrEqualTo(
+            tester.getRect(find.byType(MoreTile).first).top));
+    await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(dark().active, !before);
-    await tester.tap(find.text('ダークモード'));
+    expect(find.byTooltip('ダークモードにする'), findsOneWidget);
+    expect(AppBoxes.settings.get(SettingsKeys.darkMode), isNot(before));
+    await tester.tap(find.byTooltip('ダークモードにする'));
     await tester.pumpAndSettle();
-    expect(dark().active, before);
+    expect(find.byTooltip('ライトモードにする'), findsOneWidget);
   });
 
-  testWidgets('スキップ秒数をトップから変えられる', (tester) async {
-    await pumpPage(tester, const SettingsScreen());
-
-    expect(find.text('5秒'), findsOneWidget); // 既定値（説明文）
-    await tester.tap(find.text('スキップ秒数'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('10秒'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('10秒'), findsOneWidget);
-    expect(AppBoxes.settings.get(SettingsKeys.seekStep), 10,
-        reason: '再生画面と同じ設定値に保存されること');
+  testWidgets('横向きの電話では、ボタンが画面の幅をほぼ使う（余白が大きく余らない）', (tester) async {
+    final rects = await pumpTop(tester, const Size(915, 412));
+    // 1 行に 5 つ
+    expect(rects.every((r) => r.top == rects.first.top), isTrue);
+    expect(rects.first.left, lessThanOrEqualTo(40));
+    expect(rects.last.right, greaterThanOrEqualTo(915 - 40));
   });
 
   testWidgets('DJ ミックスの行から DJ ミックスのページへ', (tester) async {

@@ -29,11 +29,11 @@ class SettingsScreen extends ConsumerStatefulWidget {
   static const gridGap = AppSpacing.lg;
 
   /// ボタンの 1 辺の上限（広い画面で大きくなりすぎないように）
-  static const maxTileSide = 168.0;
+  static const maxTileSide = 200.0;
 
   /// [count] 個の正方形のボタンを [area] に全部収める並べ方。
   /// 列数を 1 から順に試し、ボタンがいちばん大きくなる列数にする
-  /// （縦の電話は 2 列 × 4 行、横向きの電話は 1〜2 行になる）
+  /// （縦の電話は 2 列 × 3 行、横向きの電話は 1 行になる）
   static ({int columns, double side}) gridFor(Size area, int count) {
     var best = (columns: 1, side: 0.0);
     for (var columns = 1; columns <= count; columns++) {
@@ -72,30 +72,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
   }
 
-  Future<void> _pickSeekStep() async {
-    final current = ref.read(seekStepProvider);
-    final picked = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('スキップ秒数'),
-        children: [
-          RadioGroup<int>(
-            groupValue: current,
-            onChanged: (v) => Navigator.pop(ctx, v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final s in SeekStepNotifier.options)
-                  RadioListTile<int>(value: s, title: Text('$s秒')),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (picked != null) ref.read(seekStepProvider.notifier).value = picked;
-  }
-
   // ─── アプリ情報 ───
 
   /// バージョン行を続けて 5 回押すとデバッグモード（詳細設定に「デバッグ」の群が出る）
@@ -112,7 +88,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = ref.watch(themeProvider);
-    final seekStep = ref.watch(seekStepProvider);
     final textTheme = Theme.of(context).textTheme;
     final items = AppBoxes.loopItems.length;
     final playlists = AppBoxes.playlists.length;
@@ -120,22 +95,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     final tiles = <Widget>[
       MoreTile(
-        icon: isDark ? Icons.dark_mode : Icons.light_mode,
-        label: 'ダークモード',
-        active: isDark,
-        onTap: () => ref.read(themeProvider.notifier).value = !isDark,
-      ),
-      MoreTile(
         icon: Icons.multitrack_audio,
         label: 'DJ ミックス',
         value: DjMixSettingsScreen.crossfadeLabel(ref.watch(crossfadeProvider)),
         onTap: () => _push(const DjMixSettingsScreen()),
-      ),
-      MoreTile(
-        icon: Icons.forward_10,
-        label: 'スキップ秒数',
-        value: '$seekStep秒',
-        onTap: _pickSeekStep,
       ),
       FutureBuilder<int>(
         future: _cacheSize,
@@ -175,6 +138,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     return GlassScaffold(
       title: Text('設定', style: textTheme.titleMedium),
+      // ダーク / ライトの切り替えは右上に（ボタンの並びには入れない。ラベルなし）。
+      // スキップ秒数は再生画面の ±N 秒ボタンの長押しで選ぶ
+      actions: [
+        IconButton(
+          icon: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
+          tooltip: isDark ? 'ライトモードにする' : 'ダークモードにする',
+          onPressed: () => ref.read(themeProvider.notifier).value = !isDark,
+        ),
+      ],
       bodyBuilder: (context) {
         final padding = MediaQuery.paddingOf(context);
         final viewPadding = MediaQuery.viewPaddingOf(context);
