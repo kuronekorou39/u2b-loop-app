@@ -16,11 +16,12 @@ import '../../widgets/player/sfx_offset_stepper.dart';
 
 /// 設定「DJ ミックス」。縦でも横でもスクロールせずに全部収める。
 ///
-/// よく触るもの（クロスフェードの長さ・レベル・おまかせ）は大きく、残りは
+/// よく触るもの（クロスフェードの長さ・レベル・おまかせと 1番）は大きく、残りは
 /// 群（つなぎ / 演出・効果音 / 表示）ごとに丸いアイコンのボタンを 1 列に並べる。
 /// ボタンはアイコン + 短い名前 + 今の値（オンオフは「オン」「オフ」とアイコンの灰色）。
 /// 候補から選ぶものはボタンの上にメニューを出す。
-/// 使えないもの（クロスフェードがオフ、おまかせ中の手動の項目）は薄くするだけで並びは動かさない。
+/// クロスフェードがオフの間だけ薄くして触れない（並びは動かさない）。おまかせ中に手動の項目を
+/// 変えると、おまかせを切ってカスタムに移る（制限はしない）。
 /// 縦は上から順に、横は左に大きいもの・右にアイコンの群
 class DjMixSettingsScreen extends ConsumerWidget {
   const DjMixSettingsScreen({super.key});
@@ -175,12 +176,37 @@ class _MainControls extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
         // 2 曲の解析結果（テンポ・ビートの安定・ドロップ・音量の流れ）からレシピを選ぶ
-        _WideToggle(
-          icon: Icons.auto_mode,
-          label: 'おまかせ',
-          value: auto,
-          enabled: on,
-          onChanged: (v) => ref.read(autoMixProvider.notifier).value = v,
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 3,
+                child: _WideToggle(
+                  icon: Icons.auto_mode,
+                  label: 'おまかせ',
+                  value: auto,
+                  enabled: on,
+                  onChanged: (v) =>
+                      ref.read(autoMixProvider.notifier).value = v,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              // 1番モードで「1 番の終わり」を自動で探す範囲。曲ごとの手直しは再生画面の「1番」の長押し
+              Expanded(
+                flex: 2,
+                child: _WideButton(
+                  icon: Icons.looks_one_outlined,
+                  label: '1番',
+                  value: VerseRangeNotifier.label(
+                    ref.watch(verseSearchRangeProvider),
+                  ),
+                  tooltip: '1番を探す範囲',
+                  onTap: () => VerseRangeDialog.show(context),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -257,6 +283,76 @@ class _WideToggle extends StatelessWidget {
   }
 }
 
+/// 横長の大きなボタン（1番を探す範囲）。おまかせの横に同じ高さで
+class _WideButton extends StatelessWidget {
+  const _WideButton({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final radius = BorderRadius.circular(AppRadius.xl);
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.sm,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: AppIconSizes.xl, color: AppTheme.accentGreen),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: AppTheme.muted(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 上下のスイッチと丸いボタンを群ごとに並べる。幅に余裕があれば群を横に並べる
 class _IconGroups extends ConsumerWidget {
   const _IconGroups();
@@ -276,11 +372,6 @@ class _IconGroups extends ConsumerWidget {
     final on = crossfade != 0;
     final curve = ref.watch(crossfadeCurveProvider);
     final effect = ref.watch(transitionEffectProvider);
-    final auto = ref.watch(autoMixProvider);
-    // 手動の項目はおまかせを切ったときだけ
-    final manual = on && !auto;
-    // おまかせはライザーなどを選ぶことがあるので、効果音は常に触れる
-    final sfxOn = on && (auto || effect.usesSfx);
 
     _Cell toggle(
       IconData icon,
@@ -317,8 +408,12 @@ class _IconGroups extends ConsumerWidget {
       value: labelOf(selected),
       enabled: enabled,
       onTap: (ctx) async {
-        final picked = await showAnchoredPicker<T>(ctx,
-            values: values, selected: selected, labelOf: labelOf);
+        final picked = await showAnchoredPicker<T>(
+          ctx,
+          values: values,
+          selected: selected,
+          labelOf: labelOf,
+        );
         if (picked != null) onPicked(picked);
       },
     );
@@ -335,9 +430,11 @@ class _IconGroups extends ConsumerWidget {
             values: CrossfadeCurve.values,
             selected: curve,
             labelOf: (c) => c.label,
-            onPicked: (v) =>
-                ref.read(crossfadeCurveProvider.notifier).value = v,
-            enabled: manual,
+            onPicked: (v) {
+              leaveAutoMix(ref);
+              ref.read(crossfadeCurveProvider.notifier).value = v;
+            },
+            enabled: on,
           ),
           // 波形から求めたドロップが切り替わりに来るよう次曲の開始位置をずらす
           toggle(
@@ -363,8 +460,11 @@ class _IconGroups extends ConsumerWidget {
             'テンポ',
             'テンポ合わせ',
             tempoMatchProvider,
-            enabled: manual,
-            set: (v) => ref.read(tempoMatchProvider.notifier).value = v,
+            enabled: on,
+            set: (v) {
+              leaveAutoMix(ref);
+              ref.read(tempoMatchProvider.notifier).value = v;
+            },
           ),
           // 重ね始めの拍の頭を揃え、交差中は速度を微調整して合わせ続ける
           toggle(
@@ -372,8 +472,11 @@ class _IconGroups extends ConsumerWidget {
             '拍合わせ',
             '拍合わせ',
             beatMatchProvider,
-            enabled: manual,
-            set: (v) => ref.read(beatMatchProvider.notifier).value = v,
+            enabled: on,
+            set: (v) {
+              leaveAutoMix(ref);
+              ref.read(beatMatchProvider.notifier).value = v;
+            },
           ),
           // 低音の衝突（混ざる部分がぼやける主因）を避ける
           toggle(
@@ -381,8 +484,11 @@ class _IconGroups extends ConsumerWidget {
             '低音入替',
             'ベーススワップ',
             bassSwapProvider,
-            enabled: manual,
-            set: (v) => ref.read(bassSwapProvider.notifier).value = v,
+            enabled: on,
+            set: (v) {
+              leaveAutoMix(ref);
+              ref.read(bassSwapProvider.notifier).value = v;
+            },
           ),
         ],
       ),
@@ -396,9 +502,11 @@ class _IconGroups extends ConsumerWidget {
             values: TransitionEffect.values,
             selected: effect,
             labelOf: (e) => e.label,
-            onPicked: (v) =>
-                ref.read(transitionEffectProvider.notifier).value = v,
-            enabled: manual,
+            onPicked: (v) {
+              leaveAutoMix(ref);
+              ref.read(transitionEffectProvider.notifier).value = v;
+            },
+            enabled: on,
           ),
           picker<int>(
             Icons.campaign,
@@ -408,7 +516,7 @@ class _IconGroups extends ConsumerWidget {
             selected: ref.watch(sfxLevelProvider),
             labelOf: SfxLevelNotifier.label,
             onPicked: (v) => ref.read(sfxLevelProvider.notifier).value = v,
-            enabled: sfxOn,
+            enabled: on,
           ),
           // 効果音が拍より遅れて / 早く聞こえるときに 10ms 刻みで詰める（ボタンの下に −/+）
           _Cell(
@@ -416,7 +524,7 @@ class _IconGroups extends ConsumerWidget {
             label: 'タイミング',
             tooltip: '効果音のタイミング',
             value: SfxOffsetNotifier.label(ref.watch(sfxOffsetMsProvider)),
-            enabled: sfxOn,
+            enabled: on,
             onTap: (ctx) => showMenu<void>(
               context: ctx,
               position: anchoredMenuPosition(ctx),
@@ -454,17 +562,6 @@ class _IconGroups extends ConsumerWidget {
             showMixCurvesProvider,
             enabled: true,
             set: (v) => ref.read(showMixCurvesProvider.notifier).value = v,
-          ),
-          // 1番モードで「1 番の終わり」を自動で探す範囲。曲ごとの手直しは再生画面の「1番」の長押し
-          _Cell(
-            icon: Icons.looks_one_outlined,
-            label: '1番',
-            tooltip: '1番を探す範囲',
-            value: VerseRangeNotifier.label(
-              ref.watch(verseSearchRangeProvider),
-            ),
-            enabled: true,
-            onTap: (ctx) => VerseRangeDialog.show(ctx),
           ),
         ],
       ),
@@ -516,7 +613,7 @@ class _IconGroups extends ConsumerWidget {
 /// 群の中の 1 つ。オンオフは上下のスイッチ（つまみに アイコン、上がオン）+ 短い名前、
 /// それ以外は丸いボタン（アイコン + 短い名前 + 今の値）。高さはどちらも同じ。
 /// オフは名前を灰色にするだけ（「オン」「オフ」の文字は出さない）。
-/// 使えないとき（クロスフェードがオフ、おまかせ中の手動の項目）は全体を薄く。長押しで正式な名前
+/// クロスフェードがオフの間は全体を薄く。長押しで正式な名前
 class _Cell extends StatelessWidget {
   const _Cell({
     required this.icon,
@@ -581,14 +678,19 @@ class _Cell extends StatelessWidget {
                       shape: BoxShape.circle,
                       color: onSurface.withValues(alpha: 0.08),
                     ),
-                    child: Icon(icon,
-                        size: AppIconSizes.lg, color: AppTheme.accentGreen),
+                    child: Icon(
+                      icon,
+                      size: AppIconSizes.lg,
+                      color: AppTheme.accentGreen,
+                    ),
                   ),
                 const SizedBox(height: AppSpacing.xs),
-                Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: labelStyle),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: labelStyle,
+                ),
                 if (value != null)
                   Text(
                     value!,
@@ -646,8 +748,11 @@ class _VerticalSwitch extends StatelessWidget {
                 ? AppTheme.accentGreen
                 : onSurface.withValues(alpha: 0.45),
           ),
-          child: Icon(icon,
-              size: AppIconSizes.xs, color: theme.colorScheme.surface),
+          child: Icon(
+            icon,
+            size: AppIconSizes.xs,
+            color: theme.colorScheme.surface,
+          ),
         ),
       ),
     );

@@ -78,16 +78,13 @@ void main() {
     await pick(tester, 'クロスフェード', '8拍');
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8);
     expect(tileOf(tester, 'クロスフェード').value, '8拍');
-    // 既定はおまかせ。手動の項目はおまかせを切ると触れる
+    // 既定はおまかせ。手動の項目もおまかせ中に触れ、変えるとおまかせが切れてカスタムに
     expect(tileOf(tester, 'おまかせ').active, isTrue);
-    expect(tileOf(tester, 'つなぎ方').enabled, isFalse);
-    await tester.tap(find.text('おまかせ'));
-    await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
     expect(tileOf(tester, 'つなぎ方').enabled, isTrue);
-
     await pick(tester, 'つなぎ方', '次曲先行');
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
+    expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
+    expect(tileOf(tester, 'おまかせ').active, isFalse);
 
     await tester.tap(find.text('ベーススワップ'));
     await tester.pumpAndSettle();
@@ -98,11 +95,11 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'brake');
   });
 
-  testWidgets('効果音の音量は、効果音を使う演出を選んだときだけ触れる', (tester) async {
+  testWidgets('効果音の音量は、効果音を使わない演出でも触れる（制限しない）', (tester) async {
     await pumpSheet(tester);
     // 前のテストでクロスフェードはオン、演出はブレーキ（効果音は使わない）
     expect(tileOf(tester, '効果音').value, 'ふつう');
-    expect(tileOf(tester, '効果音').enabled, isFalse);
+    expect(tileOf(tester, '効果音').enabled, isTrue);
 
     await pick(tester, '演出', 'ライザー＋インパクト');
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'riserImpact');
@@ -113,7 +110,7 @@ void main() {
     expect(tileOf(tester, '効果音').value, '大きめ');
   });
 
-  testWidgets('効果音のタイミングは「−」「+」で 10ms 刻み（効果音を使う演出のときだけ）', (tester) async {
+  testWidgets('効果音のタイミングは「−」「+」で 10ms 刻み', (tester) async {
     await pumpSheet(tester);
     // 前のテストで演出はライザー＋インパクト
     expect(find.text('0ms'), findsOneWidget);
@@ -127,10 +124,6 @@ void main() {
     expect(find.text('−10ms'), findsOneWidget);
     expect(AppBoxes.settings.get(SettingsKeys.sfxOffsetMs), -10);
 
-    // 効果音を使わない演出にすると触れない
-    await pick(tester, '演出', 'ブレーキ');
-    final add = tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.add));
-    expect(add.onPressed, isNull);
   });
 
   testWidgets('横向きの電話（800×360）でもスクロールせずに全部に届く', (tester) async {

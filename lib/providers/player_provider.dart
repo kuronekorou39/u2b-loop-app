@@ -683,6 +683,21 @@ final djLevelProvider = Provider<DjLevel?>((ref) => DjLevel.of(DjSettings(
 
 /// 段階を選ぶ: 個々の設定をまとめて変える。クロスフェードがオフならオンにする
 /// （控えめは 8 拍。普通・ガチは長さをおまかせが決めるので、今の値のまま）
+/// カスタムを選ぶ: おまかせを切り、個々の設定は今のまま手で決める。クロスフェードがオフならオンに
+void applyDjCustom(WidgetRef ref) {
+  final fade = ref.read(crossfadeProvider.notifier);
+  if (ref.read(crossfadeProvider) == 0) fade.value = CrossfadeNotifier.migratedBeats;
+  leaveAutoMix(ref);
+}
+
+/// おまかせ中は読まない項目（つなぎ方・演出・テンポ / 拍合わせ・ベーススワップ）を手で変えた:
+/// 触れないようにはせず、おまかせを切ってカスタムに移る
+void leaveAutoMix(WidgetRef ref) {
+  if (!ref.read(autoMixProvider)) return;
+  ref.read(autoMixProvider.notifier).value = false;
+  ref.read(djProProvider.notifier).value = false;
+}
+
 void applyDjLevel(WidgetRef ref, DjLevel level) {
   final fade = ref.read(crossfadeProvider.notifier);
   switch (level) {

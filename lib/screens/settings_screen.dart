@@ -8,9 +8,7 @@ import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../providers/debug_mode_provider.dart';
-import '../providers/player_provider.dart';
 import '../providers/theme_provider.dart';
-import '../services/cache_service.dart';
 import '../services/update_service.dart';
 import '../widgets/player/more_tile.dart';
 import '../widgets/glass_scaffold.dart';
@@ -61,21 +59,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _versionTapCount = 0;
 
   // 描き直すたびに取り直さない
-  Future<int> _cacheSize = CacheService().totalCacheSize();
   final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();
 
   void _toast(AppToastMessage bar) {
     if (mounted) AppToast.instance.show(bar);
   }
 
-  /// ページを開く。戻ってきたら保存の容量を取り直す（中で消したり保存先を変えたりする）
-  Future<void> _push(Widget page) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-    if (!mounted) return;
-    setState(() {
-      _cacheSize = CacheService().totalCacheSize();
-    });
-  }
+  void _push(Widget page) =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
   // ─── アプリ情報 ───
 
@@ -104,7 +95,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       MoreTile(
         icon: Icons.multitrack_audio,
         label: 'DJ ミックス',
-        value: DjMixSettingsScreen.crossfadeLabel(ref.watch(crossfadeProvider)),
         onTap: () => _push(const DjMixSettingsScreen()),
       ),
       MoreTile(
@@ -112,16 +102,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         label: AdvancedSettingsScreen.title,
         onTap: () => _push(const AdvancedSettingsScreen()),
       ),
-      FutureBuilder<int>(
-        future: _cacheSize,
-        builder: (_, snap) => MoreTile(
-          icon: Icons.sd_storage,
-          label: StorageSettingsScreen.title,
-          value: snap.hasData
-              ? '${(snap.data! / 1024 / 1024).toStringAsFixed(1)} MB'
-              : '計算中…',
-          onTap: () => _push(const StorageSettingsScreen()),
-        ),
+      MoreTile(
+        icon: Icons.sd_storage,
+        label: StorageSettingsScreen.title,
+        onTap: () => _push(const StorageSettingsScreen()),
       ),
       MoreTile(
         icon: Icons.backup_outlined,
@@ -192,12 +176,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          _updateChip(textTheme),
-                          const SizedBox(height: AppSpacing.md),
                           Text(
                             '曲 $items · プレイリスト $playlists · タグ $tags',
-                            style: textTheme.labelSmall,
+                            style: textTheme.titleSmall,
                           ),
+                          const SizedBox(height: AppSpacing.md),
+                          _updateChip(textTheme),
                         ],
                       ),
                     ),

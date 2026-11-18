@@ -216,8 +216,8 @@ void main() {
       expect(tester.takeException(), isNull, reason: '$size');
       expect(find.byType(Scrollable), findsNothing, reason: '$size');
       for (final label in const [
-        'おまかせ', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '低音入替',
-        '演出', '効果音', 'タイミング', '拍の線', '一覧の線', '音量の線', '1番',
+        'おまかせ', '1番', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '低音入替',
+        '演出', '効果音', 'タイミング', '拍の線', '一覧の線', '音量の線',
       ]) {
         final r = tester.getRect(find.text(label));
         expect(r.bottom, lessThanOrEqualTo(size.height), reason: '$size $label');
@@ -256,7 +256,7 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8,
         reason: '前のテストでオンにした値を引き継ぐ（メモリ box は setUpAll で1回だけ開く）');
 
-    // 効果音のタイミングはボタンの上に −/+。押してもメニューは閉じない
+    // 効果音のタイミングはボタンの下に −/+。押してもメニューは閉じない
     await tester.tap(find.text('タイミング'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('10ms 遅く'));
@@ -271,25 +271,42 @@ void main() {
 
     // レベルはプリセットなので、選ばれていないものも灰色にしない
     final onSurface = Theme.of(tester.element(find.text('控えめ'))).colorScheme.onSurface;
-    for (final l in const ['控えめ', '普通', 'ガチ']) {
+    for (final l in const ['控えめ', '普通', 'ガチ', 'カスタム']) {
       final color = tester.widget<Text>(find.text(l)).style?.color;
       expect(color == onSurface || color == AppTheme.accentGreen, isTrue,
           reason: l);
     }
 
-    // 既定はおまかせ。手動の項目はおまかせを切ったときだけ
+    // 既定はおまかせ（普通）。手動の項目もおまかせ中に触れ、変えるとおまかせが切れてカスタムに
     expect(AppBoxes.settings.get(SettingsKeys.autoMix, defaultValue: true), true);
-    expect(enabledOf(tester, 'テンポ'), isFalse);
-    expect(enabledOf(tester, 'ドロップ'), isTrue);
-    await tester.tap(find.text('おまかせ'));
-    await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
-
+    Color? colorOf(String l) => tester.widget<Text>(find.text(l)).style?.color;
+    expect(colorOf('普通'), AppTheme.accentGreen);
     expect(enabledOf(tester, 'テンポ'), isTrue);
     await tester.tap(find.text('テンポ'));
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.tempoMatch), false,
         reason: '既定オンなので1回タップでオフになり、PlaylistEngine が読む値に保存される');
+    expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
+    expect(colorOf('カスタム'), AppTheme.accentGreen);
+
+    // 普通に戻してからカスタムを押すと、おまかせだけ切れて個々の設定はそのまま
+    await tester.tap(find.text('普通'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.autoMix), true);
+    await tester.tap(find.text('カスタム'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
+    expect(AppBoxes.settings.get(SettingsKeys.tempoMatch), true);
+    expect(colorOf('カスタム'), AppTheme.accentGreen);
+    await tester.tap(find.text('テンポ'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.tempoMatch), false);
+
+    // 1番はおまかせの横（表示の群ではない）
+    final omakase = tester.getRect(find.text('おまかせ'));
+    final verse = tester.getRect(find.text('1番'));
+    expect((verse.center.dy - omakase.center.dy).abs(), lessThan(16));
+    expect(verse.left, greaterThan(omakase.right));
 
     await tester.tap(find.text('ドロップ'));
     await tester.pumpAndSettle();
@@ -335,17 +352,22 @@ void main() {
     }
   });
 
-  testWidgets('トップの DJ ミックスのボタンに今のクロスフェードが出る', (tester) async {
+  testWidgets('トップのボタンは名前だけ（値の行が無いのでラベルの高さがそろう）。曲数は大きく、バージョンはその下',
+      (tester) async {
     AppBoxes.settings.put(SettingsKeys.crossfadeBeats, 16);
     // 前のテストでオフにしたベーススワップを戻す
     AppBoxes.settings.put(SettingsKeys.bassSwap, true);
     await pumpPage(tester, const SettingsScreen());
-    expect(
-        tester
-            .widget<MoreTile>(find.ancestor(
-                of: find.text('DJ ミックス'), matching: find.byType(MoreTile)))
-            .value,
-        '16拍');
+    for (final t in tester.widgetList<MoreTile>(find.byType(MoreTile))) {
+      expect(t.value, isNull, reason: t.label);
+      expect(t.active, isNull, reason: t.label);
+    }
+    final count = find.textContaining('プレイリスト 0');
+    final version = find.text('v9.9.9');
+    expect(tester.getRect(version).top,
+        greaterThan(tester.getRect(count).bottom));
+    expect(tester.getSize(count).height,
+        greaterThan(tester.getSize(find.text('  ·  更新を確認')).height));
   });
 
   testWidgets('更新の札を 5 回押すとデバッグモード。トップにデバッグのボタンが出て、終了で消える',
