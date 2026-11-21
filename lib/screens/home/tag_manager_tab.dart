@@ -269,12 +269,15 @@ class TagManagerTab extends ConsumerWidget {
                           height: _trailingButtonSize,
                           child: Center(child: ReorderHandleIcon()),
                         )
-                      : IconButton(
-                          icon:
-                              const Icon(Icons.more_vert, size: AppIconSizes.md),
-                          tooltip: 'メニュー',
-                          onPressed: () =>
-                              _showMenu(rowContext, ref, tag, allItems),
+                      // ⋮ の上を長押ししても行の選択になるように
+                      : ItemInnerButtons(
+                          child: IconButton(
+                            icon: const Icon(Icons.more_vert,
+                                size: AppIconSizes.md),
+                            tooltip: 'メニュー',
+                            onPressed: () =>
+                                _showMenu(rowContext, ref, tag, allItems),
+                          ),
                         ),
                 ),
               ],

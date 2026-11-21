@@ -348,17 +348,20 @@ class ItemCollectionView extends StatelessWidget {
       trailing: SelectionTrailing(
         selecting: selecting,
         selected: selected,
-        child: PopupMenuButton<String>(
-          tooltip: 'メニュー',
-          onSelected: (v) {
-            if (v == 'delete') onDelete(item);
-            if (v == 'retry') onRetry(item);
-          },
-          itemBuilder: (_) => [
-            if (item.hasError)
-              const PopupMenuItem(value: 'retry', child: Text('再試行')),
-            const PopupMenuItem(value: 'delete', child: Text('削除')),
-          ],
+        // ⋮ の上を長押ししても行の選択になるように
+        child: ItemInnerButtons(
+          child: PopupMenuButton<String>(
+            tooltip: 'メニュー',
+            onSelected: (v) {
+              if (v == 'delete') onDelete(item);
+              if (v == 'retry') onRetry(item);
+            },
+            itemBuilder: (_) => [
+              if (item.hasError)
+                const PopupMenuItem(value: 'retry', child: Text('再試行')),
+              const PopupMenuItem(value: 'delete', child: Text('削除')),
+            ],
+          ),
         ),
       ),
       onTap: () => onOpen(item),

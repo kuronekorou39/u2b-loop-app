@@ -252,8 +252,8 @@ class PlaylistTab extends ConsumerWidget {
                 selecting: selecting,
                 selected: selected,
                 // 並べ替えモードは ⋮ とまったく同じ場所が ≡。再生は隠すだけで場所は残す
-                // （名前の折り返しが変わらないように）
-                child: Row(
+                // （名前の折り返しが変わらないように）。ボタンの上の長押しも行の選択に
+                child: ItemInnerButtons(child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (count > 0)
@@ -283,7 +283,7 @@ class PlaylistTab extends ConsumerWidget {
                           onPressed: () => _showMenu(context, ref, pl),
                         ),
                     ],
-                  ),
+                  )),
             ),
             onTap: reordering ? null : () => tap(pl),
             onLongPress: reordering ? null : () => onLongPress?.call(pl),
@@ -368,11 +368,14 @@ class PlaylistTab extends ConsumerWidget {
                         Positioned(
                           right: 4,
                           bottom: 4,
-                          child: GreenButton(
-                            icon: Icons.play_arrow_rounded,
-                            size: 32,
-                            tooltip: '再生',
-                            onPressed: () => _play(context, pl, items),
+                          // 再生ボタンの上の長押しもカードの選択に
+                          child: ItemInnerButtons(
+                            child: GreenButton(
+                              icon: Icons.play_arrow_rounded,
+                              size: 32,
+                              tooltip: '再生',
+                              onPressed: () => _play(context, pl, items),
+                            ),
                           ),
                         ),
                       if (selected)

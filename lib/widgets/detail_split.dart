@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 
-/// 詳細画面（曲・プレイリスト）の横画面: 左の列にサムネを大きく・見出し・ボタン、
-/// 右に中身。横は AppBar を置かず、左の列の一番上に [DetailSplitTopBar] を置く
-/// （右の中身を画面の上まで使う）
+/// 詳細画面（曲・プレイリスト）の横画面: 左右 2 列。横は AppBar を置かず、左の列の一番上に
+/// [DetailSplitTopBar] を置く（右の中身を画面の上まで使う）。
+/// 曲の詳細は左にサムネだけを大きく（幅は曲の画面が決める）、曲名・ボタン・メニューは右の列。
+/// プレイリストは左（[sideWidth]）に表紙・名前・ボタン、右に曲の一覧
 class DetailSplit {
   DetailSplit._();
 

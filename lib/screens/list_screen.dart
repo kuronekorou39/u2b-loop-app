@@ -742,7 +742,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
     };
     final portraitItems = _tab == _tabItems &&
         MediaQuery.orientationOf(context) == Orientation.portrait;
-    // 並べ替えモード中に使わないボタンは隠す（場所は残すので ⇅ は動かない）
+    // 並べ替えモード中に使わないボタン（設定）は隠す（場所は残すので ⇅ は動かない）。
+    // 表示の切り替えはモード中も使える（リストとグリッドのどちらでも並べ替えられる）
     final reordering = _reorderingTab != null;
     Widget hideWhileReordering(Widget button) =>
         ReorderDim(reordering: reordering, hide: true, child: button);
@@ -770,7 +771,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
           onPressed: _toggleReordering,
           tooltip: _reorderingTab == _tab ? '並べ替えを終える' : '並べ替え',
         ),
-      hideWhileReordering(viewButton),
+      viewButton,
       hideWhileReordering(IconButton(
         icon: const Icon(Icons.settings, size: AppIconSizes.ml),
         onPressed: () => Navigator.of(context).push(

@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/constants.dart';
 import '../widgets/reorder_handle.dart';
+import '../widgets/playlist_cover.dart';
 import '../widgets/selection_mark.dart';
 import '../core/storage/app_boxes.dart';
 import 'home/item_views.dart';
@@ -469,17 +470,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ),
       ] else if (items.isNotEmpty) ...[
         // 今の表示のアイコン（ホームの曲一覧と同じ）。押すとリスト大 ⇔ リスト小。
-        // 並べ替えモード中は使わないので隠す（場所は残すので ⇅ は動かない）
-        ReorderDim(
-          reordering: _reordering,
-          hide: true,
-          child: IconButton(
-            icon: Icon(
-                (_compact ? ItemViewMode.list : ItemViewMode.titles).icon),
-            tooltip:
-                '表示: ${(_compact ? ItemViewMode.list : ItemViewMode.titles).label}',
-            onPressed: _toggleCompact,
-          ),
+        // 並べ替えモード中も使える（行の高さを変えて並べ替えやすくできる）
+        IconButton(
+          icon: Icon(
+              (_compact ? ItemViewMode.list : ItemViewMode.titles).icon),
+          tooltip:
+              '表示: ${(_compact ? ItemViewMode.list : ItemViewMode.titles).label}',
+          onPressed: _toggleCompact,
         ),
         // 並べ替えモード（オンの間は緑。同じボタンで抜ける）
         IconButton(
@@ -565,53 +562,53 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           ),
         ),
     ];
-    // サムネイル + 写真ボタン。[frame] で大きさを決める（縦は小さく、横は列の幅いっぱい）。
-    // 並べ替えモード中は暗くして触れない
-    Widget thumb(Widget Function(Widget child) frame) => ReorderDim(
+    // 表紙: 一覧と同じ曲の束（正方形のサムネの上に板 2 枚、左下に曲数の札）+ 右上に写真ボタン。
+    // [size] は表紙の幅（縦は小さく、横は大きく）。並べ替えモード中は暗くして触れない
+    Widget cover(double size) => ReorderDim(
       reordering: _reordering,
-      child: Stack(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: frame(
-              thumbItem != null
-                  ? ItemThumbnail(item: thumbItem, iconSize: AppIconSizes.sm)
-                  : Container(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.08),
-                      child: Icon(Icons.playlist_play,
-                          color: AppTheme.muted(context), size: 40),
+      child: SizedBox(
+        width: size,
+        child: PlaylistCover(
+          radius: 14,
+          count: items.length,
+          image: thumbItem != null
+              ? ItemThumbnail(item: thumbItem, iconSize: AppIconSizes.sm)
+              : Container(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.08),
+                  child: Icon(Icons.playlist_play,
+                      color: AppTheme.muted(context), size: 40),
+                ),
+          overlays: [
+            if (items.isNotEmpty)
+              Positioned(
+                right: 2,
+                top: 2,
+                child: ReorderDim(
+                  reordering: _reordering,
+                  hide: true,
+                  child: IconButton(
+                    onPressed: () => _selectThumbnail(pl, items),
+                    tooltip: 'サムネイルを選ぶ',
+                    visualDensity: VisualDensity.compact,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                      foregroundColor: Colors.white70,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: AppRadius.borderSm),
                     ),
-            ),
-          ),
-          if (items.isNotEmpty)
-            Positioned(
-              right: 2,
-              top: 2,
-              child: ReorderDim(
-                reordering: _reordering,
-                hide: true,
-                child: IconButton(
-                  onPressed: () => _selectThumbnail(pl, items),
-                  tooltip: 'サムネイルを選ぶ',
-                  visualDensity: VisualDensity.compact,
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black54,
-                    foregroundColor: Colors.white70,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: AppRadius.borderSm),
+                    icon: const Icon(Icons.photo_camera,
+                        size: AppIconSizes.s),
                   ),
-                  icon: const Icon(Icons.photo_camera,
-                      size: AppIconSizes.s),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
-    // タイトル + 曲数 + 自動で入れるタグ
+    // タイトル + 自動で入れるタグ（曲数は表紙の札）
     final titleBlock = <Widget>[
       Row(
         children: [
@@ -637,10 +634,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           ),
         ],
       ),
-      const SizedBox(height: AppSpacing.xs),
-      Text('${items.length} 曲',
-          style: textTheme.bodyMedium
-              ?.copyWith(color: AppTheme.muted(context))),
       // 自動で入れるタグ（タップで変更）。無いときも同じ場所に入口を出す
       // （0 件にしたあと、どこから付け直すのか分からなくなる）
       const SizedBox(height: AppSpacing.sm),
@@ -744,7 +737,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          thumb((c) => SizedBox(width: 120, height: 90, child: c)),
+          cover(_coverSize),
           const SizedBox(width: AppSpacing.xl),
           Expanded(
             child: Column(
@@ -759,21 +752,29 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ],
       ),
     );
-    // 横: 上に「プレイリスト」の行、大きいサムネ、その下にタイトルなど、再生・シャッフル
+    // 横: 上に「プレイリスト」の行、その下に縦と同じ並び（表紙の右に名前・タグ・再生）を大きめの表紙で。
+    // 正方形の表紙を列の幅いっぱいにすると、横画面の高さに収まらない
     final splitHeader = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DetailSplitTopBar(title: screenTitle, actions: actions),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              thumb((c) => AspectRatio(aspectRatio: 16 / 9, child: c)),
-              const SizedBox(height: AppSpacing.lg),
-              titleArea(CrossAxisAlignment.stretch),
-              const SizedBox(height: AppSpacing.lg),
-              playButtons,
+              cover(_coverSizeWide),
+              const SizedBox(width: AppSpacing.xl),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleArea(CrossAxisAlignment.start),
+                    const SizedBox(height: AppSpacing.lg),
+                    playButtons,
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -942,12 +943,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                   ],
                                 ),
                               )
-                            : IconButton(
-                                icon: const Icon(Icons.more_vert,
-                                    size: AppIconSizes.md),
-                                tooltip: 'メニュー',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _showItemMenu(pl, item, i),
+                            // ⋮ の上を長押ししても行の選択になるように
+                            : ItemInnerButtons(
+                                child: IconButton(
+                                  icon: const Icon(Icons.more_vert,
+                                      size: AppIconSizes.md),
+                                  tooltip: 'メニュー',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => _showItemMenu(pl, item, i),
+                                ),
                               ),
                       ),
                       // タップ = 開く（選択中は選択の切り替え）、長押し = 選択。
@@ -993,6 +997,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
   /// 行の右端のボタン（⋮・≡）の大きさ（VisualDensity.compact の IconButton と同じ）
   static const double _trailingButtonSize = 40;
+
+  /// 見出しの表紙（正方形）の幅。縦と、横の左の列
+  static const double _coverSize = 112;
+  static const double _coverSizeWide = 150;
 
   /// 「全体」を表す特殊ID（区間選択で全体再生を選ぶ用）
   static const _fullTrackId = '__full__';

@@ -192,7 +192,7 @@ void main() {
     expect(opacityOf(tester, find.byType(GlassSegmentedTabs)), 1);
   });
 
-  testWidgets('並べ替えモード中は表示の切り替えと設定を隠す（場所は残し、⇅ は動かない）', (tester) async {
+  testWidgets('並べ替えモード中は設定を隠す（場所は残し、⇅ は動かない）。表示の切り替えは使える', (tester) async {
     await AppBoxes.playlists.put('p1', Playlist(id: 'p1', name: 'リストA'));
     addTearDown(() => AppBoxes.playlists.delete('p1'));
     await pump(tester, size: const Size(400, 800));
@@ -204,8 +204,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getCenter(find.byTooltip('並べ替えを終える')), button);
     expect(opacityOf(tester, find.byTooltip('設定')), 0);
-    expect(opacityOf(tester, find.byTooltip(RegExp('表示へ'))), 0);
     expect(tester.getRect(find.byTooltip('設定')), settings, reason: '場所は残す');
+    // 表示の切り替えは残る。グリッドにしても並べ替えモードのまま
+    expect(opacityOf(tester, find.byTooltip(RegExp('表示へ'))), 1);
+    await tester.tap(find.byTooltip(RegExp('表示へ')));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('並べ替えを終える'), findsOneWidget);
+    await tester.tap(find.byTooltip(RegExp('表示へ')));
+    await tester.pumpAndSettle();
     // 隠したボタンは押せない
     await tester.tap(find.byTooltip('設定'), warnIfMissed: false);
     await tester.pumpAndSettle();

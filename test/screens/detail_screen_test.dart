@@ -11,6 +11,7 @@ import 'package:u2b_loop_app/models/playlist.dart';
 import 'package:u2b_loop_app/models/tag.dart';
 import 'package:u2b_loop_app/screens/detail_screen.dart';
 import 'package:u2b_loop_app/widgets/glass_surface.dart';
+import 'package:u2b_loop_app/widgets/item_thumbnail.dart';
 
 /// 曲の詳細: AB 区間は再生画面で登録する（ここに「AB 設定」「＋設定」は無い）。
 /// テンポ / キーとつなぎやすい曲は値だけを 1 行に並べ、タグ → AB 区間 → メモ（控えめ）の順
@@ -89,6 +90,34 @@ void main() {
     // 小さい字（見出しの大きさにしない）
     final style = tester.widget<Text>(find.text('メモ')).style!;
     expect(style.fontSize, lessThanOrEqualTo(12));
+  });
+
+  testWidgets('横画面: 左の列はサムネを大きく。曲名・ボタンは右の列、メニューは右の列の右上',
+      (tester) async {
+    await AppBoxes.loopItems.clear();
+    await AppBoxes.loopItems.put('a', analyzed());
+    tester.view.physicalSize = const Size(923, 411);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const ProviderScope(
+      child: MaterialApp(home: DetailScreen(itemId: 'a')),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final thumb = tester.getRect(find.byType(ItemThumbnail));
+    // 画面の幅の半分くらいまで大きく、下は画面に収まる
+    expect(thumb.width, greaterThan(923 * 0.45));
+    expect(thumb.bottom, lessThanOrEqualTo(411));
+    // 曲名・再生はサムネの右
+    expect(tester.getRect(find.text('曲')).left, greaterThan(thumb.right));
+    expect(tester.getRect(find.text('再生')).left, greaterThan(thumb.right));
+    // メニューは右の列の右上（曲名より上、画面の右端寄り）
+    final menu = tester.getRect(find.byIcon(Icons.more_vert));
+    expect(menu.left, greaterThan(thumb.right));
+    expect(menu.right, greaterThan(923 - 60));
+    expect(menu.bottom, lessThanOrEqualTo(tester.getRect(find.text('曲')).top));
+    // 戻るは左上
+    expect(tester.getRect(find.byType(BackButton)).right, lessThan(thumb.right));
   });
 
   testWidgets('区間が無ければ AB 区間は出さない。未解析ならつなぎやすい曲は押せない', (tester) async {

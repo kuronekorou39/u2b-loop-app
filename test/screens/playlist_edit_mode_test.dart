@@ -10,6 +10,7 @@ import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist.dart';
 import 'package:u2b_loop_app/models/tag.dart';
 import 'package:u2b_loop_app/screens/playlist_detail_screen.dart';
+import 'package:u2b_loop_app/widgets/playlist_cover.dart';
 
 /// プレイリスト詳細の編集モード: ふだんは並べ替え・外すが出ない。編集モードでは確認なしで
 /// 外せて、通知の「元に戻す」で戻る。共有・削除はメニューに
@@ -181,6 +182,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(opacityOf(find.text('再生')), 1);
     expect(opacityOf(find.text('リスト')), 1);
+  });
+
+  testWidgets('見出しの表紙は一覧と同じ曲の束（正方形・曲数の札）。曲数の文字は出さない', (tester) async {
+    await pump(tester);
+    expect(find.byType(PlaylistCover), findsOneWidget);
+    expect(find.widgetWithText(PlaylistCountBadge, '3'), findsOneWidget);
+    expect(find.text('3 曲'), findsNothing);
+    final image = tester.getSize(find.descendant(
+        of: find.byType(PlaylistCover), matching: find.byType(AspectRatio)));
+    expect(image.width, closeTo(image.height, 0.5));
+    // 写真を選ぶボタンは表紙の右上のまま
+    final cover = tester.getRect(find.byType(PlaylistCover));
+    final camera = tester.getRect(find.byTooltip('サムネイルを選ぶ'));
+    expect(camera.right, lessThanOrEqualTo(cover.right));
+    expect(camera.center.dx, greaterThan(cover.center.dx));
   });
 
   testWidgets('並べ替えモードは行の長押しでも持ち上げて並べ替えられる', (tester) async {

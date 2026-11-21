@@ -1,3 +1,4 @@
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -452,22 +453,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               final padding = MediaQuery.paddingOf(bodyContext);
               final viewPadding = MediaQuery.viewPaddingOf(bodyContext);
               final dim = Theme.of(context).colorScheme.onSurface;
-              // 左（横画面は左の列）: サムネ・曲名・再生などのボタン
-              final head = <Widget>[
-                  // サムネイル
-                  ClipRRect(
-                    borderRadius: AppRadius.borderXl,
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: ItemThumbnail(
-                        item: item,
-                        heroTag: 'thumb_${item.id}',
-                        placeholder: ItemThumbnailPlaceholderLarge(item: item),
-                      ),
-                    ),
+              // サムネイル（横画面は左の列に大きく）
+              final thumbnail = ClipRRect(
+                borderRadius: AppRadius.borderXl,
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: ItemThumbnail(
+                    item: item,
+                    heroTag: 'thumb_${item.id}',
+                    placeholder: ItemThumbnailPlaceholderLarge(item: item),
                   ),
-                  const SizedBox(height: AppSpacing.lg + 2),
-
+                ),
+              );
+              // 曲名・補足・再生などのボタン（縦はサムネの下、横は右の列の上）
+              final info = <Widget>[
                   // 曲名（タップで編集）+ 補足
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -584,12 +583,24 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   _buildMemo(textTheme),
               ];
               if (split) {
+                // 横: 左の列は戻るの行とサムネだけ（サムネを大きく）。曲名・ボタン・保存と
+                // その他のメニューは右の列（メニューは右上）
                 final size = MediaQuery.sizeOf(context);
+                final thumbMaxHeight = size.height -
+                    padding.top -
+                    padding.bottom -
+                    kMinInteractiveDimension -
+                    AppSpacing.xs -
+                    AppSpacing.xxl;
+                final leftWidth = min(
+                  size.width * _splitThumbMaxRatio,
+                  thumbMaxHeight * 16 / 9 + AppSpacing.lg * 2 + viewPadding.left,
+                );
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(
-                      width: DetailSplit.sideWidth(size),
+                      width: leftWidth,
                       child: ListView(
                         padding: EdgeInsets.fromLTRB(
                             AppSpacing.lg + viewPadding.left,
@@ -602,11 +613,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             child: Transform.translate(
                               // 戻るボタンの左端をサムネの左端に揃える
                               offset: const Offset(-AppSpacing.md, 0),
-                              child: DetailSplitTopBar(
-                                  title: '詳細', actions: actions),
+                              child: const DetailSplitTopBar(title: '詳細'),
                             ),
                           ),
-                          ...head,
+                          thumbnail,
                         ],
                       ),
                     ),
@@ -614,10 +624,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       child: ListView(
                         padding: EdgeInsets.fromLTRB(
                             AppSpacing.sm,
-                            padding.top + AppSpacing.md,
+                            padding.top,
                             AppSpacing.lg + viewPadding.right,
                             padding.bottom + AppSpacing.xxl),
-                        children: body,
+                        children: [
+                          // 保存・その他のメニューは右の列の右上（左の戻るの行と同じ高さ）
+                          SizedBox(
+                            height: kMinInteractiveDimension,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: actions,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          ...info,
+                          const SizedBox(height: AppSpacing.xl),
+                          ...body,
+                        ],
                       ),
                     ),
                   ],
@@ -630,7 +653,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     AppSpacing.lg + viewPadding.right,
                     padding.bottom + AppSpacing.xxl),
                 children: [
-                  ...head,
+                  thumbnail,
+                  const SizedBox(height: AppSpacing.lg + 2),
+                  ...info,
                   const SizedBox(height: AppSpacing.xl),
                   ...body,
                 ],
@@ -639,6 +664,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       ),
     );
   }
+
+  /// 横画面の左の列（サムネ）の幅の上限（画面の幅に対して）。高さに収まる大きさがこれより
+  /// 小さければそちら
+  static const _splitThumbMaxRatio = 0.55;
 
   /// 曲名の下の補足: BPM・キー・再生回数・速度・出どころ
   String _subtitleText(LoopItem item) {

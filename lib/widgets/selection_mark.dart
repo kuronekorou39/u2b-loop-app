@@ -43,6 +43,23 @@ class SelectionTrailing extends StatelessWidget {
   }
 }
 
+/// 一覧の行・カードの中のボタン（⋮・再生など）を包む。ボタンの上を長押ししたときに、
+/// ボタンの吹き出し（ツールチップ）を出さず、行・カードの長押し（選択）に回す
+/// （吹き出しが長押しを取ってしまい、ボタンの所だけ長押ししても選択に入らなかった）。
+/// 吹き出しは出なくなるだけで、読み上げの名前（ツールチップの文）は残る
+class ItemInnerButtons extends StatelessWidget {
+  const ItemInnerButtons({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TooltipTheme(
+        data: TooltipTheme.of(context)
+            .copyWith(triggerMode: TooltipTriggerMode.manual),
+        child: child,
+      );
+}
+
 /// 複数選択中、選んでいないものを少し暗くする（どれを選んでいるか一目で分かるように）。
 /// 透明度を変えるだけなので大きさ・位置は動かない
 class SelectionDim extends StatelessWidget {
