@@ -468,13 +468,18 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           onPressed: () => setState(_selectedIds.clear),
         ),
       ] else if (items.isNotEmpty) ...[
-        // 今の表示のアイコン（ホームの曲一覧と同じ）。押すとリスト大 ⇔ リスト小
-        IconButton(
-          icon: Icon(
-              (_compact ? ItemViewMode.list : ItemViewMode.titles).icon),
-          tooltip:
-              '表示: ${(_compact ? ItemViewMode.list : ItemViewMode.titles).label}',
-          onPressed: _toggleCompact,
+        // 今の表示のアイコン（ホームの曲一覧と同じ）。押すとリスト大 ⇔ リスト小。
+        // 並べ替えモード中は使わないので隠す（場所は残すので ⇅ は動かない）
+        ReorderDim(
+          reordering: _reordering,
+          hide: true,
+          child: IconButton(
+            icon: Icon(
+                (_compact ? ItemViewMode.list : ItemViewMode.titles).icon),
+            tooltip:
+                '表示: ${(_compact ? ItemViewMode.list : ItemViewMode.titles).label}',
+            onPressed: _toggleCompact,
+          ),
         ),
         // 並べ替えモード（オンの間は緑。同じボタンで抜ける）
         IconButton(
@@ -485,7 +490,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ),
       ],
       if (!selecting)
-        PopupMenuButton<_PlaylistMenu>(
+        ReorderDim(
+          reordering: _reordering,
+          hide: true,
+          child: PopupMenuButton<_PlaylistMenu>(
           tooltip: 'その他',
           onSelected: (m) => switch (m) {
             _PlaylistMenu.share => _sharePlaylist(pl, items),
@@ -554,11 +562,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               ),
             ];
           },
+          ),
         ),
     ];
-    // サムネイル + 写真ボタン。[frame] で大きさを決める（縦は小さく、横は列の幅いっぱい）
-    Widget thumb(Widget Function(Widget child) frame) =>
-      Stack(
+    // サムネイル + 写真ボタン。[frame] で大きさを決める（縦は小さく、横は列の幅いっぱい）。
+    // 並べ替えモード中は暗くして触れない
+    Widget thumb(Widget Function(Widget child) frame) => ReorderDim(
+      reordering: _reordering,
+      child: Stack(
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
@@ -579,22 +590,27 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             Positioned(
               right: 2,
               top: 2,
-              child: IconButton(
-                onPressed: () => _selectThumbnail(pl, items),
-                tooltip: 'サムネイルを選ぶ',
-                visualDensity: VisualDensity.compact,
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black54,
-                  foregroundColor: Colors.white70,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: AppRadius.borderSm),
+              child: ReorderDim(
+                reordering: _reordering,
+                hide: true,
+                child: IconButton(
+                  onPressed: () => _selectThumbnail(pl, items),
+                  tooltip: 'サムネイルを選ぶ',
+                  visualDensity: VisualDensity.compact,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black54,
+                    foregroundColor: Colors.white70,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: AppRadius.borderSm),
+                  ),
+                  icon: const Icon(Icons.photo_camera,
+                      size: AppIconSizes.s),
                 ),
-                icon: const Icon(Icons.photo_camera,
-                    size: AppIconSizes.s),
               ),
             ),
         ],
-      );
+      ),
+    );
     // タイトル + 曲数 + 自動で入れるタグ
     final titleBlock = <Widget>[
       Row(
@@ -607,13 +623,17 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          IconButton(
-            onPressed: () => _renamePlaylist(pl),
-            tooltip: '名前を変更',
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.edit,
-                size: AppIconSizes.sm,
-                color: AppTheme.muted(context)),
+          ReorderDim(
+            reordering: _reordering,
+            hide: true,
+            child: IconButton(
+              onPressed: () => _renamePlaylist(pl),
+              tooltip: '名前を変更',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.edit,
+                  size: AppIconSizes.sm,
+                  color: AppTheme.muted(context)),
+            ),
           ),
         ],
       ),
@@ -712,6 +732,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         ),
       ],
     );
+    // 並べ替えモード中: 名前・曲数・タグは暗くして触れなくし、再生・シャッフルは隠す（場所は残す）
+    Widget titleArea(CrossAxisAlignment align) => ReorderDim(
+          reordering: _reordering,
+          child: Column(crossAxisAlignment: align, children: titleBlock),
+        );
+    final playButtons =
+        ReorderDim(reordering: _reordering, hide: true, child: buttons);
     final tallHeader = Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Row(
@@ -723,9 +750,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...titleBlock,
+                titleArea(CrossAxisAlignment.start),
                 const SizedBox(height: AppSpacing.lg),
-                buttons,
+                playButtons,
               ],
             ),
           ),
@@ -744,9 +771,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             children: [
               thumb((c) => AspectRatio(aspectRatio: 16 / 9, child: c)),
               const SizedBox(height: AppSpacing.lg),
-              ...titleBlock,
+              titleArea(CrossAxisAlignment.stretch),
               const SizedBox(height: AppSpacing.lg),
-              buttons,
+              playButtons,
             ],
           ),
         ),

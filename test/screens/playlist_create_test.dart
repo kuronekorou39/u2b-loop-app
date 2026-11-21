@@ -13,6 +13,7 @@ import 'package:u2b_loop_app/providers/data_provider.dart';
 import 'package:u2b_loop_app/screens/home/item_views.dart';
 import 'package:u2b_loop_app/screens/home/playlist_tab.dart';
 import 'package:u2b_loop_app/widgets/tag_chip.dart';
+import 'package:u2b_loop_app/widgets/playlist_cover.dart';
 
 /// プレイリストの作成（空 / タグから）・一覧のタグ表示・名前の長さ、曲のリスト大 / 小
 void main() {
@@ -122,7 +123,8 @@ void main() {
     await tester.pumpAndSettle();
     pl = c.read(playlistsProvider).single;
     expect(pl.itemIds, ['a', 'b']);
-    expect(find.text('2 曲'), findsOneWidget);
+    // 曲数は表紙の札
+    expect(find.widgetWithText(PlaylistCountBadge, '2'), findsOneWidget);
   });
 
   for (final grid in [false, true]) {

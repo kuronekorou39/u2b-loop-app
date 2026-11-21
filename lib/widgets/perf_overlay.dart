@@ -4,8 +4,12 @@ import '../core/theme/app_theme.dart';
 
 /// 画面下部に表示するカスタムパフォーマンスオーバーレイ。
 /// FPS・最悪フレーム時間・ジャンク数をリアルタイム表示。
+/// どの画面でもいちばん上に重ねる（App の Stack の最後。以前はミニプレイヤーの下に隠れていた）
 class PerfOverlay extends StatefulWidget {
-  const PerfOverlay({super.key});
+  const PerfOverlay({super.key, required this.bottom});
+
+  /// 画面の下端からの位置（ミニプレイヤーが出ていればその上）
+  final double bottom;
 
   @override
   State<PerfOverlay> createState() => _PerfOverlayState();
@@ -72,11 +76,10 @@ class _PerfOverlayState extends State<PerfOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
     return Positioned(
       left: 0,
       right: 0,
-      bottom: bottomPadding + 4,
+      bottom: widget.bottom,
       child: IgnorePointer(
         child: Center(
           child: Container(

@@ -81,7 +81,6 @@ class App extends ConsumerWidget {
               ),
               child: child!,
             ),
-            if (showPerfOverlay) const PerfOverlay(),
             const Positioned(
               left: 0,
               right: 0,
@@ -95,6 +94,9 @@ class App extends ConsumerWidget {
                       : mq.viewPadding.bottom) +
                   extra,
             ),
+            // 計測の表示はいちばん上に重ねる。ミニプレイヤーを隠さないよう、出ていればその上
+            if (showPerfOverlay)
+              PerfOverlay(bottom: mq.viewPadding.bottom + extra + AppSpacing.xs),
           ],
         );
       },

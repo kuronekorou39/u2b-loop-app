@@ -14,6 +14,8 @@ import 'package:u2b_loop_app/screens/home/import_tag_dialog.dart';
 import 'package:u2b_loop_app/screens/home/playlist_tab.dart';
 import 'package:u2b_loop_app/screens/playlist_detail_screen.dart';
 import 'package:u2b_loop_app/services/backup_service.dart';
+import 'package:u2b_loop_app/widgets/item_thumbnail.dart';
+import 'package:u2b_loop_app/widgets/playlist_cover.dart';
 
 /// プレイリスト一覧の並び順（手で並べ替え）と、取り込みのときのタグの 3 択
 void main() {
@@ -71,6 +73,35 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
   }
+
+  testWidgets('表紙は曲の束（板 2 枚 + 左下に曲数の札）。グリッドは正方形、リストは今までの大きさ',
+      (tester) async {
+    await AppBoxes.loopItems.put(
+        'a', LoopItem(id: 'a', title: '曲', uri: 'u', sourceType: 'local'));
+    addTearDown(() => AppBoxes.loopItems.delete('a'));
+    final pl = AppBoxes.playlists.get('p0')!..itemIds = ['a'];
+    await AppBoxes.playlists.put('p0', pl);
+
+    // グリッド: サムネは正方形（曲のグリッドは横長）
+    await pump(tester, grid: true);
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaylistCover), findsNWidgets(4));
+    final thumb = tester.getSize(find.byType(ItemThumbnail).first);
+    expect(thumb.width, closeTo(thumb.height, 0.5));
+    expect(find.widgetWithText(PlaylistCountBadge, '1'), findsOneWidget);
+    expect(find.textContaining(' 曲'), findsNothing, reason: '曲数は札だけ');
+    expect(tester.takeException(), isNull);
+
+    // リスト: 板の分も含めて 56 の中。行の高さはタグの有無でそろう
+    await pump(tester);
+    await tester.pumpAndSettle();
+    final cover = tester.getSize(find.byType(PlaylistCover).first);
+    expect(cover.width, 56);
+    expect(cover.height, closeTo(56, 0.5));
+    expect(find.widgetWithText(PlaylistCountBadge, '1'), findsOneWidget);
+    final rows = tester.widgetList<ListTile>(find.byType(ListTile));
+    expect(rows.map((t) => t.minTileHeight).toSet().length, 1);
+  });
 
   test('並び: 決めていなければ新しい順。並べ替えると番号が振られ、新しく作ったものは先頭に入る',
       () async {

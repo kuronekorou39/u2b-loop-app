@@ -57,6 +57,39 @@ class ReorderRowListener extends ReorderableDragStartListener {
           delay: reorderTouchDelay, debugOwner: this);
 }
 
+/// 並べ替えモードの間、一覧のまわり（ロゴ・タブ・プレイリストの写真や名前など）を暗くして
+/// 触れなくする。[hide] は並べ替え中に使わないボタン（表示の切り替え・設定・⋮・再生など）で、
+/// 見えなくする。どちらも場所は残す（並べ替えに入っても一覧や ⇅ のボタンが動かないように）
+class ReorderDim extends StatelessWidget {
+  const ReorderDim({
+    super.key,
+    required this.reordering,
+    required this.child,
+    this.hide = false,
+  });
+
+  final bool reordering;
+  final bool hide;
+  final Widget child;
+
+  /// 暗くしたときの濃さ（複数選択で選んでいないもの（SelectionDim）より暗く。触れないと分かるように）
+  static const dimOpacity = 0.3;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+        ignoring: reordering,
+        child: AnimatedOpacity(
+          opacity: !reordering
+              ? 1
+              : hide
+                  ? 0
+                  : dimOpacity,
+          duration: const Duration(milliseconds: 150),
+          child: child,
+        ),
+      );
+}
+
 /// つまみの見た目だけ（当たり判定は [ReorderHandle.area] を行に重ねる）
 class ReorderHandleIcon extends StatelessWidget {
   const ReorderHandleIcon({super.key});

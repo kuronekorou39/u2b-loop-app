@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +15,7 @@ import '../../models/tag.dart';
 import '../../providers/data_provider.dart';
 import '../../widgets/drag_reorder_grid.dart';
 import '../../widgets/now_playing_mark.dart';
+import '../../widgets/playlist_cover.dart';
 import '../../widgets/reorder_handle.dart';
 import '../../widgets/selection_mark.dart';
 import '../../widgets/empty_hint.dart';
@@ -213,42 +216,36 @@ class PlaylistTab extends ConsumerWidget {
             enabled: reordering,
             child: ListTile(
             selected: selected,
-            leading: ClipRRect(
-              borderRadius: AppRadius.borderMd,
-              child: SizedBox(
-                width: 56,
-                height: 56,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _Thumb(item: thumbOf(pl)),
-                    NowPlayingMark(playlistId: pl.id, size: 18),
-                  ],
-                ),
+            // タグの無い行（1 行）も同じ高さに（表紙が上下の行とくっつかないように）
+            minTileHeight: _listRowMinHeight,
+            // 曲の束に見せる表紙（板 2 枚 + 左下に曲数の札）。高さは今までの 56 に収める
+            leading: SizedBox(
+              width: _listCoverSize,
+              child: PlaylistCover(
+                image: _Thumb(item: thumbOf(pl)),
+                count: count,
+                compact: true,
+                radius: AppRadius.md,
+                aspectRatio: _listCoverSize /
+                    (_listCoverSize - PlaylistCover.stackHeightOf(compact: true)),
+                overlays: [NowPlayingMark(playlistId: pl.id, size: 18)],
               ),
             ),
             title: Text(pl.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+            // 曲数は表紙の札。下には自動で入れるタグ（2 つ目からは +N）
             subtitle: autoTags.isEmpty
-                ? Text('$count 曲', style: textTheme.bodySmall)
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('$count 曲', style: textTheme.bodySmall),
-                      // 自動で入れるタグ（2 つ目からは +N）
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Flexible(child: TagChip(tag: autoTags.first)),
-                            if (autoTags.length > 1)
-                              Text(' +${autoTags.length - 1}',
-                                  style: textTheme.labelSmall),
-                          ],
-                        ),
-                      ),
-                    ],
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(child: TagChip(tag: autoTags.first)),
+                        if (autoTags.length > 1)
+                          Text(' +${autoTags.length - 1}',
+                              style: textTheme.labelSmall),
+                      ],
+                    ),
                   ),
             // 選択の印は右端の再生・メニューの場所に（隠すだけで場所は残す）
             trailing: SelectionTrailing(
@@ -307,7 +304,9 @@ class PlaylistTab extends ConsumerWidget {
     );
   }
 
-  /// グリッド: サムネ（16:9）+ 名前 + 曲数のカード。再生はサムネ右下のボタン
+  /// グリッド: 正方形のジャケット（曲の束に見せる板と曲数の札）+ 名前 + 自動で入れるタグのカード。
+  /// 曲のグリッド（横長のサムネ）と形で見分けられるように。再生は表紙の右下のボタン。
+  /// 表紙が正方形なのでカードの高さは幅で決まる（列の幅から求める）
   Widget _buildGrid(
     BuildContext context,
     WidgetRef ref,
@@ -321,43 +320,49 @@ class PlaylistTab extends ConsumerWidget {
   ) {
     final textTheme = Theme.of(context).textTheme;
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-    return DragReorderGrid<Playlist>(
-      items: playlists,
-      idOf: (pl) => pl.id,
-      reordering: reordering,
-      onReorder: reorder,
-      padding: EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 220,
-        childAspectRatio: 16 / 14.5,
-        crossAxisSpacing: AppSpacing.md + 2,
-        mainAxisSpacing: AppSpacing.md + 2,
-      ),
-      itemBuilder: (context, pl) {
-        final count = countOf(pl);
-        final autoTags = tagsOf(pl);
-        final selected = selectedIds.contains(pl.id);
-        return SelectionDim(
-          selecting: selecting,
-          selected: selected,
-          child: GlassSurface(
-          radius: 16,
-          padding: const EdgeInsets.all(AppSpacing.md),
-          tint: selected ? AppTheme.accentGreen.withValues(alpha: 0.15) : null,
-          onTap: reordering ? null : () => tap(pl),
-          onLongPress: reordering ? null : () => onLongPress?.call(pl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _Thumb(item: thumbOf(pl)),
+    return LayoutBuilder(builder: (context, c) {
+      final width = c.maxWidth - AppSpacing.lg * 2;
+      // SliverGridDelegateWithMaxCrossAxisExtent と同じ列数の決め方
+      final columns = max(1, (width / (_gridMaxCardWidth + _gridSpacing)).ceil());
+      final cardWidth = (width - _gridSpacing * (columns - 1)) / columns;
+      final cardHeight = cardWidth +
+          PlaylistCover.stackHeightOf(compact: false) +
+          AppSpacing.sm +
+          _gridNameHeight +
+          _gridInfoHeight;
+      return DragReorderGrid<Playlist>(
+        items: playlists,
+        idOf: (pl) => pl.id,
+        reordering: reordering,
+        onReorder: reorder,
+        padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, 80 + bottomPad),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisExtent: cardHeight,
+          crossAxisSpacing: _gridSpacing,
+          mainAxisSpacing: _gridSpacing,
+        ),
+        itemBuilder: (context, pl) {
+          final count = countOf(pl);
+          final autoTags = tagsOf(pl);
+          final selected = selectedIds.contains(pl.id);
+          return SelectionDim(
+            selecting: selecting,
+            selected: selected,
+            child: GlassSurface(
+              radius: 16,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              tint: selected ? AppTheme.accentGreen.withValues(alpha: 0.15) : null,
+              onTap: reordering ? null : () => tap(pl),
+              onLongPress: reordering ? null : () => onLongPress?.call(pl),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PlaylistCover(
+                    image: _Thumb(item: thumbOf(pl)),
+                    count: count,
+                    overlays: [
                       NowPlayingMark(playlistId: pl.id, size: 20),
                       if (!selecting && !reordering && count > 0)
                         Positioned(
@@ -392,8 +397,7 @@ class PlaylistTab extends ConsumerWidget {
                           child: Container(
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: Colors.white70, width: 2),
+                              border: Border.all(color: Colors.white70, width: 2),
                             ),
                             width: 20,
                             height: 20,
@@ -401,39 +405,53 @@ class PlaylistTab extends ConsumerWidget {
                         ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: AppSpacing.sm),
+                  SizedBox(
+                    height: _gridNameHeight,
+                    child: Text(pl.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.labelMedium
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                  ),
+                  // 自動で入れるタグ（入りきらない分は +N）。曲数は表紙の札
+                  SizedBox(
+                    height: _gridInfoHeight,
+                    child: Row(
+                      children: [
+                        if (autoTags.isNotEmpty) ...[
+                          Flexible(
+                              child: TagChip(tag: autoTags.first, small: true)),
+                          if (autoTags.length > 1)
+                            Text(' +${autoTags.length - 1}',
+                                style: textTheme.labelSmall),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(pl.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.labelMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              // 曲数の右に、自動で入れるタグ（入りきらない分は +N）
-              SizedBox(
-                height: _gridInfoHeight,
-                child: Row(
-                  children: [
-                    Text('$count 曲', style: textTheme.labelSmall),
-                    if (autoTags.isNotEmpty) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Flexible(child: TagChip(tag: autoTags.first, small: true)),
-                      if (autoTags.length > 1)
-                        Text(' +${autoTags.length - 1}',
-                            style: textTheme.labelSmall),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        );
-      },
-    );
+            ),
+          );
+        },
+      );
+    });
   }
 
-  /// グリッドの曲数の行の高さ（タグのチップがあっても無くても同じ）
+  /// リストの行の表紙の大きさ（板の分も含めて今までのサムネと同じ 56）
+  static const double _listCoverSize = 56;
+
+  /// リストの行の高さの下限（表紙の上下に少し空ける）
+  static const double _listRowMinHeight = 72;
+
+  /// グリッドのカードの幅の上限（これを超えない列数にする）と間
+  static const double _gridMaxCardWidth = 220;
+  static const double _gridSpacing = AppSpacing.md + 2;
+
+  /// グリッドの名前の行の高さ
+  static const double _gridNameHeight = 20;
+
+  /// グリッドのタグの行の高さ（タグのチップがあっても無くても同じ）
   static const double _gridInfoHeight = 18;
 
   void _showMenu(BuildContext context, WidgetRef ref, Playlist pl) {

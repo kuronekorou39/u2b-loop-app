@@ -45,6 +45,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// [finder] の見え方の濃さ（祖先の Opacity をかけ合わせたもの）
+  double opacityOf(WidgetTester tester, Finder finder) {
+    var o = 1.0;
+    for (final w in tester.widgetList(find.ancestor(
+        of: finder.first,
+        matching: find.byWidgetPredicate(
+            (w) => w is Opacity || w is AnimatedOpacity)))) {
+      o *= w is Opacity ? w.opacity : (w as AnimatedOpacity).opacity;
+    }
+    return o;
+  }
+
   Rect searchRect(WidgetTester tester) =>
       tester.getRect(find.byType(GlassSearchField));
 
@@ -166,18 +178,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.drag_handle), findsNothing);
 
-    // オンのまま別のタブへ行って戻ると切れている
+    // モード中はロゴとタブを暗くして触れない（タブを押しても移らない）。抜けるのは ⇅ か戻るキー
     await tester.tap(find.byTooltip('並べ替え'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('曲'));
+    await tester.tap(find.text('曲'), warnIfMissed: false);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('タグ'));
+    expect(find.byIcon(Icons.drag_handle), findsOneWidget, reason: 'タグタブのまま');
+    expect(opacityOf(tester, find.byType(GlassSegmentedTabs)), lessThan(0.5));
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byTooltip('並べ替え'), findsOneWidget);
     expect(find.byIcon(Icons.drag_handle), findsNothing);
+    expect(opacityOf(tester, find.byType(GlassSegmentedTabs)), 1);
   });
 
-  testWidgets('並べ替えモードはプレイリストタブにもある（曲タブには無い）。タブを離れると切れる',
+  testWidgets('並べ替えモード中は表示の切り替えと設定を隠す（場所は残し、⇅ は動かない）', (tester) async {
+    await AppBoxes.playlists.put('p1', Playlist(id: 'p1', name: 'リストA'));
+    addTearDown(() => AppBoxes.playlists.delete('p1'));
+    await pump(tester, size: const Size(400, 800));
+    await tester.tap(find.text('プレイリスト'));
+    await tester.pumpAndSettle();
+    final settings = tester.getRect(find.byTooltip('設定'));
+    final button = tester.getCenter(find.byTooltip('並べ替え'));
+    await tester.tap(find.byTooltip('並べ替え'));
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(find.byTooltip('並べ替えを終える')), button);
+    expect(opacityOf(tester, find.byTooltip('設定')), 0);
+    expect(opacityOf(tester, find.byTooltip(RegExp('表示へ'))), 0);
+    expect(tester.getRect(find.byTooltip('設定')), settings, reason: '場所は残す');
+    // 隠したボタンは押せない
+    await tester.tap(find.byTooltip('設定'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(ListScreen), findsOneWidget);
+    expect(find.byTooltip('並べ替えを終える'), findsOneWidget);
+    // 抜けると戻る
+    await tester.tap(find.byTooltip('並べ替えを終える'));
+    await tester.pumpAndSettle();
+    expect(opacityOf(tester, find.byTooltip('設定')), 1);
+  });
+
+  testWidgets('並べ替えモードはプレイリストタブにもある（曲タブには無い）。モード中はタブを移れない',
       (tester) async {
     await AppBoxes.playlists.put('p1', Playlist(id: 'p1', name: 'リストA'));
     addTearDown(() => AppBoxes.playlists.delete('p1'));
@@ -194,12 +234,19 @@ void main() {
     // モード中は ＋ を出さない
     expect(find.byTooltip('プレイリストを作成'), findsNothing);
 
-    // タグタブへ移ると切れている（タグ側もオンにならない）
+    // タグタブは押しても移らない（横に払っても移らない）
+    await tester.tap(find.text('タグ'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.fling(find.byType(TabBarView), const Offset(300, 0), 1000,
+        warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.drag_handle), findsOneWidget);
+    // 抜けてからタグタブへ移ると、タグ側はオンになっていない
+    await tester.tap(find.byTooltip('並べ替えを終える'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('タグ'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('並べ替え'), findsOneWidget);
-    await tester.tap(find.text('プレイリスト'));
-    await tester.pumpAndSettle();
     expect(find.byIcon(Icons.drag_handle), findsNothing);
   });
 

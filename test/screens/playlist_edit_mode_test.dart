@@ -146,6 +146,43 @@ void main() {
     expect(find.byIcon(Icons.drag_handle), findsNothing);
   });
 
+  testWidgets('並べ替えモード中は写真・名前を暗くして触れず、再生・シャッフル・⋮・表示の切り替えは隠す（場所は残す）',
+      (tester) async {
+    await pump(tester);
+    double opacityOf(Finder finder) {
+      var o = 1.0;
+      for (final w in tester.widgetList(find.ancestor(
+          of: finder.first,
+          matching: find.byWidgetPredicate(
+              (w) => w is Opacity || w is AnimatedOpacity)))) {
+        o *= w is Opacity ? w.opacity : (w as AnimatedOpacity).opacity;
+      }
+      return o;
+    }
+
+    final play = tester.getRect(find.text('再生'));
+    await tester.tap(find.byTooltip('並べ替え'));
+    await tester.pumpAndSettle();
+    expect(opacityOf(find.text('リスト')), lessThan(0.5), reason: 'プレイリストの名前は暗く');
+    expect(opacityOf(find.text('再生')), 0);
+    expect(opacityOf(find.text('シャッフル')), 0);
+    expect(opacityOf(find.byTooltip('その他')), 0);
+    expect(opacityOf(find.byTooltip('名前を変更')), 0);
+    expect(opacityOf(find.byTooltip('サムネイルを選ぶ')), 0);
+    expect(tester.getRect(find.text('再生')), play, reason: '場所は残す（一覧が動かない）');
+    // 一覧はそのまま（暗くしない）
+    expect(opacityOf(find.text('曲 a')), 1);
+    // 隠した ⋮ は押せない
+    await tester.tap(find.byTooltip('その他'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('プレイリストを削除'), findsNothing);
+    // 抜けると戻る
+    await tester.tap(find.byTooltip('並べ替えを終える'));
+    await tester.pumpAndSettle();
+    expect(opacityOf(find.text('再生')), 1);
+    expect(opacityOf(find.text('リスト')), 1);
+  });
+
   testWidgets('並べ替えモードは行の長押しでも持ち上げて並べ替えられる', (tester) async {
     await pump(tester);
     await tester.tap(find.byTooltip('並べ替え'));

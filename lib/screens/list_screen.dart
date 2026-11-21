@@ -19,6 +19,7 @@ import '../widgets/empty_hint.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/glass_scaffold.dart';
+import '../widgets/reorder_handle.dart';
 import 'detail_screen.dart';
 import 'home/add_to_playlist_sheet.dart';
 import 'home/item_views.dart';
@@ -382,20 +383,29 @@ class _ListScreenState extends ConsumerState<ListScreen>
     final extent = _headerExtent;
     // 隠れる部分: ロゴの行・タブ（選択中は操作バー）・曲タブの検索とタグ。
     // 横画面は高さが足りないので、ロゴ・タブ・検索・ボタンを 1 行にまとめる
+    // 並べ替えモードの間は、一覧のまわり（ロゴ・タブ）を暗くして触れなくし、使わないボタンは隠す。
+    // タブも押せない（抜けるのは ⇅ か戻るキー）
+    final reordering = _reorderingTab != null;
     final tabsOrSelection = SizedBox(
       // 選択に入っても下の一覧が動かないよう、高さを揃える
       height: _topBarHeight,
       child: _isSelecting
           ? _buildSelectionBar(selectableIds)
-          : GlassSegmentedTabs(
-              controller: _tabController,
-              labels: const ['タグ', '曲', 'プレイリスト'],
+          : ReorderDim(
+              reordering: reordering,
+              child: GlassSegmentedTabs(
+                controller: _tabController,
+                labels: const ['タグ', '曲', 'プレイリスト'],
+              ),
             ),
     );
-    final logo = Image.asset(
-      'assets/images/logo.png',
-      height: landscape ? 22 : 30,
-      fit: BoxFit.contain,
+    final logo = ReorderDim(
+      reordering: reordering,
+      child: Image.asset(
+        'assets/images/logo.png',
+        height: landscape ? 22 : 30,
+        fit: BoxFit.contain,
+      ),
     );
     final collapsible = Column(
       key: _headerKey,
@@ -502,7 +512,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
                       onNotification: _onScroll,
                       child: TabBarView(
                         controller: _tabController,
-                        physics: _isSelecting
+                        // 選択中・並べ替えモード中は横に払ってもタブを移らない
+                        physics: _isSelecting || reordering
                             ? const NeverScrollableScrollPhysics()
                             : null,
                         children: [
@@ -731,6 +742,10 @@ class _ListScreenState extends ConsumerState<ListScreen>
     };
     final portraitItems = _tab == _tabItems &&
         MediaQuery.orientationOf(context) == Orientation.portrait;
+    // 並べ替えモード中に使わないボタンは隠す（場所は残すので ⇅ は動かない）
+    final reordering = _reorderingTab != null;
+    Widget hideWhileReordering(Widget button) =>
+        ReorderDim(reordering: reordering, hide: true, child: button);
     // 閉じていても絞り込み中なら緑（隠れた所で絞っていると分かるように）
     final filtering = _searchQuery.isNotEmpty ||
         ref.watch(tagFilterProvider).isNotEmpty;
@@ -755,14 +770,14 @@ class _ListScreenState extends ConsumerState<ListScreen>
           onPressed: _toggleReordering,
           tooltip: _reorderingTab == _tab ? '並べ替えを終える' : '並べ替え',
         ),
-      viewButton,
-      IconButton(
+      hideWhileReordering(viewButton),
+      hideWhileReordering(IconButton(
         icon: const Icon(Icons.settings, size: AppIconSizes.ml),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const SettingsScreen()),
         ),
         tooltip: '設定',
-      ),
+      )),
     ];
   }
 
