@@ -66,9 +66,9 @@ void main() {
     expect(tileOf(tester, 'クロスフェード').value, 'オフ');
     expect(tileOf(tester, 'つなぎ方').enabled, isFalse);
     expect(tileOf(tester, '演出').enabled, isFalse);
-    expect(tileOf(tester, 'ベーススワップ').enabled, isFalse);
-    // 既定: ベーススワップ オン / 演出はフィルタースイープ
-    expect(tileOf(tester, 'ベーススワップ').active, isTrue);
+    expect(tileOf(tester, '帯域の入れ替え').enabled, isFalse);
+    // 既定: 帯域の入れ替えは低音だけ / 演出はフィルタースイープ
+    expect(tileOf(tester, '帯域の入れ替え').value, '低音');
     expect(tileOf(tester, '演出').value, 'フィルタースイープ');
   });
 
@@ -86,10 +86,16 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.autoMix), false);
     expect(tileOf(tester, 'おまかせ').active, isFalse);
 
-    await tester.tap(find.text('ベーススワップ'));
-    await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.bassSwap), false);
-    expect(tileOf(tester, 'ベーススワップ').active, isFalse);
+    // 帯域の入れ替えは なし / 低音 / 高・中・低 から選ぶ
+    await pick(tester, '帯域の入れ替え', '高・中・低');
+    expect(AppBoxes.settings.get(SettingsKeys.bandSwap), 'three');
+    expect(tileOf(tester, '帯域の入れ替え').value, '高・中・低');
+    await pick(tester, '帯域の入れ替え', 'なし');
+    expect(AppBoxes.settings.get(SettingsKeys.bandSwap), 'none');
+
+    // 曲の音から作る演出・控えめな効果音も選べる
+    await pick(tester, '演出', 'エコーアウト');
+    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'echoTail');
 
     await pick(tester, '演出', 'ブレーキ');
     expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'brake');
@@ -128,7 +134,7 @@ void main() {
 
   testWidgets('横向きの電話（800×360）でもスクロールせずに全部に届く', (tester) async {
     await pumpSheet(tester, size: const Size(800, 360), dpr: 1);
-    for (final label in ['控えめ', 'クロスフェード', 'おまかせ', 'ベーススワップ', '効果音', '効果音のずれ']) {
+    for (final label in ['控えめ', 'クロスフェード', 'おまかせ', '帯域の入れ替え', '効果音', '効果音のずれ']) {
       expect(find.text(label).hitTestable(), findsOneWidget, reason: label);
     }
     final dialog = tester.getRect(find.byType(Dialog));
@@ -137,7 +143,7 @@ void main() {
 
   testWidgets('縦でもスクロールせずに全部に届く', (tester) async {
     await pumpSheet(tester, size: const Size(360, 640), dpr: 1);
-    for (final label in ['控えめ', 'クロスフェード', 'ベーススワップ', '効果音', '効果音のずれ']) {
+    for (final label in ['控えめ', 'クロスフェード', '帯域の入れ替え', '効果音', '効果音のずれ']) {
       expect(find.text(label).hitTestable(), findsOneWidget, reason: label);
     }
   });

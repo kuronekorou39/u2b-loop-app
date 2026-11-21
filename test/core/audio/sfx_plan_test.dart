@@ -93,7 +93,77 @@ void main() {
 
   test('効果音を使わない演出は空', () {
     expect(planFor(TransitionEffect.filterSweep).isEmpty, isTrue);
+    expect(planFor(TransitionEffect.filterIn).isEmpty, isTrue);
     expect(planFor(TransitionEffect.brake).cues, isEmpty);
+  });
+
+  group('控えめな効果音', () {
+    test('リバースシンバルは 1 小節に伸び縮みさせ、吸い込み終わりを切替点に', () {
+      final lead = planFor(TransitionEffect.reverseCymbal).lead!;
+      expect(lead.role, SfxRole.reverseCymbal);
+      expect(lead.bars, 1);
+      expect(lead.atMs, closeTo(cut - bar, 1e-6));
+      expect(lead.clip.durationMs / lead.rate, closeTo(bar, 1e-6));
+      expect(planFor(TransitionEffect.reverseCymbal).impact, isNull);
+    });
+
+    test('1 小節だと速すぎるテンポ（1 小節 1.2 秒）は 2 小節', () {
+      final plan = SfxPlan.plan(
+        effect: TransitionEffect.reverseCymbal,
+        startMs: 0,
+        cutMs: 4 * 1200,
+        outRate: 1,
+        barMediaMs: 1200,
+      );
+      expect(plan.lead!.bars, 2);
+    });
+
+    test('クラッシュは切替点で、効果音の音量からさらに下げる', () {
+      final plan = planFor(TransitionEffect.crash);
+      expect(plan.lead, isNull);
+      expect(plan.impact!.role, SfxRole.crash);
+      expect(plan.impact!.atMs, cut);
+      expect(plan.impact!.clip.gainDb, lessThan(0));
+    });
+  });
+
+  group('曲の音から作る音', () {
+    const tail = SfxClip.rendered(SfxRole.tail, '/tmp/tail.wav', 2000);
+    const spin = SfxClip.rendered(SfxRole.spinback, '/tmp/spin.wav', 900);
+
+    SfxPlan rendered(TransitionEffect effect, SfxClip? clip, {double outRate = 1}) =>
+        SfxPlan.plan(
+          effect: effect,
+          startMs: cut - 4 * bar,
+          cutMs: cut,
+          outRate: outRate,
+          barMediaMs: bar,
+          rendered: clip,
+        );
+
+    test('エコー・残響の尾は切替点から。作れていなければ鳴らさない', () {
+      final echo = rendered(TransitionEffect.echoTail, tail);
+      expect(echo.lead, isNull);
+      expect(echo.impact!.clip, tail);
+      expect(echo.impact!.atMs, cut);
+      expect(rendered(TransitionEffect.reverbTail, tail).impact!.clip.isRendered, isTrue);
+      expect(rendered(TransitionEffect.echoTail, null).isEmpty, isTrue);
+    });
+
+    test('スピンバックは作った逆回転があればそれ（実時間の長さ）、無ければ素材', () {
+      final own = rendered(TransitionEffect.spinback, spin, outRate: 1.5).lead!;
+      expect(own.clip, spin);
+      expect(own.atMs, closeTo(cut - 900 * 1.5, 1e-6));
+      final fallback = rendered(TransitionEffect.spinback, null).lead!;
+      expect(fallback.clip.isRendered, isFalse);
+      // 役割の違う音は使わない
+      expect(rendered(TransitionEffect.spinback, tail).lead!.clip.isRendered, isFalse);
+    });
+
+    test('作った音はファイルを、素材はアプリ内のアセットを開く', () {
+      expect(spin.uri, '/tmp/spin.wav');
+      expect(SfxLibrary.of(SfxRole.crash).single.uri, startsWith('asset:///assets/sfx/'));
+    });
   });
 
   test('同じ長さの素材は variant で順に回る', () {

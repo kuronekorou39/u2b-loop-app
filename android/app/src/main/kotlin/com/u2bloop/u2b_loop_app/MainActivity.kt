@@ -29,6 +29,16 @@ private const val ANALYSIS_SAMPLE_RATE = 11025
 /** 解析に使う最大秒数。それ以降の音声は捨てる（8分で約10MB） */
 private const val ANALYSIS_MAX_SECONDS = 480
 
+/** DJ の演出用に切り出せる長さの上限（ミリ秒） */
+private const val SEGMENT_MAX_MS = 15_000L
+
+/** 切り出しの手前から余分にデコードする長さ（マイクロ秒）。シーク直後のフレームは
+ *  前のフレームが無いと正しく戻らない（AAC・Opus）ので、ここは捨てる */
+private const val SEGMENT_PREROLL_US = 300_000L
+
+/** 切り出し 1 回のデコードを諦めるまで（ミリ秒） */
+private const val SEGMENT_TIMEOUT_MS = 8_000L
+
 class MainActivity : FlutterActivity() {
     private val WAVEFORM_CHANNEL = "com.u2bloop/waveform"
     private val PIP_CHANNEL = "com.u2bloop/pip"
@@ -258,6 +268,30 @@ class MainActivity : FlutterActivity() {
                     "cancelExtraction" -> {
                         cancelCurrentExtraction()
                         result.success(null)
+                    }
+                    // DJ の演出（エコー・残響・逆回転）の材料: 曲の [startMs, endMs) をそのままの
+                    // サンプルレート・チャンネル数の 16bit PCM で返す。波形の抽出とは別に動く（中止しない）
+                    "decodeSegment" -> {
+                        val url = call.argument<String>("url")
+                        val startMs = call.argument<Number>("startMs")?.toLong()
+                        val endMs = call.argument<Number>("endMs")?.toLong()
+                        if (url == null || startMs == null || endMs == null ||
+                            startMs < 0 || endMs <= startMs || endMs - startMs > SEGMENT_MAX_MS
+                        ) {
+                            result.error("INVALID", "bad segment", null)
+                            return@setMethodCallHandler
+                        }
+                        scope.launch {
+                            try {
+                                val segment = decodeSegment(url, startMs * 1000, endMs * 1000)
+                                withContext(Dispatchers.Main) { result.success(segment) }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "decodeSegment error: ${e.message}")
+                                withContext(NonCancellable + Dispatchers.Main) {
+                                    result.error("DECODE_ERROR", e.message ?: "Unknown error", null)
+                                }
+                            }
+                        }
                     }
                     else -> result.notImplemented()
                 }
@@ -836,6 +870,93 @@ class MainActivity : FlutterActivity() {
             val buf = ByteBuffer.allocate(size * 2).order(ByteOrder.LITTLE_ENDIAN)
             buf.asShortBuffer().put(out, 0, size)
             return buf.array()
+        }
+    }
+
+    /**
+     * [url] の音声の [startUs]〜[endUs] をデコードして返す（DJ の演出の材料）。
+     * 少し手前（[SEGMENT_PREROLL_US]）からデコードし、各出力バッファの時刻から
+     * 範囲のフレームだけを取り出す。PCM は 16bit インターリーブ、レート・チャンネル数はそのまま
+     */
+    private fun decodeSegment(url: String, startUs: Long, endUs: Long): Map<String, Any?> {
+        val extractor = MediaExtractor()
+        var codec: MediaCodec? = null
+        try {
+            extractor.setDataSource(url)
+            var trackFormat: MediaFormat? = null
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                if ((format.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) {
+                    extractor.selectTrack(i)
+                    trackFormat = format
+                    break
+                }
+            }
+            val format = trackFormat ?: return mapOf("pcm" to null)
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: return mapOf("pcm" to null)
+            val decoder = MediaCodec.createDecoderByType(mime)
+            codec = decoder
+            decoder.configure(format, null, null, 0)
+            decoder.start()
+            var rate = runCatching { format.getInteger(MediaFormat.KEY_SAMPLE_RATE) }.getOrDefault(44100)
+            var channels = runCatching { format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }.getOrDefault(2)
+            extractor.seekTo(maxOf(0L, startUs - SEGMENT_PREROLL_US), MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
+            val out = java.io.ByteArrayOutputStream()
+            val info = MediaCodec.BufferInfo()
+            var inputEOS = false
+            var done = false
+            val deadline = System.currentTimeMillis() + SEGMENT_TIMEOUT_MS
+            while (!done && System.currentTimeMillis() < deadline) {
+                if (!inputEOS) {
+                    val inIndex = decoder.dequeueInputBuffer(5000)
+                    if (inIndex >= 0) {
+                        val buffer = decoder.getInputBuffer(inIndex)!!
+                        val size = extractor.readSampleData(buffer, 0)
+                        if (size < 0 || extractor.sampleTime > endUs + SEGMENT_PREROLL_US) {
+                            decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputEOS = true
+                        } else {
+                            decoder.queueInputBuffer(inIndex, 0, size, extractor.sampleTime, 0)
+                            extractor.advance()
+                        }
+                    }
+                }
+                val outIndex = decoder.dequeueOutputBuffer(info, 5000)
+                when {
+                    outIndex >= 0 -> {
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) done = true
+                        if (info.size > 0) {
+                            val buffer = decoder.getOutputBuffer(outIndex)!!
+                            buffer.position(info.offset)
+                            buffer.limit(info.offset + info.size)
+                            val bytes = ByteArray(info.size)
+                            buffer.get(bytes)
+                            val frameBytes = 2 * channels
+                            val frames = info.size / frameBytes
+                            val pts = info.presentationTimeUs
+                            // バッファの中の i フレーム目の時刻 = pts + i / rate
+                            val firstFrame = Math.ceil((startUs - pts) * rate / 1e6).toInt().coerceIn(0, frames)
+                            val endFrame = Math.ceil((endUs - pts) * rate / 1e6).toInt().coerceIn(0, frames)
+                            if (endFrame > firstFrame) {
+                                out.write(bytes, firstFrame * frameBytes, (endFrame - firstFrame) * frameBytes)
+                            }
+                            if (pts + frames * 1_000_000L / rate >= endUs) done = true
+                        }
+                        decoder.releaseOutputBuffer(outIndex, false)
+                    }
+                    outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        val f = decoder.outputFormat
+                        runCatching { rate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE) }
+                        runCatching { channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }
+                    }
+                }
+            }
+            return mapOf("pcm" to out.toByteArray(), "sampleRate" to rate, "channels" to channels)
+        } finally {
+            try { codec?.stop() } catch (_: Exception) {}
+            try { codec?.release() } catch (_: Exception) {}
+            try { extractor.release() } catch (_: Exception) {}
         }
     }
 

@@ -216,7 +216,7 @@ void main() {
       expect(tester.takeException(), isNull, reason: '$size');
       expect(find.byType(Scrollable), findsNothing, reason: '$size');
       for (final label in const [
-        'おまかせ', '1番', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '低音入替',
+        'おまかせ', '1番', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '入れ替え',
         '演出', '効果音', 'タイミング', '拍の線', '一覧の線', '音量の線',
       ]) {
         final r = tester.getRect(find.text(label));
@@ -312,10 +312,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.mixPointAlign), false);
 
-    // ベーススワップは既定オン
-    await tester.tap(find.text('低音入替'));
+    // 帯域の入れ替えは既定が低音だけ。メニューで なし / 低音 / 高・中・低
+    expect(find.text('低音'), findsOneWidget);
+    await tester.tap(find.text('入れ替え'));
     await tester.pumpAndSettle();
-    expect(AppBoxes.settings.get(SettingsKeys.bassSwap), false);
+    await tester.tap(find.text('高・中・低').last);
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.bandSwap), 'three');
 
     // つなぎ方と演出はボタンの下のメニューで選ぶ（ボタンに被せない）
     final button = tester.getRect(find
@@ -330,8 +333,17 @@ void main() {
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeCurve), 'nextFirst');
     expect(find.text('次曲先行'), findsOneWidget);
 
-    // 演出の既定はフィルタースイープ
-    expect(find.text('フィルタースイープ'), findsOneWidget);
+    // 演出の既定はフィルタースイープ（ボタンの下は短い名前、メニューは正式な名前）
+    expect(find.text('スイープ'), findsOneWidget);
+    await tester.tap(find.text('演出'));
+    await tester.pumpAndSettle();
+    for (final name in const ['エコーアウト', '残響で消す', 'リバースシンバル', 'クラッシュ', 'フィルターイン']) {
+      expect(find.text(name), findsOneWidget, reason: name);
+    }
+    await tester.tap(find.text('残響で消す').last);
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.transitionEffect), 'reverbTail');
+    expect(find.text('残響'), findsOneWidget);
     await tester.tap(find.text('演出'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('ブレーキ').last);
@@ -342,7 +354,7 @@ void main() {
     tester.widget<Slider>(find.byType(Slider)).onChanged!(0);
     await tester.pumpAndSettle();
     for (final label in const [
-      'おまかせ', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '低音入替',
+      'おまかせ', 'つなぎ方', 'ドロップ', '出入り口', 'テンポ', '拍合わせ', '入れ替え',
       '演出', '効果音', 'タイミング',
     ]) {
       expect(enabledOf(tester, label), isFalse, reason: label);
@@ -355,8 +367,8 @@ void main() {
   testWidgets('トップのボタンは名前だけ（値の行が無いのでラベルの高さがそろう）。曲数は大きく、バージョンはその下',
       (tester) async {
     AppBoxes.settings.put(SettingsKeys.crossfadeBeats, 16);
-    // 前のテストでオフにしたベーススワップを戻す
-    AppBoxes.settings.put(SettingsKeys.bassSwap, true);
+    // 前のテストで 3 帯域にした入れ替えを戻す
+    AppBoxes.settings.put(SettingsKeys.bandSwap, 'bass');
     await pumpPage(tester, const SettingsScreen());
     for (final t in tester.widgetList<MoreTile>(find.byType(MoreTile))) {
       expect(t.value, isNull, reason: t.label);

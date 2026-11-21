@@ -43,7 +43,8 @@ class SettingsKeys {
   static const mixPointAlign = 'mix_point_align';
   static const smartEntry = 'smart_entry';
   static const crossfadeCurve = 'crossfade_curve';
-  static const bassSwap = 'bass_swap';
+  static const bassSwap = 'bass_swap'; // v1.158 まで（オンオフ）。帯域の入れ替えへの移行判定にだけ使う
+  static const bandSwap = 'band_swap';
   static const transitionEffect = 'transition_effect';
   static const sfxLevelDb = 'sfx_level_db';
   static const sfxOffsetMs = 'sfx_offset_ms';

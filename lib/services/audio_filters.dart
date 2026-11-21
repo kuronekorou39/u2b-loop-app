@@ -15,6 +15,9 @@ import 'package:media_kit/media_kit.dart';
 /// bass / lowpass / highpass / aecho は入っていない。そのため
 /// - 低音の入れ替え（ベーススワップ）: [bassHz] を中心に幅 [bassWidthHz] のピーキング EQ を
 ///   0dB → [bassCutDb] まで下げる（低音シェルフの代わり）
+/// - 中音・高音の入れ替え（3 帯域）: 中音は [midHz] を中心に [midWidthOct] オクターブ
+///   （歌・メロディ）、高音は [highHz] を中心に [highWidthOct] オクターブ（ハイハット・シンバル）を
+///   [bandCutDb] まで下げる。DJ ミキサーの 3 バンド EQ と同じ考え方
 /// - スイープ（こもらせる）: 上端 [sweepTopHz] と「縁」の間を [sweepCutDb] 削るピーキング EQ。
 ///   縁を下げるほど中心を下げ、幅を広げる（ローパスの代わり。縁より下は残る）
 /// - エコーは作れないので無い
@@ -39,6 +42,16 @@ class AudioFilters {
   /// 低音を切ったときのゲイン（dB）
   static const bassCutDb = -18.0;
 
+  /// 中音（歌・メロディ）と高音（ハイハット）の帯域。中音はおよそ 350Hz〜2.8kHz、
+  /// 高音はおよそ 5kHz〜20kHz
+  static const midHz = 1000;
+  static const midWidthOct = 3.0;
+  static const highHz = 10000;
+  static const highWidthOct = 2.0;
+
+  /// 中音・高音を切ったときのゲイン（dB）
+  static const bandCutDb = -18.0;
+
   /// スイープの縁（Hz）: 開いた所と閉じ切った所。縁と [sweepTopHz] の間を削る
   static const sweepOpenHz = 15000.0;
   static const sweepClosedHz = 250.0;
@@ -46,6 +59,8 @@ class AudioFilters {
   static const sweepCutDb = -30.0;
 
   static const _bassLabel = 'u2b_bass';
+  static const _midLabel = 'u2b_mid';
+  static const _highLabel = 'u2b_high';
   static const _sweepLabel = 'u2b_sweep';
 
   /// mpv がフィルタ列を作れなかったら false にして、以後は何もしない
@@ -111,6 +126,26 @@ class AudioFilters {
     await _command(player, _bassLabel, 'gain', db.toStringAsFixed(1));
   }
 
+  /// 中音のゲイン（dB、0 = そのまま、[bandCutDb] = 切る）
+  static Future<void> setMidDb(Player player, double db) async {
+    if (!available) return;
+    final s = _stateOf(player);
+    if (!s.installed) return;
+    if ((s.midDb - db).abs() < 0.05) return;
+    s.midDb = db;
+    await _command(player, _midLabel, 'gain', db.toStringAsFixed(1));
+  }
+
+  /// 高音のゲイン（dB、0 = そのまま、[bandCutDb] = 切る）
+  static Future<void> setHighDb(Player player, double db) async {
+    if (!available) return;
+    final s = _stateOf(player);
+    if (!s.installed) return;
+    if ((s.highDb - db).abs() < 0.05) return;
+    s.highDb = db;
+    await _command(player, _highLabel, 'gain', db.toStringAsFixed(1));
+  }
+
   /// スイープの縁（Hz）。ここから上端までを削る
   static Future<void> setSweep(Player player, double edgeHz) async {
     if (!available) return;
@@ -123,10 +158,12 @@ class AudioFilters {
     await _command(player, _sweepLabel, 'width', w.toStringAsFixed(2));
   }
 
-  /// 値を初期に戻す（低音 0dB・スイープ全開）。付いていなければ何もしない
+  /// 値を初期に戻す（低音・中音・高音 0dB・スイープ全開）。付いていなければ何もしない
   static Future<void> reset(Player player) async {
     if (!_stateOf(player).installed) return;
     await setBassDb(player, 0);
+    await setMidDb(player, 0);
+    await setHighDb(player, 0);
     await setSweep(player, sweepOpenHz);
   }
 
@@ -135,6 +172,10 @@ class AudioFilters {
     final (f, w) = sweepBand(s.sweepHz);
     final af = '@$_bassLabel:lavfi=[equalizer=f=$bassHz:t=h:w=$bassWidthHz'
         ':g=${s.bassDb.toStringAsFixed(1)}],'
+        '@$_midLabel:lavfi=[equalizer=f=$midHz:t=o:w=$midWidthOct'
+        ':g=${s.midDb.toStringAsFixed(1)}],'
+        '@$_highLabel:lavfi=[equalizer=f=$highHz:t=o:w=$highWidthOct'
+        ':g=${s.highDb.toStringAsFixed(1)}],'
         '@$_sweepLabel:lavfi=[equalizer=f=${f.round()}:t=o:w=${w.toStringAsFixed(2)}'
         ':g=${sweepCutDb.toStringAsFixed(1)}]';
     if (await _setAf(player, af)) s.installed = true;
@@ -197,16 +238,23 @@ class AudioFilters {
 
   /// ベーススワップのランプ（0 = 低音あり、1 = 切った）→ ゲイン（dB）
   static double bassDb(double progress) => bassCutDb * progress.clamp(0.0, 1.0);
+
+  /// 中音・高音の入れ替えのランプ（0 = そのまま、1 = 切った）→ ゲイン（dB）
+  static double bandDb(double progress) => bandCutDb * progress.clamp(0.0, 1.0);
 }
 
 class _FilterState {
   bool installed = false;
   double bassDb = 0;
+  double midDb = 0;
+  double highDb = 0;
   double sweepHz = AudioFilters.sweepOpenHz;
 
   void reset() {
     installed = false;
     bassDb = 0;
+    midDb = 0;
+    highDb = 0;
     sweepHz = AudioFilters.sweepOpenHz;
   }
 }

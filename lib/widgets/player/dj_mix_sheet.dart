@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/audio/band_swap.dart';
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/dj_level.dart';
 import '../../core/audio/transition_effect.dart';
@@ -14,7 +15,7 @@ import 'sfx_offset_stepper.dart';
 /// 再生画面から開く「DJ ミックス」のポップアップ。
 ///
 /// 設定の DJ ミックスのページと同じ値（クロスフェード / つなぎ方 / ドロップに合わせる /
-/// テンポ合わせ / ベーススワップ / 切り替えの演出）を、聴きながらその場で変えるためのもの。
+/// テンポ合わせ / 帯域の入れ替え / 切り替えの演出）を、聴きながらその場で変えるためのもの。
 /// 変更は次の切り替わりから効く（PlaylistEngine は交差を始めるときに設定を読む）。
 ///
 /// スクロールせずに収まるよう、上にレベル、真ん中に小さめのタイル（オンオフは光る、
@@ -125,15 +126,18 @@ class DjMixSheet extends ConsumerWidget {
                   },
                   enabled: on,
                 ),
-                _Toggle(
+                PickerTile<BandSwap>(
                   icon: Icons.graphic_eq,
-                  label: 'ベーススワップ',
-                  value: ref.watch(bassSwapProvider),
-                  onChanged: (v) {
+                  label: '帯域の入れ替え',
+                  values: BandSwap.values,
+                  selected: ref.watch(bandSwapProvider),
+                  labelOf: (b) => b.label,
+                  onPicked: (v) {
                     leaveAutoMix(ref);
-                    ref.read(bassSwapProvider.notifier).value = v;
+                    ref.read(bandSwapProvider.notifier).value = v;
                   },
                   enabled: on,
+                  dense: true,
                 ),
                 PickerTile<TransitionEffect>(
                   icon: Icons.auto_awesome,

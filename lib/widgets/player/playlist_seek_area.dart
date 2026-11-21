@@ -413,8 +413,9 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
       swapped: swapped,
       window: window,
       height: bandHeight,
-      curve: recipe.curve,
-      bassSwap: recipe.bassSwap,
+      // 切替点で前の曲を止める演出（トリック・尾）はカットで描く
+      curve: recipe.effectiveCurve,
+      bands: recipe.effectiveBands,
       // テンポが途中で変わる曲は、重なる位置（切断点）の区切りの格子で線を引く
       outBeats: showBeats
           ? outItem?.beatLinesAt(pair.cut.inMicroseconds / 1000)

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../core/audio/audio_quality.dart';
+import '../core/audio/band_swap.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/dj_level.dart';
 import '../core/audio/transition_effect.dart';
@@ -483,20 +484,27 @@ class VerseRangeNotifier extends StateNotifier<VerseRange> {
   }
 }
 
-/// ベーススワップ: 交差中は入る曲の低音を切って重ね、途中で出る曲と入れ替える（既定オン）
-final bassSwapProvider =
-    StateNotifierProvider<BassSwapNotifier, bool>((ref) => BassSwapNotifier());
+/// 帯域の入れ替え: 交差中は入る曲の低音（3 帯域なら中音も）を切って重ね、途中で出る曲と
+/// 入れ替える。既定は低音だけ。v1.158 までのオンオフ（ベーススワップ）は、オン = 低音・オフ = なし
+final bandSwapProvider =
+    StateNotifierProvider<BandSwapNotifier, BandSwap>((ref) => BandSwapNotifier());
 
-class BassSwapNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.bassSwap;
+class BandSwapNotifier extends StateNotifier<BandSwap> {
+  static const _key = SettingsKeys.bandSwap;
 
-  BassSwapNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
+  BandSwapNotifier() : super(BandSwap.defaultValue) {
+    final saved = AppBoxes.settings.get(_key) as String?;
+    if (saved != null) {
+      state = BandSwap.fromName(saved);
+    } else {
+      final legacy = AppBoxes.settings.get(SettingsKeys.bassSwap) as bool?;
+      if (legacy == false) state = BandSwap.none;
+    }
   }
 
-  set value(bool v) {
+  set value(BandSwap v) {
     state = v;
-    AppBoxes.settings.put(_key, v);
+    AppBoxes.settings.put(_key, v.name);
   }
 }
 
@@ -674,7 +682,7 @@ final djLevelProvider = Provider<DjLevel?>((ref) => DjLevel.of(DjSettings(
       pro: ref.watch(djProProvider),
       curve: ref.watch(crossfadeCurveProvider),
       effect: ref.watch(transitionEffectProvider),
-      bassSwap: ref.watch(bassSwapProvider),
+      bassSwap: ref.watch(bandSwapProvider) != BandSwap.none,
       tempoMatch: ref.watch(tempoMatchProvider),
       beatMatch: ref.watch(beatMatchProvider),
       smartEntry: ref.watch(smartEntryProvider),
@@ -690,7 +698,7 @@ void applyDjCustom(WidgetRef ref) {
   leaveAutoMix(ref);
 }
 
-/// おまかせ中は読まない項目（つなぎ方・演出・テンポ / 拍合わせ・ベーススワップ）を手で変えた:
+/// おまかせ中は読まない項目（つなぎ方・演出・テンポ / 拍合わせ・帯域の入れ替え）を手で変えた:
 /// 触れないようにはせず、おまかせを切ってカスタムに移る
 void leaveAutoMix(WidgetRef ref) {
   if (!ref.read(autoMixProvider)) return;
@@ -707,7 +715,7 @@ void applyDjLevel(WidgetRef ref, DjLevel level) {
       ref.read(djProProvider.notifier).value = false;
       ref.read(crossfadeCurveProvider.notifier).value = CrossfadeCurve.equalPower;
       ref.read(transitionEffectProvider.notifier).value = TransitionEffect.none;
-      ref.read(bassSwapProvider.notifier).value = false;
+      ref.read(bandSwapProvider.notifier).value = BandSwap.none;
       ref.read(tempoMatchProvider.notifier).value = false;
       ref.read(beatMatchProvider.notifier).value = false;
       ref.read(smartEntryProvider.notifier).value = false;
@@ -717,7 +725,7 @@ void applyDjLevel(WidgetRef ref, DjLevel level) {
       if (ref.read(crossfadeProvider) == 0) fade.value = CrossfadeNotifier.migratedBeats;
       ref.read(autoMixProvider.notifier).value = true;
       ref.read(djProProvider.notifier).value = level == DjLevel.pro;
-      ref.read(bassSwapProvider.notifier).value = true;
+      ref.read(bandSwapProvider.notifier).value = BandSwap.bass;
       ref.read(tempoMatchProvider.notifier).value = true;
       ref.read(beatMatchProvider.notifier).value = true;
       ref.read(smartEntryProvider.notifier).value = true;

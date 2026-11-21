@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/audio/band_swap.dart';
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/sfx_library.dart';
 import '../../core/audio/sfx_plan.dart';
@@ -66,7 +67,7 @@ class MixView extends StatelessWidget {
     required this.window,
     this.height = 72,
     this.curve = CrossfadeCurve.defaultCurve,
-    this.bassSwap = false,
+    this.bands = BandSwap.none,
     this.onSeek,
     this.outBeats,
     this.inBeats,
@@ -113,8 +114,8 @@ class MixView extends StatelessWidget {
   /// つなぎ方（音量曲線）。エンジンと同じものを描く
   final CrossfadeCurve curve;
 
-  /// ベーススワップの位置に印を出す
-  final bool bassSwap;
+  /// 帯域を入れ替える位置に印を出す（3 帯域なら高音・中音・低音の 3 本）
+  final BandSwap bands;
 
   /// 旧曲（上段）
   final List<double>? outWaveform;
@@ -245,7 +246,7 @@ class MixView extends StatelessWidget {
                       swapped: swapped,
                       window: window,
                       curve: curve,
-                      bassSwap: bassSwap,
+                      bands: bands,
                       outBeats: outBeats,
                       inBeats: inBeats,
                       inRatio: inRatio,
@@ -371,7 +372,7 @@ class _MixPainter extends CustomPainter {
     required this.swapped,
     required this.window,
     required this.curve,
-    required this.bassSwap,
+    required this.bands,
     required this.outBeats,
     required this.inBeats,
     required this.inRatio,
@@ -386,7 +387,7 @@ class _MixPainter extends CustomPainter {
 
   final double inRatio;
 
-  final bool bassSwap;
+  final BandSwap bands;
   final BeatLineSource? outBeats;
   final BeatLineSource? inBeats;
   final WaveBands? outBands;
@@ -552,16 +553,23 @@ class _MixPainter extends CustomPainter {
       );
     }
 
-    // ベーススワップの位置（点線）
-    if (bassSwap && curve.bassSwapAt < 1) {
-      final bx = startX + (cutX - startX) * curve.bassSwapAt;
-      if (bx >= 0 && bx <= w) {
+    // 帯域を入れ替える位置（点線）。低音は濃く、3 帯域の高音・中音は薄く
+    if (bands != BandSwap.none && curve.bassSwapAt < 1) {
+      void dotted(double at, double alpha) {
+        final bx = startX + (cutX - startX) * at;
+        if (bx < 0 || bx > w) return;
         final paint = Paint()
-          ..color = Colors.amber.withValues(alpha: 0.7)
+          ..color = Colors.amber.withValues(alpha: alpha)
           ..strokeWidth = 1;
         for (var y = 0.0; y < h; y += 6) {
           canvas.drawLine(Offset(bx, y), Offset(bx, min(y + 3, h)), paint);
         }
+      }
+
+      dotted(curve.bassSwapAt, 0.7);
+      if (bands == BandSwap.three) {
+        dotted(BandSwap.highAt(curve), 0.4);
+        dotted(BandSwap.midAt(curve), 0.4);
       }
     }
 
@@ -620,8 +628,9 @@ class _MixPainter extends CustomPainter {
     );
   }
 
-  /// 効果音の印。ライザー / スピンバックは始まりから切替点へ上がる（下がる）線、
-  /// インパクトは切替点の上の点。どこで鳴るかを実機で確かめるためのもの
+  /// 効果音の印。ライザー / リバースシンバル / スピンバックは始まりから切替点へ上がる（下がる）線、
+  /// インパクト / クラッシュは切替点の上の点、前の曲から作った尾は切替点から下がっていく線。
+  /// どこで鳴るかを実機で確かめるためのもの
   void _drawSfx(Canvas canvas,
       {required double w,
       required double laneH,
@@ -636,10 +645,10 @@ class _MixPainter extends CustomPainter {
     for (final cue in sfxCues) {
       final x0 = toX(cue.atMs);
       switch (cue.role) {
-        case SfxRole.impact:
+        case SfxRole.impact || SfxRole.crash:
           if (x0 < -4 || x0 > w + 4) continue;
           canvas.drawCircle(Offset(x0, top + 2), 3.5, paint);
-        case SfxRole.riser:
+        case SfxRole.riser || SfxRole.reverseCymbal:
           if (cutX < 0 || x0 > w) continue;
           canvas.drawLine(Offset(x0, laneH), Offset(cutX, top), paint);
           // 始まりの足（小節頭に立つ）
@@ -647,6 +656,11 @@ class _MixPainter extends CustomPainter {
         case SfxRole.spinback:
           if (cutX < 0 || x0 > w) continue;
           canvas.drawLine(Offset(x0, top), Offset(cutX, laneH), paint);
+        case SfxRole.tail:
+          // 尾は実時間の長さ（出る曲の時計でもほぼ同じ）
+          final x1 = toX(cue.atMs + cue.clip.durationMs);
+          if (x1 < 0 || x0 > w) continue;
+          canvas.drawLine(Offset(x0, top), Offset(x1, laneH), paint);
       }
     }
   }
@@ -719,7 +733,7 @@ class _MixPainter extends CustomPainter {
       swapped != old.swapped ||
       window != old.window ||
       curve != old.curve ||
-      bassSwap != old.bassSwap ||
+      bands != old.bands ||
       outBeats != old.outBeats ||
       inRatio != old.inRatio ||
       inBeats != old.inBeats ||

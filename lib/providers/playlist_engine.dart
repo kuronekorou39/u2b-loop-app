@@ -8,11 +8,13 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/audio/beat_grid.dart';
 import '../core/audio/audio_quality.dart';
+import '../core/audio/band_swap.dart';
 import '../core/audio/crossfade_curve.dart';
 import '../core/audio/energy_profile.dart';
 import '../core/audio/entry_planner.dart';
 import '../core/audio/exit_planner.dart';
 import '../core/audio/loudness.dart';
+import '../core/audio/sfx_library.dart';
 import '../core/audio/sfx_plan.dart';
 import '../core/audio/track_compatibility.dart';
 import '../core/audio/transition_effect.dart';
@@ -25,6 +27,7 @@ import '../services/playback/unplayable_watch.dart';
 import '../services/audio_filters.dart';
 import '../services/cache_service.dart';
 import '../services/deck_tricks.dart';
+import '../services/tail_renderer.dart';
 import '../services/playback/hq_audio.dart';
 import '../services/playback/media_cache.dart';
 import '../services/transition_sfx.dart';
@@ -493,12 +496,13 @@ class PlaylistEngine {
       if (park) {
         // 曲線が 0 に着く前にスワップが来た場合も、短く落としてからポーズするのでぶつぎりにならない
         _parkPlayer(oldPlayer, pair);
+        // 戻ったときに低音・中音・高音が切れたまま・こもったまま鳴らないよう、止めてから初期値へ
         unawaited(_fadeOutAndPark(oldPlayer, session.outVolume, session.volume)
-            .then((_) => session.clearOut()));
+            .then((_) => session.clearOut(keepFilters: true)));
       } else {
         oldPlayer.stop();
         oldPlayer.setVolume(session.volume);
-        session.clearOut();
+        session.clearOut(keepFilters: false);
       }
     } else {
       // 交差なしの切り替え: 新しい曲の大きさに合わせた音量にしてから鳴らす
@@ -885,7 +889,7 @@ class PlaylistEngine {
         TransitionRecipe(
           beats: manualBeats,
           curve: _ref.read(crossfadeCurveProvider),
-          bassSwap: _ref.read(bassSwapProvider),
+          bands: _ref.read(bandSwapProvider),
           effect: _ref.read(transitionEffectProvider),
           beatMatch: _ref.read(beatMatchProvider),
           tempoMatch: _ref.read(tempoMatchProvider),
@@ -988,9 +992,11 @@ class PlaylistEngine {
   int _sfxVariant = 0;
 
   /// 今の演出で鳴らす効果音の予定（[start] 〜 [cut] の交差。出る曲の小節に合わせる）。
-  /// 効果音を使わない演出なら null
+  /// 効果音を使わない演出なら null。曲の音から作る演出は、作り終えていればそれを使う
+  /// （エコー・残響はまだなら尾なし、スピンバックは素材の音）
   SfxPlan? _sfxPlanFor(TransitionEffect effect, Duration start, Duration cut) {
     if (!effect.usesSfx) return null;
+    final request = _tailRequest(effect, cut);
     final grid = _ref
         .read(playlistPlayerProvider)
         .currentTrack
@@ -1005,7 +1011,37 @@ class PlaylistEngine {
           ? grid.periodMs * BeatGrid.beatsPerBar
           : null,
       variant: _sfxVariant,
+      rendered: request == null ? null : TailRenderer.ready(request.key),
     );
+  }
+
+  /// 曲の音から作る演出（エコー・残響・スピンバック）の注文。切替点 [cut] の手前の
+  /// 今鳴っている曲から作る。それ以外の演出・曲が無いときは null
+  TailRequest? _tailRequest(TransitionEffect effect, Duration cut) {
+    if (!effect.rendersAudio) return null;
+    final item = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    if (item == null) return null;
+    return TailRequest(
+      effect: effect,
+      item: item,
+      cutMs: cut.inMicroseconds / 1000,
+      beatMediaMs: _outBeatMs(),
+      outRate: activePlayer.state.rate,
+    );
+  }
+
+  /// 交差が始まる前に、曲の音から作る演出の音を作っておく（切替点が動いたら作り直す）。
+  /// できたら効果音のプレイヤーに開いておく
+  void _prepareRendered(PlaylistTrack next, Duration cut) {
+    final request = _tailRequest(recipeFor(next).effect, cut);
+    if (request == null ||
+        TailRenderer.ready(request.key) != null ||
+        TailRenderer.pending(request.key)) {
+      return;
+    }
+    unawaited(TailRenderer.ensure(request).then((clip) {
+      if (clip != null && _crossfade == null) unawaited(_preloadSfx());
+    }));
   }
 
   /// 出る曲の [fromMs] 〜 [to]（媒体）が実時間で何ミリ秒か
@@ -1038,6 +1074,12 @@ class PlaylistEngine {
     final effect = recipeFor(next).effect;
     if (!effect.usesSfx) return;
     final planned = plannedCrossfade();
+    // 曲の音から作る演出は、作り終えてから開く（作れなければ尾なし・素材の音）
+    final request = planned == null ? null : _tailRequest(effect, planned.cut);
+    if (request != null) {
+      await TailRenderer.ensure(request);
+      if (!identical(_armedTrack, next)) return;
+    }
     final plan = planned == null
         ? _sfxPlanFor(effect, Duration.zero, crossfadeDuration)
         : _sfxPlanFor(effect, planned.start, planned.cut);
@@ -1229,6 +1271,7 @@ class PlaylistEngine {
     if (cutPoint == null) return;
     final cut = cutPoint.cut;
     final start = cut - fade;
+    _prepareRendered(next, cut);
     // 区間が短いと頭から交差になるので、最低2秒は素で鳴らす
     final current = _ref.read(playlistPlayerProvider).currentTrack;
     final regionStart = ls.enabled
@@ -1250,25 +1293,38 @@ class PlaylistEngine {
     final inRate = inMatchedRate * _trimFactor(next);
     final beat = _beatPlan(next, inRate);
     final inStart = plannedInStart(next, outStart: start, inRate: inRate);
-    final curve = recipe.curve;
-    // ベーススワップの位置: 曲線の決める進捗を、出る曲の次の拍の頭へ寄せる（区切りで一動作）
+    // 切替点で前の曲を止める演出（トリック・尾）は、曲線はカットで帯域は入れ替えない
+    final curve = recipe.effectiveCurve;
+    final bands = recipe.effectiveBands;
+    // 帯域を入れ替える位置: 曲線の決める進捗を、出る曲の次の拍の頭へ寄せる（区切りで一動作）
     final beatMs = _outBeatMs();
     final outGrid = _ref
         .read(playlistPlayerProvider)
         .currentTrack
         ?.item
         .beatGridAt(cut.inMicroseconds / 1000);
-    final atMs = (start + (cut - start) * curve.bassSwapAt).inMicroseconds / 1000;
+    final startMs = start.inMicroseconds / 1000;
     final cutMs = cut.inMicroseconds / 1000;
-    var swapStartMs = atMs;
-    if (curve.bassSwapAt < 1 && outGrid != null && outGrid.reliable) {
-      final floor = outGrid.floorBeatMs(atMs);
-      final ceil = floor < atMs - 1 ? floor + outGrid.periodMs : floor;
-      if (ceil < cutMs) swapStartMs = ceil;
+    // 進捗 [at] で入れ替えを始めて 2 拍で終える区間（出る曲の媒体ミリ秒）。1 以上は切替点
+    (double, double) swapWindow(double at) {
+      if (at >= 1) return (cutMs, cutMs);
+      final atMs = startMs + (cutMs - startMs) * at;
+      var from = atMs;
+      if (outGrid != null && outGrid.reliable) {
+        final floor = outGrid.floorBeatMs(atMs);
+        final ceil = floor < atMs - 1 ? floor + outGrid.periodMs : floor;
+        if (ceil < cutMs) from = ceil;
+      }
+      return (from, min(from + beatMs * _CrossfadeSession.bassSwapBeats, cutMs));
     }
-    final swapEndMs = curve.bassSwapAt < 1
-        ? min(swapStartMs + beatMs * _CrossfadeSession.bassSwapBeats, cutMs)
-        : cutMs;
+
+    final low = swapWindow(curve.bassSwapAt);
+    final mid = swapWindow(BandSwap.midAt(curve));
+    final high = swapWindow(BandSwap.highAt(curve));
+    // フィルターインは低音が入る所で開き切る（入れ替えないなら曲線の主役が替わる所）
+    final openEndMs = bands != BandSwap.none
+        ? low.$1
+        : startMs + (cutMs - startMs) * curve.bassSwapAt;
     final outRate = activePlayer.state.rate;
     final beatRealMs = beatMs / (outRate > 0 ? outRate : 1);
     final effect = recipe.effect;
@@ -1289,12 +1345,16 @@ class PlaylistEngine {
       inMatchedRate: inMatchedRate,
       inRate: inRate,
       curve: curve,
-      // トリック系は切替点まで前の曲だけなので、低音の入れ替えはしない
-      bassSwap: !effect.cutsHard && recipe.bassSwap,
+      bands: bands,
       effect: effect,
       beat: beat,
-      swapStartMs: swapStartMs,
-      swapEndMs: swapEndMs,
+      swapStartMs: low.$1,
+      swapEndMs: low.$2,
+      midStartMs: mid.$1,
+      midEndMs: mid.$2,
+      highStartMs: high.$1,
+      highEndMs: high.$2,
+      openEndMs: openEndMs,
       outRate: outRate,
       beatRealMs: beatRealMs,
       beatMediaMs: beatMs,
@@ -1326,9 +1386,17 @@ class PlaylistEngine {
       }
       if (session.inRate != baseRate) await inPlayer.setRate(session.inRate);
       await inPlayer.setVolume(0);
-      // 入る曲は低音を切った状態で重ね始める（鳴らす前に値を変えるので音切れしない）
-      if (session.bassSwap) {
+      // 入る曲は低音（3 帯域なら中音も）を切った状態で重ね始める
+      // （鳴らす前に値を変えるので音切れしない）
+      if (session.bands != BandSwap.none) {
         await AudioFilters.setBassDb(inPlayer, AudioFilters.bassCutDb);
+      }
+      if (session.bands == BandSwap.three) {
+        await AudioFilters.setMidDb(inPlayer, AudioFilters.bandCutDb);
+      }
+      // フィルターイン: 入る曲はこもった音から
+      if (effect.sweepsIn) {
+        await AudioFilters.setSweep(inPlayer, AudioFilters.sweepHz(1));
       }
       await inPlayer.play();
       // 効果音を開く（armCrossfade で同じものを開いてあれば一瞬で返る）
@@ -1343,11 +1411,15 @@ class PlaylistEngine {
         final toCutMs = _realMs(posMs, cut);
         session.startTricks(wallToCutMs: toCutMs);
         if (recipe.auto) debugPrint('[DjFx] おまかせ: $recipe');
-        if (effect != TransitionEffect.none) {
-          debugPrint('[DjFx] 演出 ${effect.name} 切替点まで ${toCutMs}ms '
+        if (effect != TransitionEffect.none || bands != BandSwap.none) {
+          debugPrint('[DjFx] 演出 ${effect.name} 帯域 ${bands.name} 切替点まで ${toCutMs}ms '
               '1拍 ${beatRealMs.round()}ms 効果音 ${sfxPlan?.cues ?? const []} '
               '補正 ${session.sfxOffsetMs}ms '
               '開始遅延見込み ${TransitionSfx.startLatencyMs.round()}ms');
+          if (effect.rendersAudio &&
+              !(sfxPlan?.cues.any((c) => c.clip.isRendered) ?? false)) {
+            debugPrint('[DjFx] 曲の音から作った音が間に合わなかった（${effect.name}）');
+          }
         }
         _ref.read(crossfadeProgressProvider.notifier).state =
             (progress: 0, next: next.item);
@@ -1692,11 +1764,16 @@ class _CrossfadeSession {
     required this.inMatchedRate,
     required this.inRate,
     required this.curve,
-    required this.bassSwap,
+    required this.bands,
     required this.effect,
     required this.beat,
     required this.swapStartMs,
     required this.swapEndMs,
+    required this.midStartMs,
+    required this.midEndMs,
+    required this.highStartMs,
+    required this.highEndMs,
+    required this.openEndMs,
     required this.outRate,
     required this.beatRealMs,
     required this.beatMediaMs,
@@ -1710,7 +1787,7 @@ class _CrossfadeSession {
         appliedInRate = inRate,
         _jogMs = jogMs;
 
-  /// ベーススワップにかける拍数（DJ の「一動作」。ゆっくり交差させない）
+  /// 帯域の入れ替え 1 つにかける拍数（DJ の「一動作」。ゆっくり交差させない）
   static const bassSwapBeats = 2;
 
   /// この交差のつなぎ方（開始時に決めたもの。途中で設定が変わっても使い続ける）
@@ -1761,6 +1838,10 @@ class _CrossfadeSession {
   /// トリック中の出る曲の音量比（null = 曲線のまま）
   double? _outOverride;
 
+  /// 切替点の瞬間に実時間のタイマーで切り替えた（以後は出る曲 0・入る曲 1）。
+  /// 100ms ごとの監視を待つと、尾と前の曲が重なったり次の曲の頭が欠けたりする
+  bool _cutFired = false;
+
   /// 効果音とトリックを予定する。[wallToCutMs] は切替点までの実時間
   void startTricks({required int wallToCutMs}) {
     if (_tricksStarted) return;
@@ -1777,9 +1858,12 @@ class _CrossfadeSession {
       if (lead != null) {
         final leadRealMs = ((cutMs - lead.atMs) / outRate).round();
         _after(toCut - leadRealMs - latency + sfxOffsetMs, () {
-          unawaited(s.start(volume: sfxVolume, rate: lead.rate));
-          // スピンバックはレコードを巻き取る音なので、曲はすぐ消す
-          if (effect == TransitionEffect.spinback) _killOut();
+          unawaited(s.start(volume: _volumeOf(lead.clip), rate: lead.rate));
+          // スピンバックはレコードを巻き取る音なので、曲はすぐ消す。曲そのものから作った
+          // 逆回転は曲の止めた所から始まるので、重なりを短く
+          if (effect == TransitionEffect.spinback) {
+            lead.clip.isRendered ? _killOut(steps: 2, stepMs: 30) : _killOut();
+          }
         });
         // 伸び縮みさせたライザーに続けて鳴るインパクトは素の速度で
         if (lead.rate != 1 && plan.impact != null) {
@@ -1791,6 +1875,12 @@ class _CrossfadeSession {
         // 終わってから鳴っていた
         _after(toCut - latency + sfxOffsetMs, _fireImpact);
       }
+    }
+    // 切替点で前の曲を止める演出のうち、位置が切替点まで普通に進むもの（尾・スピンバック）は
+    // 実時間で切り替える（尾は前の曲の続きとして鳴るので、前の曲が残ると二重に聞こえる）
+    if (effect.endsAtCut && effect != TransitionEffect.brake &&
+        effect != TransitionEffect.loopRoll) {
+      _after(toCut - TransitionSfx.startLatencyMs.round() + sfxOffsetMs, _cutNow);
     }
     switch (effect) {
       case TransitionEffect.brake:
@@ -1814,11 +1904,26 @@ class _CrossfadeSession {
     outPlayer.setVolume(outVolume);
   }
 
-  /// 出る曲を 200ms で消す
-  void _killOut() {
-    for (var i = 1; i <= 4; i++) {
-      _after(i * 50, () => _setOut(1 - i / 4));
+  /// 出る曲を [steps] × [stepMs] で消す（既定 200ms）
+  void _killOut({int steps = 4, int stepMs = 50}) {
+    for (var i = 1; i <= steps; i++) {
+      _after(i * stepMs, () => _setOut(1 - i / steps));
     }
+  }
+
+  /// 切替点: 出る曲を止めて入る曲を全開に（以後の [step] もこのまま）
+  void _cutNow() {
+    _cutFired = true;
+    _setOut(0);
+    inPlayer.setVolume(inVolume);
+  }
+
+  /// 効果音の音量。曲から作った音は曲の続きなので曲と同じ大きさ、素材は効果音の音量に
+  /// 素材ごとの控えめさ（[SfxClip.gainDb]）を足す
+  double _volumeOf(SfxClip clip) {
+    if (clip.isRendered) return volume;
+    if (clip.gainDb == 0) return sfxVolume;
+    return sfxVolume * pow(10, clip.gainDb / 20);
   }
 
   /// ブレーキ: 速度をほぼ一定の減速で落とす（レコードが止まる動き）。音程も一緒に落ちる。
@@ -1876,17 +1981,27 @@ class _CrossfadeSession {
 
   bool _impactFired = false;
 
-  /// インパクト単独を 1 回だけ鳴らす
+  /// 切替点で鳴らす音（インパクト・クラッシュ・尾）を 1 回だけ鳴らす
   void _fireImpact() {
     if (_impactFired) return;
     _impactFired = true;
-    unawaited(sfx?.start(volume: sfxVolume));
+    final clip = sfxPlan?.impact?.clip;
+    unawaited(sfx?.start(volume: clip == null ? sfxVolume : _volumeOf(clip)));
   }
 
-  /// ベーススワップの開始・終了位置（出る曲の媒体ミリ秒）。開始は拍の頭に寄せてある。
+  /// 低音の入れ替えの開始・終了位置（出る曲の媒体ミリ秒）。開始は拍の頭に寄せてある。
   /// 演出（スイープ）も開始位置から切替点にかけて
   final double swapStartMs;
   final double swapEndMs;
+
+  /// 3 帯域のとき: 中音・高音の入れ替えの開始・終了位置（低音より前。高音 → 中音 → 低音）
+  final double midStartMs;
+  final double midEndMs;
+  final double highStartMs;
+  final double highEndMs;
+
+  /// フィルターインで入る曲が開き切る位置
+  final double openEndMs;
 
   /// 拍合わせの計画（しないときは null）
   final _BeatPlan? beat;
@@ -1997,12 +2112,13 @@ class _CrossfadeSession {
     return _errSmooth;
   }
 
-  /// つなぎ方（音量曲線）。開始時の設定を交差の間は使い続ける
+  /// つなぎ方（音量曲線）。開始時の設定を交差の間は使い続ける。
+  /// 切替点で前の曲を止める演出ならカット（[TransitionRecipe.effectiveCurve]）
   final CrossfadeCurve curve;
 
-  /// ベーススワップをするか。開始時に入る曲の低音を切り、[CrossfadeCurve.bassSwapAt] で
-  /// 出る曲の低音を切って入る曲の低音を戻す
-  final bool bassSwap;
+  /// 帯域の入れ替え。開始時に入る曲の低音（3 帯域なら中音も）を切り、
+  /// 高音 → 中音 → 低音（[CrossfadeCurve.bassSwapAt]）の順に出る曲の帯域を切って入る曲の帯域を戻す
+  final BandSwap bands;
 
   /// 出る曲にかける演出。ベーススワップと同じ位置から切替点までかける
   final TransitionEffect effect;
@@ -2056,51 +2172,81 @@ class _CrossfadeSession {
     final t = total <= 0
         ? 1.0
         : ((pos - start).inMilliseconds / total).clamp(0.0, 1.0);
-    // トリック系は切替点まで前の曲だけ（カットと同じ）。トリックが音量を握っていればそれに従う
-    final levels = effect.cutsHard ? CrossfadeCurve.cut.levels(t) : curve.levels(t);
+    // 切替点で前の曲を止める演出は、曲線がカット（[curve]）。トリックが音量を握っていれば
+    // それに従い、実時間で切り替えた後は出る曲 0・入る曲 1
+    final levels = _cutFired ? (out: 0.0, in_: 1.0) : curve.levels(t);
     outVolume = volume * (_outOverride ?? levels.out);
     outPlayer.setVolume(outVolume);
     inPlayer.setVolume(inVolume * levels.in_);
 
     final posMs = pos.inMicroseconds / 1000;
     final cutMs = cut.inMicroseconds / 1000;
-    if (posMs >= swapStartMs && t < 1) {
-      // ベーススワップ: 拍の頭から 2 拍かけて、出る曲の低音を切りつつ入る曲の低音を戻す
-      // （フィルタは付けっぱなしで値だけ動かすので音は途切れない）
-      if (bassSwap && swapEndMs > swapStartMs) {
-        final r = ((posMs - swapStartMs) / (swapEndMs - swapStartMs)).clamp(0.0, 1.0);
-        unawaited(AudioFilters.setBassDb(outPlayer, AudioFilters.bassDb(r)));
-        unawaited(AudioFilters.setBassDb(inPlayer, AudioFilters.bassDb(1 - r)));
+    if (t >= 1) return t;
+    // 区間 [from, to] の中の進み（0〜1）
+    double ramp(double from, double to) =>
+        to > from ? ((posMs - from) / (to - from)).clamp(0.0, 1.0) : 1.0;
+    // 帯域の入れ替え: 拍の頭から 2 拍かけて、出る曲の帯域を切りつつ入る曲の帯域を戻す
+    // （フィルタは付けっぱなしで値だけ動かすので音は途切れない）。
+    // 3 帯域は高音（出る曲だけ抜く。入る曲のハイハットは最初から）→ 中音 → 低音の順
+    if (bands == BandSwap.three) {
+      if (posMs >= highStartMs) {
+        unawaited(AudioFilters.setHighDb(
+            outPlayer, AudioFilters.bandDb(ramp(highStartMs, highEndMs))));
       }
-      // スイープ: スワップの位置から切替点にかけてローパスを閉じていく
-      if (effect.sweepsOut && cutMs > swapStartMs) {
-        unawaited(AudioFilters.setSweep(outPlayer,
-            AudioFilters.sweepHz((posMs - swapStartMs) / (cutMs - swapStartMs))));
+      if (posMs >= midStartMs) {
+        final r = ramp(midStartMs, midEndMs);
+        unawaited(AudioFilters.setMidDb(outPlayer, AudioFilters.bandDb(r)));
+        unawaited(AudioFilters.setMidDb(inPlayer, AudioFilters.bandDb(1 - r)));
       }
+    }
+    if (bands != BandSwap.none && posMs >= swapStartMs && swapEndMs > swapStartMs) {
+      final r = ramp(swapStartMs, swapEndMs);
+      unawaited(AudioFilters.setBassDb(outPlayer, AudioFilters.bassDb(r)));
+      unawaited(AudioFilters.setBassDb(inPlayer, AudioFilters.bassDb(1 - r)));
+    }
+    // スイープ: スワップの位置から切替点にかけてローパスを閉じていく
+    if (effect.sweepsOut && posMs >= swapStartMs && cutMs > swapStartMs) {
+      unawaited(AudioFilters.setSweep(outPlayer,
+          AudioFilters.sweepHz((posMs - swapStartMs) / (cutMs - swapStartMs))));
+    }
+    // フィルターイン: 交差の始めから低音が入る所にかけて、入る曲を開いていく
+    if (effect.sweepsIn) {
+      final startMs = start.inMicroseconds / 1000;
+      unawaited(AudioFilters.setSweep(
+          inPlayer, AudioFilters.sweepHz(1 - ramp(startMs, openEndMs))));
     }
     return t;
   }
+
+  /// 入る曲のフィルタを触ったか（交差の後・取り消しで初期値に戻す）
+  bool get _touchesIn => bands != BandSwap.none || effect.sweepsIn;
 
   /// 切断点で呼ぶ（旧プレイヤーは停止済み）。
   /// 旧プレイヤーを音量0のままにすると、次にプリロード側として再利用されたとき無音になる
   void finish() {
     finishIn();
     outPlayer.setVolume(volume);
-    clearOut();
+    clearOut(keepFilters: false);
   }
 
   /// 新プレイヤーだけ本来の音量に戻す（旧プレイヤーは別途落としてから戻す）。
   /// 低音が戻り切っていなければ戻す（ランプの途中でスワップが来た場合）
   void finishIn() {
     inPlayer.setVolume(inVolume);
-    if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
+    if (_touchesIn) unawaited(AudioFilters.reset(inPlayer));
   }
 
-  /// 出る曲のトリックを初期状態に戻す（停止した後に呼ぶ。次にプリロード側として使うため）。
-  /// フィルタは止めた後なので値は戻さず、状態だけ忘れる（次に開く前の detach で外れる）
-  void clearOut() {
+  /// 出る曲のトリックを初期状態に戻す（次にプリロード側として使うため）。
+  /// [keepFilters] は出る曲をまだ使うとき（パークして戻れる・交差の取り消しで鳴り続ける）:
+  /// フィルタの値を初期に戻す（戻さないと低音・中音・高音が切れたまま、こもったまま鳴る）。
+  /// 止めたプレイヤーなら値は戻さず状態だけ忘れる（次に開く前の detach で外れる）
+  void clearOut({required bool keepFilters}) {
     _cancelTricks();
-    AudioFilters.forget(outPlayer);
+    if (keepFilters) {
+      unawaited(AudioFilters.reset(outPlayer));
+    } else {
+      AudioFilters.forget(outPlayer);
+    }
     unawaited(DeckTricks.reset(outPlayer));
     if (effect == TransitionEffect.brake) unawaited(outPlayer.setRate(outRate));
   }
@@ -2114,8 +2260,9 @@ class _CrossfadeSession {
     inPlayer.setVolume(inVolume);
     if (appliedInRate != inBaseRate) inPlayer.setRate(inBaseRate);
     outPlayer.setVolume(volume);
-    if (bassSwap) unawaited(AudioFilters.reset(inPlayer));
-    clearOut();
+    if (_touchesIn) unawaited(AudioFilters.reset(inPlayer));
+    // 出る曲は鳴り続けるので、途中まで切った帯域を戻す
+    clearOut(keepFilters: true);
   }
 }
 

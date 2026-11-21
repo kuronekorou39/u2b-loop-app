@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/audio/band_swap.dart';
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/dj_level.dart';
 import '../../core/audio/transition_effect.dart';
@@ -392,6 +393,7 @@ class _IconGroups extends ConsumerWidget {
       );
     }
 
+    // [shortOf] はボタンの下に出す短い名前（無ければメニューと同じ名前）
     _Cell picker<T>(
       IconData icon,
       String label,
@@ -399,13 +401,14 @@ class _IconGroups extends ConsumerWidget {
       required List<T> values,
       required T selected,
       required String Function(T) labelOf,
+      String Function(T)? shortOf,
       required void Function(T) onPicked,
       required bool enabled,
     }) => _Cell(
       icon: icon,
       label: label,
       tooltip: tooltip,
-      value: labelOf(selected),
+      value: (shortOf ?? labelOf)(selected),
       enabled: enabled,
       onTap: (ctx) async {
         final picked = await showAnchoredPicker<T>(
@@ -478,17 +481,19 @@ class _IconGroups extends ConsumerWidget {
               ref.read(beatMatchProvider.notifier).value = v;
             },
           ),
-          // 低音の衝突（混ざる部分がぼやける主因）を避ける
-          toggle(
+          // 低音の衝突（混ざる部分がぼやける主因）を避ける。3 帯域は高音 → 中音 → 低音の順
+          picker<BandSwap>(
             Icons.graphic_eq,
-            '低音入替',
-            'ベーススワップ',
-            bassSwapProvider,
-            enabled: on,
-            set: (v) {
+            '入れ替え',
+            '帯域の入れ替え',
+            values: BandSwap.values,
+            selected: ref.watch(bandSwapProvider),
+            labelOf: (b) => b.label,
+            onPicked: (v) {
               leaveAutoMix(ref);
-              ref.read(bassSwapProvider.notifier).value = v;
+              ref.read(bandSwapProvider.notifier).value = v;
             },
+            enabled: on,
           ),
         ],
       ),
@@ -502,6 +507,7 @@ class _IconGroups extends ConsumerWidget {
             values: TransitionEffect.values,
             selected: effect,
             labelOf: (e) => e.label,
+            shortOf: (e) => e.short,
             onPicked: (v) {
               leaveAutoMix(ref);
               ref.read(transitionEffectProvider.notifier).value = v;

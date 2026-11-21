@@ -1,4 +1,5 @@
 import '../../models/loop_item.dart';
+import 'band_swap.dart';
 import 'crossfade_curve.dart';
 import 'track_compatibility.dart';
 import 'transition_effect.dart';
@@ -9,7 +10,7 @@ class TransitionRecipe {
   const TransitionRecipe({
     required this.beats,
     required this.curve,
-    required this.bassSwap,
+    required this.bands,
     required this.effect,
     required this.beatMatch,
     required this.tempoMatch,
@@ -23,7 +24,9 @@ class TransitionRecipe {
   /// クロスフェードの長さ（拍）。0 = オフ
   final int beats;
   final CrossfadeCurve curve;
-  final bool bassSwap;
+
+  /// 帯域の入れ替え（低音だけ / 高・中・低）
+  final BandSwap bands;
   final TransitionEffect effect;
   final bool beatMatch;
   final bool tempoMatch;
@@ -39,13 +42,22 @@ class TransitionRecipe {
   /// 効果音の音量の上乗せ（dB、マイナスで小さく）。設定の音量に足す
   final int sfxDb;
 
+  /// 低音を入れ替えるか（[bands] が「なし」以外）
+  bool get bassSwap => bands != BandSwap.none;
+
+  /// 実際に使う音量曲線。切替点で前の曲を止める演出（トリック・尾）はカット
+  CrossfadeCurve get effectiveCurve => effect.endsAtCut ? CrossfadeCurve.cut : curve;
+
+  /// 実際に使う帯域の入れ替え。切替点で前の曲を止める演出では入れ替えない
+  BandSwap get effectiveBands => effect.endsAtCut ? BandSwap.none : bands;
+
   /// ミックスビューに出す 1 行。例「ドロップ合わせ（テンポ差 2% · ドロップ +11dB）」
   String get summary => reason.isEmpty ? name : '$name（$reason）';
 
   TransitionRecipe copyWith({int? beats, String? reason}) => TransitionRecipe(
         beats: beats ?? this.beats,
         curve: curve,
-        bassSwap: bassSwap,
+        bands: bands,
         effect: effect,
         beatMatch: beatMatch,
         tempoMatch: tempoMatch,
@@ -57,7 +69,7 @@ class TransitionRecipe {
       );
 
   @override
-  String toString() => 'TransitionRecipe($beats拍 ${curve.name} bass=$bassSwap '
+  String toString() => 'TransitionRecipe($beats拍 ${curve.name} bands=${bands.name} '
       '${effect.name} beat=$beatMatch tempo=$tempoMatch $summary)';
 }
 
@@ -111,11 +123,12 @@ class TransitionPlanner {
   static const proLongBeats = 32;
 
   /// ガチ: 歌が重なりそうとみなす中音の平均（前の曲の終わりと次の曲の始まりの両方）。
-  /// 中音にはギターなども入るので目安。**実曲で見て調整する値**
+  /// 中音にはギターなども入るので目安。**実曲で見て調整する値**。
+  /// 歌が重なりそうな組は、高・中・低の 3 つの帯域をずらして入れ替える（中音 = 歌の受け渡し）
   static const vocalMid = 0.6;
 
-  /// ガチ: 歌が重なりそうなら、重ねる長さをここまで縮める
-  static const vocalClashMaxBeats = 8;
+  /// ガチ: キーが合わない組は、重ねる長さをここまで縮める
+  static const keyClashProBeats = 8;
 
   /// ガチ: 効果音を設定の音量からさらに下げる量（dB）。曲の切り替わりを効果音で
   /// 塗りつぶさない（「大きくして紛らわせてるだけ」に聞こえた）
@@ -246,7 +259,8 @@ class TransitionPlanner {
   /// ガチ: テンポが分かっていて拍が安定した 2 曲を、溶かす・盛り上げ・切り替えから選ぶ。
   ///
   /// 1. 曲の組み合わせで候補を絞る（盛り上がる組は盛り上げ、そうでなければ溶かす。
-  ///    キーが合わない・歌がぶつかる組は長く重ねられないので溶かすを外す）
+  ///    キーが合わない組は長く重ねられないので溶かすを外す。歌がぶつかる組は
+  ///    高・中・低の帯域をずらして入れ替える）
   /// 2. 直前と同じタイプなら、ほかの候補に替える
   static TransitionRecipe _planPro({
     required List<String> facts,
@@ -277,7 +291,8 @@ class TransitionPlanner {
     final up = strongDrop ||
         (faster ?? 0) >= fasterPercent ||
         (energy ?? 0) >= energyStepDb;
-    final canMelt = !keyClash && !vocalClash;
+    // 歌のぶつかりは中音の入れ替えで避けられるので、長く重ねてよい。キーのぶつかりは避けられない
+    final canMelt = !keyClash;
 
     final candidates = <MixStyle>[
       if (up) MixStyle.lift,
@@ -290,12 +305,18 @@ class TransitionPlanner {
     }
 
     if (keyClash) facts.add('キー不一致');
-    if (vocalClash) facts.add('歌が重なりそう');
+    // 歌が重なりそうなら中音も入れ替える（2 つの歌が同時に前に出ない）
+    if (vocalClash) facts.add('歌は中音で入れ替え');
+    final bands = vocalClash ? BandSwap.three : BandSwap.bass;
     switch (style) {
       case MixStyle.melt:
         if (fadesOut) facts.add('フェードアウト');
         return done(_make('溶かす', proLongBeats, CrossfadeCurve.melt,
-            bass: true, effect: TransitionEffect.none, match: true, style: style));
+            bass: true,
+            bands: bands,
+            effect: TransitionEffect.none,
+            match: true,
+            style: style));
       case MixStyle.lift || MixStyle.cut:
         // 効果音は 2 回に 1 回くらい。鳴らさない回はこもらせて抜くだけ
         final sfx = seed % 3 != 1;
@@ -309,10 +330,11 @@ class TransitionPlanner {
               sfxDb: proSfxDb));
         }
         if (up) facts.add(_energyFact(faster, energy, up: true));
-        // 歌・キーがぶつかる組は短く入れ替える
-        final beats = canMelt ? 16 : vocalClashMaxBeats;
+        // キーがぶつかる組は短く入れ替える
+        final beats = canMelt ? 16 : keyClashProBeats;
         return done(_make(up ? '盛り上げ' : '入れ替え', beats, CrossfadeCurve.nextFirst,
             bass: true,
+            bands: bands,
             effect: up && sfx ? TransitionEffect.riser : TransitionEffect.filterSweep,
             match: true,
             style: MixStyle.lift,
@@ -330,6 +352,7 @@ class TransitionPlanner {
 
   static TransitionRecipe _make(String name, int beats, CrossfadeCurve curve,
           {required bool bass,
+          BandSwap? bands,
           required TransitionEffect effect,
           required bool match,
           MixStyle? style,
@@ -337,7 +360,7 @@ class TransitionPlanner {
       TransitionRecipe(
         beats: beats,
         curve: curve,
-        bassSwap: bass,
+        bands: bass ? (bands ?? BandSwap.bass) : BandSwap.none,
         effect: effect,
         beatMatch: match,
         tempoMatch: match,

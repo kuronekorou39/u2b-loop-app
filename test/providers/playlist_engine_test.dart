@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/core/audio/beat_grid.dart';
 import 'package:u2b_loop_app/core/audio/crossfade_curve.dart';
 import 'package:u2b_loop_app/core/audio/transition_effect.dart';
+import 'package:u2b_loop_app/core/audio/band_swap.dart';
 import 'package:u2b_loop_app/core/audio/transition_planner.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist_track.dart';
@@ -138,7 +139,7 @@ void main() {
       recipe: const TransitionRecipe(
         beats: 16,
         curve: CrossfadeCurve.defaultCurve,
-        bassSwap: false,
+        bands: BandSwap.none,
         effect: TransitionEffect.none,
         beatMatch: false,
         tempoMatch: false,

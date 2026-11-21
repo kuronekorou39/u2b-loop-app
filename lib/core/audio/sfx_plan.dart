@@ -36,8 +36,9 @@ class SfxCue {
 /// DJ の定石どおり小節で数える:
 /// - ライザーは切替点の 1 / 2 / 4 / 8 小節前の小節頭から始め、素材（2 / 4 / 8 秒）の
 ///   再生速度を変えてその小節数にぴったり収める。頂点が切替点（新しい段落の「1」）に来る
-/// - インパクトは切替点で鳴らす
-/// - スピンバックは素材の長さのまま、終わりを切替点に合わせる（巻き取る音なので伸ばさない）
+/// - リバースシンバルは 1 小節（短すぎる曲は 2 小節）に伸び縮みさせ、吸い込み終わりを切替点に
+/// - インパクト・クラッシュ・前の曲から作った尾は切替点で鳴らす
+/// - スピンバックは長さのまま、終わりを切替点に合わせる（巻き取る音なので伸ばさない）
 ///
 /// 拍の格子が無い曲は従来どおり（交差の長さに収まる長さの素材を 1 倍速で、終わりを切替点に）
 class SfxPlan {
@@ -46,13 +47,11 @@ class SfxPlan {
   /// 鳴らす順
   final List<SfxCue> cues;
 
-  /// 切替点の手前で鳴らすもの（ライザー / スピンバック）
-  SfxCue? get lead =>
-      cues.where((c) => c.role != SfxRole.impact).firstOrNull;
+  /// 切替点の手前で鳴らすもの（ライザー / リバースシンバル / スピンバック）
+  SfxCue? get lead => cues.where((c) => !c.role.startsAtCut).firstOrNull;
 
-  /// 切替点で鳴らすもの
-  SfxCue? get impact =>
-      cues.where((c) => c.role == SfxRole.impact).firstOrNull;
+  /// 切替点で鳴らすもの（インパクト / クラッシュ / 尾）
+  SfxCue? get impact => cues.where((c) => c.role.startsAtCut).firstOrNull;
 
   List<SfxClip> get clips => [for (final c in cues) c.clip];
 
@@ -61,13 +60,17 @@ class SfxPlan {
   /// ライザーの小節数の候補（長いものから試す）。交差の中に収まるものだけ使う
   static const riserBars = [8, 4, 2, 1];
 
+  /// リバースシンバルの小節数の候補。素材に近い速度になるほうを使う
+  static const cymbalBars = [1, 2];
+
   /// 素材を伸び縮みさせてよい速度の範囲（外れると音が変わりすぎるので小節数を減らす）
   static const minRate = 0.5;
   static const maxRate = 2.0;
 
   /// [effect] の効果音を予定する。[startMs] / [cutMs] は交差の開始と切替点（出る曲の媒体ミリ秒）、
   /// [outRate] は出る曲の再生速度、[barMediaMs] は出る曲の 1 小節（格子が無ければ null）。
-  /// 同じ長さの素材が何本かあるときは [variant] で順に回す
+  /// 同じ長さの素材が何本かあるときは [variant] で順に回す。
+  /// [rendered] は前の曲から作った音（尾・逆回転）。尾はこれが無ければ鳴らさない
   static SfxPlan plan({
     required TransitionEffect effect,
     required double startMs,
@@ -75,43 +78,68 @@ class SfxPlan {
     required double outRate,
     double? barMediaMs,
     int variant = 0,
+    SfxClip? rendered,
   }) {
     final rate = outRate > 0 ? outRate : 1.0;
     final windowMs = max(0.0, (cutMs - startMs) / rate).round();
+    final bar = barMediaMs != null && barMediaMs > 0 ? barMediaMs : null;
     final cues = <SfxCue>[];
     final lead = effect.leadInSfx;
-    if (lead == SfxRole.riser && barMediaMs != null && barMediaMs > 0) {
-      cues.add(_riser(
+    final own = rendered != null && rendered.role == lead ? rendered : null;
+    if (own != null) {
+      // 前の曲から作った音は実時間の長さのまま
+      cues.add(SfxCue(clip: own, atMs: cutMs - own.durationMs * rate));
+    } else if (lead == SfxRole.riser && bar != null) {
+      cues.add(_barFitted(SfxRole.riser, riserBars,
           startMs: startMs,
           cutMs: cutMs,
           outRate: rate,
-          barMediaMs: barMediaMs,
+          barMediaMs: bar,
           windowMs: windowMs,
           variant: variant));
+    } else if (lead == SfxRole.reverseCymbal && bar != null) {
+      cues.add(_barFitted(SfxRole.reverseCymbal, cymbalBars,
+          startMs: startMs,
+          cutMs: cutMs,
+          outRate: rate,
+          barMediaMs: bar,
+          windowMs: windowMs,
+          variant: variant,
+          nearestRate: true));
     } else if (lead != null) {
       final clip = SfxLibrary.pick(lead, windowMs: windowMs, variant: variant);
       cues.add(SfxCue(clip: clip, atMs: cutMs - clip.durationMs * rate));
     }
-    if (effect.impactAtCut) {
+    final atCut = effect.atCutSfx;
+    if (atCut == SfxRole.tail) {
+      if (rendered != null && rendered.role == SfxRole.tail) {
+        cues.add(SfxCue(clip: rendered, atMs: cutMs));
+      }
+    } else if (atCut != null) {
       cues.add(SfxCue(
-          clip: SfxLibrary.pick(SfxRole.impact,
-              windowMs: windowMs, variant: variant),
+          clip: SfxLibrary.pick(atCut, windowMs: windowMs, variant: variant),
           atMs: cutMs));
     }
     return SfxPlan(cues);
   }
 
-  static SfxCue _riser({
+  /// 小節数 [bars] のどれかにぴったり収める。[nearestRate] なら素材の速度に一番近い小節数、
+  /// そうでなければ長いものから順に（収まる最初のもの）
+  static SfxCue _barFitted(
+    SfxRole role,
+    List<int> bars, {
     required double startMs,
     required double cutMs,
     required double outRate,
     required double barMediaMs,
     required int windowMs,
     required int variant,
+    bool nearestRate = false,
   }) {
-    final candidates = SfxLibrary.of(SfxRole.riser);
-    for (final bars in riserBars) {
-      final mediaMs = bars * barMediaMs;
+    final candidates = SfxLibrary.of(role);
+    SfxCue? chosen;
+    for (final n in bars) {
+      final mediaMs = n * barMediaMs;
       // 交差の中に収まる小節数だけ（効果音は交差が始まってから予定するので、
       // それより前からは鳴らせない）
       if (mediaMs > cutMs - startMs + 1) continue;
@@ -126,15 +154,19 @@ class SfxPlan {
       final same = candidates
           .where((c) => c.durationMs == best.durationMs)
           .toList(growable: false);
-      return SfxCue(
+      final cue = SfxCue(
         clip: same[variant.abs() % same.length],
         atMs: cutMs - mediaMs,
         rate: rate,
-        bars: bars,
+        bars: n,
       );
+      if (!nearestRate) return cue;
+      if (chosen == null || log(rate).abs() < log(chosen.rate).abs()) {
+        chosen = cue;
+      }
     }
-    final clip =
-        SfxLibrary.pick(SfxRole.riser, windowMs: windowMs, variant: variant);
+    if (chosen != null) return chosen;
+    final clip = SfxLibrary.pick(role, windowMs: windowMs, variant: variant);
     return SfxCue(clip: clip, atMs: cutMs - clip.durationMs * outRate);
   }
 }

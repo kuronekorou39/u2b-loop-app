@@ -1,33 +1,61 @@
 /// DJ ミックスの切り替えに重ねる効果音（assets/sfx/ に同梱。出どころは同フォルダの README）。
 ///
 /// 役割ごとに長さ違いを持ち、クロスフェードの長さ（実時間）に合わせて選ぶ。
-/// ライザーとスピンバックは **終わりを切替点に合わせて** 鳴らすので、長さが分かっている必要がある
+/// ライザーなど **終わりを切替点に合わせて** 鳴らすものは、長さが分かっている必要がある
 /// （ファイル名の `_2s` などと同じ値。MP3 はフレームを数えた実測）。
 enum SfxRole {
   /// 切替点に向けて上がっていく音（終わりを切替点に合わせる）
   riser,
 
+  /// 切替点に向けて吸い込むシンバル（終わりを切替点に合わせる。1 小節に伸び縮み）
+  reverseCymbal,
+
   /// 切替点の瞬間の一撃と余韻（切替点で鳴らし始める）
   impact,
 
-  /// レコードを逆回転させて巻き取る音（終わりを切替点に合わせる）
+  /// 次の曲の 1 拍目に重ねるシンバル（切替点で鳴らし始める）
+  crash,
+
+  /// レコードを逆回転させて巻き取る音（終わりを切替点に合わせる）。
+  /// 前の曲から作ったもの（[SfxClip.rendered]）があればそれ、無ければ素材
   spinback,
+
+  /// 前の曲の最後から作った尾（エコー・残響）。切替点で鳴らし始める。素材は無い
+  tail;
+
+  /// 切替点で鳴らし始めるもの（それ以外は終わりを切替点に合わせる）
+  bool get startsAtCut => this == impact || this == crash || this == tail;
 }
 
 class SfxClip {
-  const SfxClip(this.role, this.asset, this.durationMs);
+  const SfxClip(this.role, this.asset, this.durationMs, {this.gainDb = 0})
+      : path = null;
+
+  /// アプリが前の曲から作った音（端末内の WAV）。曲の続きとして曲と同じ音量で鳴らす
+  const SfxClip.rendered(this.role, String this.path, this.durationMs)
+      : asset = path,
+        gainDb = 0;
 
   final SfxRole role;
 
-  /// Flutter のアセットキー（pubspec の assets/sfx/ 以下）
+  /// Flutter のアセットキー（pubspec の assets/sfx/ 以下）。作った音ならファイルのパス
   final String asset;
+
+  /// 作った音のファイル（素材なら null）
+  final String? path;
   final int durationMs;
 
+  /// 効果音の音量の設定からさらに足す量（dB）。控えめに重ねる素材はマイナス
+  final double gainDb;
+
+  /// 前の曲から作った音か（効果音の音量ではなく曲の音量で鳴らす）
+  bool get isRendered => path != null;
+
   /// media_kit に渡す URI（asset:// はアプリ内のファイルへ展開される）
-  String get uri => 'asset:///$asset';
+  String get uri => path ?? 'asset:///$asset';
 
   @override
-  String toString() => 'SfxClip($asset ${durationMs}ms)';
+  String toString() => 'SfxClip(${asset.split('/').last} ${durationMs}ms)';
 }
 
 class SfxLibrary {
@@ -47,6 +75,9 @@ class SfxLibrary {
     SfxClip(SfxRole.riser, '$_dir/riser_noise_8s.wav', 8000),
     SfxClip(SfxRole.riser, '$_dir/riser_sweep_8s.wav', 8000),
     SfxClip(SfxRole.riser, '$_dir/riser_supersaw_8s.wav', 8000),
+    // 控えめに重ねるシンバル（大きなライザーより目立たないよう、効果音の音量からさらに下げる）
+    SfxClip(SfxRole.reverseCymbal, '$_dir/reverse_cymbal.mp3', 2040, gainDb: -2),
+    SfxClip(SfxRole.crash, '$_dir/crash.mp3', 3264, gainDb: -4),
     // インパクトはライザーと同じ形式（44.1kHz / 16bit / モノラル WAV）のものを使う。
     // ライザーの直後にプレイリストで続けて鳴らすとき、形式が同じだとギャップレスになる
     SfxClip(SfxRole.impact, '$_dir/down_impact_tail_2s.wav', 2000),

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/core/audio/band_swap.dart';
 import 'package:u2b_loop_app/core/audio/crossfade_curve.dart';
 import 'package:u2b_loop_app/core/audio/transition_effect.dart';
 import 'package:u2b_loop_app/core/audio/transition_planner.dart';
@@ -231,15 +232,22 @@ void main() {
           MixStyle.melt);
     });
 
-    test('歌が重なりそう・キーが合わない組は溶かさない（長く重ねない）', () {
+    test('歌が重なりそうな組は高・中・低をずらして入れ替える（溶かすのはやめない）。'
+        'キーが合わない組は溶かさない', () {
       final vocal = pro(item(bpm: 126), item(bpm: 128), outMid: 0.75, inMid: 0.7);
-      expect(vocal.style, isNot(MixStyle.melt));
-      expect(vocal.reason, contains('歌が重なりそう'));
+      expect(vocal.style, MixStyle.melt);
+      expect(vocal.bands, BandSwap.three);
+      expect(vocal.reason, contains('歌は中音で入れ替え'));
+      final lift = pro(item(bpm: 120), item(bpm: 126), outMid: 0.75, inMid: 0.7);
+      expect(lift.style, MixStyle.lift);
+      expect(lift.bands, BandSwap.three);
+      expect(lift.beats, 16, reason: '歌だけなら短くしない');
       final key = pro(item(bpm: 128, key: 'Cmaj'), item(bpm: 128, key: 'F#maj'));
       expect(key.style, isNot(MixStyle.melt));
       expect(key.beats, lessThanOrEqualTo(16));
       final one = pro(item(bpm: 126), item(bpm: 128), outMid: 0.75, inMid: 0.3);
       expect(one.style, MixStyle.melt, reason: '片方だけなら溶かす');
+      expect(one.bands, BandSwap.bass, reason: '片方だけなら低音だけ入れ替える');
     });
 
     test('テンポ差が大きければ、ブレーキかループロールで切り替え', () {
