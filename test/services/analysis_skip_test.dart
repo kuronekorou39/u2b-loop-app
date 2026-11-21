@@ -75,13 +75,14 @@ void main() {
     expect(AudioAnalysisService.needsAnalysis(item), isFalse);
   });
 
-  test('曲ではないと判定した曲だけは、拍のない曲を見分ける版（9）で解析し直す', () {
+  test('テンポの取り違えを直す版（10）より前の解析は、どの曲も解析し直す', () {
     _LoopItemWith item({bool? notMusic, required int version}) => _LoopItemWith(_item(
         analyzedAt: now, leadingSilenceMs: 0, analysisVersion: version)
       ..notMusic = notMusic);
-    expect(AudioAnalysisService.needsAnalysis(item(version: 8).i), isFalse);
-    expect(AudioAnalysisService.needsAnalysis(item(version: 8, notMusic: true).i), isTrue);
-    expect(AudioAnalysisService.needsAnalysis(item(version: 9, notMusic: true).i), isFalse);
+    expect(AudioAnalysisService.needsAnalysis(item(version: 9).i), isTrue);
+    expect(AudioAnalysisService.needsAnalysis(item(version: 9, notMusic: true).i), isTrue);
+    expect(AudioAnalysisService.needsAnalysis(item(version: 10).i), isFalse);
+    expect(AudioAnalysisService.needsAnalysis(item(version: 10, notMusic: true).i), isFalse);
   });
 }
 

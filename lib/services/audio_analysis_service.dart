@@ -10,6 +10,7 @@ import '../core/audio/silence_detector.dart';
 import '../models/loop_item.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
+import 'waveform_cache.dart';
 import 'waveform_service.dart';
 import 'playback/unplayable_watch.dart';
 import 'youtube_service.dart';
@@ -105,11 +106,14 @@ class AudioAnalysisService {
           musicalKey: result.key,
           silence: silence,
           beatGrid: result.beatGrid,
+          baseGrid: result.baseGrid,
           sections: result.sections,
           keySections: result.keySections,
           sectionGrids: result.sectionGrids,
           span: MusicSpanInfo.of(result.span,
               lengthMs: pcm.length * 1000 ~/ sampleRate, truncated: truncated));
+      // 取り直しになったミックス点・音量の流れを、鳴っている曲ならすぐ求め直す
+      WaveformCache.notifyChanged(itemId);
       debugPrint('[AudioAnalysis] $itemId: ${result.span} ${result.bpm} BPM '
           '${result.key} 区切り ${result.sections} 転調 ${result.keySections} '
           '拍 ${result.beatGrid}');

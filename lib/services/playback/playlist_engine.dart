@@ -1073,8 +1073,17 @@ class PlaylistEngine {
       dropMs: item.barAnchorAt(rawMs),
       leadingSilenceMs: item.introSkipMs,
     );
-    if (exit == null || exit >= rawMs) return raw;
-    final cut = Duration(microseconds: (exit * 1000).round());
+    var cutMs = exit != null && exit < rawMs ? exit : rawMs;
+    // フェードアウトが始まる前の小節頭で渡す（フェードの途中だと次の曲が急に大きく聞こえる）
+    final fade = ExitPlanner.fadeStartMs(curve, stepMs: EnergyProfile.curveStepMs);
+    if (fade != null && fade < cutMs) {
+      final fadeGrid = item.beatGridAt(fade);
+      cutMs = fadeGrid != null && fadeGrid.reliable
+          ? snapCutMs(fadeGrid, fade, dropMs: item.barAnchorAt(fade))
+          : fade;
+    }
+    if (cutMs >= rawMs) return raw;
+    final cut = Duration(microseconds: (cutMs * 1000).round());
     if (activePlayer.state.position >= cut) return raw;
     return (cut: cut, advancesAtCut: true);
   }

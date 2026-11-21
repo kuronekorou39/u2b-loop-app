@@ -29,6 +29,37 @@ void main() {
         closeTo(184320, 0.01));
   });
 
+  group('fadeStartMs（曲の終わりのフェードアウトの始まり）', () {
+    /// [bodySec] 秒まで −5dB、そこから [fadeSec] 秒かけて −55dB へ
+    List<double> fading(int bodySec, int fadeSec) => [
+          for (var i = 0; i < bodySec ~/ 2; i++) -5.0,
+          for (var i = 1; i <= fadeSec ~/ 2; i++) -5.0 - 50.0 * i / (fadeSec ~/ 2),
+        ];
+
+    test('本体の音量から 3dB 下がる手前が始まり', () {
+      // 20 秒のフェード: 2 秒ごとに 5dB 下がるので、最初の点で −10dB（3dB を超える）
+      expect(ExitPlanner.fadeStartMs(fading(200, 20), stepMs: step), 200000);
+    });
+
+    test('最後まで鳴っている曲は null', () {
+      expect(ExitPlanner.fadeStartMs(curve(240, 240), stepMs: step), isNull);
+    });
+
+    test('最後の音の余韻（短い下がり）は null', () {
+      expect(ExitPlanner.fadeStartMs(fading(234, 4), stepMs: step), isNull);
+    });
+
+    test('静かな終盤が長い曲（曲の一部）は null', () {
+      expect(ExitPlanner.fadeStartMs(fading(160, 80), stepMs: step), isNull);
+    });
+
+    test('下がりきらない終わり方は null', () {
+      expect(
+          ExitPlanner.fadeStartMs(curve(200, 240, loud: -5, quiet: -12), stepMs: step),
+          isNull);
+    });
+  });
+
   test('最後まで鳴っている曲は今までどおり（null）', () {
     expect(ExitPlanner.exitMs(curve(240, 240), stepMs: step, cutMs: 240000),
         isNull);

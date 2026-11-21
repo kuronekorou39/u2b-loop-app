@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// 拍の線の材料: 拍の格子と、小節頭の代わりの基準（ドロップ。解析の小節頭が確かなら使わない）
 typedef BeatLineSource = ({BeatGrid grid, double? anchorMs});
 
@@ -118,6 +120,21 @@ class BeatGrid {
     );
   }
 
+  /// 同じ解析の格子とみなす差: テンポ 0.3%・拍の位置 30ms（音源の違いで出るくらいの幅）
+  static const sameBpmRatio = 0.003, samePhaseMs = 30.0;
+
+  /// 解析で求めた [detected] と同じ拍と小節頭か。違えば手で直した格子（ジョグ・フェーダー・×2）
+  bool matchesDetected(BeatGrid detected) {
+    if ((bpm / detected.bpm - 1).abs() > sameBpmRatio) return false;
+    final p = detected.periodMs;
+    var d = (offsetMs - detected.offsetMs) % p;
+    if (d > p / 2) d -= p;
+    if (d.abs() > samePhaseMs) return false;
+    final a = downbeatMs, b = detected.downbeatMs;
+    if (a == null || b == null) return a == b;
+    return ((a - b) / p).round() % beatsPerBar == 0;
+  }
+
   /// 小節頭を足したもの（解析の結果を格子に載せる）
   BeatGrid withDownbeat(Downbeat? downbeat) {
     return BeatGrid(
@@ -227,7 +244,9 @@ class BeatMatcher {
   }
 
   /// 交差中の位相誤差（実時間 ms）。正なら入る曲の拍が遅れている（速める方向）。
-  /// 入る曲の 1 拍の実時間で折り返すので、戻り値は ±半拍以内
+  /// 2 曲の短いほうの拍の実時間で折り返すので、戻り値は ±半拍以内。
+  /// テンポが倍/半分の組を長いほうの拍で折り返すと、短いほうの裏の拍のたびに誤差が
+  /// 0 と半周期を行き来し、速度を上下に振って拍がずれていった
   static double phaseErrorMs({
     required BeatGrid out,
     required BeatGrid in_,
@@ -238,7 +257,7 @@ class BeatMatcher {
   }) {
     final tOut = out.toNextBeatMs(outPosMs) / outRate;
     final tIn = in_.toNextBeatMs(inPosMs) / inRate;
-    final period = in_.periodMs / inRate;
+    final period = min(in_.periodMs / inRate, out.periodMs / outRate);
     var err = (tIn - tOut) % period;
     if (err < 0) err += period;
     if (err > period / 2) err -= period;

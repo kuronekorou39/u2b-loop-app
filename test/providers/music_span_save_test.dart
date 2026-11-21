@@ -70,6 +70,49 @@ void main() {
     expect(item().analysisVersion, LoopItem.currentAnalysisVersion);
   });
 
+  group('テンポの取り違えの直し（版 10）', () {
+    const before = BeatGrid(bpm: 60, offsetMs: 100, confidence: 0.8);
+    const after = BeatGrid(bpm: 120, offsetMs: 100, confidence: 0.8);
+    Future<void> reanalyze(BeatGrid base) =>
+        container.read(loopItemsProvider.notifier).saveAnalysis(
+              'x',
+              bpm: 120,
+              musicalKey: 'Cmaj',
+              silence: const SilenceInfo(leadingMs: 500, trailingMs: 800),
+              beatGrid: after,
+              baseGrid: base,
+              span: const MusicSpanInfo(headMs: 0, tailMs: 0, notMusic: false),
+            );
+
+    test('保存された格子が前の解析のままなら、新しいテンポに置き換える', () async {
+      await reanalyze(before);
+      expect(item().bpm, 120);
+      expect(item().beatGrid!.bpm, 120);
+    });
+
+    test('手で直した格子（前の解析と違う）は残す', () async {
+      await reanalyze(const BeatGrid(bpm: 121, offsetMs: 300, confidence: 0.7));
+      expect(item().bpm, 60);
+      expect(item().beatGrid!.bpm, 60);
+    });
+
+    test('短い曲は波形の穴の分、ミックス点と音量の流れを取り直す', () async {
+      final x = item()..durationMs = 44000;
+      await AppBoxes.loopItems.put('x', x);
+      await reanalyze(before);
+      expect(item().mixInMs, isNull);
+      expect(item().headDb, isNull);
+    });
+
+    test('長い曲のミックス点はそのまま', () async {
+      final x = item()..durationMs = 240000;
+      await AppBoxes.loopItems.put('x', x);
+      await reanalyze(before);
+      expect(item().mixInMs, 20000);
+      expect(item().headDb, -10);
+    });
+  });
+
   test('頭のトークを飛ばすようになったら解析し直した値にし、ミックス点も取り直す', () async {
     await save(const MusicSpanInfo(headMs: 30000, tailMs: 0, notMusic: false));
     expect(item().bpm, 121);

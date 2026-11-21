@@ -6,6 +6,7 @@ import 'bpm_key_detector.dart';
 import 'cq_chroma.dart';
 import 'key_sections.dart';
 import 'music_span_detector.dart';
+import 'tempo_resolver.dart';
 import 'tempo_sections.dart';
 
 class AudioAnalysisResult {
@@ -13,6 +14,7 @@ class AudioAnalysisResult {
     required this.bpmCandidates,
     required this.keyCandidates,
     this.beatGrid,
+    this.baseGrid,
     this.span = MusicSpan.whole,
     this.sections = const [],
     this.keySections = const [],
@@ -27,6 +29,10 @@ class AudioAnalysisResult {
   /// 1 位の BPM で求めた拍の格子と小節頭（BPM が無ければ null）。
   /// テンポが変わる曲では一番長い区切りで求めたもの
   final BeatGrid? beatGrid;
+
+  /// テンポの取り違えを直す前の格子。解析し直すとき、保存されている格子がこれと同じなら
+  /// 自動で求めたもの（新しい [beatGrid] に置き換えてよい）、違えば手で直したもの
+  final BeatGrid? baseGrid;
 
   /// テンポの区切り（テンポが変わる曲だけ。一定なら空）
   final List<TempoSection> sections;
@@ -113,20 +119,14 @@ class AudioAnalyzer {
         : main != null
             ? [BpmCandidate(main.bpm, 1)]
             : BpmKeyDetector.bpmFromEnvelope(env);
-    // 部分の頭を 0 として求めたので、動画の時刻に戻す
-    final grid = env == null || bpms.isEmpty
+    final detected = env == null || bpms.isEmpty
         ? null
-        : _gridWithDownbeat(part, sampleRate, env, bpms.first.bpm)
-            ?.shiftedBy(tempoFrom / sampleRate * 1000);
-    // 一番長い区切りのテンポは、その区切りだけで引き直した格子の値に揃える（表示の範囲とずれない）
-    var outSections = sections;
-    if (main != null && grid != null) {
-      final b = (grid.bpm * 10).round() / 10;
-      bpms = [BpmCandidate(b, 1)];
-      outSections = [
-        for (final s in sections) identical(s, main) ? TempoSection(s.startMs, b) : s,
-      ];
-    }
+        : _gridWithDownbeat(part, sampleRate, env, bpms.first.bpm);
+    // 部分の頭を 0 として求めたので、動画の時刻に戻す
+    final partStartMs = tempoFrom / sampleRate * 1000;
+    final grid = detected?.grid.shiftedBy(partStartMs);
+    // BPM は引き直した格子の値に揃える（自己相関の値は刻みが粗く、1% ほどずれている）
+    if (grid != null) bpms = [BpmCandidate(_round1(grid.bpm), 1)];
     // ほかの区切りも、その区切りだけで格子（と小節頭）を求める（波形の拍の線を区切りごとに引く）
     final sectionGrids = <BeatGrid?>[
       for (var i = 0; i < sections.length; i++)
@@ -136,6 +136,14 @@ class AudioAnalyzer {
           _sectionGrid(pcm, sampleRate, sample(sections[i].startMs),
               i + 1 < sections.length ? sample(sections[i + 1].startMs) : to,
               sections[i].bpm),
+    ];
+    // 区切りのテンポも格子の値に揃える（表示の範囲とずれないように）
+    final outSections = [
+      for (var i = 0; i < sections.length; i++)
+        switch (sectionGrids[i]) {
+          final g? => TempoSection(sections[i].startMs, _round1(g.bpm)),
+          null => sections[i],
+        },
     ];
     // キー: 曲の範囲のクロマ。転調するなら一番長い区切りのキーを代表にする
     final chroma = CqChroma.frames(musicPart, sampleRate);
@@ -147,6 +155,7 @@ class AudioAnalyzer {
       bpmCandidates: bpms,
       keyCandidates: keys,
       beatGrid: grid,
+      baseGrid: detected?.base.shiftedBy(partStartMs),
       span: span,
       sections: outSections,
       keySections: keySections,
@@ -179,14 +188,26 @@ class AudioAnalyzer {
     final env = BpmKeyDetector.onsetEnvelope(part, sampleRate);
     if (env == null) return null;
     return _gridWithDownbeat(part, sampleRate, env, bpm)
-        ?.shiftedBy(from / sampleRate * 1000);
+        ?.grid
+        .shiftedBy(from / sampleRate * 1000);
   }
 
-  /// 拍の格子に小節頭を載せたもの
-  static BeatGrid? _gridWithDownbeat(
+  static double _round1(double v) => (v * 10).round() / 10;
+
+  /// 拍の格子に小節頭を載せたもの。テンポの取り違え（倍・半分・2:3）は格子の精密なテンポで
+  /// 確かめて直す（粗いテンポだと 16 拍先で 1 フレーム以上ずれ、音の並びの戻りを測れない）。
+  /// [base] は直す前の格子（直さなかったら [grid] と同じ）
+  static ({BeatGrid grid, BeatGrid base})? _gridWithDownbeat(
       Int16List pcm, int sampleRate, OnsetEnvelope env, double bpm) {
-    final grid = BpmKeyDetector.detectBeatGrid(env, bpm);
-    if (grid == null) return null;
-    return grid.withDownbeat(BpmKeyDetector.detectDownbeat(pcm, sampleRate, grid));
+    final first = BpmKeyDetector.detectBeatGrid(env, bpm);
+    if (first == null) return null;
+    BeatGrid withBar(BeatGrid g) =>
+        g.withDownbeat(BpmKeyDetector.detectDownbeat(pcm, sampleRate, g));
+    final flux = BandFlux.of(pcm, sampleRate);
+    final resolved =
+        flux == null ? first.bpm : TempoResolver.resolve(flux, 0, flux.frames, first.bpm);
+    final better = resolved == first.bpm ? null : BpmKeyDetector.detectBeatGrid(env, resolved);
+    final base = withBar(first);
+    return (grid: better == null ? base : withBar(better), base: base);
   }
 }

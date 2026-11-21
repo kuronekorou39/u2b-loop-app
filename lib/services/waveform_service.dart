@@ -93,7 +93,7 @@ class WaveformService {
       final db = Loudness.measureDb(amplitudes);
       if (db != null) onLoudness(db);
     }
-    return _downsampleAndNormalize(amplitudes, targetSamples);
+    return downsampleAndNormalize(amplitudes, targetSamples);
   }
 
   /// ネイティブはリトルエンディアンの16bitで返す。奇数オフセットだと view できないのでコピーする
@@ -167,7 +167,7 @@ class WaveformService {
       (i) => bd.getUint32(atomOffset + 20 + i * 4),
     );
 
-    return _downsampleAndNormalize(sizes, targetSamples);
+    return downsampleAndNormalize(sizes, targetSamples);
   }
 
   void _findAtomsByType(
@@ -472,13 +472,16 @@ class WaveformService {
 
   // --- 共通ユーティリティ ---
 
-  List<double> _downsampleAndNormalize(List<int> sizes, int targetSamples) {
+  /// [sizes] を [targetSamples] 点に間引いて 0〜1 に揃える（区間ごとの最大）。
+  /// 元の値が点より少ない短い曲（4000 点なら約 93 秒未満）は、どの点にも一番近い値を入れる
+  /// （区間に 1 つも値が入らない点が 0 のままだと、音量の計算で無音に見えていた）
+  static List<double> downsampleAndNormalize(List<int> sizes, int targetSamples) {
     final n = sizes.length;
     if (n == 0) return List.filled(targetSamples, 0);
     final samplesPerBucket = n / targetSamples;
     final peaks = List<double>.generate(targetSamples, (i) {
       final start = (i * samplesPerBucket).floor();
-      final end = min(((i + 1) * samplesPerBucket).floor(), n);
+      final end = max(start + 1, min(((i + 1) * samplesPerBucket).floor(), n));
       var maxVal = 0;
       for (var j = start; j < end; j++) {
         if (sizes[j] > maxVal) maxVal = sizes[j];

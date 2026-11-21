@@ -200,6 +200,31 @@ void main() {
           closeTo(0, 1e-6));
     });
 
+    test('テンポが倍/半分の組は、拍が揃っていれば裏の拍でも誤差 0 のまま', () {
+      // 出る曲 150 BPM（400ms）、入る曲 75 BPM（800ms）。入る曲の拍は出る曲の 1 拍おき
+      const fast = BeatGrid(bpm: 150, offsetMs: 0);
+      const slow = BeatGrid(bpm: 75, offsetMs: 0);
+      for (var t = 0.0; t < 4000; t += 70) {
+        expect(
+            BeatMatcher.phaseErrorMs(
+                out: fast, in_: slow, outPosMs: 60000 + t, outRate: 1, inPosMs: 8000 + t, inRate: 1),
+            closeTo(0, 1e-6),
+            reason: '出る曲が速い組 t=$t');
+        expect(
+            BeatMatcher.phaseErrorMs(
+                out: slow, in_: fast, outPosMs: 8000 + t, outRate: 1, inPosMs: 60000 + t, inRate: 1),
+            closeTo(0, 1e-6),
+            reason: '入る曲が速い組 t=$t');
+      }
+      // 入る曲が 30ms 遅れていれば、どの位置でも +30
+      for (var t = 0.0; t < 4000; t += 70) {
+        expect(
+            BeatMatcher.phaseErrorMs(
+                out: fast, in_: slow, outPosMs: 60000 + t, outRate: 1, inPosMs: 7970 + t, inRate: 1),
+            closeTo(30, 1e-6));
+      }
+    });
+
     test('速度の変化は誤差に比例し、許容内なら 0、上限で止まる', () {
       expect(BeatMatcher.rateAdjust(3), 0);
       expect(BeatMatcher.rateAdjust(-3), 0);
@@ -263,6 +288,28 @@ void main() {
           out: outBars, in_: in_, outPosMs: 60000, outRate: 1, inPosMs: 10150 + 50, inRate: 1);
       expect(fixed, closeTo(0, 1e-6));
       // そうやって +50 で合わせた分を shiftedBy(+50) で焼くと、次回も同じ開始に揃う（上のテスト）
+    });
+  });
+
+  group('matchesDetected（解析の格子のままか、手で直したか）', () {
+    const g = BeatGrid(bpm: 120, offsetMs: 100, downbeatMs: 1100, downbeatConfidence: 1);
+
+    test('音源の違いくらいの差は同じ', () {
+      expect(
+          const BeatGrid(bpm: 120.1, offsetMs: 112, downbeatMs: 1112, downbeatConfidence: 1)
+              .matchesDetected(g),
+          isTrue);
+      // 小節頭は 1 小節（4 拍）ずれていても同じ位置
+      expect(
+          const BeatGrid(bpm: 120, offsetMs: 100, downbeatMs: 3100, downbeatConfidence: 1)
+              .matchesDetected(g),
+          isTrue);
+    });
+
+    test('ジョグで動かした・テンポを変えた・小節頭を動かしたら違う', () {
+      expect(g.shiftedBy(60).matchesDetected(g), isFalse);
+      expect(const BeatGrid(bpm: 60, offsetMs: 100).matchesDetected(g), isFalse);
+      expect(g.shiftedBy(500).matchesDetected(g), isFalse, reason: '小節頭が 1 拍動いた');
     });
   });
 

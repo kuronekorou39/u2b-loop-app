@@ -94,6 +94,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     bool markAnalyzed = true,
     SilenceInfo? silence,
     BeatGrid? beatGrid,
+    BeatGrid? baseGrid,
     MusicSpanInfo? span,
     List<TempoSection> sections = const [],
     List<KeySection> keySections = const [],
@@ -112,10 +113,14 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       item.musicTailMs = span.tailMs;
       item.notMusic = span.notMusic ? true : null;
       item.noSteadyBeat = span.noSteadyBeat ? true : null;
+      final version = item.analysisVersion ?? 0;
       // 飛ばす部分が 1 秒以上変わったら、波形から求めたミックス点と音量の流れを取り直す
       final moved = (item.introSkipMs - oldIntro).abs() >= 1000 ||
           ((item.outroSkipMs ?? 0) - oldOutro).abs() >= 1000;
-      if (moved) {
+      // 版 10 より前の短い曲は波形に穴があり、音量の流れを低く読んでいたので取り直す
+      final d = item.durationMs;
+      final holey = version < 10 && d != null && d < LoopItem.holeyWaveformMs;
+      if (moved || holey) {
         item.mixInMs = null;
         item.mixOutMs = null;
         item.headDb = null;
@@ -123,9 +128,14 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
         item.endFadeDb = null;
         item.dropDb = null;
       }
-      final version = item.analysisVersion ?? 0;
+      // 手で直した格子は残す。保存されている格子が前の解析の結果と同じなら、
+      // 自動で求めたものなので新しい解析（テンポの取り違えの直し）に置き換える
+      final stored = item.beatGrid;
+      final edited =
+          stored != null && (baseGrid == null || !stored.matchesDetected(baseGrid));
       keepTempo = version >= 4 &&
           version < LoopItem.currentAnalysisVersion &&
+          edited &&
           !span.notMusic &&
           !span.noSteadyBeat &&
           !moved &&

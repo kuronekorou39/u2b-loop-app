@@ -44,8 +44,11 @@ class WaveformCache {
     return b;
   }
 
-  /// 帯域の波形を保存した曲の ID
+  /// 帯域の波形を保存した・解析し直した曲の ID（ミックス点の取り直しの合図）
   static Stream<String> get bandsChanged => _bandsChanged.stream;
+
+  /// 解析を保存したことを [bandsChanged] で知らせる
+  static void notifyChanged(String itemId) => _bandsChanged.add(itemId);
 
   static Future<Directory> _dir() async {
     final base = await getApplicationSupportDirectory();

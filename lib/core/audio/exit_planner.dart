@@ -24,6 +24,39 @@ class ExitPlanner {
   /// 出口を探すのは曲のこの割合より後ろだけ（曲の大半を捨てない）
   static const searchFrom = 0.6;
 
+  /// 本体の音量からこれだけ下がったら、フェードアウトが始まったとみなす（dB）
+  static const fadeStartDb = 3.0;
+
+  /// 終わりがこれ以上下がっていなければフェードアウトではない（dB）
+  static const fadeDepthDb = 12.0;
+
+  /// フェードアウトとみなす長さの範囲（ミリ秒）。短いのは最後の音の余韻、
+  /// 長いのは静かな終盤（曲の一部なので切らない）
+  static const minFadeMs = 6000.0, maxFadeMs = 45000.0;
+
+  /// 曲の終わりのフェードアウトが始まる位置（ミリ秒）。無ければ null。
+  ///
+  /// 本体（曲の真ん中 6 割の中央値）の音量に最後に届いている所の直後。フェードの途中で
+  /// 切り替えると、小さくなった前の曲から次の曲へ音量が 5〜9dB 跳ねて聞こえる
+  static double? fadeStartMs(List<double> curve, {required int stepMs}) {
+    final n = curve.length;
+    if (n < 10) return null;
+    final middle = curve.sublist((n * 0.2).floor(), (n * 0.8).ceil())..sort();
+    final body = middle[middle.length ~/ 2];
+    var last = n - 1;
+    while (last >= 0 && curve[last] < body - fadeStartDb) {
+      last--;
+    }
+    if (last < 0 || curve[n - 1] > body - fadeDepthDb) return null;
+    final startMs = (last + 1) * stepMs.toDouble();
+    final durationMs = n * stepMs.toDouble();
+    final fadeMs = durationMs - startMs;
+    if (fadeMs < minFadeMs || fadeMs > maxFadeMs || startMs < durationMs * searchFrom) {
+      return null;
+    }
+    return startMs;
+  }
+
   /// 出口（ミリ秒）。早めに切らなくてよければ null。
   /// [cutMs] は今の切断点（アウトロ点・曲末の無音の手前など）、
   /// [dropMs] はフレーズの頭の基準（[BeatGrid.phraseGrid]）、[leadingSilenceMs] は曲頭で飛ばす長さ
