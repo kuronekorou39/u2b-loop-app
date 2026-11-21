@@ -36,8 +36,8 @@ class ShareService {
           'v': item.videoId,
           't': item.title,
         };
-        // AB区間
-        final regions = item.regions
+        // AB区間（旧形式の AB しか持たない曲も、1 区間として送る）
+        final regions = item.effectiveRegions
             .where((r) => r.hasPoints)
             .map((r) => <String, dynamic>{
                   'n': r.name,

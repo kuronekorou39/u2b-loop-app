@@ -136,23 +136,20 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _initDeepLinks() async {
-    // アプリ起動時のURL
-    try {
-      final initialUri = await _appLinks.getInitialLink();
-      if (initialUri != null) _handleUri(initialUri);
-    } catch (_) {}
-
-    // バックグラウンドからのURL
-    _linkSub = _appLinks.uriLinkStream.listen(_handleUri);
+  void _initDeepLinks() {
+    // 起動時のリンクも、購読した直後にこのストリームへ 1 回流れてくる（app_links 6 以降）。
+    // getInitialLink も読むと、同じリンクで受信の画面が 2 枚重なる
+    _linkSub = _appLinks.uriLinkStream.listen(_handleUri, onError: (_) {});
   }
 
   void _handleUri(Uri uri) {
-    final url = uri.toString();
-    final data = ShareService.decode(url);
-    if (data != null && mounted) {
-      showShareImportDialog(context, ref, data);
+    if (!mounted) return;
+    final data = ShareService.decode(uri.toString());
+    if (data == null) {
+      AppToast.instance.show(AppSnackBar.info('無効な共有URLです'));
+      return;
     }
+    showShareImportDialog(context, ref, data);
   }
 
   @override

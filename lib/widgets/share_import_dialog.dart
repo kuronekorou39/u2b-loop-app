@@ -35,6 +35,8 @@ class _ShareImportDialog extends StatelessWidget {
         data.items.expand((i) => i.tags).toSet();
 
     return AlertDialog(
+      // タグが多いと低い画面（横向き）に入らない
+      scrollable: true,
       title: const Text('プレイリストを受信'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -72,7 +74,7 @@ class _ShareImportDialog extends StatelessWidget {
         FilledButton(
           onPressed: () {
             Navigator.pop(context);
-            _import(context);
+            _import();
           },
           child: const Text('インポート'),
         ),
@@ -80,7 +82,7 @@ class _ShareImportDialog extends StatelessWidget {
     );
   }
 
-  void _import(BuildContext context) async {
+  void _import() async {
     final tagBox = AppBoxes.tags;
     final existingTags = tagBox.values.toList();
 
@@ -116,12 +118,11 @@ class _ShareImportDialog extends StatelessWidget {
     ref.invalidate(playlistsProvider);
     ref.invalidate(tagsProvider);
 
-    if (context.mounted) {
-      AppToast.instance.show(
-        AppSnackBar.success(
-            '「${data.name}」をインポートしました（${itemIds.length}曲）'),
-      );
-    }
+    // このダイアログはもう閉じているので context は見ない（曲が多いと通知が出なくなる）
+    AppToast.instance.show(
+      AppSnackBar.success(
+          '「${data.name}」をインポートしました（${itemIds.length}曲）'),
+    );
 
     // バックグラウンドで各アイテムのYouTube情報を順次取得
     if (itemIds.isNotEmpty) {

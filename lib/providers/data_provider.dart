@@ -768,11 +768,14 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
           _box.values.where((i) => i.videoId == si.videoId).firstOrNull;
       if (existing != null) {
         itemIds.add(existing.id);
-        for (final sr in si.regions) {
-          if (existing.regions.length >= AppLimits.maxRegions) break;
-          if (!existing.regions.any((r) => r.name == sr.name)) {
-            existing.regions
-                .add(sr.toLoopRegion('${existing.id}_r${existing.regions.length}'));
+        if (si.regions.isNotEmpty) {
+          // 旧形式の AB しか無い曲は先に区間にする（足すと元の AB が見えなくなる）
+          final regions = existing.ensureRegions();
+          for (final sr in si.regions) {
+            if (regions.length >= AppLimits.maxRegions) break;
+            if (!regions.any((r) => r.name == sr.name)) {
+              regions.add(sr.toLoopRegion(IdGenerator.next()));
+            }
           }
         }
         for (final tagName in si.tags) {

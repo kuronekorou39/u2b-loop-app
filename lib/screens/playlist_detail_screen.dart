@@ -1,9 +1,6 @@
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../core/audio/track_compatibility.dart';
 import '../core/constants.dart';
@@ -32,6 +29,7 @@ import '../widgets/glass_surface.dart';
 import '../widgets/item_thumbnail.dart';
 import '../widgets/tag_chip.dart';
 import '../widgets/now_playing_mark.dart';
+import '../widgets/share_playlist_popup.dart';
 import '../widgets/thumb_picker_sheet.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
@@ -160,63 +158,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       return;
     }
 
-    final canQr = url.length <= AppLimits.qrMaxLength;
-
-    AppSheets.actions(
+    SharePlaylistPopup.show(
       context,
-      title: '「${pl.name}」を共有',
-      subtitle: '${youtubeItems.length} 曲（${url.length} 文字）',
-      note: canQr ? null : '曲数が多いため QR コードは使えません',
-      actions: [
-        SheetAction(
-          icon: Icons.share_outlined,
-          label: 'テキストで共有',
-          subtitle: 'LINE、メールなどで送信',
-          onTap: () => Share.share(url),
-        ),
-        SheetAction(
-          icon: Icons.content_copy,
-          label: 'URL をコピー',
-          onTap: () {
-            Clipboard.setData(ClipboardData(text: url));
-            AppToast.instance.show(
-              AppSnackBar.success('URL をコピーしました'),
-            );
-          },
-        ),
-        if (canQr)
-          SheetAction(
-            icon: Icons.qr_code,
-            label: 'QR コードを表示',
-            onTap: () => _showQrDialog(pl.name, url),
-          ),
-      ],
-    );
-  }
-
-  void _showQrDialog(String name, String url) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(name, style: Theme.of(context).textTheme.titleMedium),
-        content: SizedBox(
-          width: 250,
-          height: 250,
-          child: Center(
-            child: QrImageView(
-              data: url,
-              size: 240,
-              backgroundColor: Colors.white,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('閉じる'),
-          ),
-        ],
-      ),
+      name: pl.name,
+      songCount: youtubeItems.length,
+      url: url,
     );
   }
 

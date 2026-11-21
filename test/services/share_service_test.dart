@@ -53,6 +53,28 @@ void main() {
       expect(regions.first.pointBMs, 78000);
     });
 
+    test('旧形式の AB しか持たない曲も 1 区間として送る', () {
+      final url = ShareService.encode(
+        playlistName: 'PL',
+        items: [
+          LoopItem(
+            id: 'old',
+            title: '古い曲',
+            uri: '',
+            sourceType: SourceTypes.youtube,
+            videoId: 'aaaaaaaaaaa',
+            pointAMs: 1000,
+            pointBMs: 5000,
+          ),
+        ],
+        tagIdToName: {},
+      );
+      final regions = ShareService.decode(url)!.items.first.regions;
+      expect(regions, hasLength(1));
+      expect(regions.first.pointAMs, 1000);
+      expect(regions.first.pointBMs, 5000);
+    });
+
     test('タグ名が往復する', () {
       final url = ShareService.encode(
         playlistName: 'PL',
