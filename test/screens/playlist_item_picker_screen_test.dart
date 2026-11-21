@@ -309,12 +309,16 @@ void main() {
           scrollable: find.byType(Scrollable).first);
       await tester.tap(find.text('タグ 30'));
       await tester.pumpAndSettle();
+      // 縦はボタンを一覧の下に
+      expect(tester.getRect(find.text('OK')).top,
+          greaterThan(tester.getRect(find.byType(Scrollable).first).bottom));
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
       expect(result, ['t3', 't30']);
     });
 
-    testWidgets('タグのダイアログ: 横画面は左に選んだタグ、右にほかのタグ。サムネも出す', (tester) async {
+    testWidgets('タグのダイアログ: 横画面は左に選んだタグ、右にほかのタグ。サムネも出す。'
+        'ボタンは見出しの行の右', (tester) async {
       tester.view.physicalSize = const Size(923, 411);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -323,13 +327,30 @@ void main() {
         't2': LoopItem(
             id: 'a', title: 'a', uri: 'u', sourceType: 'local', thumbnailPath: '/none.png'),
       };
-      await open<List<String>>(
-          tester,
-          (ctx) => showPlaylistTagsDialog(ctx,
-              tags: some,
-              selected: {'t2'},
-              countOf: (_) => 1,
-              thumbOf: (t) => thumbs[t.id]));
+      List<String>? result;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(
+          builder: (ctx) => TextButton(
+            onPressed: () async => result = await showPlaylistTagsDialog(ctx,
+                tags: some,
+                selected: {'t2'},
+                countOf: (_) => 1,
+                thumbOf: (t) => thumbs[t.id]),
+            child: const Text('開く'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('開く'));
+      await tester.pumpAndSettle();
+      // キャンセル・OK は見出しと同じ行の右（一覧の上）
+      final title = tester.getRect(find.text('タグで自動追加'));
+      for (final label in ['キャンセル', 'OK']) {
+        final button = tester.getRect(find.text(label));
+        expect(button.center.dy, closeTo(title.center.dy, 2), reason: label);
+        expect(button.left, greaterThan(title.right), reason: label);
+        expect(button.bottom,
+            lessThan(tester.getRect(find.text('タグ 1')).top), reason: label);
+      }
       final picked = tester.getRect(find.text('タグ 2'));
       final other = tester.getRect(find.text('タグ 1'));
       expect(other.left, greaterThan(picked.right), reason: '右の列');
@@ -341,6 +362,9 @@ void main() {
       expect(tester.getRect(find.text('タグ 3')).left, closeTo(picked.left, 1));
       // サムネ（無いタグは色の面）
       expect(find.byType(ItemThumbnail), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(result, ['t2', 't3']);
     });
 
     testWidgets('タグが無ければその旨を出す', (tester) async {

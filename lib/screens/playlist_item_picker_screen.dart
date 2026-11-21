@@ -555,9 +555,43 @@ class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
       );
     }
 
+    final title = Text('タグで自動追加', style: textTheme.displaySmall);
+    final actions = [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('キャンセル'),
+      ),
+      TextButton(
+        // タグ一覧の並びで保存
+        onPressed: () => Navigator.pop<List<String>>(context, [
+          for (final t in widget.tags)
+            if (_selected.contains(t.id)) t.id
+        ]),
+        child: const Text('OK'),
+      ),
+    ];
+
     return AlertDialog(
-      title: Text('タグで自動追加', style: textTheme.displaySmall),
-      contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      // 横（2 列）はボタンを見出しの行の右に置き（幅が広く見出しの右が空いている）、
+      // 下のボタンの行の分も一覧に使う。低い画面の入力ダイアログ（AppFormDialog）と同じ形
+      title: wide
+          ? Row(
+              children: [
+                Expanded(child: title),
+                const SizedBox(width: AppSpacing.md),
+                for (final a in actions) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  a,
+                ],
+              ],
+            )
+          : title,
+      titlePadding: wide
+          ? const EdgeInsets.fromLTRB(
+              AppSpacing.xxl, AppSpacing.md, AppSpacing.lg, 0)
+          : null,
+      contentPadding: EdgeInsets.only(
+          top: AppSpacing.md, bottom: wide ? AppSpacing.lg : AppSpacing.md),
       constraints: wide
           ? const BoxConstraints(
               minWidth: 280, maxWidth: _PlaylistTagsDialog.wideMaxWidth)
@@ -570,20 +604,7 @@ class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
             : null,
         child: content,
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('キャンセル'),
-        ),
-        TextButton(
-          // タグ一覧の並びで保存
-          onPressed: () => Navigator.pop<List<String>>(context, [
-            for (final t in widget.tags)
-              if (_selected.contains(t.id)) t.id
-          ]),
-          child: const Text('OK'),
-        ),
-      ],
+      actions: wide ? null : actions,
     );
   }
 }
