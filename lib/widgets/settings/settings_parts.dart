@@ -5,18 +5,31 @@ import '../glass_scaffold.dart';
 import '../glass_surface.dart';
 
 /// 設定の 1 ページ: ガラスの土台 + 縦に並ぶ群。
-/// 本文の上端は AppBar の下端（extendBodyBehindAppBar）から始める
+/// 本文の上端は AppBar の下端（extendBodyBehindAppBar）から始める。
+/// [wideColumns] を渡すと、横画面ではその列に分けて群を並べ、スクロールせずに収める
+/// （縦に 1 列のままだと行が画面の端まで伸び、データのページは下が切れてスクロールしていた）
 class SettingsPage extends StatelessWidget {
   const SettingsPage({
     super.key,
     required this.title,
     required this.children,
     this.actions,
+    this.wideColumns,
   });
 
   final String title;
   final List<Widget> children;
   final List<Widget>? actions;
+
+  /// 横画面の並べ方（列ごとの群。左の列から）。[children] と同じ群を分けて渡す。
+  /// null なら横画面でも縦と同じ 1 列
+  final List<List<Widget>>? wideColumns;
+
+  /// 列に分けて並べる幅（これより狭いか縦長なら 1 列）
+  static const wideMinWidth = 600.0;
+
+  /// 横画面の中身の幅の上限（広い画面で間延びしないように）
+  static const maxWideWidth = 960.0;
 
   @override
   Widget build(BuildContext context) {
@@ -27,15 +40,51 @@ class SettingsPage extends StatelessWidget {
       bodyBuilder: (context) {
           final padding = MediaQuery.paddingOf(context);
           final viewPadding = MediaQuery.viewPaddingOf(context);
-          return ListView(
-            padding: EdgeInsets.fromLTRB(
-              AppSpacing.lg + viewPadding.left,
-              padding.top + AppSpacing.md,
-              AppSpacing.lg + viewPadding.right,
-              padding.bottom + AppSpacing.xxl,
-            ),
-            children: children,
-          );
+          final columns = wideColumns;
+          return LayoutBuilder(builder: (context, c) {
+            final wide = columns != null &&
+                c.maxWidth >= wideMinWidth &&
+                c.maxWidth > c.maxHeight;
+            if (!wide) {
+              return ListView(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.lg + viewPadding.left,
+                  padding.top + AppSpacing.md,
+                  AppSpacing.lg + viewPadding.right,
+                  padding.bottom + AppSpacing.xxl,
+                ),
+                children: children,
+              );
+            }
+            // 横: 群を列に並べて収める（収まらないほど低い画面でだけスクロールする）
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.lg + viewPadding.left,
+                padding.top + AppSpacing.md,
+                AppSpacing.lg + viewPadding.right,
+                padding.bottom + AppSpacing.md,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: maxWideWidth),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < columns.length; i++) ...[
+                        if (i > 0) const SizedBox(width: AppSpacing.lg),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: columns[i],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          });
       },
     );
   }

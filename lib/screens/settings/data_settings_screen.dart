@@ -334,111 +334,116 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final keep = DataSettingsScreen.keepOfflineVideos;
+    final backup = SettingsGroup(
+      title: 'バックアップ',
+      children: [
+        SettingsRow(
+          icon: Icons.upload_file,
+          title: 'バックアップを書き出す',
+          onTap: _busy ? null : _exportData,
+        ),
+        SettingsRow(
+          icon: Icons.download,
+          title: 'バックアップから復元',
+          onTap: _busy ? null : _importData,
+        ),
+      ],
+    );
+    final offline = SettingsGroup(
+      title: 'オフライン動画',
+      children: [
+        SettingsSwitchRow(
+          icon: Icons.sd_storage,
+          title: '端末に残す',
+          value: keep,
+          onChanged: (v) {
+            AppBoxes.settings.put(SettingsKeys.cacheToDocuments, v);
+            setState(() {});
+            // 保存先は保存時に決まるので、既存の動画は移動しない
+            _toast(AppSnackBar.info('これから保存する動画から適用されます'));
+          },
+        ),
+        FutureBuilder<int>(
+          future: CacheService().totalCacheSize(),
+          builder: (_, snap) => SettingsRow(
+            icon: Icons.folder_open,
+            title: '使用量',
+            subtitle: snap.hasData ? _mb(snap.data!) : '計算中…',
+            trailing: _trash('オフライン動画をすべて削除',
+                (snap.data ?? 0) == 0 ? null : _clearAllOfflineVideos),
+          ),
+        ),
+      ],
+    );
+    // 一度聴いた曲の映像・高音質の音声（MediaCache）。消えてよい使い捨て。
+    // 長い曲（MediaCache.maxDuration 超）は残さない
+    final cache = SettingsGroup(
+      title: '自動キャッシュ',
+      children: [
+        FutureBuilder<int>(
+          future: MediaCache.totalBytes(),
+          builder: (_, snap) => SettingsRow(
+            icon: Icons.cached,
+            title: '使用量',
+            subtitle: snap.hasData ? _mb(snap.data!, digits: 0) : '計算中…',
+            trailing: _trash('自動キャッシュを空にする',
+                (snap.data ?? 0) == 0 ? null : _clearMediaCache),
+          ),
+        ),
+        // 超えたら古い順に消す
+        SettingsRow(
+          icon: Icons.data_usage,
+          title: '上限',
+          subtitle: _mbLabel(MediaCache.limitMb),
+          onTap: _pickCacheLimit,
+        ),
+      ],
+    );
+    final waveform = SettingsGroup(
+      title: '波形',
+      children: [
+        // 波形は 4KB/曲 なので上限は設けない。作り直したいときだけ消す
+        FutureBuilder<(int, int)>(
+          future: WaveformCache.stats(),
+          builder: (_, snap) {
+            final (count, bytes) = snap.data ?? (0, 0);
+            return SettingsRow(
+              icon: Icons.graphic_eq,
+              title: '保存済み',
+              subtitle: snap.hasData
+                  ? '$count 曲 · ${(bytes / 1024).toStringAsFixed(0)} KB'
+                  : '計算中…',
+              trailing: _trash('保存済みの波形を削除',
+                  count == 0 ? null : _clearWaveformCache),
+            );
+          },
+        ),
+      ],
+    );
+    // 取り返しのつかない操作は、ふだんの操作から離して最後に
+    final deleteAll = SettingsGroup(
+      children: [
+        SettingsRow(
+          icon: Icons.delete_forever,
+          title: 'すべてのデータを削除',
+          danger: true,
+          showChevron: false,
+          onTap: _busy ? null : _clearAllData,
+        ),
+      ],
+    );
     return Stack(
       children: [
         SettingsPage(
           title: DataSettingsScreen.title,
-          children: [
-            SettingsGroup(
-              title: 'バックアップ',
-              children: [
-                SettingsRow(
-                  icon: Icons.upload_file,
-                  title: 'バックアップを書き出す',
-                  onTap: _busy ? null : _exportData,
-                ),
-                SettingsRow(
-                  icon: Icons.download,
-                  title: 'バックアップから復元',
-                  onTap: _busy ? null : _importData,
-                ),
-              ],
-            ),
-            SettingsGroup(
-              title: 'オフライン動画',
-              children: [
-                SettingsSwitchRow(
-                  icon: Icons.sd_storage,
-                  title: '端末に残す',
-                  value: keep,
-                  onChanged: (v) {
-                    AppBoxes.settings.put(SettingsKeys.cacheToDocuments, v);
-                    setState(() {});
-                    // 保存先は保存時に決まるので、既存の動画は移動しない
-                    _toast(AppSnackBar.info('これから保存する動画から適用されます'));
-                  },
-                ),
-                FutureBuilder<int>(
-                  future: CacheService().totalCacheSize(),
-                  builder: (_, snap) => SettingsRow(
-                    icon: Icons.folder_open,
-                    title: '使用量',
-                    subtitle: snap.hasData ? _mb(snap.data!) : '計算中…',
-                    trailing: _trash('オフライン動画をすべて削除',
-                        (snap.data ?? 0) == 0 ? null : _clearAllOfflineVideos),
-                  ),
-                ),
-              ],
-            ),
-            // 一度聴いた曲の映像・高音質の音声（MediaCache）。消えてよい使い捨て。
-            // 長い曲（MediaCache.maxDuration 超）は残さない
-            SettingsGroup(
-              title: '自動キャッシュ',
-              children: [
-                FutureBuilder<int>(
-                  future: MediaCache.totalBytes(),
-                  builder: (_, snap) => SettingsRow(
-                    icon: Icons.cached,
-                    title: '使用量',
-                    subtitle:
-                        snap.hasData ? _mb(snap.data!, digits: 0) : '計算中…',
-                    trailing: _trash('自動キャッシュを空にする',
-                        (snap.data ?? 0) == 0 ? null : _clearMediaCache),
-                  ),
-                ),
-                // 超えたら古い順に消す
-                SettingsRow(
-                  icon: Icons.data_usage,
-                  title: '上限',
-                  subtitle: _mbLabel(MediaCache.limitMb),
-                  onTap: _pickCacheLimit,
-                ),
-              ],
-            ),
-            SettingsGroup(
-              title: '波形',
-              children: [
-                // 波形は 4KB/曲 なので上限は設けない。作り直したいときだけ消す
-                FutureBuilder<(int, int)>(
-                  future: WaveformCache.stats(),
-                  builder: (_, snap) {
-                    final (count, bytes) = snap.data ?? (0, 0);
-                    return SettingsRow(
-                      icon: Icons.graphic_eq,
-                      title: '保存済み',
-                      subtitle: snap.hasData
-                          ? '$count 曲 · ${(bytes / 1024).toStringAsFixed(0)} KB'
-                          : '計算中…',
-                      trailing: _trash('保存済みの波形を削除',
-                          count == 0 ? null : _clearWaveformCache),
-                    );
-                  },
-                ),
-              ],
-            ),
-            // 取り返しのつかない操作は、ふだんの操作から離して最後に
-            SettingsGroup(
-              children: [
-                SettingsRow(
-                  icon: Icons.delete_forever,
-                  title: 'すべてのデータを削除',
-                  danger: true,
-                  showChevron: false,
-                  onTap: _busy ? null : _clearAllData,
-                ),
-              ],
-            ),
+          // 横は 3 列: 曲の一覧まるごとの操作（バックアップ・すべて削除）/ オフライン動画 /
+          // 消えてよい使い捨て（自動キャッシュ・波形）
+          wideColumns: [
+            [backup, deleteAll],
+            [offline],
+            [cache, waveform],
           ],
+          children: [backup, offline, cache, waveform, deleteAll],
         ),
         if (_busy)
           Container(

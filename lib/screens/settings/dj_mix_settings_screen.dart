@@ -21,11 +21,25 @@ import '../../widgets/player/sfx_offset_stepper.dart';
 /// 群（つなぎ / 演出・効果音 / 表示）ごとに丸いアイコンのボタンを 1 列に並べる。
 /// ボタンはアイコン + 短い名前 + 今の値（オンオフは「オン」「オフ」とアイコンの灰色）。
 /// 候補から選ぶものはボタンの上にメニューを出す。
-/// クロスフェードがオフの間だけ薄くして触れない（並びは動かさない）。おまかせ中に手動の項目を
-/// 変えると、おまかせを切ってカスタムに移る（制限はしない）。
-/// 縦は上から順に、横は左に大きいもの・右にアイコンの群
+/// クロスフェードがオフの間だけ薄くして触れない（並びは動かさない。表示の群は別）。
+/// おまかせ中に手動の項目を変えると、おまかせを切ってカスタムに移る（制限はしない）。
+/// 縦は上から順に、横は左に大きいもの・右にアイコンの群。行の間は画面に余裕があれば
+/// [gapMax] まで広げ、狭い画面では [gapMin] まで詰める。
+/// 音量の正規化は 1 曲ずつ聴くときにも効くので「表示・再生」に置く（ここは群を増やすと
+/// 小さい画面で収まらない）
 class DjMixSettingsScreen extends ConsumerWidget {
   const DjMixSettingsScreen({super.key});
+
+  /// 行と行の間（アイコンの群の行どうし・横の左の列）
+  static const gapMin = AppSpacing.lg;
+  static const gapMax = 36.0;
+
+  /// 横の左の列の「おまかせ」「1番」の高さ（1 行ずつ同じ高さに）
+  static const wideRowHeight = 64.0;
+
+  /// 横で「おまかせ」「1番」を 1 行ずつにする中身の高さの下限。これより低い画面
+  /// （小さい横向きの電話）は縦と同じく横に並べる（1 行ずつだと 1番が下で切れた）
+  static const stackRowsMinHeight = 264.0;
 
   /// 長いもの（32 拍から）は小節で数える（8 小節・16 小節・32 小節）
   static String crossfadeLabel(int beats) => beats == 0
@@ -71,24 +85,25 @@ class DjMixSettingsScreen extends ConsumerWidget {
                   final wide =
                       c.maxWidth >= wideMinWidth && c.maxWidth > c.maxHeight;
                   if (!wide) {
+                    // 群の上と群の行の間は、下に余っている分から広げる
                     return const Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _MainControls(),
-                        SizedBox(height: AppSpacing.xxl),
-                        _IconGroups(),
+                        _MainControls(wide: false),
+                        Expanded(child: _IconGroups(leadingGap: true)),
                       ],
                     );
                   }
                   final left = (c.maxWidth * 0.38)
                       .clamp(_leftMin, _leftMax)
                       .toDouble();
+                  final stack = c.maxHeight >= stackRowsMinHeight;
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(width: left, child: const _MainControls()),
+                      SizedBox(width: left, child: _MainControls(wide: stack)),
                       const SizedBox(width: AppSpacing.xxl),
-                      const Expanded(child: _IconGroups()),
+                      const Expanded(child: _IconGroups(leadingGap: false)),
                     ],
                   );
                 },
@@ -101,9 +116,24 @@ class DjMixSettingsScreen extends ConsumerWidget {
   }
 }
 
-/// 大きく出すもの: クロスフェードの長さ（つまみ）・レベル・おまかせ
+/// 余裕があれば [DjMixSettingsScreen.gapMax] まで広がる行の間（狭い画面では
+/// [DjMixSettingsScreen.gapMin] まで詰まる）。高さに上限のある Column の中だけで使う
+List<Widget> _flexGap() => const [
+  SizedBox(height: DjMixSettingsScreen.gapMin),
+  Flexible(
+    child: SizedBox(
+      height: DjMixSettingsScreen.gapMax - DjMixSettingsScreen.gapMin,
+    ),
+  ),
+];
+
+/// 大きく出すもの: クロスフェードの長さ（つまみ）・レベル・おまかせと 1番。
+/// 横（[wide]）は左の列で、おまかせと 1番を 1 行ずつ、行の間は右の群の行の間と同じだけ広げる。
+/// 縦（と低い横画面）はおまかせと 1番を横に並べ、間は詰める（広げるのは下の群の上下）
 class _MainControls extends ConsumerWidget {
-  const _MainControls();
+  const _MainControls({required this.wide});
+
+  final bool wide;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -124,6 +154,23 @@ class _MainControls extends ConsumerWidget {
       }
       index = best;
     }
+    // 2 曲の解析結果（テンポ・ビートの安定・ドロップ・音量の流れ）からレシピを選ぶ
+    final autoToggle = _WideToggle(
+      icon: Icons.auto_mode,
+      label: 'おまかせ',
+      value: auto,
+      enabled: on,
+      onChanged: (v) => ref.read(autoMixProvider.notifier).value = v,
+    );
+    // 1番モードで「1 番の終わり」を自動で探す範囲。曲ごとの手直しは再生画面の「1番」の長押し
+    final verseButton = _WideButton(
+      icon: Icons.looks_one_outlined,
+      label: '1番',
+      value: VerseRangeNotifier.label(ref.watch(verseSearchRangeProvider)),
+      tooltip: '1番を探す範囲',
+      inline: wide,
+      onTap: () => VerseRangeDialog.show(context),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -163,7 +210,7 @@ class _MainControls extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.md),
+        if (wide) ..._flexGap() else const SizedBox(height: AppSpacing.md),
         // 控えめ・普通・ガチ。選ぶと下の個々の設定がまとめて変わる（変えるとどれも選ばれない）
         const Row(
           children: [
@@ -175,40 +222,24 @@ class _MainControls extends ConsumerWidget {
             Expanded(child: DjLevelChips()),
           ],
         ),
-        const SizedBox(height: AppSpacing.lg),
-        // 2 曲の解析結果（テンポ・ビートの安定・ドロップ・音量の流れ）からレシピを選ぶ
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                flex: 3,
-                child: _WideToggle(
-                  icon: Icons.auto_mode,
-                  label: 'おまかせ',
-                  value: auto,
-                  enabled: on,
-                  onChanged: (v) =>
-                      ref.read(autoMixProvider.notifier).value = v,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              // 1番モードで「1 番の終わり」を自動で探す範囲。曲ごとの手直しは再生画面の「1番」の長押し
-              Expanded(
-                flex: 2,
-                child: _WideButton(
-                  icon: Icons.looks_one_outlined,
-                  label: '1番',
-                  value: VerseRangeNotifier.label(
-                    ref.watch(verseSearchRangeProvider),
-                  ),
-                  tooltip: '1番を探す範囲',
-                  onTap: () => VerseRangeDialog.show(context),
-                ),
-              ),
-            ],
+        if (wide) ...[
+          ..._flexGap(),
+          SizedBox(height: DjMixSettingsScreen.wideRowHeight, child: autoToggle),
+          ..._flexGap(),
+          SizedBox(height: DjMixSettingsScreen.wideRowHeight, child: verseButton),
+        ] else ...[
+          const SizedBox(height: AppSpacing.lg),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 3, child: autoToggle),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(flex: 2, child: verseButton),
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -259,13 +290,19 @@ class _WideToggle extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.lg),
+              // 狭い列（低い横画面で 1番と横に並べたとき）は折り返さずに少し縮める
               Expanded(
-                child: Text(
-                  label,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    // オフは名前を灰色に
-                    color: enabled && value ? onSurface : muted,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      // オフは名前を灰色に
+                      color: enabled && value ? onSurface : muted,
+                    ),
                   ),
                 ),
               ),
@@ -284,7 +321,8 @@ class _WideToggle extends StatelessWidget {
   }
 }
 
-/// 横長の大きなボタン（1番を探す範囲）。おまかせの横に同じ高さで
+/// 横長の大きなボタン（1番を探す範囲）。縦はおまかせの横に同じ高さで（名前の下に値）、
+/// 横（[inline]）はおまかせの下の 1 行で（名前の右端に値。おまかせのスイッチと同じ位置）
 class _WideButton extends StatelessWidget {
   const _WideButton({
     required this.icon,
@@ -292,6 +330,7 @@ class _WideButton extends StatelessWidget {
     required this.value,
     required this.tooltip,
     required this.onTap,
+    this.inline = false,
   });
 
   final IconData icon;
@@ -299,11 +338,24 @@ class _WideButton extends StatelessWidget {
   final String value;
   final String tooltip;
   final VoidCallback onTap;
+  final bool inline;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(AppRadius.xl);
+    final labelText = Text(
+      label,
+      maxLines: 1,
+      style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+    );
+    final valueText = Text(
+      value,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: (inline ? theme.textTheme.bodyMedium : theme.textTheme.labelSmall)
+          ?.copyWith(color: AppTheme.muted(context)),
+    );
     return Tooltip(
       message: tooltip,
       child: Material(
@@ -314,37 +366,31 @@ class _WideButton extends StatelessWidget {
           onTap: onTap,
           borderRadius: radius,
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.sm,
-            ),
+            padding: inline
+                // おまかせ（_WideToggle）と同じ余白でアイコンと名前の位置をそろえる
+                ? const EdgeInsets.symmetric(horizontal: AppSpacing.xl)
+                : const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
+                  ),
             child: Row(
               children: [
                 Icon(icon, size: AppIconSizes.xl, color: AppTheme.accentGreen),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        maxLines: 1,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        value,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: AppTheme.muted(context),
-                        ),
-                      ),
-                    ],
+                SizedBox(width: inline ? AppSpacing.lg : AppSpacing.md),
+                if (inline) ...[
+                  labelText,
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Align(alignment: Alignment.centerRight, child: valueText),
                   ),
-                ),
+                ] else
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [labelText, valueText],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -354,15 +400,19 @@ class _WideButton extends StatelessWidget {
   }
 }
 
-/// 上下のスイッチと丸いボタンを群ごとに並べる。幅に余裕があれば群を横に並べる
+/// 上下のスイッチと丸いボタンを群ごとに並べる。幅に余裕があれば群を横に並べ、
+/// 行の間は余裕に合わせて広げる（[leadingGap] なら 1 行目の上も。縦の大きいものとの間）
 class _IconGroups extends ConsumerWidget {
-  const _IconGroups();
+  const _IconGroups({required this.leadingGap});
+
+  final bool leadingGap;
 
   /// ボタン 1 つの幅の上限。これに満たない幅では 1 行に 6 つ（いちばん多い群）
   static const maxCellWidth = 64.0;
 
-  /// 詰めるときの下限（5 文字の「タイミング」が入る幅）
-  static const minCellWidth = 56.0;
+  /// 詰めるときの下限。名前は入らなければ少し縮めて出すので、丸いボタン（44）の左右が
+  /// 詰まりすぎない幅まで詰める（小さい縦の電話でも群を 2 行に収める。56 では 3 行になって下が切れた）
+  static const minCellWidth = 50.0;
 
   /// 群と群の間
   static const groupGap = AppSpacing.xl;
@@ -576,43 +626,77 @@ class _IconGroups extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
     return LayoutBuilder(
       builder: (context, c) {
-        // 後ろの 2 群（3 + 4）が 1 行に入るなら少し詰めても入れる（横向きの電話で 2 行に収める）。
-        // 入らなければ、いちばん多い群（6）が 1 行に入る幅
-        final most = groups.map((g) => g.$2.length).reduce(max);
-        final pairCount = groups[1].$2.length + groups[2].$2.length;
-        final pair = (c.maxWidth - groupGap) / pairCount;
-        final cell = min(
-          maxCellWidth,
-          pair >= minCellWidth ? pair : c.maxWidth / most,
-        ).floorToDouble();
-        return Wrap(
-          spacing: groupGap,
-          runSpacing: AppSpacing.lg,
+        final width = c.maxWidth;
+        final cell = cellWidthFor(width, [for (final g in groups) g.$2.length]);
+        Widget group(String title, List<_Cell> cells) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            for (final (title, cells) in groups)
-              Column(
+            Text(
+              title,
+              style: textTheme.labelMedium?.copyWith(
+                color: AppTheme.muted(context),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final x in cells) SizedBox(width: cell, child: x),
+              ],
+            ),
+          ],
+        );
+        final rows = rowsFor(width, cell, [for (final g in groups) g.$2.length]);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var r = 0; r < rows.length; r++) ...[
+              if (r > 0 || leadingGap) ..._flexGap(),
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title,
-                    style: textTheme.labelMedium?.copyWith(
-                      color: AppTheme.muted(context),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final x in cells) SizedBox(width: cell, child: x),
-                    ],
-                  ),
+                  for (final (k, i) in rows[r].indexed) ...[
+                    if (k > 0) const SizedBox(width: groupGap),
+                    group(groups[i].$1, groups[i].$2),
+                  ],
                 ],
               ),
+            ],
           ],
         );
       },
     );
+  }
+
+  /// ボタン 1 つの幅。1 群目（つなぎ）の後ろの群がまとめて 1 行に入るなら少し詰めても入れる
+  /// （横向きの電話で 2 行に収める）。入らなければ、いちばん多い群が 1 行に入る幅
+  static double cellWidthFor(double width, List<int> counts) {
+    final most = counts.reduce(max);
+    final rest = counts.skip(1).fold(0, (a, b) => a + b);
+    final together = (width - groupGap * (counts.length - 2)) / rest;
+    return min(
+      maxCellWidth,
+      together >= minCellWidth ? together : width / most,
+    ).floorToDouble();
+  }
+
+  /// 群を行に分ける（群の番号の並び）。1 群目は 1 行目、続く群は入るだけ同じ行に
+  static List<List<int>> rowsFor(double width, double cell, List<int> counts) {
+    final rows = <List<int>>[];
+    var used = 0.0;
+    for (var i = 0; i < counts.length; i++) {
+      final w = counts[i] * cell;
+      if (rows.isNotEmpty && i > 1 && used + groupGap + w <= width) {
+        rows.last.add(i);
+        used += groupGap + w;
+      } else {
+        rows.add([i]);
+        used = w;
+      }
+    }
+    return rows;
   }
 }
 
@@ -691,19 +775,20 @@ class _Cell extends StatelessWidget {
                     ),
                   ),
                 const SizedBox(height: AppSpacing.xs),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: labelStyle,
+                // 狭い画面（ボタンの幅 56 未満）では「…」で切らずに少し縮めて全部出す
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(label, maxLines: 1, style: labelStyle),
                 ),
                 if (value != null)
-                  Text(
-                    value!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: muted.withValues(alpha: 0.9),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value!,
+                      maxLines: 1,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: muted.withValues(alpha: 0.9),
+                      ),
                     ),
                   ),
               ],

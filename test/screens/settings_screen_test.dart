@@ -11,6 +11,8 @@ import 'package:u2b_loop_app/core/theme/app_theme.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist.dart';
 import 'package:u2b_loop_app/models/tag.dart';
+import 'package:u2b_loop_app/screens/settings/advanced_settings_screen.dart';
+import 'package:u2b_loop_app/screens/settings/data_settings_screen.dart';
 import 'package:u2b_loop_app/screens/settings/dj_mix_settings_screen.dart';
 import 'package:u2b_loop_app/screens/settings_screen.dart';
 import 'package:u2b_loop_app/widgets/player/more_tile.dart';
@@ -239,6 +241,63 @@ void main() {
     }
   });
 
+  testWidgets('DJ ミックス: 横はおまかせと 1番を 1 行ずつ、縦は横に並べる。行の間は余裕があれば広げる',
+      (tester) async {
+    Future<void> pumpAt(Size size) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const ProviderScope(
+        child: MaterialApp(home: DjMixSettingsScreen()),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    Rect rectOf(String label) => tester.getRect(find
+        .ancestor(of: find.text(label), matching: find.byType(InkWell))
+        .first);
+
+    // 横: 1番はおまかせの下で、左端と幅がそろう
+    await pumpAt(const Size(915, 412));
+    final auto = rectOf('おまかせ');
+    final verse = rectOf('1番');
+    expect(verse.top, greaterThan(auto.bottom));
+    expect(verse.left, auto.left);
+    expect(verse.width, auto.width);
+    // 右の列の群の行の間と、左の列の行の間は同じくらい広い（詰めた 12 より広い）
+    final rightGap =
+        tester.getRect(find.text('演出・効果音')).top - rectOf('つなぎ方').bottom;
+    final leftGap = verse.top - auto.bottom;
+    expect(rightGap, greaterThan(24));
+    expect(leftGap, greaterThan(24));
+
+    // 縦: おまかせの右に 1番。群の上と群の行の間は余裕に合わせて広い
+    await pumpAt(const Size(412, 915));
+    final autoP = rectOf('おまかせ');
+    final verseP = rectOf('1番');
+    expect((verseP.center.dy - autoP.center.dy).abs(), lessThan(1));
+    expect(verseP.left, greaterThan(autoP.right));
+    expect(tester.getRect(find.text('つなぎ')).top - autoP.bottom, greaterThan(24));
+    expect(tester.getRect(find.text('演出・効果音')).top - rectOf('つなぎ方').bottom,
+        greaterThan(24));
+  });
+
+  testWidgets('音量の正規化は「表示・再生」の再生に（再生画面の「音量正規化」と同じ設定）',
+      (tester) async {
+    await pumpPage(tester, const AdvancedSettingsScreen());
+    final before =
+        AppBoxes.settings.get(SettingsKeys.volumeNorm, defaultValue: false) as bool;
+    await tester.tap(find.text('音量の正規化'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.volumeNorm), !before);
+    await tester.tap(find.text('音量の正規化'));
+    await tester.pumpAndSettle();
+    expect(AppBoxes.settings.get(SettingsKeys.volumeNorm), before);
+    // 再生の群の中（高音質の下）
+    expect(tester.getRect(find.text('音量の正規化')).top,
+        greaterThan(tester.getRect(find.text('YouTube を高音質で再生')).bottom));
+  });
+
   testWidgets('クロスフェードの長さはつまみで変える', (tester) async {
     await pumpPage(tester, const DjMixSettingsScreen());
     final slider = tester.widget<Slider>(find.byType(Slider));
@@ -418,7 +477,7 @@ void main() {
     await pumpPage(tester, const SettingsScreen());
     await tester.tap(find.text('表示・再生'));
     await tester.pumpAndSettle();
-    expect(find.text('画面のぼかし'), findsOneWidget);
+    expect(find.text('すりガラス効果'), findsOneWidget);
     expect(find.textContaining('重い端末'), findsNothing);
     expect(find.textContaining('kbps'), findsNothing);
     // 消す操作はデータへ
@@ -441,6 +500,49 @@ void main() {
     expect(find.textContaining('タップで'), findsNothing);
     expect(find.textContaining('残ります'), findsNothing);
     expect(find.textContaining('置き換わ'), findsNothing);
+  });
+
+  testWidgets('表示・再生とデータは、横画面では群を列に並べてスクロールせずに収める（縦は 1 列）',
+      (tester) async {
+    Future<void> pumpAt(Size size, Widget page) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(ProviderScope(child: MaterialApp(home: page)));
+      await tester.pumpAndSettle();
+    }
+
+    double scrollExtent() => tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position
+        .maxScrollExtent;
+
+    for (final size in const [Size(915, 412), Size(800, 360)]) {
+      // データ: バックアップ（とすべて削除）/ オフライン動画 / 自動キャッシュと波形 の 3 列
+      await pumpAt(size, const DataSettingsScreen());
+      expect(scrollExtent(), 0, reason: '$size');
+      expect(tester.getRect(find.text('オフライン動画')).left,
+          greaterThan(tester.getRect(find.text('バックアップを書き出す')).right),
+          reason: '$size');
+      expect(tester.getRect(find.text('自動キャッシュ')).left,
+          greaterThan(tester.getRect(find.text('端末に残す')).right),
+          reason: '$size');
+      expect(tester.getRect(find.text('すべてのデータを削除')).top,
+          greaterThan(tester.getRect(find.text('バックアップから復元')).bottom),
+          reason: '$size');
+
+      // 表示・再生: 表示 / 再生 の 2 列
+      await pumpAt(size, const AdvancedSettingsScreen());
+      expect(scrollExtent(), 0, reason: '$size');
+      expect(tester.getRect(find.text('再生')).left,
+          greaterThan(tester.getRect(find.text('タグのサムネ')).right),
+          reason: '$size');
+    }
+
+    // 縦は今までどおり 1 列
+    await pumpAt(const Size(412, 915), const DataSettingsScreen());
+    expect(tester.getRect(find.text('オフライン動画')).top,
+        greaterThan(tester.getRect(find.text('バックアップから復元')).bottom));
   });
 
   testWidgets('バージョンが表示される', (tester) async {
