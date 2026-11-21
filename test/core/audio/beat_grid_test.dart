@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/core/audio/beat_grid.dart';
+import 'package:u2b_loop_app/core/audio/audio_analyzer.dart';
 import 'package:u2b_loop_app/core/audio/bpm_key_detector.dart';
 
 const _sr = BpmKeyDetector.analysisSampleRate;
@@ -61,10 +62,10 @@ void main() {
     });
 
     test('analyze は BPM と一緒に格子を返し、無音なら返さない', () {
-      final result = BpmKeyDetector.analyze(_click(120, offsetMs: 250, seconds: 30), _sr);
+      final result = AudioAnalyzer.analyze(_click(120, offsetMs: 250, seconds: 30), _sr);
       expect(result.bpm, closeTo(120, 2));
       expect(result.beatGrid, isNotNull);
-      expect(BpmKeyDetector.analyze(Int16List(_sr * 10), _sr).beatGrid, isNull);
+      expect(AudioAnalyzer.analyze(Int16List(_sr * 10), _sr).beatGrid, isNull);
     });
   });
 

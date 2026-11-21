@@ -11,7 +11,7 @@ import '../../models/loop_item.dart';
 import '../../providers/data_provider.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
-import '../../providers/playlist_engine.dart';
+import '../../services/playback/playlist_engine.dart';
 import '../../providers/playlist_player_provider.dart';
 import '../../services/waveform_cache.dart';
 import '../loop/loop_seekbar.dart';

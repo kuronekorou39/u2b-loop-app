@@ -47,8 +47,10 @@ class WaveformLoader {
     }
     () async {
       final cached = await _showCached(item);
-      var skip = await WaveformService.canSkipAudioFetch(item,
-          needLoudness: _needLoudness(item));
+      // 解析も音量の計測も要らず波形が保存してあれば、音声を取りに行かない
+      var skip = !AudioAnalysisService.needsAnalysis(item) &&
+          !_needLoudness(item) &&
+          await WaveformCache.exists(item.id);
       // この起動中にもう試した曲は、保存した波形があれば音声を落とし直さない
       if (cached && WaveformService.decodeTried(item.id)) skip = true;
       if (!isMounted()) return;

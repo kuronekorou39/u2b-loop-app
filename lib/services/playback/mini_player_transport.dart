@@ -7,8 +7,9 @@ import '../../models/video_source.dart';
 import '../../providers/data_provider.dart';
 import '../../providers/mini_player_provider.dart';
 import '../../providers/player_provider.dart';
-import '../../providers/playlist_engine.dart';
+import 'playlist_engine.dart';
 import '../../providers/playlist_player_provider.dart';
+import '../../providers/provider_reader.dart';
 import '../waveform_cache.dart';
 import 'playlist_transport.dart';
 

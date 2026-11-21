@@ -3,20 +3,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../app.dart';
+import '../core/app_navigation.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../models/loop_item.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
-import '../screens/player_screen.dart';
 import '../services/playback/pip_bridge.dart';
 import 'glass_panel.dart';
+
+/// ミニプレイヤーから再生画面へ戻るときに開く中身
+typedef MiniPlayerReopen = ({
+  LoopItem item,
+  List<LoopItem>? playlistItems,
+  int initialIndex,
+  Map<String, List<String>>? regionSelections,
+  Set<String>? disabledItemIds,
+  String? playlistName,
+  String? playlistId,
+});
 
 /// 画面の下に浮くミニプレイヤー（ガラス板）。
 /// 各画面の下端は [reservedHeight] ぶん余白を取る（App が MediaQuery の padding に足す）
 class MiniPlayerBar extends ConsumerWidget {
-  const MiniPlayerBar({super.key});
+  const MiniPlayerBar({super.key, required this.playerScreen});
+
+  /// 再生画面を作る（widgets から screens を import しないよう App が渡す）
+  final Widget Function(MiniPlayerReopen reopen) playerScreen;
 
   /// 板の高さ（余白を除く）
   static const height = 60.0;
@@ -160,7 +173,7 @@ class MiniPlayerBar extends ConsumerWidget {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(
-          builder: (_) => PlayerScreen(
+          builder: (_) => playerScreen((
             item: state.item!,
             playlistItems: playlistItems,
             initialIndex: state.initialIndex,
@@ -168,7 +181,7 @@ class MiniPlayerBar extends ConsumerWidget {
             disabledItemIds: disabledItemIds,
             playlistName: playlistName,
             playlistId: state.playlistId,
-          ),
+          )),
         ),
       );
     });

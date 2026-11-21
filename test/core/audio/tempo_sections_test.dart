@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/core/audio/audio_analyzer.dart';
 import 'package:u2b_loop_app/core/audio/bpm_key_detector.dart';
 import 'package:u2b_loop_app/core/audio/tempo_sections.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
@@ -61,7 +62,7 @@ void main() {
   });
 
   test('解析: メインの BPM は一番長い区切りのテンポ、格子もそこで求める', () {
-    final r = BpmKeyDetector.analyze(_concat([_click(120, 50), _click(150, 80, seed: 1)]), _sr);
+    final r = AudioAnalyzer.analyze(_concat([_click(120, 50), _click(150, 80, seed: 1)]), _sr);
     expect(r.sections, hasLength(2));
     expect(r.bpm, closeTo(150, 1.5));
     expect(r.beatGrid!.bpm, closeTo(150, 1.5));

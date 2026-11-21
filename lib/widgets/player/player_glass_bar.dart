@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../glass_panel.dart';
+import 'player_density.dart';
 import 'player_shell.dart';
 
 /// 再生画面の下部コントローラーの板（ガラス）。
@@ -139,23 +140,6 @@ class PlayerGlassBar extends StatelessWidget {
       ],
     );
   }
-}
-
-/// 横画面のコントローラーを詰めた形にする（[PlayerShell] の横レイアウトが付ける）
-class PlayerDensity extends InheritedWidget {
-  const PlayerDensity({
-    super.key,
-    required this.dense,
-    required super.child,
-  });
-
-  final bool dense;
-
-  static bool of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<PlayerDensity>()?.dense ?? false;
-
-  @override
-  bool updateShouldNotify(PlayerDensity old) => old.dense != dense;
 }
 
 /// シャッフル・リピート・ループのようなオン/オフのあるボタン。オンなら緑の丸を敷く

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
-import '../core/audio/bpm_key_detector.dart';
+import '../core/audio/audio_analyzer.dart';
 import '../core/audio/music_span_detector.dart';
 import '../core/audio/silence_detector.dart';
 import '../models/loop_item.dart';
@@ -97,7 +97,7 @@ class AudioAnalysisService {
         return null;
       }
       final (result, silence) = await Isolate.run(() => (
-            BpmKeyDetector.analyze(pcm, sampleRate),
+            AudioAnalyzer.analyze(pcm, sampleRate),
             SilenceDetector.detect(pcm, sampleRate, truncated: truncated),
           ));
       await items.saveAnalysis(itemId,

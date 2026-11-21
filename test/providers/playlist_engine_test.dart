@@ -7,7 +7,7 @@ import 'package:u2b_loop_app/core/audio/transition_planner.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/playlist_track.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
-import 'package:u2b_loop_app/providers/playlist_engine.dart';
+import 'package:u2b_loop_app/services/playback/playlist_engine.dart';
 
 LoopItem _item(String id, {int? trailingSilenceMs}) => LoopItem(
       id: id,

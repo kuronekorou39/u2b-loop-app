@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/loop_item.dart';
 import '../../providers/player_provider.dart';
-import '../../providers/playlist_engine.dart';
+import '../../services/playback/playlist_engine.dart';
 import '../item_thumbnail.dart';
 import '../lyrics_overlay.dart';
 import 'video_player_widget.dart';

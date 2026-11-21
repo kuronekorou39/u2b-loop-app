@@ -9,7 +9,7 @@ import '../../models/loop_item.dart';
 import '../../providers/thumb_tone_provider.dart';
 import '../karaoke_subtitle.dart';
 import 'deck_anchor.dart';
-import 'player_glass_bar.dart';
+import 'player_density.dart';
 
 /// 再生画面（縦）の骨組み。プレイリスト再生と単体再生で共通。
 ///

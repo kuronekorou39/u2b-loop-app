@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/app_snack_bar.dart';
 import '../../models/loop_item.dart';
@@ -10,12 +9,12 @@ import '../../models/playlist_mode.dart' as pl;
 import '../../models/playlist_track.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
-import '../../providers/playlist_engine.dart';
+import 'playlist_engine.dart';
 import '../../providers/playlist_player_provider.dart';
+import '../../providers/provider_reader.dart';
 
 /// プロバイダーを読む関数。再生画面は WidgetRef.read、ミニプレイヤー中は
 /// ProviderContainer.read（画面の dispose 後も使える）を渡す
-typedef ProviderReader = T Function<T>(ProviderListenable<T> provider);
 
 /// 進行役が使う再生の土台。本番は [EngineTransportDeck]（PlaylistEngine とプロバイダー）、
 /// テストでは偽物に差し替える（media_kit の Player を作らずに遷移の手順を確かめるため）

@@ -4,11 +4,13 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/app_navigation.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/perf_overlay_provider.dart';
 import 'providers/mini_player_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/list_screen.dart';
+import 'screens/player_screen.dart';
 import 'services/share_service.dart';
 import 'services/update_service.dart';
 import 'widgets/mini_player.dart';
@@ -18,11 +20,6 @@ import 'widgets/perf_overlay.dart';
 import 'widgets/player/player_status_views.dart';
 import 'widgets/share_import_dialog.dart';
 import 'services/playback/pip_bridge.dart';
-
-final appNavigatorKey = GlobalKey<NavigatorState>();
-
-/// PlayerScreenが表示中かどうか（PiP制御用）
-bool playerScreenActive = false;
 
 class App extends ConsumerWidget {
   const App({super.key});
@@ -81,11 +78,21 @@ class App extends ConsumerWidget {
               ),
               child: child!,
             ),
-            const Positioned(
+            Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: MiniPlayerBar(),
+              child: MiniPlayerBar(
+                playerScreen: (r) => PlayerScreen(
+                  item: r.item,
+                  playlistItems: r.playlistItems,
+                  initialIndex: r.initialIndex,
+                  regionSelections: r.regionSelections,
+                  disabledItemIds: r.disabledItemIds,
+                  playlistName: r.playlistName,
+                  playlistId: r.playlistId,
+                ),
+              ),
             ),
             // 通知はどの画面でもミニプレイヤーのすぐ上（キーボードが出ていればその上）
             AppToastHost(

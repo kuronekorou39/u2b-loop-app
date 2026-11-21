@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:u2b_loop_app/models/loop_item.dart';
 import 'package:u2b_loop_app/models/video_source.dart';
+import 'package:u2b_loop_app/services/playback/media_opener.dart';
 import 'package:u2b_loop_app/services/playback/player_loader.dart';
 
 /// 曲をどのソースとして開くか（再生画面と AB 設定画面で同じ判断になる）
@@ -47,5 +48,25 @@ void main() {
       () {
     final s = PlayerLoader.sourceFor(local(), offlinePath: '/cache/v.mp4');
     expect(s.uri, '/cache/v.mp4');
+  });
+
+  test('共通の開く手順（MediaOpener）で開いたものを、どこから開いたかで画面のソースにする', () {
+    final offline = PlayerLoader.mediaOf(youtube(),
+        const OpenedMedia(uri: '/cache/v.mp4', origin: MediaOrigin.offline));
+    expect(offline.source.type, VideoSourceType.youtube);
+    expect(offline.source.uri, '/cache/v.mp4');
+    expect(offline.manifest, isNull);
+
+    // 自動キャッシュの映像もストリームも、YouTube の曲として開いた URI のまま
+    final stream = PlayerLoader.mediaOf(youtube(),
+        const OpenedMedia(uri: 'https://rr1.googlevideo.com/x', origin: MediaOrigin.youtube));
+    expect(stream.source.type, VideoSourceType.youtube);
+    expect(stream.source.uri, 'https://rr1.googlevideo.com/x');
+    expect(stream.source.videoId, 'abcdefghijk');
+
+    final file = PlayerLoader.mediaOf(
+        local(), const OpenedMedia(uri: '/sdcard/Music/a.mp4', origin: MediaOrigin.local));
+    expect(file.source.type, VideoSourceType.local);
+    expect(file.source.uri, '/sdcard/Music/a.mp4');
   });
 }

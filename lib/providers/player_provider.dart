@@ -13,6 +13,7 @@ import '../services/audio_filters.dart';
 import '../services/transition_sfx.dart';
 import '../services/youtube_service.dart';
 import '../core/storage/app_boxes.dart';
+import 'persisted_setting.dart';
 
 final youtubeServiceProvider = Provider<YouTubeService>((ref) {
   final service = YouTubeService();
@@ -241,21 +242,12 @@ final rateProvider = StreamProvider<double>((ref) {
 final seekStepProvider =
     StateNotifierProvider<SeekStepNotifier, int>((ref) => SeekStepNotifier());
 
-class SeekStepNotifier extends StateNotifier<int> {
-  static const _key = SettingsKeys.seekStep;
-
+class SeekStepNotifier extends PersistedSetting<int> {
   /// 選べるスキップ秒数。再生画面のメニューと設定画面で共有する
   /// （再生画面のアイコン replay_5/10/30 もこの値に対応している）
   static const options = [5, 10, 30];
 
-  SeekStepNotifier() : super(5) {
-    state = AppBoxes.settings.get(_key, defaultValue: 5) as int;
-  }
-
-  set value(int v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
+  SeekStepNotifier() : super(SettingsKeys.seekStep, 5);
 }
 
 /// プレイリスト遷移のクロスフェードの長さ（拍数。0=オフ）。
@@ -263,9 +255,7 @@ class SeekStepNotifier extends StateNotifier<int> {
 final crossfadeProvider =
     StateNotifierProvider<CrossfadeNotifier, int>((ref) => CrossfadeNotifier());
 
-class CrossfadeNotifier extends StateNotifier<int> {
-  static const _key = SettingsKeys.crossfadeBeats;
-
+class CrossfadeNotifier extends PersistedSetting<int> {
   /// 選べる拍数。0はオフ。4 拍 = 1 小節。64・128 拍（16・32 小節）は長くかけて移るとき
   /// （おまかせでは、長いつなぎをその分伸ばす。[TransitionPlanner.stretch]）
   static const options = [0, 4, 8, 16, 32, 64, 128];
@@ -273,176 +263,65 @@ class CrossfadeNotifier extends StateNotifier<int> {
   /// v1.94 までの秒数設定からの移行先（オンだった人は 8 拍 = 2 小節）
   static const migratedBeats = 8;
 
-  CrossfadeNotifier() : super(0) {
-    final box = AppBoxes.settings;
-    final beats = box.get(_key) as int?;
-    if (beats != null) {
-      state = beats;
-    } else {
-      final seconds = box.get(SettingsKeys.crossfadeSeconds, defaultValue: 0) as int;
+  CrossfadeNotifier() : super(SettingsKeys.crossfadeBeats, 0) {
+    if (!isSaved) {
+      final seconds = AppBoxes.settings
+          .get(SettingsKeys.crossfadeSeconds, defaultValue: 0) as int;
       state = seconds > 0 ? migratedBeats : 0;
     }
-  }
-
-  set value(int v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
   }
 }
 
 /// YouTube を音声専用ストリーム（高音質）で鳴らすか（既定オン）。
 /// 一体型ストリームの音声は 96kbps しかない。仕組みは HqAudio を参照
-final hqAudioProvider =
-    StateNotifierProvider<HqAudioNotifier, bool>((ref) => HqAudioNotifier());
-
-class HqAudioNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.hqAudio;
-
-  HqAudioNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final hqAudioProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.hqAudio, true));
 
 /// クロスフェード中に次曲の速度を前曲のテンポへ寄せるか（既定オン）。
 /// クロスフェードがオフのときは効かない
-final tempoMatchProvider =
-    StateNotifierProvider<TempoMatchNotifier, bool>((ref) => TempoMatchNotifier());
-
-class TempoMatchNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.tempoMatch;
-
-  TempoMatchNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final tempoMatchProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.tempoMatch, true));
 
 /// クロスフェードで次曲のドロップ（音量が上がる点）が切り替わりに来るよう開始位置をずらし、
 /// 出ていく曲はアウトロの落ち込みで切るか（既定オン）。クロスフェードがオフのときは効かない
-final mixPointAlignProvider =
-    StateNotifierProvider<MixPointAlignNotifier, bool>((ref) => MixPointAlignNotifier());
-
-class MixPointAlignNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.mixPointAlign;
-
-  MixPointAlignNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final mixPointAlignProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.mixPointAlign, true));
 
 /// 次曲の入り口を前曲の出口に合わせて選ぶか（既定オン）。前曲が盛り上がったまま終わるなら
 /// 次曲の静かなイントロを飛ばし、同じくらい鳴っている段落から入れる（EntryPlanner）。
 /// オフなら曲頭（ドロップ合わせがあればそれ）。クロスフェードがオフのときは効かない。
 /// 出口も（v1.138.0「出入り口を選ぶ」）: 前曲の静かで長いアウトロは待たず、最後の盛り上がりの
 /// 終わりで切る（ExitPlanner）
-final smartEntryProvider =
-    StateNotifierProvider<SmartEntryNotifier, bool>((ref) => SmartEntryNotifier());
-
-class SmartEntryNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.smartEntry;
-
-  SmartEntryNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final smartEntryProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.smartEntry, true));
 
 /// クロスフェードの音量曲線（つなぎ方）。既定は等パワー
 final crossfadeCurveProvider =
-    StateNotifierProvider<CrossfadeCurveNotifier, CrossfadeCurve>(
-        (ref) => CrossfadeCurveNotifier());
-
-class CrossfadeCurveNotifier extends StateNotifier<CrossfadeCurve> {
-  static const _key = SettingsKeys.crossfadeCurve;
-
-  CrossfadeCurveNotifier() : super(CrossfadeCurve.defaultCurve) {
-    state = CrossfadeCurve.fromName(AppBoxes.settings.get(_key) as String?);
-  }
-
-  set value(CrossfadeCurve v) {
-    state = v;
-    AppBoxes.settings.put(_key, v.name);
-  }
-}
+    StateNotifierProvider<PersistedEnum<CrossfadeCurve>, CrossfadeCurve>(
+        (ref) => PersistedEnum(SettingsKeys.crossfadeCurve, CrossfadeCurve.defaultCurve,
+            fromName: CrossfadeCurve.fromName));
 
 /// 拍合わせ: 交差を始めるとき次曲の開始位置を ±半拍ずらして拍の頭を揃え、
 /// テンポが揃っていれば交差中も速度を微調整して合わせ続ける（既定オン）。
 /// 両方の曲に拍の格子（解析結果）があるときだけ効く
-final beatMatchProvider =
-    StateNotifierProvider<BeatMatchNotifier, bool>((ref) => BeatMatchNotifier());
-
-class BeatMatchNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.beatMatch;
-
-  BeatMatchNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final beatMatchProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.beatMatch, true));
 
 /// 重ね表示（交差の 2 段の波形）に拍の線と拍のずれを出すか（既定オン）。1 拍目は濃く。
 /// 単体の波形には出さない（細くて見えない・v1.108.1）
-final showBeatLinesProvider = StateNotifierProvider<ShowBeatLinesNotifier, bool>(
-    (ref) => ShowBeatLinesNotifier(SettingsKeys.showBeatLines));
-
-class ShowBeatLinesNotifier extends StateNotifier<bool> {
-  final String _key;
-
-  ShowBeatLinesNotifier(this._key, {bool defaultValue = true}) : super(defaultValue) {
-    state = AppBoxes.settings.get(_key, defaultValue: defaultValue) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final showBeatLinesProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.showBeatLines, true));
 
 /// プレイリストの波形（拡大できない）に拍の線を出すか（既定オフ。v1.131.0 で
 /// 「倍率 1 では間引いた線がいまいち」）。詰まるので小節頭、それでも詰まれば 4 小節・8 小節ごと。
 /// テンポ・キーの変わり目の印も一緒に
-final playlistBeatLinesProvider = StateNotifierProvider<ShowBeatLinesNotifier, bool>(
-    (ref) => ShowBeatLinesNotifier(SettingsKeys.playlistBeatLines, defaultValue: false));
+final playlistBeatLinesProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.playlistBeatLines, false));
 
 /// 重ね表示に音量曲線（つなぎ方の 2 本の線）を出すか（既定オン）。デッキの板で切り替え。
 /// 切替点の線と効果音の印は消さない（どこで切り替わるかは分かるように）
-final showMixCurvesProvider = StateNotifierProvider<ShowMixCurvesNotifier, bool>(
-    (ref) => ShowMixCurvesNotifier());
-
-class ShowMixCurvesNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.showMixCurves;
-
-  ShowMixCurvesNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final showMixCurvesProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.showMixCurves, true));
 
 /// 1番モードで「1 番の終わり」を自動で探す範囲（秒）。この間で一番静かな所を終わりにする。
 /// 曲がこの範囲の終わりより短ければ全部流す
@@ -489,69 +368,36 @@ class VerseRangeNotifier extends StateNotifier<VerseRange> {
 final bandSwapProvider =
     StateNotifierProvider<BandSwapNotifier, BandSwap>((ref) => BandSwapNotifier());
 
-class BandSwapNotifier extends StateNotifier<BandSwap> {
-  static const _key = SettingsKeys.bandSwap;
-
-  BandSwapNotifier() : super(BandSwap.defaultValue) {
-    final saved = AppBoxes.settings.get(_key) as String?;
-    if (saved != null) {
-      state = BandSwap.fromName(saved);
-    } else {
-      final legacy = AppBoxes.settings.get(SettingsKeys.bassSwap) as bool?;
-      if (legacy == false) state = BandSwap.none;
+class BandSwapNotifier extends PersistedEnum<BandSwap> {
+  BandSwapNotifier()
+      : super(SettingsKeys.bandSwap, BandSwap.defaultValue,
+            fromName: BandSwap.fromName) {
+    // v1.158 までのオンオフ（ベーススワップ）: オフにしていた人は「なし」
+    if (!isSaved &&
+        (AppBoxes.settings.get(SettingsKeys.bassSwap) as bool?) == false) {
+      state = BandSwap.none;
     }
-  }
-
-  set value(BandSwap v) {
-    state = v;
-    AppBoxes.settings.put(_key, v.name);
   }
 }
 
 /// 切り替わりの演出（フィルタースイープ / ライザーなど）。既定はフィルタースイープ
 final transitionEffectProvider =
-    StateNotifierProvider<TransitionEffectNotifier, TransitionEffect>(
-        (ref) => TransitionEffectNotifier());
-
-class TransitionEffectNotifier extends StateNotifier<TransitionEffect> {
-  static const _key = SettingsKeys.transitionEffect;
-
-  TransitionEffectNotifier() : super(TransitionEffect.defaultEffect) {
-    state = TransitionEffect.fromName(AppBoxes.settings.get(_key) as String?);
-  }
-
-  set value(TransitionEffect v) {
-    state = v;
-    AppBoxes.settings.put(_key, v.name);
-  }
-}
+    StateNotifierProvider<PersistedEnum<TransitionEffect>, TransitionEffect>(
+        (ref) => PersistedEnum(SettingsKeys.transitionEffect,
+            TransitionEffect.defaultEffect,
+            fromName: TransitionEffect.fromName));
 
 /// おまかせ: 2 曲の解析結果からつなぎ方（長さ・曲線・低音・演出・合わせるか）を自動で選ぶ（既定オン）。
 /// オフのときは手動の設定（つなぎ方 / テンポ合わせ / 拍合わせ / ベーススワップ / 演出）が効く。
 /// クロスフェードのオン/オフと「ドロップに合わせる」「効果音の音量」はどちらでも手動
-final autoMixProvider =
-    StateNotifierProvider<AutoMixNotifier, bool>((ref) => AutoMixNotifier());
-
-class AutoMixNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.autoMix;
-
-  AutoMixNotifier() : super(true) {
-    state = AppBoxes.settings.get(_key, defaultValue: true) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final autoMixProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.autoMix, true));
 
 /// 切り替えの効果音の音量（曲との差 dB）。既定は曲より 6dB 小さい
 final sfxLevelProvider =
     StateNotifierProvider<SfxLevelNotifier, int>((ref) => SfxLevelNotifier());
 
-class SfxLevelNotifier extends StateNotifier<int> {
-  static const _key = SettingsKeys.sfxLevelDb;
-
+class SfxLevelNotifier extends PersistedSetting<int> {
   static const options = [-12, -6, 0];
   static const defaultDb = -6;
 
@@ -564,14 +410,7 @@ class SfxLevelNotifier extends StateNotifier<int> {
   /// 「曲より 6dB 小さい」のような説明
   static String describe(int db) => db >= 0 ? '曲と同じ大きさ' : '曲より ${-db}dB 小さい';
 
-  SfxLevelNotifier() : super(defaultDb) {
-    state = AppBoxes.settings.get(_key, defaultValue: defaultDb) as int;
-  }
-
-  set value(int v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
+  SfxLevelNotifier() : super(SettingsKeys.sfxLevelDb, defaultDb);
 }
 
 /// 切り替えの効果音のタイミングの補正（実時間 ms、+ は遅く、− は早く）。
@@ -579,9 +418,7 @@ class SfxLevelNotifier extends StateNotifier<int> {
 final sfxOffsetMsProvider =
     StateNotifierProvider<SfxOffsetNotifier, int>((ref) => SfxOffsetNotifier());
 
-class SfxOffsetNotifier extends StateNotifier<int> {
-  static const _key = SettingsKeys.sfxOffsetMs;
-
+class SfxOffsetNotifier extends PersistedSetting<int> {
   static const step = 10;
   static const maxAbsMs = 200;
 
@@ -593,14 +430,10 @@ class SfxOffsetNotifier extends StateNotifier<int> {
   static String? describe(int ms) =>
       ms == 0 ? null : '効果音を ${ms.abs()}ms ${ms > 0 ? '遅く' : '早く'}';
 
-  SfxOffsetNotifier() : super(0) {
-    state = AppBoxes.settings.get(_key, defaultValue: 0) as int;
-  }
+  SfxOffsetNotifier() : super(SettingsKeys.sfxOffsetMs, 0);
 
-  set value(int v) {
-    state = v.clamp(-maxAbsMs, maxAbsMs);
-    AppBoxes.settings.put(_key, state);
-  }
+  @override
+  set value(int v) => super.value = v.clamp(-maxAbsMs, maxAbsMs);
 
   void nudge(int delta) => value = state + delta;
 }
@@ -614,21 +447,8 @@ final waveformLoadingProvider = StateProvider<bool>((ref) => false);
 final waveformErrorProvider = StateProvider<String?>((ref) => null);
 
 /// 音量正規化（曲ごとに測った大きさで音量を揃える。Loudness）。既定オフ、保存する
-final volumeNormProvider =
-    StateNotifierProvider<VolumeNormNotifier, bool>((ref) => VolumeNormNotifier());
-
-class VolumeNormNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.volumeNorm;
-
-  VolumeNormNotifier() : super(false) {
-    state = AppBoxes.settings.get(_key, defaultValue: false) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final volumeNormProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.volumeNorm, false));
 
 /// ユーザーの音量（0〜[Loudness.maxVolume]%、保存する）。プレイヤーに入れるのは
 /// これに曲ごとの正規化をかけた値（[Loudness.volumeFor]）。曲が替わっても引き継ぐ。
@@ -637,23 +457,22 @@ class VolumeNormNotifier extends StateNotifier<bool> {
 final userVolumeProvider =
     StateNotifierProvider<UserVolumeNotifier, double>((ref) => UserVolumeNotifier());
 
-class UserVolumeNotifier extends StateNotifier<double> {
-  static const _key = SettingsKeys.userVolume;
-
-  UserVolumeNotifier() : super(100) {
-    final saved = (AppBoxes.settings.get(_key) as num?)?.toDouble();
-    // ミュートのまま終わっても、次に起動したときは鳴らす
-    if (saved != null && saved > 0) state = saved.clamp(0.0, Loudness.maxVolume);
-  }
+class UserVolumeNotifier extends PersistedSetting<double> {
+  UserVolumeNotifier()
+      : super(SettingsKeys.userVolume, 100, decode: (saved) {
+          final v = (saved as num).toDouble();
+          // ミュートのまま終わっても、次に起動したときは鳴らす
+          return v > 0 ? v.clamp(0.0, Loudness.maxVolume) : 100;
+        });
 
   /// 100% の前後はそこに吸い付かせる（200% までのスライダーで 100 に戻しやすく）
   static const _snap = 4.0;
 
+  @override
   set value(double v) {
     var next = v.clamp(0.0, Loudness.maxVolume);
     if ((next - 100).abs() < _snap) next = 100;
-    state = next;
-    AppBoxes.settings.put(_key, next);
+    super.value = next;
   }
 }
 
@@ -661,20 +480,8 @@ class UserVolumeNotifier extends StateNotifier<double> {
 final audioDeviceProvider = StateProvider<String>((ref) => 'speaker');
 
 /// ガチ（おまかせに派手な演出・フレーズ単位の長いつなぎ・歌のぶつかり回避を足す）。既定オフ
-final djProProvider = StateNotifierProvider<DjProNotifier, bool>((ref) => DjProNotifier());
-
-class DjProNotifier extends StateNotifier<bool> {
-  static const _key = SettingsKeys.djPro;
-
-  DjProNotifier() : super(false) {
-    state = AppBoxes.settings.get(_key, defaultValue: false) as bool;
-  }
-
-  set value(bool v) {
-    state = v;
-    AppBoxes.settings.put(_key, v);
-  }
-}
+final djProProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.djPro, false));
 
 /// 今の DJ のつなぎ方の段階（個々の設定から決まる。どれとも一致しなければ null = カスタム）
 final djLevelProvider = Provider<DjLevel?>((ref) => DjLevel.of(DjSettings(

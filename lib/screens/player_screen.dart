@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import '../app.dart';
+import '../core/app_navigation.dart';
 import '../core/audio/energy_profile.dart';
 import '../core/audio/loudness.dart';
 import '../core/audio/mix_point_detector.dart';
@@ -27,7 +27,7 @@ import '../providers/data_provider.dart';
 import '../providers/loop_provider.dart';
 import '../providers/mini_player_provider.dart';
 import '../providers/player_provider.dart';
-import '../providers/playlist_engine.dart';
+import '../services/playback/playlist_engine.dart';
 import '../providers/playlist_player_provider.dart';
 import '../services/save_flow.dart';
 import '../services/playback/load_progress.dart';

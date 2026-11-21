@@ -8,9 +8,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../core/audio/loudness.dart';
 import '../core/native_channels.dart';
-import '../models/loop_item.dart';
 import '../models/video_source.dart';
-import 'audio_analysis_service.dart';
 import 'playback/hq_audio.dart';
 import 'playback/media_cache.dart';
 import 'waveform_cache.dart';
@@ -454,12 +452,6 @@ class WaveformService {
     }
     return d != null && d > maxWaveformDuration;
   }
-
-  static Future<bool> canSkipAudioFetch(LoopItem item,
-          {bool needLoudness = false}) async =>
-      !AudioAnalysisService.needsAnalysis(item) &&
-      !needLoudness &&
-      await WaveformCache.exists(item.id);
 
   Future<List<double>?> generateFromCachedAudio(
     String audioPath, {

@@ -9,6 +9,7 @@ import 'package:u2b_loop_app/models/playlist_mode.dart' as pl;
 import 'package:u2b_loop_app/models/video_source.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
 import 'package:u2b_loop_app/widgets/player/player_glass_bar.dart';
+import 'package:u2b_loop_app/widgets/player/player_density.dart';
 import 'package:u2b_loop_app/widgets/player/playlist_bottom_bar.dart';
 
 /// プレイリストのコントローラー: ふだんのピルと AB 編集中のピルの切り替え、

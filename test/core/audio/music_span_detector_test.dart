@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:u2b_loop_app/core/audio/audio_analyzer.dart';
 import 'package:u2b_loop_app/core/audio/bpm_key_detector.dart';
 import 'package:u2b_loop_app/core/audio/music_span_detector.dart';
 
@@ -99,7 +100,7 @@ void main() {
   test('解析は曲の範囲だけで行い、拍の格子は動画の時刻に戻す', () {
     // 曲は 30 秒ちょうどから。120 BPM なので拍は 500ms ごと、動画の時刻で 30000 の倍数の位置
     final pcm = _concat([_talk(30), _click(120, 60), _talk(20, seed: 2)]);
-    final r = BpmKeyDetector.analyze(pcm, _sr);
+    final r = AudioAnalyzer.analyze(pcm, _sr);
     expect(r.span.isMusic, isTrue);
     expect(r.bpm, closeTo(120, 1.5));
     final grid = r.beatGrid!;
@@ -108,7 +109,7 @@ void main() {
   });
 
   test('曲ではないなら BPM・キー・格子は空', () {
-    final r = BpmKeyDetector.analyze(_talk(90), _sr);
+    final r = AudioAnalyzer.analyze(_talk(90), _sr);
     expect(r.span.isMusic, isFalse);
     expect(r.bpm, isNull);
     expect(r.key, isNull);
@@ -125,13 +126,13 @@ void main() {
   });
 
   test('拍がなくても和音があれば曲（キーだけ）。トークは曲ではないまま', () {
-    final r = BpmKeyDetector.analyze(_pad(60), _sr);
+    final r = AudioAnalyzer.analyze(_pad(60), _sr);
     expect(r.span.isMusic, isTrue);
     expect(r.span.steadyBeat, isFalse, reason: '${r.span} bpm=${r.bpm}');
     expect(r.bpm, isNull);
     expect(r.beatGrid, isNull);
     expect(r.key, 'Cmaj');
-    expect(BpmKeyDetector.analyze(_talk(60), _sr).span.isMusic, isFalse);
+    expect(AudioAnalyzer.analyze(_talk(60), _sr).span.isMusic, isFalse);
     expect(MusicSpanInfo.of(r.span, lengthMs: 60000, truncated: false).noSteadyBeat, isTrue);
   });
 }
