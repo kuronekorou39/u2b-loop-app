@@ -140,6 +140,8 @@ class BackupService {
         'trailingSilenceMs': item.trailingSilenceMs,
         'musicHeadMs': item.musicHeadMs,
         'musicTailMs': item.musicTailMs,
+        'sharedHeadMs': item.sharedHeadMs,
+        'sharedTailMs': item.sharedTailMs,
         'notMusic': item.notMusic,
         'tempoSections': item.tempoSectionData,
         'keySections': item.keySectionData,
@@ -161,6 +163,7 @@ class BackupService {
         'loudnessDb': item.loudnessDb,
         'firstVerseAMs': item.firstVerseAMs,
         'firstVerseBMs': item.firstVerseBMs,
+        'firstVerseEnding': item.firstVerseEnding,
         'durationMs': item.durationMs,
       };
 
@@ -198,6 +201,8 @@ class BackupService {
         trailingSilenceMs: j['trailingSilenceMs'] as int?,
         musicHeadMs: j['musicHeadMs'] as int?,
         musicTailMs: j['musicTailMs'] as int?,
+        sharedHeadMs: j['sharedHeadMs'] as int?,
+        sharedTailMs: j['sharedTailMs'] as int?,
         notMusic: j['notMusic'] as bool?,
         keySectionData: (j['keySections'] as List?)?.cast<String>(),
         unplayableReason: j['unplayableReason'] as String?,
@@ -223,6 +228,7 @@ class BackupService {
         loudnessDb: (j['loudnessDb'] as num?)?.toDouble(),
         firstVerseAMs: j['firstVerseAMs'] as int?,
         firstVerseBMs: j['firstVerseBMs'] as int?,
+        firstVerseEnding: j['firstVerseEnding'] as String?,
         durationMs: j['durationMs'] as int?,
       );
 

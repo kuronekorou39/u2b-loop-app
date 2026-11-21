@@ -61,6 +61,17 @@ void main() {
       expect(_roundTrip(items: [_item('b')]).items.single.hasFirstVerse, isFalse);
     });
 
+    test('共通の端と 1 番の終わり方が保たれる', () {
+      final item = _item('a')
+        ..sharedHeadMs = 3000
+        ..sharedTailMs = 18000
+        ..firstVerseEnding = 'echo';
+      final back = _roundTrip(items: [item]).items.single;
+      expect(back.sharedHeadMs, 3000);
+      expect(back.sharedTailMs, 18000);
+      expect(back.firstVerseEnding, 'echo');
+    });
+
     test('日時が保たれる', () {
       final back = _roundTrip(items: [_item('a')]).items.single;
       expect(back.createdAt, DateTime(2026, 1, 2, 3, 4, 5));

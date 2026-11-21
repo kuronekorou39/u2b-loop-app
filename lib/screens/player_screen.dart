@@ -69,6 +69,8 @@ import '../core/storage/app_boxes.dart';
 import '../core/utils/id_generator.dart';
 import '../core/ui/app_dialogs.dart';
 import '../core/ui/app_sheets.dart';
+import '../core/audio/verse_ending.dart';
+import '../services/tail_renderer.dart';
 import '../widgets/player/first_verse_sheet.dart';
 
 /// 汎用プレーヤー画面。単体再生・プレイリスト再生・PiP対応。
@@ -616,10 +618,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         .state
         .duration;
     if (duration <= Duration.zero) return;
+    // エンドカードなど、ほかの曲と共通の端は曲の音量の流れに入れない
+    final songWave = item.withoutSharedEdges(waveform, duration.inMilliseconds);
     MixPoints points;
     if (needPoints) {
       points = MixPointDetector.fromWaveform(
-        waveform,
+        songWave,
         duration.inMilliseconds,
         leadingSilenceMs: item.introSkipMs,
         trailingSilenceMs: item.outroSkipMs,
@@ -635,7 +639,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     final energy = needEnergy
         ? EnergyProfile.fromWaveform(
-            waveform,
+            songWave,
             duration.inMilliseconds,
             leadingSilenceMs: item.introSkipMs,
             trailingSilenceMs: item.outroSkipMs,
@@ -643,7 +647,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           )
         : null;
     final curve = needEnergy
-        ? EnergyProfile.curve(waveform, duration.inMilliseconds)
+        ? EnergyProfile.curve(songWave, duration.inMilliseconds)
         : null;
     if (points == MixPoints.none &&
         (energy == null || energy.isEmpty) &&
@@ -2044,6 +2048,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       startMs: saved.firstVerseAMs ?? 0,
       manualEndMs: saved.firstVerseBMs,
       positionMs: player.state.position.inMilliseconds,
+      ending: saved.verseEnding,
+      onEnding: ref.read(crossfadeProvider) > 0
+          ? (ending) => unawaited(_saveVerseEnding(saved, ending))
+          : null,
     );
     if (!mounted) return;
     final firstVerse = ref.read(playlistPlayerProvider).firstVerseMode;
@@ -2069,6 +2077,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _applyFirstVerseCut(track);
         }
     }
+  }
+
+  /// この曲の 1 番の終わり方を保存する。エコー・残響は端末にある音声から作るので、
+  /// 無い曲はふだんの重ね方になることを知らせる
+  Future<void> _saveVerseEnding(LoopItem item, VerseEnding ending) async {
+    await ref.read(loopItemsProvider.notifier).saveVerseEnding(item.id, ending);
+    if (ending.effect == null || await TailRenderer.sourceFor(item) != null) return;
+    AppToast.instance.show(
+        AppSnackBar.info('この曲は音声が端末に無いので、今は重ねてつなぎます'));
   }
 
   /// この曲の 1 番を自動（波形から探す）に戻す

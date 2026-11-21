@@ -6,10 +6,12 @@ import 'package:flutter/foundation.dart';
 
 import '../core/audio/audio_analyzer.dart';
 import '../core/audio/music_span_detector.dart';
+import '../core/audio/shared_edges.dart';
 import '../core/audio/silence_detector.dart';
 import '../models/loop_item.dart';
 import '../models/video_source.dart';
 import '../providers/data_provider.dart';
+import 'shared_edge_service.dart';
 import 'waveform_cache.dart';
 import 'waveform_service.dart';
 import 'playback/unplayable_watch.dart';
@@ -97,16 +99,29 @@ class AudioAnalysisService {
         debugPrint('[AudioAnalysis] $itemId: $maxAnalyzableMinutes 分を超えるので解析しない');
         return null;
       }
-      final (result, silence) = await Isolate.run(() => (
-            AudioAnalyzer.analyze(pcm, sampleRate),
-            SilenceDetector.detect(pcm, sampleRate, truncated: truncated),
-          ));
+      // ほかの曲と共通の端（エンドカードなど）は無音にして解析する。BPM の誤判定の元になる
+      final edge = await SharedEdgeService.update(items, itemId, pcm, sampleRate);
+      final before = items.byId(itemId);
+      // 端を今回から除く曲は、保存済みの格子が除く前の音の自動の値かを確かめる材料も要る
+      final needRaw = !edge.isNone &&
+          before?.beatGrid != null &&
+          (before?.analysisVersion ?? 0) < LoopItem.currentAnalysisVersion;
+      final (result, silence, rawGrid) = await Isolate.run(() {
+        final clean = SharedEdges.muted(pcm, sampleRate, edge);
+        return (
+          AudioAnalyzer.analyze(clean, sampleRate),
+          SilenceDetector.detect(clean, sampleRate, truncated: truncated),
+          needRaw ? AudioAnalyzer.analyze(pcm, sampleRate).baseGrid : null,
+        );
+      });
       await items.saveAnalysis(itemId,
           bpm: result.bpm,
           musicalKey: result.key,
           silence: silence,
           beatGrid: result.beatGrid,
           baseGrid: result.baseGrid,
+          rawGrid: rawGrid,
+          usedEdge: edge,
           sections: result.sections,
           keySections: result.keySections,
           sectionGrids: result.sectionGrids,

@@ -18,6 +18,7 @@ import '../../core/audio/sfx_plan.dart';
 import '../../core/audio/track_compatibility.dart';
 import '../../core/audio/transition_effect.dart';
 import '../../core/audio/transition_planner.dart';
+import '../../core/audio/verse_ending.dart';
 import '../../models/loop_item.dart';
 import '../../models/playlist_mode.dart';
 import '../../models/playlist_track.dart';
@@ -157,6 +158,8 @@ class PlaylistEngine {
     if (startMs != null) return Duration(milliseconds: startMs);
     final fade = crossfadeDuration;
     if (fade == Duration.zero) return Duration.zero;
+    // 1 番をエコー・残響で終えるときは、次の曲を切替点で頭から聴かせる
+    if (_verseTailRecipe() != null) return _verseTailEntry(track);
     final leading = Duration(milliseconds: track.item.introSkipMs);
     // 前曲の出口に合わせた入り口（静かなイントロを飛ばして、鳴っている段落の頭を切替点に）
     final entry = _smartEntryMs(track);
@@ -284,6 +287,9 @@ class PlaylistEngine {
   double inAtMs(PlaylistTrack next) {
     final startMs = next.startMs;
     if (startMs != null) return startMs.toDouble();
+    if (_verseTailRecipe() != null) {
+      return _verseTailEntry(next).inMicroseconds / 1000;
+    }
     final entry = _smartEntryMs(next);
     if (entry != null) return entry;
     final mixIn = next.item.mixInMs;
@@ -505,7 +511,8 @@ class PlaylistEngine {
         next: next,
         inDuration: inDuration,
         inStart: inStart,
-        start: start,
+        // 切替点まで止めておく曲は、時間軸でも切替点から鳴り始める（重なりが無い）
+        start: recipe.holdsIn ? cut : start,
         cut: cut,
         recipe: recipe,
         inRatio: inRatio,
@@ -771,6 +778,10 @@ class PlaylistEngine {
   TransitionRecipe recipeFor(PlaylistTrack next) {
     final manualBeats = _ref.read(crossfadeProvider);
     final current = _ref.read(playlistPlayerProvider).currentTrack?.item;
+    if (manualBeats > 0) {
+      final verseTail = _verseTailRecipe();
+      if (verseTail != null) return verseTail;
+    }
     if (manualBeats > 0 && current != null && _ref.read(autoMixProvider)) {
       final pro = _ref.read(djProProvider);
       final planned = TransitionPlanner.plan(current, next.item,
@@ -796,6 +807,42 @@ class PlaylistEngine {
         ),
         current,
         next.item);
+  }
+
+  // --- 1 番の終わり方（重ねる / エコー / 残響） ---
+
+  /// 今の曲の 1 番の終わりに選ばれたつなぎ方。1 番だけモードで B 点で切る曲だけ
+  VerseEnding _verseEnding() {
+    final playlist = _ref.read(playlistPlayerProvider);
+    final track = playlist.currentTrack;
+    final loop = _ref.read(loopProvider);
+    if (!playlist.firstVerseMode ||
+        track == null ||
+        track.hasRegion ||
+        !loop.enabled ||
+        loop.pointB == null) {
+      return VerseEnding.overlap;
+    }
+    // 画面が持つ item は古いことがあるので保存済みの方を見る
+    final saved = _ref.read(loopItemsProvider.notifier).byId(track.item.id);
+    return (saved ?? track.item).verseEnding;
+  }
+
+  /// 1 番をエコー・残響で終えるレシピ。尾の音ができていなければ null（ふだんのつなぎ）
+  TransitionRecipe? _verseTailRecipe() {
+    final ending = _verseEnding();
+    final effect = ending.effect;
+    final b = _ref.read(loopProvider).pointB;
+    if (effect == null || b == null) return null;
+    final request = _tailRequest(effect, b);
+    return TransitionPlanner.verseTail(ending,
+        rendered: request != null && TailRenderer.ready(request.key) != null);
+  }
+
+  /// 1 番を尾で終えたあと、次の曲が鳴り始める位置: その曲の 1 番の始まりか、曲の頭
+  Duration _verseTailEntry(PlaylistTrack next) {
+    final saved = _ref.read(loopItemsProvider.notifier).byId(next.item.id) ?? next.item;
+    return Duration(milliseconds: max(saved.introSkipMs, saved.firstVerseAMs ?? 0));
   }
 
   /// 重ねてよい長さは、短いほうの曲（曲でない部分を除く）のこの割合まで
@@ -933,14 +980,19 @@ class PlaylistEngine {
   /// 交差が始まる前に、曲の音から作る演出の音を作っておく（切替点が動いたら作り直す）。
   /// できたら効果音のプレイヤーに開いておく
   void _prepareRendered(PlaylistTrack next, Duration cut) {
-    final request = _tailRequest(recipeFor(next).effect, cut);
+    // 1 番の尾はできるまでレシピに出ないので、選ばれた演出を直接見る
+    final request = _tailRequest(_verseEnding().effect ?? recipeFor(next).effect, cut);
     if (request == null ||
         TailRenderer.ready(request.key) != null ||
         TailRenderer.pending(request.key)) {
       return;
     }
     unawaited(TailRenderer.ensure(request).then((clip) {
-      if (clip != null && _crossfade == null) unawaited(_preloadSfx());
+      if (clip != null && _crossfade == null) {
+        unawaited(_preloadSfx());
+        // 1 番の尾ができたら、次の曲の開始位置が頭に変わる
+        unawaited(realignPreload(next));
+      }
     }));
   }
 
@@ -971,7 +1023,7 @@ class PlaylistEngine {
   Future<void> _preloadSfx() async {
     final next = _armedTrack;
     if (next == null) return;
-    final effect = recipeFor(next).effect;
+    final effect = _verseEnding().effect ?? recipeFor(next).effect;
     if (!effect.usesSfx) return;
     final planned = plannedCrossfade();
     // 曲の音から作る演出は、作り終えてから開く（作れなければ尾なし・素材の音）
@@ -1256,6 +1308,7 @@ class PlaylistEngine {
       curve: curve,
       bands: bands,
       effect: effect,
+      holdsIn: recipe.holdsIn,
       beat: beat,
       swapStartMs: low.$1,
       swapEndMs: low.$2,
@@ -1288,7 +1341,8 @@ class PlaylistEngine {
       final offset = activePlayer.state.position - start;
       final midway = offset >= _resumeSlack;
       // 入る曲は速度が違う（テンポ合わせ）ので、進めた量もその比で
-      final target = midway ? inStart + offset * session.inRatio : inStart;
+      final target =
+          midway && !session.holdsIn ? inStart + offset * session.inRatio : inStart;
       final slack = beat != null ? _seekSlack : _resumeSlack;
       if ((inPlayer.state.position - target).abs() >= slack) {
         await inPlayer.seek(target);
@@ -1307,7 +1361,8 @@ class PlaylistEngine {
       if (effect.sweepsIn) {
         await AudioFilters.setSweep(inPlayer, AudioFilters.sweepHz(1));
       }
-      await inPlayer.play();
+      // 頭から聴かせる曲は切替点まで止めておく（鳴らすのは [_CrossfadeSession._cutNow]）
+      if (!session.holdsIn) await inPlayer.play();
       // 効果音を開く（armCrossfade で同じものを開いてあれば一瞬で返る）
       if (session.sfx != null && sfxPlan != null) {
         await session.sfx!.load(sfxPlan.clips);

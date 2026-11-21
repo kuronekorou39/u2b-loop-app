@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:u2b_loop_app/core/audio/verse_ending.dart';
 import 'package:u2b_loop_app/core/storage/app_boxes.dart';
 import 'package:u2b_loop_app/providers/player_provider.dart';
 import 'package:u2b_loop_app/widgets/player/first_verse_sheet.dart';
@@ -18,7 +19,9 @@ void main() {
   setUp(() => AppBoxes.settings.clear());
 
   Future<List<FirstVerseResult?>> open(WidgetTester tester,
-      {int? manualEndMs}) async {
+      {int? manualEndMs,
+      VerseEnding ending = VerseEnding.overlap,
+      ValueChanged<VerseEnding>? onEnding}) async {
     final results = <FirstVerseResult?>[];
     await tester.pumpWidget(ProviderScope(
       child: MaterialApp(
@@ -33,6 +36,8 @@ void main() {
                 startMs: 0,
                 manualEndMs: manualEndMs,
                 positionMs: 120000,
+                ending: ending,
+                onEnding: onEnding,
               )),
               child: const Text('open'),
             ),
@@ -60,6 +65,28 @@ void main() {
     await tester.tap(save);
     await tester.pumpAndSettle();
     expect((results.single as FirstVerseSave).endMs, 121000);
+  });
+
+  testWidgets('終わり方を選ぶとすぐ知らせる（範囲を動かさなくても）', (tester) async {
+    final picked = <VerseEnding>[];
+    await open(tester, onEnding: picked.add);
+    final seg = find.byType(SegmentedButton<VerseEnding>);
+    expect(tester.widget<SegmentedButton<VerseEnding>>(seg).selected, {VerseEnding.overlap});
+    await tester.tap(find.text('エコー'));
+    await tester.pump();
+    expect(picked, [VerseEnding.echo]);
+    expect(tester.widget<SegmentedButton<VerseEnding>>(seg).selected, {VerseEnding.echo});
+    await tester.tap(find.text('残響'));
+    await tester.pump();
+    expect(picked, [VerseEnding.echo, VerseEnding.reverb]);
+  });
+
+  testWidgets('クロスフェードがオフなら終わり方は選べない（場所は残る）', (tester) async {
+    await open(tester, ending: VerseEnding.reverb);
+    final seg = find.byType(SegmentedButton<VerseEnding>);
+    expect(seg, findsOneWidget);
+    expect(tester.widget<SegmentedButton<VerseEnding>>(seg).onSelectionChanged, isNull);
+    expect(tester.widget<SegmentedButton<VerseEnding>>(seg).selected, {VerseEnding.reverb});
   });
 
   testWidgets('スマホの幅（360）でもはみ出さない', (tester) async {

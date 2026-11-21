@@ -66,6 +66,12 @@ class WaveformCache {
   static Future<bool> bandsExist(String itemId) async =>
       (await _bandsFile(itemId)).exists();
 
+  /// 帯域の波形のファイルの場所（isolate でまとめて読むとき用）
+  static Future<Map<String, String>> bandsPaths(Iterable<String> itemIds) async {
+    final dir = (await _dir()).path;
+    return {for (final id in itemIds) id: '$dir/$id$_bandsExtension'};
+  }
+
   /// 無ければ null
   static Future<WaveBands?> loadBands(String itemId) async {
     try {

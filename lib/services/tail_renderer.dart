@@ -76,6 +76,13 @@ class TailRenderer {
   /// 作り終えていれば返す
   static SfxClip? ready(String key) => _readyKey == key ? _readyClip : null;
 
+  /// テスト用: 作り終えた音を置く
+  @visibleForTesting
+  static void debugSetReady(String? key, SfxClip? clip) {
+    _readyKey = key;
+    _readyClip = clip;
+  }
+
   /// [key] を作っている最中か
   static bool pending(String key) => _jobKey == key && _job != null;
 

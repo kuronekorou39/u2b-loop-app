@@ -6,12 +6,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/app_navigation.dart';
 import 'core/theme/app_theme.dart';
+import 'providers/data_provider.dart';
 import 'providers/perf_overlay_provider.dart';
 import 'providers/mini_player_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/list_screen.dart';
 import 'screens/player_screen.dart';
 import 'services/share_service.dart';
+import 'services/shared_edge_service.dart';
 import 'services/update_service.dart';
 import 'widgets/mini_player.dart';
 import 'core/ui/app_snack_bar.dart';
@@ -133,6 +135,7 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
       PipBridge.setAutoPiP(enabled: false);
       UpdateService.checkForUpdate(context);
       _initDeepLinks();
+      unawaited(SharedEdgeService.scanLibrary(ref.read(loopItemsProvider.notifier)));
     });
   }
 

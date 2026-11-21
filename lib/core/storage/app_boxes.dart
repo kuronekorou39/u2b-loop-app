@@ -80,6 +80,9 @@ class SettingsKeys {
   /// 全画面のコントロールを出したままにする（上の帯のピン）
   static const fullscreenControlsPinned = 'fullscreen_controls_pinned';
 
+  /// 解析済みの曲どうしの端（エンドカードなど）を一度見比べたか
+  static const sharedEdgesScanned = 'shared_edges_scanned';
+
   /// デバッグモード（設定のバージョン行を 5 回タップ）と、その中のテスト版の受け取り
   static const debugMode = 'debug_mode';
   static const betaUpdates = 'beta_updates';

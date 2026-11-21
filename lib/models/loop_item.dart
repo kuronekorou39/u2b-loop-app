@@ -4,7 +4,9 @@ import 'package:hive/hive.dart';
 import '../core/audio/beat_grid.dart';
 import '../core/audio/key_sections.dart';
 import '../core/audio/musical_key.dart';
+import '../core/audio/shared_edges.dart';
 import '../core/audio/tempo_sections.dart';
+import '../core/audio/verse_ending.dart';
 import '../core/utils/time_utils.dart';
 import 'loop_region.dart';
 
@@ -92,6 +94,10 @@ class LoopItem {
   /// これより古い解析は解析し直す
   static const minAnalysisVersion = 10;
 
+  /// 共通の端（[sharedEdge]）が変わった曲をこの版に下げて、次の再生で解析し直す。
+  /// 版が古い扱いなので、手で直した BPM・拍は [LoopItemsNotifier.saveAnalysis] で残る
+  static const reanalyzeVersion = minAnalysisVersion - 1;
+
   /// 版 10 より前の波形に穴があり得る長さの上限（ミリ秒）。デコードの塊が 4000 点より
   /// 少ない曲で、塊の長さは形式で違う（AAC 93 秒、HE-AAC 186 秒まで）
   static const holeyWaveformMs = 190000;
@@ -110,6 +116,27 @@ class LoopItem {
   /// 曲が終わってからの曲でない部分（ミリ秒。ED の語りなど）。
   /// null = 未計測、または曲末まで解析していない
   int? musicTailMs;
+
+  /// ほかの曲と共通の頭・終わりの長さ（ミリ秒。ロゴやエンドカードなど。[SharedEdges]）。
+  /// つなぎでも解析でも飛ばす。null = 無い、または未計測
+  int? sharedHeadMs;
+  int? sharedTailMs;
+
+  SharedEdge get sharedEdge =>
+      SharedEdge(headMs: sharedHeadMs ?? 0, tailMs: sharedTailMs ?? 0);
+
+  /// 波形の共通の端を無音にしたコピー（音量の流れ・ミックス点を曲の部分だけで読む）。
+  /// 端が無ければそのまま
+  List<double> withoutSharedEdges(List<double> waveform, int durationMs) {
+    final head = sharedHeadMs ?? 0, tail = sharedTailMs ?? 0;
+    if ((head == 0 && tail == 0) || durationMs <= 0 || waveform.isEmpty) return waveform;
+    final n = waveform.length;
+    final from = min(n, (head / durationMs * n).ceil());
+    final to = max(0, n - (tail / durationMs * n).ceil());
+    return [
+      for (var i = 0; i < n; i++) i < from || i >= to ? 0.0 : waveform[i],
+    ];
+  }
 
   /// 曲ではないと判定した（拍も和音もはっきりした部分がほとんど無い）。BPM・キーは出さない
   bool? notMusic;
@@ -234,13 +261,16 @@ class LoopItem {
         .join(' → ');
   }
 
-  /// 曲頭で飛ばしてよい長さ: 無音と、曲でない部分の長い方
-  int get introSkipMs => max(leadingSilenceMs ?? 0, musicHeadMs ?? 0);
+  /// 曲頭で飛ばしてよい長さ: 無音・曲でない部分・ほかの曲と共通の頭の一番長いもの
+  int get introSkipMs =>
+      max(max(leadingSilenceMs ?? 0, musicHeadMs ?? 0), sharedHeadMs ?? 0);
 
-  /// 曲末で飛ばしてよい長さ: 無音と、曲でない部分の長い方。どちらも未計測なら null
-  int? get outroSkipMs => trailingSilenceMs == null && musicTailMs == null
-      ? null
-      : max(trailingSilenceMs ?? 0, musicTailMs ?? 0);
+  /// 曲末で飛ばしてよい長さ: 無音・曲でない部分・ほかの曲と共通の終わりの一番長いもの。
+  /// どれも未計測なら null
+  int? get outroSkipMs =>
+      trailingSilenceMs == null && musicTailMs == null && sharedTailMs == null
+          ? null
+          : max(max(trailingSilenceMs ?? 0, musicTailMs ?? 0), sharedTailMs ?? 0);
 
   /// ミックスイン点（ミリ秒）: 曲頭側で音量がぐっと上がる点（ドロップ）。
   /// クロスフェードで入るとき、ここが切り替わりに来るよう開始位置をずらす。
@@ -292,6 +322,11 @@ class LoopItem {
   /// 手で直した 1 番の範囲があるか
   bool get hasFirstVerse => firstVerseAMs != null && firstVerseBMs != null;
 
+  /// 1 番の終わりのつなぎ方（[VerseEnding] の名前）。null = 重ねる
+  String? firstVerseEnding;
+
+  VerseEnding get verseEnding => VerseEnding.fromName(firstVerseEnding);
+
   /// 曲の長さ（ミリ秒）。再生したとき、または解析の前に YouTube へ問い合わせて埋まる。
   /// 長すぎる曲（ミックス音源・配信など）を解析から外す判定に使う。null = 不明
   int? durationMs;
@@ -330,6 +365,8 @@ class LoopItem {
     this.trailingSilenceMs,
     this.musicHeadMs,
     this.musicTailMs,
+    this.sharedHeadMs,
+    this.sharedTailMs,
     this.notMusic,
     this.tempoSectionData,
     this.keySectionData,
@@ -352,6 +389,7 @@ class LoopItem {
     this.loudnessDb,
     this.firstVerseAMs,
     this.firstVerseBMs,
+    this.firstVerseEnding,
     this.durationMs,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
@@ -637,6 +675,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       unplayableReason: fields[53] as String?,
       noSteadyBeat: fields[54] as bool?,
       mixPointsFromBass: fields[55] as bool?,
+      sharedHeadMs: fields[56] as int?,
+      sharedTailMs: fields[57] as int?,
+      firstVerseEnding: fields[58] as String?,
     );
   }
 
@@ -699,6 +740,9 @@ class LoopItemAdapter extends TypeAdapter<LoopItem> {
       53: obj.unplayableReason,
       54: obj.noSteadyBeat,
       55: obj.mixPointsFromBass,
+      56: obj.sharedHeadMs,
+      57: obj.sharedTailMs,
+      58: obj.firstVerseEnding,
     });
   }
 }

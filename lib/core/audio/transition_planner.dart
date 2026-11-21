@@ -3,6 +3,7 @@ import 'band_swap.dart';
 import 'crossfade_curve.dart';
 import 'track_compatibility.dart';
 import 'transition_effect.dart';
+import 'verse_ending.dart';
 
 /// つなぎ方 1 回分の材料（クロスフェードの長さ・曲線・低音・演出・合わせるか）。
 /// 手動の設定をまとめたものと、おまかせ（[TransitionPlanner]）が選んだものの両方をこれで表す
@@ -19,7 +20,11 @@ class TransitionRecipe {
     this.auto = false,
     this.style,
     this.sfxDb = 0,
+    this.holdsIn = false,
   });
+
+  /// 入る曲を切替点まで鳴らさない（1 番を尾で終えて、次の曲を頭から聴かせる）
+  final bool holdsIn;
 
   /// クロスフェードの長さ（拍）。0 = オフ
   final int beats;
@@ -66,6 +71,7 @@ class TransitionRecipe {
         auto: auto,
         style: style,
         sfxDb: sfxDb,
+        holdsIn: holdsIn,
       );
 
   @override
@@ -97,6 +103,28 @@ enum MixStyle {
 /// 分からない値は「その条件は満たさない」として扱う（情報が無いときは無難な側へ倒れる）
 class TransitionPlanner {
   TransitionPlanner._();
+
+  /// 1 番を尾で終えるときの交差の長さ（拍）。前の曲は切替点まで 100% で鳴るので音には
+  /// 関係なく、次の曲と尾の音を用意する分
+  static const verseTailLeadBeats = 2;
+
+  /// 1 番をエコー・残響で終えるレシピ。効果音・テンポ合わせなしで、次の曲は切替点で頭から。
+  /// 尾の音ができていない（[rendered] が false）と B 点でぶつ切れになるので null
+  /// （呼び出し側はふだんのつなぎにする）
+  static TransitionRecipe? verseTail(VerseEnding ending, {required bool rendered}) {
+    final effect = ending.effect;
+    if (effect == null || !rendered) return null;
+    return TransitionRecipe(
+      beats: verseTailLeadBeats,
+      curve: CrossfadeCurve.cut,
+      bands: BandSwap.none,
+      effect: effect,
+      beatMatch: false,
+      tempoMatch: false,
+      holdsIn: true,
+      name: effect.label,
+    );
+  }
 
   /// テンポを寄せられる上限（これを超えると合わせない）
   static const tempoLimitPercent = TrackCompatibility.maxTempoAdjustPercent;

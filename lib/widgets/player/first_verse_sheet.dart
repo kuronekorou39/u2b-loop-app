@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/audio/verse_ending.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_sheets.dart';
 import '../../core/utils/time_utils.dart';
@@ -36,7 +37,15 @@ class FirstVerseSheet extends ConsumerStatefulWidget {
     required this.startMs,
     required this.manualEndMs,
     required this.positionMs,
+    this.ending = VerseEnding.overlap,
+    this.onEnding,
   });
+
+  /// 次の曲へのつなぎ方（曲ごと）
+  final VerseEnding ending;
+
+  /// 選んだらすぐ保存する。null なら選べない（クロスフェードがオフのとき）
+  final ValueChanged<VerseEnding>? onEnding;
 
   final String title;
   final List<double>? waveform;
@@ -57,6 +66,8 @@ class FirstVerseSheet extends ConsumerStatefulWidget {
     required int startMs,
     required int? manualEndMs,
     required int positionMs,
+    VerseEnding ending = VerseEnding.overlap,
+    ValueChanged<VerseEnding>? onEnding,
   }) {
     return AppSheets.show<FirstVerseResult>(
       context,
@@ -67,6 +78,8 @@ class FirstVerseSheet extends ConsumerStatefulWidget {
         startMs: startMs,
         manualEndMs: manualEndMs,
         positionMs: positionMs,
+        ending: ending,
+        onEnding: onEnding,
       ),
     );
   }
@@ -78,6 +91,8 @@ class FirstVerseSheet extends ConsumerStatefulWidget {
 class _FirstVerseSheetState extends ConsumerState<FirstVerseSheet> {
   /// 手で動かしたか（動かしていなければ自動の値を出し続ける）
   late int? _editedEndMs = widget.manualEndMs;
+
+  late VerseEnding _ending = widget.ending;
 
   int _autoEndMs(VerseRange range) =>
       VerseDetector.findCutPoint(
@@ -160,6 +175,30 @@ class _FirstVerseSheetState extends ConsumerState<FirstVerseSheet> {
                       : null,
                   icon: const Icon(Icons.my_location, size: AppIconSizes.s),
                   label: const Text('今の位置'),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(child: Text('終わり方', style: textTheme.bodyMedium)),
+                SegmentedButton<VerseEnding>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  segments: [
+                    for (final e in VerseEnding.values)
+                      ButtonSegment(value: e, label: Text(e.label)),
+                  ],
+                  selected: {_ending},
+                  onSelectionChanged: widget.onEnding == null
+                      ? null
+                      : (s) {
+                          setState(() => _ending = s.first);
+                          widget.onEnding!(s.first);
+                        },
                 ),
               ],
             ),

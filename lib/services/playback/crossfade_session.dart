@@ -43,6 +43,7 @@ class _CrossfadeSession {
     required this.curve,
     required this.bands,
     required this.effect,
+    required this.holdsIn,
     required this.beat,
     required this.swapStartMs,
     required this.swapEndMs,
@@ -188,11 +189,13 @@ class _CrossfadeSession {
     }
   }
 
-  /// 切替点: 出る曲を止めて入る曲を全開に（以後の [step] もこのまま）
+  /// 切替点: 出る曲を止めて入る曲を全開に（以後の [step] もこのまま）。
+  /// 頭から聴かせる曲（[holdsIn]）はここで鳴らし始める
   void _cutNow() {
     _cutFired = true;
     _setOut(0);
     inPlayer.setVolume(inVolume);
+    if (holdsIn) unawaited(inPlayer.play());
   }
 
   /// 効果音の音量。曲から作った音は曲の続きなので曲と同じ大きさ、素材は効果音の音量に
@@ -336,8 +339,9 @@ class _CrossfadeSession {
   /// 拍合わせは測り直す（シークが済むまでの位置は信用できないので少し待つ）
   void resync(Duration outPos) {
     final offset = outPos - start;
-    unawaited(inPlayer.seek(
-        offset > Duration.zero ? inStart + offset * inRatio : inStart));
+    unawaited(inPlayer.seek(offset > Duration.zero && !holdsIn
+        ? inStart + offset * inRatio
+        : inStart));
     _measuring = false;
     _nudgeTicks = 0;
     _errSmooth = 0;
@@ -399,6 +403,9 @@ class _CrossfadeSession {
 
   /// 出る曲にかける演出。ベーススワップと同じ位置から切替点までかける
   final TransitionEffect effect;
+
+  /// 入る曲を切替点まで鳴らさない（1 番を尾で終えて、次の曲を頭から聴かせる）
+  final bool holdsIn;
 
   final Player outPlayer;
   final Player inPlayer;

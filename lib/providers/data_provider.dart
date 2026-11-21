@@ -10,8 +10,10 @@ import '../core/audio/beat_grid.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/audio/key_sections.dart';
 import '../core/audio/music_span_detector.dart';
+import '../core/audio/shared_edges.dart';
 import '../core/audio/tempo_sections.dart';
 import '../core/audio/silence_detector.dart';
+import '../core/audio/verse_ending.dart';
 import '../core/constants.dart';
 import '../models/loop_item.dart';
 import '../models/loop_region.dart';
@@ -86,7 +88,10 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   ///
   /// 版 4 以上で解析済みの曲は、曲の範囲で新たに飛ばす部分が無く、テンポも一定なら
   /// BPM・格子を据え置く（手で直した BPM やジョグ・フェーダーで保存した拍を消さない）。
-  /// キーと転調の区切り（[keySections]）は解析し直したら必ず置き換える
+  /// キーと転調の区切り（[keySections]）は解析し直したら必ず置き換える。
+  /// [baseGrid] は今回の解析の補正前の格子。保存済みの格子がこれと同じなら自動の値なので
+  /// 置き換える。共通の端を今回から除いた曲は、除く前の音の格子（[rawGrid]）とも比べる。
+  /// [usedEdge] はこの解析で除いた共通の端
   Future<void> saveAnalysis(
     String id, {
     required double? bpm,
@@ -95,6 +100,8 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     SilenceInfo? silence,
     BeatGrid? beatGrid,
     BeatGrid? baseGrid,
+    BeatGrid? rawGrid,
+    SharedEdge? usedEdge,
     MusicSpanInfo? span,
     List<TempoSection> sections = const [],
     List<KeySection> keySections = const [],
@@ -131,8 +138,9 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       // 手で直した格子は残す。保存されている格子が前の解析の結果と同じなら、
       // 自動で求めたものなので新しい解析（テンポの取り違えの直し）に置き換える
       final stored = item.beatGrid;
-      final edited =
-          stored != null && (baseGrid == null || !stored.matchesDetected(baseGrid));
+      final edited = stored != null &&
+          (baseGrid == null || !stored.matchesDetected(baseGrid)) &&
+          (rawGrid == null || !stored.matchesDetected(rawGrid));
       keepTempo = version >= 4 &&
           version < LoopItem.currentAnalysisVersion &&
           edited &&
@@ -185,7 +193,10 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     }
     if (markAnalyzed) {
       item.analyzedAt = DateTime.now().millisecondsSinceEpoch;
-      item.analysisVersion = LoopItem.currentAnalysisVersion;
+      // 解析の間に端が変わった（同時に解析した曲で見つかった）なら、次の再生でやり直す
+      item.analysisVersion = usedEdge == null || usedEdge == item.sharedEdge
+          ? LoopItem.currentAnalysisVersion
+          : LoopItem.reanalyzeVersion;
       if (!keepTempo) {
         item.beatBpm = beatGrid?.bpm;
         item.beatOffsetMs = beatGrid?.offsetMs;
@@ -336,6 +347,32 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     _refresh();
   }
 
+  /// ほかの曲と共通の端（[SharedEdges]）の保存。飛ばす範囲が変わるので、波形から求めた
+  /// ミックス点と音量の流れは取り直し、解析も次の再生で端を除いてやり直す。
+  /// 裏で決まるので updatedAt は触らない
+  Future<void> saveSharedEdges(Map<String, SharedEdge> edges) async {
+    var changed = false;
+    for (final e in edges.entries) {
+      final item = _box.get(e.key);
+      if (item == null || item.sharedEdge == e.value) continue;
+      item.sharedHeadMs = e.value.headMs == 0 ? null : e.value.headMs;
+      item.sharedTailMs = e.value.tailMs == 0 ? null : e.value.tailMs;
+      item.mixInMs = null;
+      item.mixOutMs = null;
+      item.headDb = null;
+      item.tailDb = null;
+      item.endFadeDb = null;
+      item.dropDb = null;
+      final version = item.analysisVersion;
+      if (version != null && version > LoopItem.reanalyzeVersion) {
+        item.analysisVersion = LoopItem.reanalyzeVersion;
+      }
+      await _box.put(e.key, item);
+      changed = true;
+    }
+    if (changed) _refresh();
+  }
+
   /// 保存されている最新のアイテム（画面が持つ古いコピーではなく）
   LoopItem? byId(String id) => _box.get(id);
 
@@ -355,6 +392,17 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     if (item == null) return;
     item.firstVerseAMs = aMs;
     item.firstVerseBMs = bMs;
+    await _box.put(id, item);
+    _refresh();
+  }
+
+  /// 1 番の終わりのつなぎ方。並びが変わらないよう updatedAt は触らない
+  Future<void> saveVerseEnding(String id, VerseEnding ending) async {
+    final item = _box.get(id);
+    if (item == null) return;
+    final name = ending == VerseEnding.overlap ? null : ending.name;
+    if (item.firstVerseEnding == name) return;
+    item.firstVerseEnding = name;
     await _box.put(id, item);
     _refresh();
   }
