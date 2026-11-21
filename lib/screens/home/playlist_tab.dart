@@ -210,8 +210,9 @@ class PlaylistTab extends ConsumerWidget {
             key: ValueKey(pl.id),
             selecting: selecting,
             selected: selected,
-            // 並べ替えモードは行に触れるとほぼすぐ持ち上がる（ふだんの長押しは選択）
-            child: Stack(children: [
+            // 並べ替えモードは行に触れるとほぼすぐ持ち上がる（ふだんの長押しは選択）。
+            // メニューは行の脇に出すので、行の context を取る
+            child: Builder(builder: (row) => Stack(children: [
             ReorderRowListener(
             index: i,
             enabled: reordering,
@@ -281,7 +282,8 @@ class PlaylistTab extends ConsumerWidget {
                           icon:
                               const Icon(Icons.more_vert, size: AppIconSizes.md),
                           tooltip: 'メニュー',
-                          onPressed: () => _showMenu(context, ref, pl),
+                          onPressed: () =>
+                              _showMenu(context, ref, pl, anchor: row),
                         ),
                     ],
                   )),
@@ -298,7 +300,7 @@ class PlaylistTab extends ConsumerWidget {
                 width: _handleColumnWidth,
                 child: ReorderHandle.area(index: i),
               ),
-          ]),
+          ])),
           );
         },
       ),
@@ -458,9 +460,12 @@ class PlaylistTab extends ConsumerWidget {
   /// グリッドのタグの行の高さ（タグのチップがあっても無くても同じ）
   static const double _gridInfoHeight = 18;
 
-  void _showMenu(BuildContext context, WidgetRef ref, Playlist pl) {
+  /// 行の ⋮ から。行の脇（[anchor]）に出す
+  void _showMenu(BuildContext context, WidgetRef ref, Playlist pl,
+      {BuildContext? anchor}) {
     AppSheets.actions(
       context,
+      anchor: anchor,
       title: pl.name,
       actions: [
         SheetAction(

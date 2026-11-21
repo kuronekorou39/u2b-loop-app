@@ -46,11 +46,10 @@ void main() {
             viewMode: mode,
             selectedIds: const {'i0'},
             selecting: selecting,
-            onOpen: (_) {},
+            onOpen: (_, _) {},
             onLongPress: (_) {},
             onToggleSelect: (_) {},
-            onDelete: (_) {},
-            onRetry: (_) {},
+            onMenu: (_, _) {},
           );
       await pumpBody(tester, view(false));
       final before = [for (final t in ['曲0', '曲1']) tester.getRect(find.text(t))];

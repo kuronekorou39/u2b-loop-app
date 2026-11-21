@@ -82,8 +82,13 @@ void main() {
             .first)
         .color!;
     final before = tileRect(tester, '動画');
+    bool switchOn() => tester.widget<MiniSwitch>(find.byType(MiniSwitch)).value;
+    Color labelColor() => tester.widget<Text>(find.text('動画')).style!.color!;
     expect(iconColor(), isNot(AppTheme.accentGreen));
-    expect(find.text('オフ'), findsOneWidget);
+    // オンオフは文字でなく小さなスイッチ。オフは名前も灰色
+    expect(find.text('オフ'), findsNothing);
+    expect(switchOn(), isFalse);
+    expect(labelColor(), isNot(tester.widget<Text>(find.text('ほか')).style!.color));
     expect(fillOf('動画'), fillOf('ほか'));
     // オンオフでないタイルのアイコンは緑、値は出ない
     expect(tester.widget<Icon>(find.byIcon(Icons.star)).color,
@@ -92,7 +97,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(on, isTrue);
     expect(iconColor(), AppTheme.accentGreen);
-    expect(find.text('オン'), findsOneWidget);
+    expect(find.text('オン'), findsNothing);
+    expect(switchOn(), isTrue);
+    expect(labelColor(), tester.widget<Text>(find.text('ほか')).style!.color);
     expect(fillOf('動画'), fillOf('ほか'));
     expect(tileRect(tester, '動画'), before);
   });

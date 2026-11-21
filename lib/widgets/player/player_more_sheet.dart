@@ -5,7 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_sheets.dart';
 import '../../core/utils/rate_label.dart';
 import '../../providers/player_provider.dart';
-import '../../screens/settings/dj_mix_settings_screen.dart';
+import 'dj_mix_controls.dart';
 import 'more_tile.dart';
 import 'player_controls.dart';
 import 'volume_slider.dart';
@@ -88,7 +88,7 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
               MoreTile(
                 icon: Icons.multitrack_audio,
                 label: 'DJ ミックス',
-                value: DjMixSettingsScreen.crossfadeLabel(crossfade),
+                value: DjMixControls.crossfadeLabel(crossfade),
                 onTap: () {
                   Navigator.pop(context);
                   widget.onDjMix();

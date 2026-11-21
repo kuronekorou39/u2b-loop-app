@@ -12,7 +12,8 @@ import '../../core/ui/app_sheets.dart';
 /// - タイルの面はどれも同じ色（オンオフで面を塗り分けない。塗ると「どれが何の色か
 ///   分からない」と言われた）。右上の矢印（› ▾）も付けない
 /// - アイコンはアクセントの緑。オンオフが切り替わるもの（[active] を渡す）は、
-///   ラベルの下に「オン」「オフ」と書き、オフの間だけアイコンが灰色になる
+///   ラベルの下に小さなスイッチ（「オン」「オフ」の文字は書かない）。オフの間は
+///   アイコンと名前が灰色になる
 /// - 今の値があるもの（速度の 1.0x など）はラベルの下に小さく書く
 /// アイコンと文字はタイルの大きさに合わせて大きくなる。押しても場所は動かない。
 class MoreTile extends StatelessWidget {
@@ -31,7 +32,7 @@ class MoreTile extends StatelessWidget {
   final String label;
 
   /// 今の値（速度の 1.0x、出力の「スピーカー」など）。ラベルの下に小さく。
-  /// [active] を渡して値が無ければ「オン」「オフ」
+  /// [active] を渡して値が無ければ、値の代わりに小さなスイッチ
   final String? value;
 
   /// null なら情報だけ（押せない）
@@ -65,8 +66,10 @@ class MoreTile extends StatelessWidget {
     final iconColor = enabled
         ? (off ? muted : AppTheme.accentGreen)
         : (off ? muted.withValues(alpha: 0.4) : AppTheme.accentGreen.withValues(alpha: 0.4));
-    final textColor = enabled ? onSurface : muted;
-    final shown = value ?? (active == null ? null : (active! ? 'オン' : 'オフ'));
+    // オフは名前も灰色に
+    final textColor = enabled && !off ? onSurface : muted;
+    final shown = value;
+    final showSwitch = shown == null && active != null;
     final radius = BorderRadius.circular(dense ? AppRadius.lg : AppRadius.xl);
     return Material(
       color: onSurface.withValues(alpha: enabled ? 0.08 : 0.04),
@@ -110,7 +113,7 @@ class MoreTile extends StatelessWidget {
                   label,
                   style: labelStyle,
                   textAlign: TextAlign.center,
-                  maxLines: dense && shown == null ? 2 : 1,
+                  maxLines: dense && shown == null && !showSwitch ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (shown != null)
@@ -121,11 +124,72 @@ class MoreTile extends StatelessWidget {
                     // 長い値（フィルタースイープ）は小さめのとき 2 行まで
                     maxLines: dense ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
-                  ),
+                  )
+                else if (showSwitch) ...[
+                  const SizedBox(height: 3),
+                  MiniSwitch(value: active!, enabled: enabled, large: large),
+                ],
               ],
             ),
           );
         }),
+      ),
+    );
+  }
+}
+
+/// オンオフのタイルの値の行に出す小さなスイッチ（見た目だけ。押すのはタイル全体）。
+/// オンはつまみが右で緑。設定の DJ ミックスの上下のスイッチと同じ色
+class MiniSwitch extends StatelessWidget {
+  const MiniSwitch({
+    super.key,
+    required this.value,
+    this.enabled = true,
+    this.large = false,
+  });
+
+  final bool value;
+  final bool enabled;
+
+  /// 大きいタイル用に一回り大きく
+  final bool large;
+
+  static const _duration = Duration(milliseconds: 150);
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final height = large ? 20.0 : 16.0;
+    const pad = 2.0;
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: AnimatedContainer(
+        duration: _duration,
+        width: height * 1.75,
+        height: height,
+        padding: const EdgeInsets.all(pad),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(height / 2),
+          color: value
+              ? AppTheme.accentGreen.withValues(alpha: 0.35)
+              : onSurface.withValues(alpha: 0.12),
+        ),
+        child: AnimatedAlign(
+          duration: _duration,
+          curve: Curves.easeOut,
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+          child: AnimatedContainer(
+            duration: _duration,
+            width: height - pad * 2,
+            height: height - pad * 2,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: value
+                  ? AppTheme.accentGreen
+                  : onSurface.withValues(alpha: 0.45),
+            ),
+          ),
+        ),
       ),
     );
   }

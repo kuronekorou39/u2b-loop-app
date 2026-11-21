@@ -152,11 +152,10 @@ void main() {
           viewMode: mode,
           selectedIds: const {},
           selecting: false,
-          onOpen: (_) {},
+          onOpen: (_, _) {},
           onLongPress: (_) {},
           onToggleSelect: (_) {},
-          onDelete: (_) {},
-          onRetry: (_) {},
+          onMenu: (_, _) {},
         );
     expect(ItemViewMode.list.label, 'リスト小');
     expect(ItemViewMode.titles.label, 'リスト大');

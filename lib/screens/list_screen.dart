@@ -228,7 +228,8 @@ class _ListScreenState extends ConsumerState<ListScreen>
 
   // --- アイテム操作 ---
 
-  void _openDetail(LoopItem item) {
+  /// 曲を開く。[anchor] はタップした行・カード（取得に失敗した曲はそこにメニュー）
+  void _openDetail(LoopItem item, BuildContext anchor) {
     if (_isSelecting) {
       _toggleSelectId(item.id);
       return;
@@ -240,7 +241,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
       return;
     }
     if (item.hasError) {
-      _showErrorOptions(item);
+      _showItemMenu(item, anchor);
       return;
     }
     Navigator.of(context).push(
@@ -248,17 +249,21 @@ class _ListScreenState extends ConsumerState<ListScreen>
     );
   }
 
-  void _showErrorOptions(LoopItem item) {
+  /// 曲の行の ⋮ と、取得に失敗した曲のタップから。行・カードの脇に出す
+  /// （見出しは行が開けなかったときの下のシートだけ）
+  void _showItemMenu(LoopItem item, BuildContext anchor) {
     AppSheets.actions(
       context,
+      anchor: anchor,
       title: item.title,
-      subtitle: '情報を取得できませんでした',
+      subtitle: item.hasError ? '情報を取得できませんでした' : null,
       actions: [
-        SheetAction(
-          icon: Icons.refresh,
-          label: '再試行',
-          onTap: () => ref.read(loopItemsProvider.notifier).retryFetch(item),
-        ),
+        if (item.hasError)
+          SheetAction(
+            icon: Icons.refresh,
+            label: '再試行',
+            onTap: () => ref.read(loopItemsProvider.notifier).retryFetch(item),
+          ),
         SheetAction(
           icon: Icons.delete_outline,
           label: '削除',
@@ -600,9 +605,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
                   onOpen: _openDetail,
                   onLongPress: (item) => _startSelectId(item.id),
                   onToggleSelect: (item) => _toggleSelectId(item.id),
-                  onDelete: _deleteItem,
-                  onRetry: (item) =>
-                      ref.read(loopItemsProvider.notifier).retryFetch(item),
+                  onMenu: _showItemMenu,
                 );
   }
 

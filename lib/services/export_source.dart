@@ -10,6 +10,7 @@ import 'export_service.dart';
 import 'playback/hq_audio.dart';
 import 'ranged_downloader.dart';
 import 'youtube_client_info.dart';
+import 'youtube_http.dart';
 
 /// 書き出しの解像度。YouTube の一体型は 360p しか無いので、それ以上は
 /// 映像専用ストリームを落として高音質の音声と結合してから切り出す
@@ -136,7 +137,7 @@ class ExportSource {
     }
 
     onStatus?.call('映像の情報を取得中...');
-    final yt = YoutubeExplode();
+    final yt = newYoutubeExplode();
     final StreamManifest manifest;
     try {
       manifest = await yt.videos.streamsClient

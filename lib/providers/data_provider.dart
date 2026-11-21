@@ -21,6 +21,7 @@ import '../services/cache_service.dart';
 import '../services/share_service.dart';
 import '../services/thumbnail_service.dart';
 import '../services/waveform_cache.dart';
+import '../services/youtube_http.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/utils/id_generator.dart';
 
@@ -494,7 +495,7 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   }
 
   Future<void> _fetchYouTubeInfo(LoopItem item, {int retry = 0}) async {
-    final yt = YoutubeExplode();
+    final yt = newYoutubeExplode();
     var shouldRetry = false;
     try {
       final video = await yt.videos.get(item.videoId!)

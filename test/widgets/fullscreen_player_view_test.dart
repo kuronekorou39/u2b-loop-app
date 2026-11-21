@@ -86,7 +86,7 @@ void main() {
                 events.add('export:${fullTrack ? 'full' : 'ab'}'),
             onSelectAll: () => events.add('all'),
             onSelect: (i) => events.add('select:$i'),
-            onMenu: (i) => events.add('menu:$i'),
+            onMenu: (i, _) => events.add('menu:$i'),
             onAdd: canAdd ? () => events.add('add') : null,
           ),
         ),

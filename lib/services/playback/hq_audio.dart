@@ -9,6 +9,7 @@ import '../../core/storage/app_boxes.dart';
 import '../audio_filters.dart';
 import '../ranged_downloader.dart';
 import '../youtube_client_info.dart';
+import '../youtube_http.dart';
 import 'media_cache.dart';
 
 /// YouTube の音声を高音質（音声専用ストリーム）で鳴らすための取得と取り付け。
@@ -222,7 +223,7 @@ class HqAudio {
 
   static Future<AudioOnlyStreamInfo?> _pickFromClient(
       String videoId, YoutubeApiClient client) async {
-    final yt = YoutubeExplode();
+    final yt = newYoutubeExplode();
     try {
       final m = await yt.videos.streamsClient
           .getManifest(videoId, ytClients: [client])

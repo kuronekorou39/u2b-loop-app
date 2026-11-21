@@ -28,7 +28,9 @@ class RegionPanel extends StatelessWidget {
   /// 選択中の区間。-1 は「全体」
   final int selectedIndex;
   final ValueChanged<int> onSelect;
-  final ValueChanged<int> onMenu;
+
+  /// 行の ⋮・長押し。[anchor] は行の context（メニューを行の脇に出す）
+  final void Function(int index, BuildContext anchor) onMenu;
 
   /// null なら上限（追加できない）
   final VoidCallback? onAdd;
@@ -112,13 +114,15 @@ class RegionPanel extends StatelessWidget {
                     onTap: onSelectAll ?? () {},
                   ),
                 for (var i = 0; i < regions.length; i++)
-                  _RegionRow(
-                    name: regions[i].name,
-                    time: timeText(regions[i]),
-                    isCurrent: i == selectedIndex,
-                    icon: Icons.repeat,
-                    onTap: () => onSelect(i),
-                    onMenu: () => onMenu(i),
+                  Builder(
+                    builder: (row) => _RegionRow(
+                      name: regions[i].name,
+                      time: timeText(regions[i]),
+                      isCurrent: i == selectedIndex,
+                      icon: Icons.repeat,
+                      onTap: () => onSelect(i),
+                      onMenu: () => onMenu(i, row),
+                    ),
                   ),
               ],
             ),

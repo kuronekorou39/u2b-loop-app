@@ -90,14 +90,22 @@ class AppSheets {
   }
 
   /// ボタンの集まり（その他メニュー・DJ ミックス）。向きに関係なく真ん中のダイアログで出す。
-  /// 中身は [show] の低い画面のときと同じ（padding / viewPadding は 0）
+  /// 中身は [show] の低い画面のときと同じ（padding / viewPadding は 0）。
+  /// [maxWidth] は幅の上限（横画面で中身を横に並べたいものは広げる）、
+  /// [sideInset] は画面の左右の端との間（中身が多いものは詰めて幅を取る）
   static Future<T?> popup<T>(
     BuildContext context, {
     required WidgetBuilder builder,
+    double maxWidth = dialogMaxWidth,
+    double sideInset = AppSpacing.xxl,
   }) {
     return showDialog<T>(
       context: context,
-      builder: (_) => SheetDialog(child: Builder(builder: builder)),
+      builder: (_) => SheetDialog(
+        maxWidth: maxWidth,
+        sideInset: sideInset,
+        child: Builder(builder: builder),
+      ),
     );
   }
 
@@ -143,17 +151,28 @@ class AppSheets {
 /// ミニプレイヤーの分を SafeArea / viewPadding で避けるが、ダイアログは画面の
 /// 安全な範囲に置かれるので、中では両方とも 0 にして無駄な余白を作らない
 class SheetDialog extends StatelessWidget {
-  const SheetDialog({super.key, required this.child});
+  const SheetDialog({
+    super.key,
+    required this.child,
+    this.maxWidth = AppSheets.dialogMaxWidth,
+    this.sideInset = AppSpacing.xxl,
+  });
 
   final Widget child;
 
+  /// 幅の上限
+  final double maxWidth;
+
+  /// 画面の左右の端との間
+  final double sideInset;
+
   @override
   Widget build(BuildContext context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xxl, vertical: AppSpacing.xl),
+        insetPadding: EdgeInsets.symmetric(
+            horizontal: sideInset, vertical: AppSpacing.xl),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSheets.dialogMaxWidth),
+          constraints: BoxConstraints(maxWidth: maxWidth),
           child: Builder(
             builder: (ctx) => MediaQuery(
               data: MediaQuery.of(ctx).copyWith(

@@ -1013,11 +1013,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           hintText: '区間名を入力',
           maxLength: AppLimits.regionNameMaxLength);
 
-  void _showRegionMenu(int index) {
+  /// 区間の行の ⋮・長押しから。行の脇（[anchor]）に出す
+  void _showRegionMenu(int index, BuildContext anchor) {
     final regions = _currentItem.effectiveRegions;
     if (index < 0 || index >= regions.length) return;
     AppSheets.actions(
       context,
+      anchor: anchor,
       title: regions[index].name,
       actions: [
         SheetAction(
@@ -1172,11 +1174,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // --- Track context menu ---
 
-  void _showTrackMenu(int trackIndex, PlaylistTrack track) {
+  /// トラックの行の ⋮・長押しから。行の脇（[anchor]）に出す
+  void _showTrackMenu(int trackIndex, PlaylistTrack track, BuildContext anchor) {
     final isCurrent =
         ref.read(playlistPlayerProvider).currentTrackIndex == trackIndex;
     AppSheets.actions(
       context,
+      anchor: anchor,
       title: track.displayName,
       actions: [
         if (!isCurrent)

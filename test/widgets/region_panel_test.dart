@@ -40,7 +40,7 @@ void main() {
             showAll: showAll,
             onSelectAll: () => alls.add(null),
             onSelect: selected.add,
-            onMenu: menus.add,
+            onMenu: (i, _) => menus.add(i),
             onAdd: canAdd ? () => adds.add(null) : null,
             onClose: () => closes.add(null),
           ),

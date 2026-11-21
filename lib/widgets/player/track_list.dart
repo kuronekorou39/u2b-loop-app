@@ -40,7 +40,10 @@ class TrackList extends ConsumerWidget {
   static const rowHeight = 64.0;
 
   final void Function(int index) onSelect;
-  final void Function(int index, PlaylistTrack track) onMenu;
+
+  /// 行の ⋮・長押し。[anchor] は行の context（メニューを行の脇に出す）
+  final void Function(int index, PlaylistTrack track, BuildContext anchor)
+      onMenu;
   final ScrollController? controller;
   final bool dense;
   final double bottomInset;
@@ -76,7 +79,7 @@ class TrackList extends ConsumerWidget {
       padding: EdgeInsets.only(
           bottom: bottomInset + (dense ? AppSpacing.xxl : AppSpacing.md)),
       itemCount: plState.tracks.length,
-      itemBuilder: (ctx, i) => _TrackRow(
+      itemBuilder: (ctx, i) => Builder(builder: (row) => _TrackRow(
         index: i,
         track: plState.tracks[i],
         tagMap: tagMap,
@@ -87,8 +90,8 @@ class TrackList extends ConsumerWidget {
         isPreloaded: preloadedIndex == i,
         dense: dense,
         onTap: () => onSelect(i),
-        onMenu: () => onMenu(i, plState.tracks[i]),
-      ),
+        onMenu: () => onMenu(i, plState.tracks[i], row),
+      )),
     );
   }
 }

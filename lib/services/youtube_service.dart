@@ -1,6 +1,7 @@
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/video_source.dart';
 import 'youtube_client_info.dart';
+import 'youtube_http.dart';
 
 /// Androidクライアント + contentCheckOk/racyCheckOk
 /// TVクライアントはBot判定されやすいため、Androidベースで警告回避
@@ -13,7 +14,7 @@ final _androidContentCheck = YoutubeApiClient({
 class YouTubeService {
   static const _networkTimeout = Duration(seconds: 30);
 
-  final yt = YoutubeExplode();
+  final yt = newYoutubeExplode();
 
   /// ストリームマニフェストを取得（コンテンツ警告付き動画にも対応）
   Future<StreamManifest> getManifestWithFallback(String videoId) async {

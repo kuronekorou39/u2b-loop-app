@@ -56,11 +56,10 @@ void main() {
         viewMode: ItemViewMode.titles,
         selectedIds: const {},
         selecting: false,
-        onOpen: (_) {},
+        onOpen: (_, _) {},
         onLongPress: (i) => pressed.add(i.id),
         onToggleSelect: (_) {},
-        onDelete: (_) {},
-        onRetry: (_) {},
+        onMenu: (_, _) {},
       ),
     );
     await tester.longPress(find.byTooltip('メニュー').first);

@@ -587,7 +587,9 @@ class FullscreenRegionDrawer extends StatelessWidget {
   final void Function({required bool fullTrack}) onExport;
   final VoidCallback onSelectAll;
   final void Function(int index) onSelect;
-  final void Function(int index) onMenu;
+
+  /// 行の ⋮・長押し。[anchor] は行の context（メニューを行の脇に出す）
+  final void Function(int index, BuildContext anchor) onMenu;
 
   /// null なら「区間追加」を出さない（上限）
   final VoidCallback? onAdd;
@@ -643,14 +645,16 @@ class FullscreenRegionDrawer extends StatelessWidget {
               ),
               divider,
               for (var i = 0; i < regions.length; i++) ...[
-                RegionTile(
-                  name: regions[i].name,
-                  isActive: i == activeIndex,
-                  pointAMs: regions[i].pointAMs,
-                  pointBMs: regions[i].pointBMs,
-                  onTap: () => onSelect(i),
-                  onLongPress: () => onMenu(i),
-                  onMenu: () => onMenu(i),
+                Builder(
+                  builder: (row) => RegionTile(
+                    name: regions[i].name,
+                    isActive: i == activeIndex,
+                    pointAMs: regions[i].pointAMs,
+                    pointBMs: regions[i].pointBMs,
+                    onTap: () => onSelect(i),
+                    onLongPress: () => onMenu(i, row),
+                    onMenu: () => onMenu(i, row),
+                  ),
                 ),
                 if (i < regions.length - 1) divider,
               ],

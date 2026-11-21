@@ -46,8 +46,7 @@ class ItemCollectionView extends StatelessWidget {
     required this.onOpen,
     required this.onLongPress,
     required this.onToggleSelect,
-    required this.onDelete,
-    required this.onRetry,
+    required this.onMenu,
   });
 
   final List<LoopItem> items;
@@ -57,11 +56,14 @@ class ItemCollectionView extends StatelessWidget {
 
   /// 複数選択中（チェックの枠を出す）
   final bool selecting;
-  final ValueChanged<LoopItem> onOpen;
+
+  /// タップ。[anchor] は行・カードの context（取得に失敗した曲はそこにメニューを出す）
+  final void Function(LoopItem item, BuildContext anchor) onOpen;
   final ValueChanged<LoopItem> onLongPress;
   final ValueChanged<LoopItem> onToggleSelect;
-  final ValueChanged<LoopItem> onDelete;
-  final ValueChanged<LoopItem> onRetry;
+
+  /// 行の ⋮。[anchor] は行の context（メニューを行の脇に出す）
+  final void Function(LoopItem item, BuildContext anchor) onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -93,10 +95,12 @@ class ItemCollectionView extends StatelessWidget {
         mainAxisSpacing: compact ? AppSpacing.sm : AppSpacing.md + 2,
       ),
       itemCount: items.length,
+      // メニューをカードの脇に出すので、カードの context を取る
       itemBuilder: (context, i) => SelectionDim(
         selecting: selecting,
         selected: selectedIds.contains(items[i].id),
-        child: _buildCard(context, items[i], compact: compact),
+        child: Builder(
+            builder: (card) => _buildCard(card, items[i], compact: compact)),
       ),
     );
   }
@@ -207,7 +211,7 @@ class ItemCollectionView extends StatelessWidget {
       radius: compact ? 10 : 16,
       padding: EdgeInsets.all(pad),
       tint: selected ? AppTheme.accentGreen.withValues(alpha: 0.15) : null,
-      onTap: () => onOpen(item),
+      onTap: () => onOpen(item, context),
       onLongPress: () => onLongPress(item),
       child: compact
           ? thumb
@@ -273,11 +277,13 @@ class ItemCollectionView extends StatelessWidget {
       child: ListView.builder(
         padding: HomeListSurface.listPadding,
         itemCount: items.length,
+        // メニューを行の脇に出すので、行の context を取る
         itemBuilder: (context, i) => SelectionDim(
           selecting: selecting,
           selected: selectedIds.contains(items[i].id),
-          child: _buildTile(context, items[i],
-              titleLines: titleLines, detailed: detailed),
+          child: Builder(
+              builder: (row) => _buildTile(row, items[i],
+                  titleLines: titleLines, detailed: detailed)),
         ),
       ),
     );
@@ -350,21 +356,14 @@ class ItemCollectionView extends StatelessWidget {
         selected: selected,
         // ⋮ の上を長押ししても行の選択になるように
         child: ItemInnerButtons(
-          child: PopupMenuButton<String>(
+          child: IconButton(
+            icon: const Icon(Icons.more_vert, size: AppIconSizes.md),
             tooltip: 'メニュー',
-            onSelected: (v) {
-              if (v == 'delete') onDelete(item);
-              if (v == 'retry') onRetry(item);
-            },
-            itemBuilder: (_) => [
-              if (item.hasError)
-                const PopupMenuItem(value: 'retry', child: Text('再試行')),
-              const PopupMenuItem(value: 'delete', child: Text('削除')),
-            ],
+            onPressed: () => onMenu(item, context),
           ),
         ),
       ),
-      onTap: () => onOpen(item),
+      onTap: () => onOpen(item, context),
       onLongPress: () => onLongPress(item),
     );
   }

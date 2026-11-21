@@ -716,10 +716,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     setState(() => _memoController.text = result);
   }
 
-  void _showRegionEditMenu(LoopItem item, int index) {
+  /// 区間の行のタップ・長押しから。行の脇（[anchor]）に出す
+  void _showRegionEditMenu(LoopItem item, int index, {BuildContext? anchor}) {
     final region = item.effectiveRegions[index];
     AppSheets.actions(
       context,
+      anchor: anchor,
       title: region.name,
       actions: [
         SheetAction(
@@ -917,10 +919,11 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               ],
             ),
           ),
+          // メニューは行の脇に出すので、行の context を取る
           for (var i = 0; i < regions.length; i++)
-            InkWell(
-              onTap: () => _showRegionEditMenu(item, i),
-              onLongPress: () => _showRegionEditMenu(item, i),
+            Builder(builder: (row) => InkWell(
+              onTap: () => _showRegionEditMenu(item, i, anchor: row),
+              onLongPress: () => _showRegionEditMenu(item, i, anchor: row),
               borderRadius: AppRadius.borderSm,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(0, AppSpacing.sm, AppSpacing.sm, AppSpacing.sm),
@@ -951,7 +954,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ],
                 ),
               ),
-            ),
+            )),
         ],
       ),
     );

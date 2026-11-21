@@ -275,12 +275,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       ));
   }
 
-  /// 行の ⋮ と長押しから。スワイプでしかできなかった「外す」と、
+  /// 行の ⋮ から。行の脇（[anchor]）に出す。スワイプでしかできなかった「外す」と、
   /// サムネのタップでしかできなかった有効・無効もここに置く
-  void _showItemMenu(Playlist pl, LoopItem item, int index) {
+  void _showItemMenu(Playlist pl, LoopItem item, int index,
+      {BuildContext? anchor}) {
     final disabled = pl.disabledItemIds.contains(item.id);
     AppSheets.actions(
       context,
+      anchor: anchor,
       title: item.title,
       actions: [
         if (index > 0)
@@ -843,8 +845,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   child: SelectionDim(
                     selecting: selecting,
                     selected: isSelected,
-                    // 並べ替えモードは行に触れるとほぼすぐ持ち上がる
-                    child: ReorderRowListener(
+                    // 並べ替えモードは行に触れるとほぼすぐ持ち上がる。
+                    // メニューは行の脇に出すので、行の context を取る
+                    child: Builder(builder: (row) => ReorderRowListener(
                       index: i,
                       enabled: _reordering,
                       child: Opacity(
@@ -937,7 +940,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                       size: AppIconSizes.md),
                                   tooltip: 'メニュー',
                                   visualDensity: VisualDensity.compact,
-                                  onPressed: () => _showItemMenu(pl, item, i),
+                                  onPressed: () =>
+                                      _showItemMenu(pl, item, i, anchor: row),
                                 ),
                               ),
                       ),
@@ -960,7 +964,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           _reordering ? null : () => _toggleSelect(item.id),
                     ),
                   ),
-                    ),
+                    )),
                   ),
                 );
               },
