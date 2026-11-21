@@ -465,7 +465,46 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                 ),
               );
-              // 曲名・補足・再生などのボタン（縦はサムネの下、横は右の列の上）
+              // 再生 / 保存 / URL（サムネのすぐ下。縦も横も）。押しやすいように大きく、再生は幅いっぱい
+              // （AB 区間は再生画面で登録する）
+              final buttons = Row(
+                children: [
+                  Expanded(
+                    child: GreenButton(
+                      icon: Icons.play_arrow_rounded,
+                      label: '再生',
+                      size: _buttonSize,
+                      onPressed: () => _openPlayer(item),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  GlassPill(
+                    active: item.isCached,
+                    tooltip: item.isCached
+                        ? 'アプリ内に保存済み。タップで削除'
+                        : '保存・書き出し',
+                    padding: const EdgeInsets.all(_pillPadding),
+                    onTap: () =>
+                        item.isCached ? _clearOffline(item) : _saveItem(item),
+                    child: Icon(
+                      item.isCached ? Icons.offline_pin : Icons.download_outlined,
+                      size: AppIconSizes.lg,
+                      color: item.isCached ? AppTheme.accentGreen : null,
+                    ),
+                  ),
+                  if (ytUrl != null) ...[
+                    const SizedBox(width: AppSpacing.md),
+                    GlassPill(
+                      tooltip: 'URL をコピー（長押しで開く）',
+                      padding: const EdgeInsets.all(_pillPadding),
+                      onTap: () => _copyUrl(ytUrl),
+                      onLongPress: () => _openUrl(ytUrl),
+                      child: const Icon(Icons.open_in_new, size: AppIconSizes.lg),
+                    ),
+                  ],
+                ],
+              );
+              // 曲名・補足（縦はボタンの下、横は右の列の上）
               final info = <Widget>[
                   // 曲名（タップで編集）+ 補足
                   Padding(
@@ -502,47 +541,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-
-                  // 再生 / オフライン / URL（AB 区間は再生画面で登録する）
-                  Wrap(
-                    spacing: AppSpacing.md,
-                    runSpacing: AppSpacing.md,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      GreenButton(
-                        icon: Icons.play_arrow_rounded,
-                        label: '再生',
-                        onPressed: () => _openPlayer(item),
-                      ),
-                      ...[
-                        GlassPill(
-                          active: item.isCached,
-                          tooltip: item.isCached
-                              ? 'アプリ内に保存済み。タップで削除'
-                              : '保存・書き出し',
-                          padding: const EdgeInsets.all(10),
-                          onTap: () => item.isCached
-                              ? _clearOffline(item)
-                              : _saveItem(item),
-                          child: Icon(
-                            item.isCached ? Icons.offline_pin : Icons.download_outlined,
-                            size: AppIconSizes.md,
-                            color: item.isCached ? AppTheme.accentGreen : null,
-                          ),
-                        ),
-                      ],
-                      if (ytUrl != null) ...[
-                        GlassPill(
-                          tooltip: 'URL をコピー（長押しで開く）',
-                          padding: const EdgeInsets.all(10),
-                          onTap: () => _copyUrl(ytUrl),
-                          onLongPress: () => _openUrl(ytUrl),
-                          child: const Icon(Icons.open_in_new, size: AppIconSizes.md),
-                        ),
-                      ],
-                    ],
                   ),
               ];
               // 右（横画面は右の列）: テンポとキー・タグ・区間・メモ
@@ -591,6 +589,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     padding.bottom -
                     kMinInteractiveDimension -
                     AppSpacing.xs -
+                    _thumbToButtons -
+                    _buttonSize -
                     AppSpacing.xxl;
                 final leftWidth = min(
                   size.width * _splitThumbMaxRatio,
@@ -617,6 +617,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             ),
                           ),
                           thumbnail,
+                          const SizedBox(height: _thumbToButtons),
+                          buttons,
                         ],
                       ),
                     ),
@@ -654,7 +656,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     padding.bottom + AppSpacing.xxl),
                 children: [
                   thumbnail,
-                  const SizedBox(height: AppSpacing.lg + 2),
+                  const SizedBox(height: _thumbToButtons),
+                  buttons,
+                  const SizedBox(height: AppSpacing.lg),
                   ...info,
                   const SizedBox(height: AppSpacing.xl),
                   ...body,
@@ -665,9 +669,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  /// 横画面の左の列（サムネ）の幅の上限（画面の幅に対して）。高さに収まる大きさがこれより
-  /// 小さければそちら
+  /// 横画面の左の列（サムネ）の幅の上限（画面の幅に対して）。高さに収まる大きさ（下の
+  /// ボタンの行の分を引く）がこれより小さければそちら
   static const _splitThumbMaxRatio = 0.55;
+
+  /// サムネの下の再生などのボタンの高さ（押しやすいように大きく）と、サムネとの間
+  static const _buttonSize = 52.0;
+  static const _thumbToButtons = AppSpacing.md;
+
+  /// 保存・URL の丸いボタンの余白（アイコン 24 + 余白 = 再生ボタンと同じ高さ）
+  static const _pillPadding = (_buttonSize - AppIconSizes.lg) / 2;
 
   /// 曲名の下の補足: BPM・キー・再生回数・速度・出どころ
   String _subtitleText(LoopItem item) {

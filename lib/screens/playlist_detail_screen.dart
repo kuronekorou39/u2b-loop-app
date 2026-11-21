@@ -381,7 +381,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
     final result = await showPlaylistTagsDialog(context,
         tags: tags,
-        selected: pl.tagIds.toSet(), countOf: countOf);
+        selected: pl.tagIds.toSet(),
+        countOf: countOf,
+        thumbOf: (tag) => tag.thumbItemOf(allItems));
     if (result == null || !mounted) return;
     final notifier = ref.read(playlistsProvider.notifier);
     final before = pl.itemIds.length;
@@ -664,17 +666,16 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         },
       ),
     ];
-    // 再生・シャッフル（横画面の左の列が狭いときは折り返す）
-    final buttons = Wrap(
-      spacing: AppSpacing.md,
-      runSpacing: AppSpacing.md,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    // 再生・シャッフル（表紙の右に縦に 2 つ、幅いっぱい）
+    final buttons = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (items.isNotEmpty)
+        if (items.isNotEmpty) ...[
           GreenButton(
             icon: Icons.play_arrow_rounded,
             label: '再生',
-            size: 38,
+            size: _headerButtonHeight,
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => PlayerScreen(
@@ -694,17 +695,20 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               ),
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         GlassPill(
           active: pl.defaultShuffle,
           tooltip: pl.defaultShuffle ? 'シャッフル再生' : '順に再生',
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg, vertical: 8),
+              horizontal: AppSpacing.lg, vertical: 10),
           onTap: () {
             pl.defaultShuffle = !pl.defaultShuffle;
             ref.read(playlistsProvider.notifier).update(pl);
           },
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.shuffle,
                   size: AppIconSizes.sm,
@@ -732,27 +736,26 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         );
     final playButtons =
         ReorderDim(reordering: _reordering, hide: true, child: buttons);
-    final tallHeader = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          cover(_coverSize),
-          const SizedBox(width: AppSpacing.xl),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    // 表紙の右に再生・シャッフル、名前とタグは表紙の下（[coverSize] は縦と横で変える）
+    Widget headerBody(double coverSize) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                titleArea(CrossAxisAlignment.start),
-                const SizedBox(height: AppSpacing.lg),
-                playButtons,
+                cover(coverSize),
+                const SizedBox(width: AppSpacing.xl),
+                Expanded(child: playButtons),
               ],
             ),
-          ),
-        ],
-      ),
+            const SizedBox(height: AppSpacing.md),
+            titleArea(CrossAxisAlignment.start),
+          ],
+        );
+    final tallHeader = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: headerBody(_coverSize),
     );
-    // 横: 上に「プレイリスト」の行、その下に縦と同じ並び（表紙の右に名前・タグ・再生）を大きめの表紙で。
+    // 横: 上に「プレイリスト」の行、その下に縦と同じ並びを大きめの表紙で。
     // 正方形の表紙を列の幅いっぱいにすると、横画面の高さに収まらない
     final splitHeader = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -760,23 +763,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         DetailSplitTopBar(title: screenTitle, actions: actions),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              cover(_coverSizeWide),
-              const SizedBox(width: AppSpacing.xl),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    titleArea(CrossAxisAlignment.start),
-                    const SizedBox(height: AppSpacing.lg),
-                    playButtons,
-                  ],
-                ),
-              ),
-            ],
-          ),
+          child: headerBody(_coverSizeWide),
         ),
       ],
     );
@@ -1001,6 +988,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   /// 見出しの表紙（正方形）の幅。縦と、横の左の列
   static const double _coverSize = 112;
   static const double _coverSizeWide = 150;
+
+  /// 表紙の右の再生ボタンの高さ
+  static const double _headerButtonHeight = 44;
 
   /// 「全体」を表す特殊ID（区間選択で全体再生を選ぶ用）
   static const _fullTrackId = '__full__';

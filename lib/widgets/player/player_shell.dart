@@ -25,7 +25,8 @@ import 'player_glass_bar.dart';
 /// 描画後に測って次のフレームで反映する。
 ///
 /// 横画面（[wide]）は左右 2 列。左に [topBar]（AppBar の代わり）・動画（大きく）・
-/// 曲名行、右に字幕・[controller]（波形・再生操作・ピル）。[panel] は左の列の
+/// 曲名行、右の上に [wideChip]（次の曲・いまの区間）、下に字幕・[controller]
+/// （波形・再生操作・ピル）。[panel] は左の列の
 /// [topBar] より下に重ねる。デッキの板も左の列に大きく出す（[DeckAnchorScope]。出している間は動画を暗く）。
 class PlayerShell extends ConsumerStatefulWidget {
   const PlayerShell({
@@ -37,6 +38,7 @@ class PlayerShell extends ConsumerStatefulWidget {
     required this.controller,
     this.wide = false,
     this.topBar,
+    this.wideChip,
   });
 
   /// 背景の色味に使う（サムネ）
@@ -56,6 +58,10 @@ class PlayerShell extends ConsumerStatefulWidget {
   /// [wide] のとき動画の上に出す 1 行（戻る・プレイリスト名・字幕・PiP など）。
   /// 横画面は AppBar を置かないので、その代わり
   final Widget? topBar;
+
+  /// [wide] のとき右の列の上（右寄せ）に出すチップ（次の曲・いまの区間）。縦では
+  /// 曲名行（[header]）の中に出すので渡さない
+  final Widget? wideChip;
 
   /// 板や動画の横の余白、画面下端との間
   static const margin = 12.0;
@@ -207,12 +213,37 @@ class _PlayerShellState extends ConsumerState<PlayerShell> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // 字幕はコントローラーの上の空き
-                        const Expanded(
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: KaraokeSubtitle(),
-                          ),
+                        // コントローラーの上の空き: 上端に次の曲・いまの区間（左の列の
+                        // 戻るの行と同じ高さの右寄せ）、下に字幕。チップは空きが
+                        // 1 行分に満たない低い画面では出さない（コントローラーが先）
+                        Expanded(
+                          child: LayoutBuilder(builder: (context, c) {
+                            final chip = widget.wideChip;
+                            final showChip = chip != null &&
+                                c.maxHeight >= kMinInteractiveDimension;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (showChip)
+                                  SizedBox(
+                                    height: kMinInteractiveDimension,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: PlayerShell.margin),
+                                      child: Align(
+                                          alignment: Alignment.centerRight,
+                                          child: chip),
+                                    ),
+                                  ),
+                                const Expanded(
+                                  child: Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: KaraokeSubtitle(),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }),
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         PlayerDensity(dense: true, child: widget.controller),

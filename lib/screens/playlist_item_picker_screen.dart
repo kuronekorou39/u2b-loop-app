@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
@@ -13,9 +15,11 @@ import '../widgets/tag_chip.dart';
 
 /// プレイリストに入れる曲を一覧から選ぶ画面（ガラス風）。
 ///
-/// 検索欄とタグの絞り込み（チップのタップで切替）の下に、1 枚のガラス面の一覧。
+/// 検索欄とタグの絞り込み（チップのタップで切替。選んだタグのどれかが付いた曲 = OR。
+/// 曲一覧の絞り込みと同じ）の下に、1 枚のガラス面の一覧。
 /// 区間のある曲は行を開いて区間ごとに選べる（「全体」も 1 つの区間として扱う）。
-/// 決定は右上の「追加 (n)」。
+/// 決定は右上の「追加 (n)」。その左に、表示中の曲をまとめて選ぶ・外すボタン。
+/// 横画面は左右（ナビゲーションバー・カメラの切り欠き）と下の画面の端を避ける
 class PlaylistItemPickerScreen extends StatefulWidget {
   const PlaylistItemPickerScreen({
     super.key,
@@ -94,6 +98,30 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
     });
   }
 
+  /// 表示中（検索・タグで絞った）の曲のうち、まだプレイリストに入っていないもの
+  List<LoopItem> _selectable(List<LoopItem> visible) =>
+      [for (final i in visible) if (!widget.existingIds.contains(i.id)) i];
+
+  /// 表示中の曲をまとめて選ぶ。全部選んであれば外す（区間のある曲は全区間、開かない）
+  void _toggleSelectAll(List<LoopItem> visible) {
+    final targets = _selectable(visible);
+    final all = targets.every((i) => _selections.containsKey(i.id));
+    setState(() {
+      for (final item in targets) {
+        if (all) {
+          _selections.remove(item.id);
+          _expanded.remove(item.id);
+        } else {
+          _selections.putIfAbsent(
+              item.id,
+              () => _hasRegions(item)
+                  ? item.effectiveRegions.map((r) => r.id).toSet()
+                  : <String>{});
+        }
+      }
+    });
+  }
+
   void _submit() {
     final ids = <String>[];
     final regions = <String, List<String>>{};
@@ -107,9 +135,10 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
 
   List<LoopItem> _visibleItems() {
     var items = widget.items;
+    // 選んだタグのどれかが付いた曲（OR。曲一覧の絞り込みと同じ。ここでは除外は無い）
     if (_filterTagIds.isNotEmpty) {
       items = items
-          .where((i) => _filterTagIds.every((t) => i.tagIds.contains(t)))
+          .where((i) => i.tagIds.any(_filterTagIds.contains))
           .toList();
     }
     if (_searchQuery.isNotEmpty) {
@@ -123,11 +152,20 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final items = _visibleItems();
-    final bottomPad = MediaQuery.viewPaddingOf(context).bottom;
+    final selectable = _selectable(items);
+    final allSelected = selectable.isNotEmpty &&
+        selectable.every((i) => _selections.containsKey(i.id));
 
     return GlassScaffold(
       title: Text('曲を選択', style: textTheme.titleMedium),
       actions: [
+        IconButton(
+          icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
+          // 表示中（検索・タグで絞った）の曲が対象。ほかの一覧の「全選択」と同じアイコン
+          tooltip: allSelected ? '全解除' : '全選択',
+          onPressed:
+              selectable.isEmpty ? null : () => _toggleSelectAll(items),
+        ),
         Padding(
           padding: const EdgeInsets.only(right: AppSpacing.lg),
           child: Center(
@@ -141,12 +179,17 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
         ),
       ],
       // 上端の余白は Scaffold の中の context から（State の context だと
-      // 状態バーの分しか入らず、検索欄が AppBar の裏に隠れていた）
-      bodyBuilder: (context) => Column(
+      // 状態バーの分しか入らず、検索欄が AppBar の裏に隠れていた）。
+      // 左右と下は画面の端（横画面のナビゲーションバー・切り欠き、下のジェスチャーの帯）を避ける
+      bodyBuilder: (context) {
+        final view = MediaQuery.viewPaddingOf(context);
+        final left = AppSpacing.lg + view.left;
+        final right = AppSpacing.lg + view.right;
+        return Column(
         children: [
           SizedBox(height: MediaQuery.paddingOf(context).top + AppSpacing.xs),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            padding: EdgeInsets.only(left: left, right: right),
             child: GlassSearchField(
               controller: _searchController,
               onChanged: (v) => setState(() => _searchQuery = v),
@@ -156,7 +199,7 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
               },
             ),
           ),
-          if (widget.tags.isNotEmpty) _buildTagFilter(),
+          if (widget.tags.isNotEmpty) _buildTagFilter(left: left, right: right),
           const SizedBox(height: AppSpacing.md),
           Expanded(
             child: items.isEmpty
@@ -171,8 +214,8 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
                     ),
                   )
                 : GlassSurface(
-                    margin: EdgeInsets.fromLTRB(AppSpacing.lg, 0,
-                        AppSpacing.lg, bottomPad + AppSpacing.lg),
+                    margin: EdgeInsets.fromLTRB(
+                        left, 0, right, view.bottom + AppSpacing.lg),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: ListView.builder(
@@ -185,18 +228,18 @@ class _PlaylistItemPickerScreenState extends State<PlaylistItemPickerScreen> {
                   ),
           ),
         ],
-      ),
+      );
+      },
     );
   }
 
   /// タグのチップを横に並べ、タップで絞り込みの入切。選んでいないものは薄く
-  Widget _buildTagFilter() {
+  Widget _buildTagFilter({required double left, required double right}) {
     return SizedBox(
       height: 36,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+        padding: EdgeInsets.fromLTRB(left, AppSpacing.md, right, 0),
         children: [
           for (final tag in widget.tags)
             Padding(
@@ -362,18 +405,20 @@ Future<PlaylistAddChoice?> showPlaylistAddDialog(BuildContext context) {
 }
 
 /// プレイリストに自動で入れるタグを選ぶダイアログ（複数選べる。どれか 1 つが付いた曲が入る）。
-/// 選んであるタグを上に集める。タグが多くても中で縦に流れる。[countOf] はそのタグが
-/// 付いた曲数。戻り値は選んだタグの ID（タグ一覧の並び）
+/// 選んだタグとほかのタグを分けて出す（縦は上に選んだタグ・区切りの線・ほかのタグ、横は左右の列）。
+/// どちらもタグ一覧の並び。行にはタグのサムネ（[thumbOf]）と曲数（[countOf]）。
+/// 戻り値は選んだタグの ID（タグ一覧の並び）
 Future<List<String>?> showPlaylistTagsDialog(
   BuildContext context, {
   required List<Tag> tags,
   required Set<String> selected,
   required int Function(Tag tag) countOf,
+  LoopItem? Function(Tag tag)? thumbOf,
 }) {
   return showDialog<List<String>>(
     context: context,
-    builder: (_) =>
-        _PlaylistTagsDialog(tags: tags, initial: selected, countOf: countOf),
+    builder: (_) => _PlaylistTagsDialog(
+        tags: tags, initial: selected, countOf: countOf, thumbOf: thumbOf),
   );
 }
 
@@ -382,11 +427,19 @@ class _PlaylistTagsDialog extends StatefulWidget {
     required this.tags,
     required this.initial,
     required this.countOf,
+    this.thumbOf,
   });
 
   final List<Tag> tags;
   final Set<String> initial;
   final int Function(Tag tag) countOf;
+  final LoopItem? Function(Tag tag)? thumbOf;
+
+  /// 横に 2 列で出す幅（これより狭いか縦長なら上下に分ける）
+  static const wideMinWidth = 600.0;
+
+  /// 横に 2 列で出すときのダイアログの幅の上限
+  static const wideMaxWidth = 760.0;
 
   @override
   State<_PlaylistTagsDialog> createState() => _PlaylistTagsDialogState();
@@ -395,80 +448,127 @@ class _PlaylistTagsDialog extends StatefulWidget {
 class _PlaylistTagsDialogState extends State<_PlaylistTagsDialog> {
   late final Set<String> _selected = {...widget.initial};
 
-  /// 上に集めるタグ（並び順）。開いたとき選んであったもの + 開いている間にオンにしたもの。
-  /// オフにしても開いている間はここから抜かない（押した行が逃げないように）
-  late final List<String> _top = [
-    for (final t in widget.tags)
-      if (widget.initial.contains(t.id)) t.id
-  ];
-
   void _toggle(Tag tag) {
     setState(() {
-      if (!_selected.remove(tag.id)) {
-        _selected.add(tag.id);
-        if (!_top.contains(tag.id)) _top.add(tag.id);
-      }
+      if (!_selected.remove(tag.id)) _selected.add(tag.id);
     });
+  }
+
+  static const double _thumbSize = 40;
+
+  /// 行の高さ（チェックの行 1 段。横の 2 列の高さを決めるのに使う）
+  static const double _rowHeight = 56;
+
+  /// タグの行: 色の印・サムネ・名前・曲数・チェック
+  Widget _row(Tag tag) {
+    final textTheme = Theme.of(context).textTheme;
+    final thumb = widget.thumbOf?.call(tag);
+    return CheckboxListTile(
+      key: ValueKey(tag.id),
+      value: _selected.contains(tag.id),
+      onChanged: (_) => _toggle(tag),
+      secondary: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.label, size: AppIconSizes.md, color: tag.color),
+          const SizedBox(width: AppSpacing.md),
+          ClipRRect(
+            borderRadius: AppRadius.borderSm,
+            child: SizedBox(
+              width: _thumbSize,
+              height: _thumbSize,
+              child: thumb != null
+                  ? ItemThumbnail(item: thumb, iconSize: AppIconSizes.sm)
+                  : ColoredBox(color: tag.color.withValues(alpha: 0.15)),
+            ),
+          ),
+        ],
+      ),
+      // 名前の右に曲数
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(tag.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodyLarge),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Text('${widget.countOf(tag)} 曲', style: textTheme.labelSmall),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4);
-    // 上に集めたタグ、その下に残りをタグ一覧の並び（ユーザーが決めた順）で
-    final byId = {for (final t in widget.tags) t.id: t};
-    final tags = [
-      for (final id in _top) ?byId[id],
+    final dim = AppTheme.muted(context, alpha: 0.4);
+    final size = MediaQuery.sizeOf(context);
+    final wide = size.width >= _PlaylistTagsDialog.wideMinWidth &&
+        size.width > size.height;
+    final picked = [
       for (final t in widget.tags)
-        if (!_top.contains(t.id)) t,
+        if (_selected.contains(t.id)) t
     ];
+    final others = [
+      for (final t in widget.tags)
+        if (!_selected.contains(t.id)) t
+    ];
+    final line = AppTheme.muted(context, alpha: 0.2);
+
+    final Widget content;
+    if (widget.tags.isEmpty) {
+      content = Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Text('タグがありません',
+            style: textTheme.bodyMedium?.copyWith(color: dim)),
+      );
+    } else if (wide) {
+      // 横: 左に選んだタグ、右にほかのタグ（間に縦の線）。それぞれの列で縦に流れる
+      Widget column(List<Tag> tags) => tags.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Text('選択なし',
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodySmall?.copyWith(color: dim)),
+            )
+          : ListView(children: [for (final t in tags) _row(t)]);
+      content = Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: column(picked)),
+          VerticalDivider(width: 1, color: line),
+          Expanded(child: column(others)),
+        ],
+      );
+    } else {
+      // 縦: 上に選んだタグ、区切りの線、下にほかのタグ（全体で縦に流れる）
+      content = ListView(
+        shrinkWrap: true,
+        children: [
+          for (final t in picked) _row(t),
+          if (picked.isNotEmpty && others.isNotEmpty)
+            Divider(height: 1, color: line),
+          for (final t in others) _row(t),
+        ],
+      );
+    }
+
     return AlertDialog(
       title: Text('タグで自動追加', style: textTheme.displaySmall),
       contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      constraints: wide
+          ? const BoxConstraints(
+              minWidth: 280, maxWidth: _PlaylistTagsDialog.wideMaxWidth)
+          : null,
       content: SizedBox(
         width: double.maxFinite,
-        child: tags.isEmpty
-            ? Padding(
-                padding: const EdgeInsets.all(AppSpacing.xl),
-                child: Text('タグがありません',
-                    style: textTheme.bodyMedium?.copyWith(color: dim)),
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: tags.length,
-                      itemBuilder: (_, i) {
-                        final tag = tags[i];
-                        final on = _selected.contains(tag.id);
-                        return CheckboxListTile(
-                          key: ValueKey(tag.id),
-                          value: on,
-                          onChanged: (_) => _toggle(tag),
-                          secondary: Icon(Icons.label,
-                              size: AppIconSizes.md, color: tag.color),
-                          // 名前の右に曲数
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(tag.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: textTheme.bodyLarge),
-                              ),
-                              const SizedBox(width: AppSpacing.md),
-                              Text('${widget.countOf(tag)} 曲',
-                                  style: textTheme.labelSmall),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
+        // 横の 2 列は行の多い方に合わせた高さ（入りきらなければダイアログの高さまでで、列の中で流す）
+        height: wide && widget.tags.isNotEmpty
+            ? max(picked.length, others.length) * _rowHeight + AppSpacing.md
+            : null,
+        child: content,
       ),
       actions: [
         TextButton(

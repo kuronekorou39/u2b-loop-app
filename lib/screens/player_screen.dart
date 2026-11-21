@@ -1670,6 +1670,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             ? () => plNotifier.setPointB(ref.read(playerProvider).state.position)
             : null,
       );
+      final nextChip = nextIdx != null
+          ? NextTrackChip(
+              track: plState.tracks[nextIdx],
+              onTap: () => _setPanelOpen(true),
+            )
+          : null;
       return PlayerShell(
         item: _currentItem,
         wide: wide,
@@ -1681,16 +1687,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     currentItem: _currentItem,
                     onFullscreen: _enterFullscreen,
                   )),
+        // 次の曲: 縦は曲名の下の行の右、横は右の列の上
         header: NowPlayingHeader(
           title: plState.currentTrack?.displayName ?? '',
           subtitle: subParts.join('  ·  '),
-          chip: nextIdx != null
-              ? NextTrackChip(
-                  track: plState.tracks[nextIdx],
-                  onTap: () => _setPanelOpen(true),
-                )
-              : null,
+          chip: wide ? null : nextChip,
         ),
+        wideChip: wide ? nextChip : null,
         panel: panelOpen
             ? _buildTrackListPanel()
             : wide && _editMode
@@ -1758,6 +1761,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           '${activeRegion.name}  ${TimeUtils.formatShortNullable(loop.pointA)} - ${TimeUtils.formatShortNullable(loop.pointB)}';
     }
 
+    final regionChip = HeaderChip(
+      leading: Icon(
+        activeRegion == null ? Icons.all_inclusive : Icons.repeat,
+        size: AppIconSizes.s,
+        color: AppTheme.accentGreen,
+      ),
+      label: '区間',
+      text: regionText,
+      onTap: () => _setPanelOpen(true),
+    );
+
     final editBlock = AbEditControls(
       loop: loop,
       step: loop.adjustStep,
@@ -1791,20 +1805,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     const LyricsOverlay(),
                   ],
                 )),
+      // いまの区間: 縦は曲名の下の行の右、横は右の列の上
       header: NowPlayingHeader(
         title: item.title,
         subtitle: subParts.join('  ·  '),
-        chip: HeaderChip(
-          leading: Icon(
-            activeRegion == null ? Icons.all_inclusive : Icons.repeat,
-            size: AppIconSizes.s,
-            color: AppTheme.accentGreen,
-          ),
-          label: '区間',
-          text: regionText,
-          onTap: () => _setPanelOpen(true),
-        ),
+        chip: wide ? null : regionChip,
       ),
+      wideChip: wide ? regionChip : null,
       panel: panelOpen
           ? _buildRegionPanel(regions)
           : wide && _editMode

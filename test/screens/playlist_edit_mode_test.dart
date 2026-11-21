@@ -197,6 +197,11 @@ void main() {
     final camera = tester.getRect(find.byTooltip('サムネイルを選ぶ'));
     expect(camera.right, lessThanOrEqualTo(cover.right));
     expect(camera.center.dx, greaterThan(cover.center.dx));
+    // 名前とタグは表紙の下、再生とシャッフルは表紙の右
+    expect(tester.getRect(find.text('リスト')).top, greaterThan(cover.bottom));
+    expect(tester.getRect(find.text('タグを紐づける')).top, greaterThan(cover.bottom));
+    expect(tester.getRect(find.text('再生')).left, greaterThan(cover.right));
+    expect(tester.getRect(find.text('シャッフル')).left, greaterThan(cover.right));
   });
 
   testWidgets('並べ替えモードは行の長押しでも持ち上げて並べ替えられる', (tester) async {
@@ -297,9 +302,9 @@ void main() {
     final title = tester.getRect(find.text('リスト'));
     final play = tester.getRect(find.text('再生'));
     final song = tester.getRect(find.text('曲 a'));
-    // 戻る → 名前 → 再生 の順に左の列を下へ。曲は右の列で、戻るの行と同じ高さから
-    expect(title.top, greaterThan(back.bottom));
-    expect(play.top, greaterThan(title.bottom));
+    // 戻る → 表紙（右に再生）→ 名前 の順に左の列を下へ。曲は右の列で、戻るの行と同じ高さから
+    expect(play.top, greaterThan(back.bottom));
+    expect(title.top, greaterThan(play.bottom));
     expect(song.left, greaterThan(play.right));
     expect(song.top, lessThan(title.top));
     expect(tester.takeException(), isNull);

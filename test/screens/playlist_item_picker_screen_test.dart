@@ -5,6 +5,7 @@ import 'package:u2b_loop_app/models/loop_region.dart';
 import 'package:u2b_loop_app/models/tag.dart';
 import 'package:u2b_loop_app/screens/playlist_item_picker_screen.dart';
 import 'package:u2b_loop_app/widgets/glass_surface.dart';
+import 'package:u2b_loop_app/widgets/item_thumbnail.dart';
 
 /// プレイリストの「曲を追加」: 一覧から選択の画面と、入口・タグのダイアログ。
 /// 以前はタグのシートが Column 直書きでスクロールできなかったので、
@@ -104,6 +105,83 @@ void main() {
     expect(find.text('該当する曲がありません'), findsOneWidget);
   });
 
+  testWidgets('タグの絞り込みは OR（選んだタグのどれかが付いた曲）', (tester) async {
+    await pump(tester, [
+      item(1, tagIds: ['t1']),
+      item(2, tagIds: ['t2']),
+      item(3, tagIds: ['t1', 't2']),
+      item(4),
+    ]);
+    await tester.tap(find.text('練習'));
+    await tester.pump();
+    await tester.tap(find.text('本番'));
+    await tester.pump();
+    for (final n in [1, 2, 3]) {
+      expect(find.text('曲 $n'), findsOneWidget, reason: '$n');
+    }
+    expect(find.text('曲 4'), findsNothing);
+  });
+
+  testWidgets('表示中の曲をまとめて選べ、もう一度押すと外れる（入っている曲は除く）', (tester) async {
+    await pump(tester, [
+      item(1, tagIds: ['t1']),
+      item(2, tagIds: ['t1']),
+      item(3, tagIds: ['t1']),
+      item(4),
+    ], existing: {'i3'});
+    await tester.tap(find.text('練習'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('全選択'));
+    await tester.pump();
+    expect(find.text('追加 (2)'), findsOneWidget);
+    // 絞り込みの外の曲は選ばない
+    await tester.tap(find.text('練習'));
+    await tester.pump();
+    expect(find.byTooltip('全選択'), findsOneWidget);
+    await tester.tap(find.text('練習'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('全解除'));
+    await tester.pump();
+    expect(find.text('追加 (0)'), findsOneWidget);
+  });
+
+  testWidgets('区間のある曲をまとめて選ぶと全区間が入る（行は開かない）', (tester) async {
+    final r = await pump(tester, [
+      item(1, regions: [
+        LoopRegion(id: 'r1', name: 'サビ', pointAMs: 1000, pointBMs: 5000),
+        LoopRegion(id: 'r2', name: 'ソロ', pointAMs: 6000, pointBMs: 9000),
+      ]),
+      item(2),
+    ]);
+    await tester.tap(find.byTooltip('全選択'));
+    await tester.pump();
+    expect(find.text('サビ'), findsNothing);
+    await tester.tap(find.text('追加 (2)'));
+    await tester.pumpAndSettle();
+    expect(r.ids.single, ['i1', 'i2']);
+    expect(r.regions.single['i1'], unorderedEquals(['r1', 'r2']));
+  });
+
+  testWidgets('横画面は左右と下の画面の端（ナビゲーションバー・ジェスチャーの帯）を避ける',
+      (tester) async {
+    tester.view.physicalSize = const Size(923, 411);
+    tester.view.devicePixelRatio = 1;
+    const pad = FakeViewPadding(top: 24, left: 30, right: 48, bottom: 20);
+    tester.view.padding = pad;
+    tester.view.viewPadding = pad;
+    addTearDown(tester.view.reset);
+    await pump(tester, [item(1), item(2)]);
+    final list = tester.getRect(listScrollable);
+    expect(list.left, greaterThanOrEqualTo(30));
+    expect(list.right, lessThanOrEqualTo(923 - 48));
+    expect(list.bottom, lessThanOrEqualTo(411 - 20));
+    final search = tester.getRect(find.byType(TextField));
+    expect(search.left, greaterThanOrEqualTo(30));
+    expect(search.right, lessThanOrEqualTo(923 - 48));
+    expect(tester.getRect(find.text('練習')).left, greaterThanOrEqualTo(30));
+    expect(tester.getRect(find.text('追加 (0)')).right, lessThanOrEqualTo(923 - 48));
+  });
+
   testWidgets('区間のある曲は開いて区間ごとに選べ、全部外すと曲も外れる', (tester) async {
     final regions = [
       LoopRegion(id: 'r1', name: 'サビ', pointAMs: 1000, pointBMs: 5000),
@@ -182,6 +260,10 @@ void main() {
 
     testWidgets('タグのダイアログは複数選べ、件数が多くてもスクロールできる。結果はタグ一覧の並び',
         (tester) async {
+      // 縦の電話（既定の 800x600 は横向きなので 2 列になる）
+      tester.view.physicalSize = const Size(411, 923);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final many = [for (var i = 1; i <= 30; i++) Tag(id: 't$i', name: 'タグ $i')];
       List<String>? result;
       await tester.pumpWidget(MaterialApp(
@@ -207,20 +289,21 @@ void main() {
           closeTo(tester.getCenter(find.text('タグ 3')).dy, 1));
       expect(tester.getTopLeft(find.text('2 曲').first).dx,
           greaterThan(tester.getTopRight(find.text('タグ 3')).dx));
-      // オンにすると選んであるタグのすぐ下へ上がり、オフにしても開いている間は動かない
+      // 選んだタグとほかのタグの間に区切りの線
+      final line = tester.getRect(find.byType(Divider)).top;
+      expect(tester.getTopLeft(find.text('タグ 3')).dy, lessThan(line));
+      expect(tester.getTopLeft(find.text('タグ 1')).dy, greaterThan(line));
+      // オンにすると選んだタグの側へ（タグ一覧の並びで タグ 3 の下）、オフで戻る
       await tester.tap(find.text('タグ 5'));
       await tester.pumpAndSettle();
-      final moved = tester.getTopLeft(find.text('タグ 5')).dy;
-      expect(moved, greaterThan(tester.getTopLeft(find.text('タグ 3')).dy));
-      expect(moved, lessThan(tester.getTopLeft(find.text('タグ 1')).dy));
+      final picked = tester.getTopLeft(find.text('タグ 5')).dy;
+      expect(picked, greaterThan(tester.getTopLeft(find.text('タグ 3')).dy));
+      expect(picked, lessThan(tester.getRect(find.byType(Divider)).top));
       await tester.tap(find.text('タグ 5'));
       await tester.pumpAndSettle();
-      expect(tester.getTopLeft(find.text('タグ 5')).dy, moved);
-      await tester.tap(find.text('タグ 3'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('タグ 3'));
-      await tester.pumpAndSettle();
-      expect(tester.getTopLeft(find.text('タグ 3')).dy, lessThan(moved));
+      final back = tester.getTopLeft(find.text('タグ 5')).dy;
+      expect(back, greaterThan(tester.getTopLeft(find.text('タグ 4')).dy));
+      expect(back, greaterThan(tester.getRect(find.byType(Divider)).top));
 
       await tester.scrollUntilVisible(find.text('タグ 30'), 300,
           scrollable: find.byType(Scrollable).first);
@@ -229,6 +312,35 @@ void main() {
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
       expect(result, ['t3', 't30']);
+    });
+
+    testWidgets('タグのダイアログ: 横画面は左に選んだタグ、右にほかのタグ。サムネも出す', (tester) async {
+      tester.view.physicalSize = const Size(923, 411);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final some = [for (var i = 1; i <= 4; i++) Tag(id: 't$i', name: 'タグ $i')];
+      final thumbs = {
+        't2': LoopItem(
+            id: 'a', title: 'a', uri: 'u', sourceType: 'local', thumbnailPath: '/none.png'),
+      };
+      await open<List<String>>(
+          tester,
+          (ctx) => showPlaylistTagsDialog(ctx,
+              tags: some,
+              selected: {'t2'},
+              countOf: (_) => 1,
+              thumbOf: (t) => thumbs[t.id]));
+      final picked = tester.getRect(find.text('タグ 2'));
+      final other = tester.getRect(find.text('タグ 1'));
+      expect(other.left, greaterThan(picked.right), reason: '右の列');
+      expect(find.byType(VerticalDivider), findsOneWidget);
+      expect(find.byType(Divider), findsNothing);
+      // 選ぶと左の列へ移る
+      await tester.tap(find.text('タグ 3'));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.text('タグ 3')).left, closeTo(picked.left, 1));
+      // サムネ（無いタグは色の面）
+      expect(find.byType(ItemThumbnail), findsOneWidget);
     });
 
     testWidgets('タグが無ければその旨を出す', (tester) async {

@@ -85,7 +85,12 @@ class _DragReorderGridState<T> extends State<DragReorderGrid<T>> {
           },
           builder: (context, _, _) => LayoutBuilder(
             builder: (context, constraints) {
-              final tile = widget.itemBuilder(context, item);
+              // タイルの全面を当たり判定にする。並べ替え中のタイルはタップを持たないので、
+              // そのままでは文字・画像の上しか触れず、空いている所を長押ししても持ち上がらなかった
+              final tile = ColoredBox(
+                color: const Color(0x00000000),
+                child: widget.itemBuilder(context, item),
+              );
               return LongPressDraggable<String>(
                 data: id,
                 delay: reorderTouchDelay,

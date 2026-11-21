@@ -92,7 +92,7 @@ void main() {
     expect(style.fontSize, lessThanOrEqualTo(12));
   });
 
-  testWidgets('横画面: 左の列はサムネを大きく。曲名・ボタンは右の列、メニューは右の列の右上',
+  testWidgets('横画面: 左の列はサムネを大きく、すぐ下に再生などのボタン。曲名は右の列、メニューは右の列の右上',
       (tester) async {
     await AppBoxes.loopItems.clear();
     await AppBoxes.loopItems.put('a', analyzed());
@@ -108,9 +108,14 @@ void main() {
     // 画面の幅の半分くらいまで大きく、下は画面に収まる
     expect(thumb.width, greaterThan(923 * 0.45));
     expect(thumb.bottom, lessThanOrEqualTo(411));
-    // 曲名・再生はサムネの右
+    // 曲名はサムネの右、再生はサムネのすぐ下（左の列）で画面に収まる
     expect(tester.getRect(find.text('曲')).left, greaterThan(thumb.right));
-    expect(tester.getRect(find.text('再生')).left, greaterThan(thumb.right));
+    final play = tester.getRect(find.ancestor(
+        of: find.text('再生'), matching: find.byType(InkWell)).first);
+    expect(play.top, greaterThan(thumb.bottom));
+    expect(play.top - thumb.bottom, lessThan(16));
+    expect(play.left, closeTo(thumb.left, 1));
+    expect(play.bottom, lessThanOrEqualTo(411));
     // メニューは右の列の右上（曲名より上、画面の右端寄り）
     final menu = tester.getRect(find.byIcon(Icons.more_vert));
     expect(menu.left, greaterThan(thumb.right));
@@ -118,6 +123,18 @@ void main() {
     expect(menu.bottom, lessThanOrEqualTo(tester.getRect(find.text('曲')).top));
     // 戻るは左上
     expect(tester.getRect(find.byType(BackButton)).right, lessThan(thumb.right));
+  });
+
+  testWidgets('再生などのボタンはサムネのすぐ下に大きく（再生は幅いっぱい）。曲名はその下', (tester) async {
+    await pump(tester, analyzed());
+    final thumb = tester.getRect(find.byType(ItemThumbnail));
+    final play = tester.getRect(find.ancestor(
+        of: find.text('再生'), matching: find.byType(InkWell)).first);
+    expect(play.top, greaterThan(thumb.bottom));
+    expect(play.top - thumb.bottom, lessThan(16));
+    expect(play.height, greaterThanOrEqualTo(52));
+    expect(play.width, greaterThan(thumb.width / 2));
+    expect(tester.getRect(find.text('曲')).top, greaterThan(play.bottom));
   });
 
   testWidgets('区間が無ければ AB 区間は出さない。未解析ならつなぎやすい曲は押せない', (tester) async {

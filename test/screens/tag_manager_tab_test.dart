@@ -78,6 +78,24 @@ void main() {
   }
 
   for (final mode in [TagViewMode.grid2, TagViewMode.grid4]) {
+    testWidgets('${mode.label}: 並べ替えモードはタイルの空いている所（文字の無い右側）からでも持ち上がる',
+        (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final (c, _) = await pump(tester, mode, reordering: true);
+      await tester.pumpAndSettle();
+      final tile = tester.getRect(find
+          .ancestor(of: find.text('あ'), matching: find.byType(LongPressDraggable<String>))
+          .first);
+      // 右端の近く（文字も印も無い所）
+      final from = Offset(tile.right - 6, tile.center.dy);
+      await holdAndDrag(tester, from, tester.getCenter(find.text('え')));
+      expect(names(c).first, isNot('あ'), reason: '持ち上がって動いた');
+    });
+  }
+
+  for (final mode in [TagViewMode.grid2, TagViewMode.grid4]) {
     testWidgets('${mode.label}: 並べ替えモードは長押しで動かすと並べ替え（選択しない）', (tester) async {
       final (c, toggled) = await pump(tester, mode, reordering: true);
       await holdAndDrag(tester, tester.getCenter(find.text('あ')),

@@ -30,6 +30,7 @@ void main() {
     double width = 400,
     bool wide = false,
     Widget? topBar,
+    Widget? wideChip,
   }) async {
     tester.view.physicalSize = Size(width, height);
     tester.view.devicePixelRatio = 1;
@@ -49,6 +50,7 @@ void main() {
             item: item,
             wide: wide,
             topBar: topBar,
+            wideChip: wideChip,
             video: const ColoredBox(color: Colors.black, key: Key('video')),
             header: const SizedBox(height: 40, key: Key('header')),
             panel: panel,
@@ -116,6 +118,36 @@ void main() {
           of: find.byKey(const Key('header')),
           matching: find.byType(Visibility)));
       expect(header.visible, isFalse);
+    });
+
+    testWidgets('チップ（次の曲・いまの区間）は右の列の上端の右寄せ。空きが無ければ出さない',
+        (tester) async {
+      const chipKey = Key('chip');
+      const chip = SizedBox(width: 120, height: 30, key: chipKey);
+      await pump(tester,
+          width: 900,
+          height: 400,
+          controllerHeight: 250,
+          wide: true,
+          topBar: const SizedBox(
+              height: kMinInteractiveDimension, key: Key('topBar')),
+          wideChip: chip);
+      final rect = tester.getRect(find.byKey(chipKey));
+      final topBar = tester.getRect(find.byKey(const Key('topBar')));
+      expect(rect.left, greaterThan(900 * PlayerShell.wideLeftRatio));
+      expect(rect.right, closeTo(900 - PlayerShell.margin, 0.5));
+      // 左の列の戻るの行と同じ高さ
+      expect(rect.center.dy, closeTo(topBar.center.dy, 0.5));
+
+      // コントローラーが高く、上に 1 行分の空きが無い
+      await pump(tester,
+          width: 900,
+          height: 400,
+          controllerHeight: 380,
+          wide: true,
+          wideChip: chip);
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(chipKey), findsNothing);
     });
 
     testWidgets('低い画面でも溢れない', (tester) async {

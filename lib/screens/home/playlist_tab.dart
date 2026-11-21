@@ -76,7 +76,8 @@ class PlaylistTab extends ConsumerWidget {
         selected: const {},
         countOf: (tag) => allItems
             .where((i) => i.isReady && i.tagIds.contains(tag.id))
-            .length);
+            .length,
+        thumbOf: (tag) => tag.thumbItemOf(allItems));
     if (result == null || result.isEmpty) return;
     // 名前は選んだタグの名前から（タグ一覧の並び）
     final name = AppLimits.clip(

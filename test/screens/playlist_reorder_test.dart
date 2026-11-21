@@ -181,6 +181,24 @@ void main() {
     }
   });
 
+  testWidgets('グリッド: 並べ替えモードはカードの空いている所（名前の下）からでも持ち上がる', (tester) async {
+    final c = await pump(tester, grid: true, reordering: true);
+    await tester.pumpAndSettle();
+    final first = names(c).first;
+    final card = tester.getRect(find
+        .ancestor(of: find.text(first), matching: find.byType(LongPressDraggable<String>))
+        .first);
+    // カードの下の端の近く（タグの行。タグが無いので空いている）
+    final from = Offset(card.center.dx + card.width / 4, card.bottom - 6);
+    final to = tester.getCenter(find.text(names(c).last));
+    final g = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 300));
+    await slide(tester, g, from, to);
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(names(c).first, isNot(first), reason: '持ち上がって動いた');
+  });
+
   testWidgets('グリッド: 並べ替えモードは長押しで動かす。ふだんは動かない', (tester) async {
     Future<void> holdAndDrag(Offset from, Offset to) async {
       final gesture = await tester.startGesture(from);

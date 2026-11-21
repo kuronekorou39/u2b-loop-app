@@ -8,8 +8,10 @@ import '../settings/hq_audio_log_dialog.dart';
 import '../marquee_text.dart';
 import 'track_row_parts.dart';
 
-/// 動画の下に出す「いま何を聴いているか」: 曲名、補足（BPM・キーなど）、右にチップ。
-/// チップはモードごと（プレイリスト: 次の曲 [NextTrackChip]、単体: いまの区間 [HeaderChip]）。
+/// 動画の下に出す「いま何を聴いているか」: 曲名（1 行目を幅いっぱい）、2 行目に補足（BPM・キーなど）と
+/// 右寄せのチップ。チップはモードごと（プレイリスト: 次の曲 [NextTrackChip]、単体: いまの区間
+/// [HeaderChip]）。以前は曲名の行の右にあり、曲名が短く切れていた。横画面ではチップを
+/// 右の列に出すので、ここには渡さない（PlayerShell.wideChip）。
 /// 補足の行末に、いま鳴っている音声の素性（高音質 / 標準 / オフライン / ローカル）も出す。
 /// 高音質は落とせないと黙って標準に戻るので、ここで気づけるようにしてある
 class NowPlayingHeader extends ConsumerWidget {
@@ -34,15 +36,15 @@ class NowPlayingHeader extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl + 4),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                MarqueeText(text: title, style: titleStyle),
-                const SizedBox(height: 3),
-                Row(
+          MarqueeText(text: title, style: titleStyle),
+          const SizedBox(height: 3),
+          Row(
+            children: [
+              Expanded(
+                child: Row(
                   children: [
                     if (subtitle.isNotEmpty)
                       Flexible(
@@ -68,20 +70,21 @@ class NowPlayingHeader extends ConsumerWidget {
                     ],
                   ],
                 ),
+              ),
+              if (chip != null) ...[
+                const SizedBox(width: AppSpacing.lg),
+                chip!,
               ],
-            ),
+            ],
           ),
-          if (chip != null) ...[
-            const SizedBox(width: AppSpacing.lg),
-            chip!,
-          ],
         ],
       ),
     );
   }
 }
 
-/// 曲名行の右に置く小さなチップ: 先頭に [leading]、緑の小さな [label] と本文 [text]
+/// 曲名の下の行の右（横画面は右の列の上）に置く小さなチップ: 先頭に [leading]、
+/// 緑の小さな [label] と本文 [text] を 1 行に
 class HeaderChip extends StatelessWidget {
   const HeaderChip({
     super.key,
@@ -96,6 +99,9 @@ class HeaderChip extends StatelessWidget {
   final String text;
   final VoidCallback onTap;
 
+  /// 幅の上限（補足の行と分け合うので長い曲名・区間名は切る）
+  static const maxWidth = 200.0;
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -106,32 +112,27 @@ class HeaderChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
+          padding: const EdgeInsets.fromLTRB(6, 4, 10, 4),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 160),
+            constraints: const BoxConstraints(maxWidth: maxWidth),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 leading,
-                const SizedBox(width: AppSpacing.md),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  label,
+                  // 以前は 9px で読めなかった。labelSmall（11px）のまま
+                  style: textTheme.labelSmall!
+                      .copyWith(color: AppTheme.accentGreen),
+                ),
+                const SizedBox(width: AppSpacing.xs),
                 Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        label,
-                        // 以前は 9px で読めなかった。labelSmall（11px）のまま
-                        style: textTheme.labelSmall!
-                            .copyWith(color: AppTheme.accentGreen),
-                      ),
-                      Text(
-                        text,
-                        style: textTheme.labelMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+                  child: Text(
+                    text,
+                    style: textTheme.labelMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -153,7 +154,7 @@ class NextTrackChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return HeaderChip(
-      leading: TrackThumb(track: track, width: 34, height: 26),
+      leading: TrackThumb(track: track, width: 32, height: 22),
       label: '次',
       text: track.displayName,
       onTap: onTap,
