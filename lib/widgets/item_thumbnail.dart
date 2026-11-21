@@ -32,6 +32,15 @@ class ItemThumbnail extends StatelessWidget {
   /// 既定のプレースホルダを差し替えたい場合に指定する
   final Widget? placeholder;
 
+  /// サムネが無いときの地。ライトは白い面の上でも見えるよう薄い灰色にする
+  /// （白のままだと、白い面に置いたとき枠ごと消えていた）
+  static Color placeholderColor(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.brightness == Brightness.dark
+        ? theme.colorScheme.surfaceContainerHighest
+        : theme.colorScheme.onSurface.withValues(alpha: 0.07);
+  }
+
   @override
   Widget build(BuildContext context) {
     final fallback = placeholder ?? _defaultPlaceholder(context);
@@ -49,7 +58,7 @@ class ItemThumbnail extends StatelessWidget {
 
   Widget _defaultPlaceholder(BuildContext context) {
     return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: placeholderColor(context),
       child: Center(
         child: Icon(
           item.isYouTube
@@ -72,7 +81,7 @@ class ItemThumbnailPlaceholderLarge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: ItemThumbnail.placeholderColor(context),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

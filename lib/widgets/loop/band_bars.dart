@@ -36,7 +36,7 @@ class BandBars {
   static const _midScale = 0.62;
   static const _highScale = 0.28;
 
-  /// まだ鳴っていない側をどれだけ暗くするか
+  /// まだ鳴っていない側をどれだけ地の色へ寄せるか
   static const _dimAmount = 0.55;
 
   static void paint(
@@ -49,10 +49,13 @@ class BandBars {
     required BandPalette palette,
     required double opacity,
     bool dim = false,
+    bool light = false,
   }) {
-    // まだ鳴っていない側は色を暗くする（透かすと 3 色が混ざって濁るので、色そのものを沈める）
+    // まだ鳴っていない側は色を地の色へ寄せて沈める（透かすと 3 色が混ざって濁るので、色そのものを
+    // 変える）。ダークは黒へ、ライトは白へ（黒へ寄せると明るい地の上で鳴った側より重く見えた）
+    final toward = light ? Colors.white : Colors.black;
     void bar(double v, Color base) {
-      final c = dim ? Color.lerp(base, Colors.black, _dimAmount)! : base;
+      final c = dim ? Color.lerp(base, toward, _dimAmount)! : base;
       final h = (v * maxHalfHeight).clamp(0.5, maxHalfHeight);
       canvas.drawRRect(
         RRect.fromRectAndRadius(

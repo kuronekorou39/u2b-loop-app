@@ -13,10 +13,9 @@ import '../services/update_service.dart';
 import '../widgets/player/more_tile.dart';
 import '../widgets/glass_scaffold.dart';
 import 'settings/advanced_settings_screen.dart';
-import 'settings/backup_settings_screen.dart';
+import 'settings/data_settings_screen.dart';
 import 'settings/debug_settings_screen.dart';
 import 'settings/dj_mix_settings_screen.dart';
-import 'settings/storage_settings_screen.dart';
 
 /// 設定のトップ。四角い大きなボタン（[MoreTile]）を敷き詰め、残りは各ページへ。
 /// アップデートは次の画面へ進むボタンではない（その場で確認する。ふだんは起動時に自動）ので、
@@ -34,7 +33,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
   /// [count] 個の正方形のボタンを [area] に全部収める並べ方。
   /// 列数を 1 から順に試し、ボタンがいちばん大きくなる列数にする
-  /// （縦の電話は 2 列 × 2 行、横向きの電話は 1 行になる）
+  /// （3 つなら縦の電話は縦に 1 列、横向きの電話は 1 行。デバッグモードで 4 つなら
+  /// 縦の電話は 2 列 × 2 行）
   static ({int columns, double side}) gridFor(Size area, int count) {
     var best = (columns: 1, side: 0.0);
     for (var columns = 1; columns <= count; columns++) {
@@ -89,8 +89,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final playlists = AppBoxes.playlists.length;
     final tags = AppBoxes.tags.length;
 
-    // 縦の電話（2 列）で「DJ ミックス・表示と再生」「保存データ・バックアップ」と
-    // 設定する系とデータの系が行で分かれる並び。デバッグモードの間だけ最後にデバッグ
+    // 設定する系（DJ ミックス・表示と再生）の後にデータ（バックアップ・保存した動画など）。
+    // デバッグモードの間だけ最後にデバッグ
     final tiles = <Widget>[
       MoreTile(
         icon: Icons.multitrack_audio,
@@ -104,13 +104,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
       MoreTile(
         icon: Icons.sd_storage,
-        label: StorageSettingsScreen.title,
-        onTap: () => _push(const StorageSettingsScreen()),
-      ),
-      MoreTile(
-        icon: Icons.backup_outlined,
-        label: 'バックアップ',
-        onTap: () => _push(const BackupSettingsScreen()),
+        label: DataSettingsScreen.title,
+        onTap: () => _push(const DataSettingsScreen()),
       ),
       if (ref.watch(debugModeProvider))
         MoreTile(

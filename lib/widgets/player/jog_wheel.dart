@@ -223,11 +223,12 @@ class _JogWheelState extends State<JogWheel>
         : widget.periodMs > 0
             ? widget.valueMs / widget.periodMs
             : 0.0;
+    final brightness = Theme.of(context).brightness;
     final disc = SizedBox(
       width: widget.size,
       height: widget.size,
       child: CustomPaint(
-        painter: _WheelPainter(turns: turns, active: active),
+        painter: _WheelPainter(turns: turns, active: active, brightness: brightness),
         // 動かしていなければ色の点、動かしていれば量（+ は曲を先へ）
         child: Center(
           child: active
@@ -239,7 +240,7 @@ class _JogWheelState extends State<JogWheel>
                   ].join('\n'),
                   textAlign: TextAlign.center,
                   style: style.copyWith(
-                    color: Colors.white,
+                    color: AppTheme.ink(brightness),
                     height: 1.2,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
@@ -310,28 +311,37 @@ class _JogWheelState extends State<JogWheel>
 }
 
 class _WheelPainter extends CustomPainter {
-  _WheelPainter({required this.turns, required this.active});
+  _WheelPainter({required this.turns, required this.active, required this.brightness});
 
   /// 回転数（1 = 1 周）
   final double turns;
   final bool active;
 
+  /// ダークは暗い盤に白い線、ライトは淡い盤に濃紺の線
+  /// （ライトで暗い盤を半透明に敷くと、白い板の上でくすんだ灰色になっていた）
+  final Brightness brightness;
+
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
     final r = min(size.width, size.height) / 2 - 2;
+    final dark = brightness == Brightness.dark;
+    final ink = AppTheme.ink(brightness);
 
     // 円盤
     canvas.drawCircle(
       c,
       r,
-      Paint()..color = Colors.black.withValues(alpha: 0.45),
+      Paint()
+        ..color = dark
+            ? Colors.black.withValues(alpha: 0.45)
+            : ink.withValues(alpha: 0.06),
     );
     canvas.drawCircle(
       c,
       r,
       Paint()
-        ..color = Colors.white.withValues(alpha: active ? 0.6 : 0.3)
+        ..color = ink.withValues(alpha: active ? 0.6 : 0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -339,7 +349,7 @@ class _WheelPainter extends CustomPainter {
     // 回転につれて回る溝（レコードの溝）。向きと動きが見える
     final rot = turns * 2 * pi;
     final grooves = Paint()
-      ..color = Colors.white.withValues(alpha: 0.2)
+      ..color = ink.withValues(alpha: dark ? 0.2 : 0.16)
       ..strokeWidth = 1;
     for (var i = 0; i < 12; i++) {
       final a = rot + i * pi / 6;
@@ -356,7 +366,7 @@ class _WheelPainter extends CustomPainter {
       c + Offset(cos(mark), sin(mark)) * (r * 0.5),
       c + Offset(cos(mark), sin(mark)) * (r * 0.86),
       Paint()
-        ..color = active ? AppTheme.accentGreen : Colors.white.withValues(alpha: 0.7)
+        ..color = active ? AppTheme.accentGreen : ink.withValues(alpha: 0.7)
         ..strokeWidth = 3
         ..strokeCap = StrokeCap.round,
     );
@@ -364,11 +374,11 @@ class _WheelPainter extends CustomPainter {
     canvas.drawCircle(
       c + Offset(0, -r),
       2.5,
-      Paint()..color = Colors.white.withValues(alpha: 0.6),
+      Paint()..color = ink.withValues(alpha: 0.6),
     );
   }
 
   @override
   bool shouldRepaint(covariant _WheelPainter old) =>
-      turns != old.turns || active != old.active;
+      turns != old.turns || active != old.active || brightness != old.brightness;
 }

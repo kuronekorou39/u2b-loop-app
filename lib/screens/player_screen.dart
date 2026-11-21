@@ -83,13 +83,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? playlistName;
   final String? playlistId;
 
-  /// 単体再生で最初に選ぶ区間（null なら 1 つ目）
-  final int? initialRegionIndex;
-
-  /// 単体再生を AB 編集の状態で開く（詳細の「AB 設定」。区間が無ければ 1 つ作る）。
-  /// v1.126.0 で AB 設定専用の画面をこれに統合した
-  final bool startEditing;
-
   const PlayerScreen({
     super.key,
     required this.item,
@@ -99,8 +92,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.disabledItemIds,
     this.playlistName,
     this.playlistId,
-    this.initialRegionIndex,
-    this.startEditing = false,
   });
 
   @override
@@ -880,20 +871,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 単体再生は 1 つ目の区間から（区間の登録・編集は「その他」→「AB区間」）
   void _setupRegions(LoopItem item) {
     final regions = item.effectiveRegions;
-    if (regions.isNotEmpty) {
-      final i = (widget.initialRegionIndex ?? 0).clamp(0, regions.length - 1);
-      setState(() => _activeRegionIdx = i);
-      _loadRegion(regions[i]);
-      if (widget.startEditing) {
-        final a = regions[i].pointAMs;
-        if (a != null) ref.read(playerProvider).seek(Duration(milliseconds: a));
-        _beginSingleEdit();
-      }
-    } else if (widget.startEditing) {
-      _addRegion();
-    }
+    if (regions.isEmpty) return;
+    setState(() => _activeRegionIdx = 0);
+    _loadRegion(regions.first);
   }
 
   /// 単体再生の AB 編集を始めたとき（区間を選び直したとき）の A/B。「元に戻す」で戻す先

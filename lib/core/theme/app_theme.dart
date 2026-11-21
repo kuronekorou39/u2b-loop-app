@@ -59,6 +59,11 @@ class AppTheme {
   static Color muted(BuildContext context, {double alpha = 0.55}) =>
       Theme.of(context).colorScheme.onSurface.withValues(alpha: alpha);
 
+  /// 波形・重ね表示・円盤などに描く線や点の色。ダークは白、ライトは文字と同じ濃紺
+  /// （白のままだとライトの明るい地で消える）
+  static Color ink(Brightness brightness) =>
+      brightness == Brightness.dark ? Colors.white : darkBackground;
+
   static const _fontFamily = 'Roboto';
 
   static TextTheme _buildTextTheme(Brightness brightness) {

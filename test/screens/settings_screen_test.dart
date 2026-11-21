@@ -58,8 +58,8 @@ void main() {
   }
 
   const tileLabels = [
-    // 縦の電話で「DJ ミックス・表示と再生」「保存データ・バックアップ」の 2 行
-    'DJ ミックス', '表示・再生', '保存データ', 'バックアップ',
+    // 設定する系の後にデータ（保存データとバックアップは 1 つにまとめた）
+    'DJ ミックス', '表示・再生', 'データ',
   ];
 
   /// 画面の大きさ（論理ピクセル）を指定して設定のトップを出し、ボタンの矩形を返す
@@ -79,21 +79,20 @@ void main() {
     ];
   }
 
-  testWidgets('トップは四角い大きなボタン 4 つ。縦の電話は 2 列で、矢印は付けない', (tester) async {
+  testWidgets('トップは四角い大きなボタン 3 つ。縦の電話は縦に 1 列で、矢印は付けない', (tester) async {
     final rects = await pumpTop(tester, const Size(412, 915));
     for (var i = 0; i < rects.length; i++) {
       expect(rects[i].width, closeTo(rects[i].height, 0.5), reason: '正方形');
       expect(rects[i].width, greaterThan(140), reason: 'デカいボタン');
-      // 2 列: 偶数番目が左、奇数番目がその右の同じ行
-      if (i.isOdd) {
-        expect(rects[i].top, rects[i - 1].top);
-        expect(rects[i].left, greaterThan(rects[i - 1].right));
-      } else if (i > 0) {
-        expect(rects[i].top, greaterThan(rects[i - 2].bottom));
+      // 1 列: 前のボタンの下、左端はそろう
+      if (i > 0) {
+        expect(rects[i].top, greaterThan(rects[i - 1].bottom));
         expect(rects[i].left, rects[0].left);
       }
     }
-    expect(find.byType(MoreTile), findsNWidgets(4));
+    // 左右の真ん中
+    expect(rects.first.center.dx, closeTo(412 / 2, 0.5));
+    expect(find.byType(MoreTile), findsNWidgets(3));
     // アップデートはボタンではなく、下の真ん中の札
     final chip = tester.getRect(find.text('  ·  更新を確認'));
     expect(chip.top, greaterThan(rects.last.bottom));
@@ -139,7 +138,8 @@ void main() {
   });
 
   test('並べ方: ボタンがいちばん大きくなる列数を選ぶ', () {
-    // 縦長は 2 列 × 2 行
+    // 縦長: 3 つなら縦に 1 列、4 つ（デバッグモード）なら 2 列 × 2 行
+    expect(SettingsScreen.gridFor(const Size(360, 700), 3).columns, 1);
     expect(SettingsScreen.gridFor(const Size(360, 700), 4).columns, 2);
     // 横長で低いと 1 行
     expect(SettingsScreen.gridFor(const Size(860, 200), 4).columns, 4);
@@ -173,12 +173,14 @@ void main() {
     expect(find.byTooltip('ライトモードにする'), findsOneWidget);
   });
 
-  testWidgets('横向きの電話では、ボタンが画面の幅をほぼ使う（余白が大きく余らない）', (tester) async {
+  testWidgets('横向きの電話では 1 行に並び、ボタンは上限の大きさまで使う', (tester) async {
     final rects = await pumpTop(tester, const Size(915, 412));
-    // 1 行に 4 つ
+    // 1 行に 3 つ（大きさは上限で止まり、左右の余白は同じ）
     expect(rects.every((r) => r.top == rects.first.top), isTrue);
-    expect(rects.first.left, lessThanOrEqualTo(40));
-    expect(rects.last.right, greaterThanOrEqualTo(915 - 40));
+    for (final r in rects) {
+      expect(r.width, SettingsScreen.maxTileSide);
+    }
+    expect(rects.first.left, closeTo(915 - rects.last.right, 0.5));
   });
 
   testWidgets('DJ ミックスのボタンから DJ ミックスのページへ', (tester) async {
@@ -394,7 +396,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.debugMode), true);
     // 表示・再生の中ではなく、トップの別のボタン
-    expect(find.byType(MoreTile), findsNWidgets(5));
+    expect(find.byType(MoreTile), findsNWidgets(4));
 
     await tester.tap(find.text('デバッグ'));
     await tester.pumpAndSettle();
@@ -407,7 +409,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.text('デバッグ'), findsNothing);
-    expect(find.byType(MoreTile), findsNWidgets(4));
+    expect(find.byType(MoreTile), findsNWidgets(3));
     expect(AppBoxes.settings.get(SettingsKeys.debugMode), false);
     expect(AppBoxes.settings.get(SettingsKeys.betaUpdates), false);
   });
@@ -419,22 +421,25 @@ void main() {
     expect(find.text('画面のぼかし'), findsOneWidget);
     expect(find.textContaining('重い端末'), findsNothing);
     expect(find.textContaining('kbps'), findsNothing);
-    // 消す操作は保存データへ
+    // 消す操作はデータへ
     expect(find.text('すべてのデータを削除'), findsNothing);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('保存データ'));
-    await tester.pumpAndSettle();
-    expect(find.text('すべてのデータを削除'), findsOneWidget);
-    expect(find.textContaining('タップで'), findsNothing);
-    expect(find.textContaining('残ります'), findsNothing);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('バックアップ'));
+    // データ: バックアップと、端末に残しているもの（とその削除）が 1 つのページに
+    await tester.tap(find.text('データ'));
     await tester.pumpAndSettle();
     expect(find.text('バックアップを書き出す'), findsOneWidget);
+    expect(find.text('バックアップから復元'), findsOneWidget);
+    expect(find.text('オフライン動画'), findsOneWidget);
+    expect(find.text('すべてのデータを削除'), findsOneWidget);
+    // バックアップは上、取り返しのつかない削除は最後
+    expect(tester.getRect(find.text('バックアップを書き出す')).top,
+        lessThan(tester.getRect(find.text('オフライン動画')).top));
+    expect(tester.getRect(find.text('すべてのデータを削除')).top,
+        greaterThan(tester.getRect(find.text('オフライン動画')).top));
+    expect(find.textContaining('タップで'), findsNothing);
+    expect(find.textContaining('残ります'), findsNothing);
     expect(find.textContaining('置き換わ'), findsNothing);
   });
 

@@ -110,6 +110,7 @@ class _PitchFaderState extends State<PitchFader> {
     // つまみと数字は自動 + 手。手で動かしてあるときだけ緑
     final percent = widget.autoPercent + trim;
     final active = !readOnly && trim != 0;
+    final brightness = Theme.of(context).brightness;
     final fader = SizedBox(
       width: widget.width,
       height: widget.height,
@@ -120,6 +121,7 @@ class _PitchFaderState extends State<PitchFader> {
           maxPercent: widget.maxPercent,
           active: active,
           enabled: !readOnly,
+          brightness: brightness,
         ),
       ),
     );
@@ -145,7 +147,7 @@ class _PitchFaderState extends State<PitchFader> {
           softWrap: false,
           overflow: TextOverflow.visible,
           style: style.copyWith(
-              color: active ? AppTheme.accentGreen : Colors.white),
+              color: active ? AppTheme.accentGreen : AppTheme.ink(brightness)),
         ),
       ],
     );
@@ -159,6 +161,7 @@ class _FaderPainter extends CustomPainter {
     required this.maxPercent,
     required this.active,
     required this.enabled,
+    required this.brightness,
   });
 
   /// つまみの位置（自動 + 手、±%）
@@ -170,6 +173,9 @@ class _FaderPainter extends CustomPainter {
   final bool active;
   final bool enabled;
 
+  /// 溝・目盛り・つまみの色（ダークは白、ライトは濃紺。つまみの地はダークが黒、ライトが白）
+  final Brightness brightness;
+
   /// 印の横幅（つまみの両脇に出る）
   static const _markHalf = 17.0;
 
@@ -179,7 +185,9 @@ class _FaderPainter extends CustomPainter {
     final top = PitchFader.knobHalf;
     final bottom = size.height - PitchFader.knobHalf;
     final travel = bottom - top;
-    final dim = Colors.white.withValues(alpha: enabled ? 0.35 : 0.2);
+    final ink = AppTheme.ink(brightness);
+    final dark = brightness == Brightness.dark;
+    final dim = ink.withValues(alpha: enabled ? 0.35 : 0.2);
 
     // 溝
     canvas.drawLine(
@@ -200,7 +208,7 @@ class _FaderPainter extends CustomPainter {
         Offset(cx - half, y),
         Offset(cx + half, y),
         Paint()
-          ..color = i == 0 ? Colors.white.withValues(alpha: 0.7) : dim
+          ..color = i == 0 ? ink.withValues(alpha: 0.7) : dim
           ..strokeWidth = i == 0 ? 2 : 1,
       );
     }
@@ -219,13 +227,18 @@ class _FaderPainter extends CustomPainter {
       Rect.fromCenter(center: Offset(cx, y), width: 26, height: PitchFader.knobHalf * 2),
       const Radius.circular(4),
     );
-    canvas.drawRRect(knob, Paint()..color = Colors.black.withValues(alpha: 0.6));
+    canvas.drawRRect(
+        knob,
+        Paint()
+          ..color = dark
+              ? Colors.black.withValues(alpha: 0.6)
+              : Colors.white.withValues(alpha: 0.9));
     canvas.drawRRect(
       knob,
       Paint()
         ..color = active
             ? AppTheme.accentGreen
-            : Colors.white.withValues(alpha: enabled ? 0.8 : 0.4)
+            : ink.withValues(alpha: enabled ? 0.8 : 0.4)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -234,13 +247,14 @@ class _FaderPainter extends CustomPainter {
       Offset(cx - 9, y),
       Offset(cx + 9, y),
       Paint()
-        ..color = active ? AppTheme.accentGreen : Colors.white.withValues(alpha: 0.8)
+        ..color = active ? AppTheme.accentGreen : ink.withValues(alpha: 0.8)
         ..strokeWidth = 2,
     );
   }
 
   @override
   bool shouldRepaint(covariant _FaderPainter old) =>
+      brightness != old.brightness ||
       percent != old.percent ||
       autoPercent != old.autoPercent ||
       maxPercent != old.maxPercent ||

@@ -185,86 +185,50 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       if (bpm != null) LoopItem.formatBpm(bpm, sections) else if (noSteadyBeat) 'テンポ不定',
       if (key != null) MusicalKey.display(key)!,
     ];
-    return parts.isEmpty ? '検出できず（タップで入力）' : parts.join(' · ');
+    return parts.isEmpty ? '検出できず' : parts.join(' · ');
   }
 
-  Widget _buildTempoKeyLine(LoopItem item) {
+  /// 「テンポ / キー」と「つなぎやすい曲」を 1 行に並べる。説明は出さず値だけ
+  /// （テンポの区切りなどの細かい値はタップで開くシートに）
+  Widget _buildMusicRow(LoopItem item) {
     final unanalyzed =
         item.analyzedAt == null && item.bpm == null && item.musicalKey == null;
-    final textTheme = Theme.of(context).textTheme;
-    final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
     final analyzed = item.bpm != null || item.musicalKey != null;
-    // 長い曲（ミックス音源など）は解析しない。手入力はできる
+    // 長い曲（ミックス音源など）は解析しない。タップで手入力のシート
     final tooLong = unanalyzed && AudioAnalysisService.isTooLong(item);
-    final label = _analyzing
+    final value = _analyzing
         ? '解析中…'
-        : tooLong
-            ? '${AudioAnalysisService.maxAnalyzableMinutes} 分以上の曲は解析しません。タップで手入力'
-            : unanalyzed
-                ? 'タップして解析（BPM とキー）'
-                : item.notMusic == true && !analyzed
-                    ? '曲ではないと判定。タップで手入力'
-                    : '${_tempoKeyText(item.bpm, item.musicalKey, item.tempoSections, noSteadyBeat: item.noSteadyBeat == true)}。タップで補正'
-                        '${item.tempoSectionsLabel == null ? '' : '\n${item.tempoSectionsLabel}'}'
-                        '${item.keySectionsLabel == null ? '' : '\n${item.keySectionsLabel}'}';
-    Widget row({
-      required IconData icon,
-      required String title,
-      required String subtitle,
-      required VoidCallback? onTap,
-    }) {
-      return InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
-          child: Row(
-            children: [
-              Icon(icon, size: AppIconSizes.md, color: AppTheme.accentGreen),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: textTheme.titleSmall),
-                    Text(subtitle, style: textTheme.labelSmall),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: dim),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return GlassSurface(
-      child: Column(
+        : unanalyzed
+            ? '未解析'
+            : item.notMusic == true && !analyzed
+                ? '曲ではない'
+                : _tempoKeyText(item.bpm, item.musicalKey, item.tempoSections,
+                    noSteadyBeat: item.noSteadyBeat == true);
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          row(
-            icon: Icons.speed,
-            title: 'テンポ / キー',
-            subtitle: label,
-            onTap: _analyzing
-                ? null
-                : () => unanalyzed && !tooLong
-                    ? _analyze(item)
-                    : TempoKeySheet.show(context,
-                        item: item, onReanalyze: () => _analyze(item)),
-          ),
-          // 解析済みなら、ライブラリからつなぎやすい曲を探せる
-          if (analyzed) ...[
-            Divider(
-                height: 1,
-                indent: 52,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06)),
-            row(
-              icon: Icons.join_inner,
-              title: 'つなぎやすい曲',
-              subtitle: 'テンポとキーが近い曲をライブラリから探す',
-              onTap: () => _showSimilarTracks(item),
+          Expanded(
+            child: _MusicTile(
+              icon: Icons.speed,
+              text: value,
+              onTap: _analyzing
+                  ? null
+                  : () => unanalyzed && !tooLong
+                      ? _analyze(item)
+                      : TempoKeySheet.show(context,
+                          item: item, onReanalyze: () => _analyze(item)),
             ),
-          ],
+          ),
+          const SizedBox(width: AppSpacing.md),
+          // 解析済みなら、ライブラリからつなぎやすい曲を探せる（未解析の間は押せない）
+          Expanded(
+            child: _MusicTile(
+              icon: Icons.join_inner,
+              text: 'つなぎやすい曲',
+              onTap: analyzed ? () => _showSimilarTracks(item) : null,
+            ),
+          ),
         ],
       ),
     );
@@ -278,17 +242,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       onSelect: (other) => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => DetailScreen(itemId: other.id)),
       ),
-    );
-  }
-
-  Future<void> _openAbEditor(LoopItem item, {int regionIndex = 0}) async {
-    if (_hasChanges(item)) await _saveOnly(item);
-    if (!mounted) return;
-    // AB 設定は単体再生の編集モード（v1.126.0 で専用画面を統合）
-    Navigator.of(context).push(
-      MaterialPageRoute(
-          builder: (_) => PlayerScreen(
-              item: item, initialRegionIndex: regionIndex, startEditing: true)),
     );
   }
 
@@ -553,7 +506,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // 再生 / AB 設定 / オフライン / URL
+                  // 再生 / オフライン / URL（AB 区間は再生画面で登録する）
                   Wrap(
                     spacing: AppSpacing.md,
                     runSpacing: AppSpacing.md,
@@ -563,18 +516,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         icon: Icons.play_arrow_rounded,
                         label: '再生',
                         onPressed: () => _openPlayer(item),
-                      ),
-                      GlassPill(
-                        onTap: () => _openAbEditor(item),
-                        tooltip: 'AB 区間を設定',
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.tune, size: AppIconSizes.sm),
-                            const SizedBox(width: AppSpacing.sm),
-                            Text('AB 設定', style: textTheme.labelMedium),
-                          ],
-                        ),
                       ),
                       ...[
                         GlassPill(
@@ -605,7 +546,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     ],
                   ),
               ];
-              // 右（横画面は右の列）: 区間・テンポとキー・タグ・メモ
+              // 右（横画面は右の列）: テンポとキー・タグ・区間・メモ
               final body = <Widget>[
                   // 再生できないと分かっている曲（年齢制限など）。通信の失敗のこともあるので試し直せる
                   if (item.isUnplayable) ...[
@@ -613,12 +554,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     const SizedBox(height: AppSpacing.lg),
                   ],
 
-                  // AB 区間
-                  _buildRegionsSection(item, regions),
-                  const SizedBox(height: AppSpacing.lg),
-
-                  // テンポ / キー（未解析ならタップで解析、解析済みならタップで補正）
-                  _buildTempoKeyLine(item),
+                  // テンポ / キー（未解析ならタップで解析、解析済みならタップで補正）と
+                  // つなぎやすい曲を 1 行に
+                  _buildMusicRow(item),
                   const SizedBox(height: AppSpacing.lg),
 
                   // タグ
@@ -634,38 +572,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
 
-                  // メモ（タップで編集）
-                  GlassSurface(
-                    onTap: _editMemo,
-                    padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.lg),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text('メモ', style: textTheme.titleSmall),
-                            const Spacer(),
-                            Icon(Icons.edit_outlined,
-                                size: AppIconSizes.s,
-                                color: dim.withValues(alpha: 0.4)),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          _memoController.text.isEmpty
-                              ? '練習メモなど'
-                              : _memoController.text,
-                          style: textTheme.bodyMedium!.copyWith(
-                            color: dim.withValues(
-                                alpha: _memoController.text.isEmpty ? 0.4 : 0.8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  // AB 区間（登録は再生画面で。ここは名前・時間の手直し・書き出し・削除）。無ければ出さない
+                  if (regions.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    _buildRegionsSection(item, regions),
+                  ],
+
+                  // メモ（ふだんは使わないので一番下に、面を敷かず小さく）
+                  const SizedBox(height: AppSpacing.md),
+                  _buildMemo(textTheme),
               ];
               if (split) {
                 final size = MediaQuery.sizeOf(context);
@@ -912,31 +828,54 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  /// AB 区間の一覧（ガラス面）。行のタップでメニュー（名前・時間・書き出し・削除）、
-  /// 見出しの「編集」で単体再生を AB 編集の状態で開く
+  /// メモ: ふだんは使わないので、面を敷かずに小さな字で（空なら「メモ」とだけ）。タップで編集
+  Widget _buildMemo(TextTheme textTheme) {
+    final memo = _memoController.text;
+    final color = AppTheme.muted(context, alpha: memo.isEmpty ? 0.4 : 0.6);
+    return InkWell(
+      onTap: _editMemo,
+      borderRadius: AppRadius.borderMd,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.notes, size: AppIconSizes.s, color: color),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                memo.isEmpty ? 'メモ' : memo,
+                style: (memo.isEmpty ? textTheme.labelSmall : textTheme.bodySmall)!
+                    .copyWith(color: color),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// AB 区間の一覧（ガラス面）。行のタップでメニュー（名前・時間・書き出し・削除）。
+  /// 区間の登録は再生画面で行う
   Widget _buildRegionsSection(LoopItem item, List<dynamic> regions) {
     final textTheme = Theme.of(context).textTheme;
     final dim = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
     return GlassSurface(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl, AppSpacing.md, AppSpacing.md, AppSpacing.md),
+          AppSpacing.xl, AppSpacing.lg, AppSpacing.md, AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text('AB 区間', style: textTheme.titleSmall),
-              const SizedBox(width: AppSpacing.md),
-              Text(regions.isEmpty ? '未設定' : '${regions.length} 件',
-                  style: textTheme.labelSmall),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: () => _openAbEditor(item),
-                icon: Icon(regions.isEmpty ? Icons.add : Icons.edit_outlined,
-                    size: AppIconSizes.s),
-                label: Text(regions.isEmpty ? '設定' : '編集'),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+            child: Row(
+              children: [
+                Text('AB 区間', style: textTheme.titleSmall),
+                const SizedBox(width: AppSpacing.md),
+                Text('${regions.length} 件', style: textTheme.labelSmall),
+              ],
+            ),
           ),
           for (var i = 0; i < regions.length; i++)
             InkWell(
@@ -980,6 +919,44 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   // --- Thumbnail ---
 
+}
+
+/// 詳細の「テンポ / キー」「つなぎやすい曲」の札（半分の幅に 2 つ並べる）。
+/// アイコン + 値だけ。押せないときはアイコンも字も薄く
+class _MusicTile extends StatelessWidget {
+  const _MusicTile({required this.icon, required this.text, this.onTap});
+
+  final IconData icon;
+  final String text;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final textTheme = Theme.of(context).textTheme;
+    return GlassSurface(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg, vertical: AppSpacing.lg),
+      child: Row(
+        children: [
+          Icon(icon,
+              size: AppIconSizes.md,
+              color: enabled ? AppTheme.accentGreen : AppTheme.muted(context, alpha: 0.3)),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.titleSmall!.copyWith(
+                  color: enabled ? null : AppTheme.muted(context, alpha: 0.4)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // タグ編集シートは ItemTagSheet (widgets/item_tag_sheet.dart) に移動

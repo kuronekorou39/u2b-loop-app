@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../services/playlist_service.dart';
+import '../../widgets/item_thumbnail.dart';
 
 /// YouTube プレイリストの取り込みで「個別に選択」を選んだときのページ。
 /// 登録済みの動画は外した状態で始まり、追加する動画をチェックで選ぶ
@@ -112,9 +113,7 @@ class _PlaylistVideoSelectPageState extends State<PlaylistVideoSelectPage> {
                         video.thumbnailLowUrl,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => Container(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
+                          color: ItemThumbnail.placeholderColor(context),
                           child: Icon(Icons.play_circle_outline,
                               color: AppTheme.muted(context),
                               size: AppIconSizes.sm),

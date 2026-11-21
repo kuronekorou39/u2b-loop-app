@@ -39,10 +39,18 @@ class GlassPanel extends ConsumerWidget {
 
   static const blurSigma = 24.0;
 
+  /// ライトで地を敷かない板の白の濃さ。白を薄く重ねるだけでは明るい地の上で板の境目が
+  /// 見えなかったので、地より明らかに明るい白の板にする
+  static const lightFill = 0.62;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final blurOn = blur && ref.watch(glassBlurProvider);
     final borderRadius = BorderRadius.circular(radius);
+    // 地（scrim）を敷く板は、その地で読めるようにしてあるので白は薄いまま
+    final lightPanel =
+        scrim == null && Theme.of(context).brightness == Brightness.light;
+    final f = lightPanel ? lightFill : fill;
 
     Widget panel = Container(
       padding: padding,
@@ -53,8 +61,8 @@ class GlassPanel extends ConsumerWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white.withValues(alpha: (fill + 0.05).clamp(0.0, 1.0)),
-            Colors.white.withValues(alpha: (fill - 0.03).clamp(0.0, 1.0)),
+            Colors.white.withValues(alpha: (f + 0.05).clamp(0.0, 1.0)),
+            Colors.white.withValues(alpha: (f - 0.03).clamp(0.0, 1.0)),
           ],
         ),
       ),

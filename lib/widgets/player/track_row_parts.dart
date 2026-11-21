@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/playlist_track.dart';
 import '../../models/tag.dart';
+import '../item_thumbnail.dart';
 
 /// プレイリストのトラック行に使うサムネイル。
 /// サムネ未取得・読み込み失敗時はソース種別に応じたアイコンを表示する。
@@ -39,7 +40,7 @@ class TrackThumb extends StatelessWidget {
 
   Widget _placeholder(BuildContext context) {
     return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: ItemThumbnail.placeholderColor(context),
       child: Icon(
         track.item.isYouTube
             ? Icons.play_circle_outline

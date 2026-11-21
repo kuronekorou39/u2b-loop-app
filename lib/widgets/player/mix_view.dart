@@ -253,6 +253,7 @@ class MixView extends StatelessWidget {
                       sfxCues: sfxCues,
                       showCurves: showCurves,
                       linesOpacity: linesOpacity,
+                      brightness: Theme.of(context).brightness,
                     ),
                   ),
                 ),
@@ -333,6 +334,8 @@ class _LaneLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 波形の上でも読めるよう、字の周りに地の色をにじませる（ダークは白い字に黒、ライトは濃い字に白）
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: [
         Container(
@@ -345,8 +348,11 @@ class _LaneLabel extends StatelessWidget {
           child: Text(
             text,
             style: style.copyWith(
-              color: Colors.white.withValues(alpha: 0.8),
-              shadows: const [Shadow(color: Colors.black, blurRadius: 4)],
+              color: AppTheme.ink(Theme.of(context).brightness)
+                  .withValues(alpha: dark ? 0.8 : 0.85),
+              shadows: [
+                Shadow(color: dark ? Colors.black : Colors.white, blurRadius: 4),
+              ],
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -379,11 +385,15 @@ class _MixPainter extends CustomPainter {
     required this.sfxCues,
     required this.showCurves,
     required this.linesOpacity,
+    required this.brightness,
   });
 
   final List<SfxCue> sfxCues;
   final bool showCurves;
   final double linesOpacity;
+
+  /// 線の色（ダークは白、ライトは濃紺）と、まだ鳴っていない側の沈め方を決める
+  final Brightness brightness;
 
   final double inRatio;
 
@@ -421,13 +431,14 @@ class _MixPainter extends CustomPainter {
     final cutX = toX(cut.inMilliseconds.toDouble());
     final nowMs = now.inMilliseconds.toDouble();
     final nowX = toX(nowMs);
+    final ink = AppTheme.ink(brightness);
 
     // 段の境界
     canvas.drawLine(
       Offset(0, laneH),
       Offset(w, laneH),
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.08)
+        ..color = ink.withValues(alpha: 0.08)
         ..strokeWidth = 1,
     );
 
@@ -477,7 +488,7 @@ class _MixPainter extends CustomPainter {
         toX: toX,
         top: 0,
         bottom: laneH,
-        color: Colors.white,
+        color: ink,
         numbers: true,
         numbersAtBottom: true,
       );
@@ -497,7 +508,7 @@ class _MixPainter extends CustomPainter {
         toX: (ms) => toX(s0 + (ms - i0) / inRatio),
         top: laneH,
         bottom: h,
-        color: Colors.white,
+        color: ink,
         numbers: true,
       );
     }
@@ -523,7 +534,7 @@ class _MixPainter extends CustomPainter {
         Offset(nowX, 0),
         Offset(nowX, h),
         Paint()
-          ..color = Colors.white
+          ..color = ink
           ..strokeWidth = 2,
       );
     }
@@ -548,7 +559,7 @@ class _MixPainter extends CustomPainter {
         Offset(cutX, 0),
         Offset(cutX, h),
         Paint()
-          ..color = Colors.white.withValues(alpha: 0.35)
+          ..color = AppTheme.ink(brightness).withValues(alpha: 0.35)
           ..strokeWidth = 1,
       );
     }
@@ -700,7 +711,8 @@ class _MixPainter extends CustomPainter {
             bands: v,
             palette: palette,
             opacity: 0.9,
-            dim: t > playedUntilMs);
+            dim: t > playedUntilMs,
+            light: brightness == Brightness.light);
         continue;
       }
       final idx0 = (trackMs / durationMs * n).floor().clamp(0, n - 1);
@@ -728,6 +740,7 @@ class _MixPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MixPainter old) =>
       now != old.now ||
+      brightness != old.brightness ||
       showCurves != old.showCurves ||
       linesOpacity != old.linesOpacity ||
       swapped != old.swapped ||

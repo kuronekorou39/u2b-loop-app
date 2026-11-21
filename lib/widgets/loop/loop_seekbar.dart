@@ -918,12 +918,17 @@ class _CompactSeekbarPainter extends CustomPainter {
       );
     }
 
-    // Position dot
+    // Position dot（ライトは明るい棒の上で白丸が埋もれるので、薄い縁を付ける）
+    if (!isDark) {
+      canvas.drawCircle(Offset(posX, cy), 6,
+          Paint()..color = AppTheme.ink(brightness).withValues(alpha: 0.3));
+    }
     canvas.drawCircle(Offset(posX, cy), 5, Paint()..color = Colors.white);
   }
 
   @override
   bool shouldRepaint(covariant _CompactSeekbarPainter old) =>
+      brightness != old.brightness ||
       advancing != old.advancing ||
       position != old.position ||
       duration != old.duration ||
@@ -1084,7 +1089,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
         Offset(posX, 0),
         Offset(posX, size.height),
         Paint()
-          ..color = Colors.white
+          ..color = AppTheme.ink(brightness)
           ..strokeWidth = 2,
       );
     }
@@ -1136,7 +1141,8 @@ class _WaveformSeekbarPainter extends CustomPainter {
             bands: v,
             palette: BandPalette.green,
             opacity: 0.9,
-            dim: cx > posX);
+            dim: cx > posX,
+            light: !isDark);
       } else {
         final i = (t0 / totalMs * data.length).floor().clamp(0, data.length - 1);
         canvas.drawRect(
@@ -1317,6 +1323,7 @@ class _WaveformSeekbarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WaveformSeekbarPainter old) =>
+      old.brightness != brightness ||
       old.position != position ||
       old.duration != duration ||
       old.pointA != pointA ||
@@ -1427,12 +1434,13 @@ class _MinimapPainter extends CustomPainter {
     }
 
     // Position line
+    final ink = AppTheme.ink(brightness);
     final posX = toX(position);
     canvas.drawLine(
       Offset(posX, 0),
       Offset(posX, size.height),
       Paint()
-        ..color = Colors.white
+        ..color = ink
         ..strokeWidth = 1,
     );
 
@@ -1441,12 +1449,12 @@ class _MinimapPainter extends CustomPainter {
     final vpRight = viewEnd * size.width;
     canvas.drawRect(
       Rect.fromLTRB(vpLeft, 0, vpRight, size.height),
-      Paint()..color = Colors.white.withValues(alpha: 0.12),
+      Paint()..color = ink.withValues(alpha: isDark ? 0.12 : 0.06),
     );
     canvas.drawRect(
       Rect.fromLTRB(vpLeft, 0, vpRight, size.height),
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.5)
+        ..color = ink.withValues(alpha: isDark ? 0.5 : 0.4)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
@@ -1454,6 +1462,7 @@ class _MinimapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MinimapPainter old) =>
+      old.brightness != brightness ||
       old.viewStart != viewStart ||
       old.viewEnd != viewEnd ||
       old.position != position ||
