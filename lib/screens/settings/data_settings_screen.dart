@@ -15,6 +15,7 @@ import '../../services/backup_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/playback/media_cache.dart';
 import '../../services/waveform_cache.dart';
+import '../../widgets/settings/backup_export_dialog.dart';
 import '../../widgets/settings/settings_parts.dart';
 
 /// 設定「データ」: バックアップ（曲・プレイリスト・タグ・AB 区間を 1 つのファイルに書き出す / 復元）と、
@@ -45,6 +46,7 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
   // ─── バックアップ ───
 
   Future<void> _exportData() async {
+    if (!await BackupExportDialog.show(context) || !mounted) return;
     setState(() => _busy = true);
     try {
       final json = BackupService.encode(
@@ -328,6 +330,19 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
           onPressed: _busy ? null : onPressed,
         );
 
+  /// 群の 1 行目: 今どれだけ使っているかと、まとめて消すごみ箱（[value] が null なら計算中）
+  Widget _usageRow({
+    required String? value,
+    required String clearLabel,
+    required VoidCallback? onClear,
+  }) =>
+      SettingsRow(
+        icon: Icons.data_usage,
+        title: '使用量',
+        subtitle: value ?? '計算中…',
+        trailing: _trash(clearLabel, onClear),
+      );
+
   static String _mb(int bytes, {int digits = 1}) =>
       '${(bytes / 1024 / 1024).toStringAsFixed(digits)} MB';
 
@@ -352,6 +367,14 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
     final offline = SettingsGroup(
       title: 'オフライン動画',
       children: [
+        FutureBuilder<int>(
+          future: CacheService().totalCacheSize(),
+          builder: (_, snap) => _usageRow(
+            value: snap.hasData ? _mb(snap.data!) : null,
+            clearLabel: 'オフライン動画をすべて削除',
+            onClear: (snap.data ?? 0) == 0 ? null : _clearAllOfflineVideos,
+          ),
+        ),
         SettingsSwitchRow(
           icon: Icons.sd_storage,
           title: '端末に残す',
@@ -363,16 +386,6 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
             _toast(AppSnackBar.info('これから保存する動画から適用されます'));
           },
         ),
-        FutureBuilder<int>(
-          future: CacheService().totalCacheSize(),
-          builder: (_, snap) => SettingsRow(
-            icon: Icons.folder_open,
-            title: '使用量',
-            subtitle: snap.hasData ? _mb(snap.data!) : '計算中…',
-            trailing: _trash('オフライン動画をすべて削除',
-                (snap.data ?? 0) == 0 ? null : _clearAllOfflineVideos),
-          ),
-        ),
       ],
     );
     // 一度聴いた曲の映像・高音質の音声（MediaCache）。消えてよい使い捨て。
@@ -382,17 +395,15 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
       children: [
         FutureBuilder<int>(
           future: MediaCache.totalBytes(),
-          builder: (_, snap) => SettingsRow(
-            icon: Icons.cached,
-            title: '使用量',
-            subtitle: snap.hasData ? _mb(snap.data!, digits: 0) : '計算中…',
-            trailing: _trash('自動キャッシュを空にする',
-                (snap.data ?? 0) == 0 ? null : _clearMediaCache),
+          builder: (_, snap) => _usageRow(
+            value: snap.hasData ? _mb(snap.data!, digits: 0) : null,
+            clearLabel: '自動キャッシュを空にする',
+            onClear: (snap.data ?? 0) == 0 ? null : _clearMediaCache,
           ),
         ),
         // 超えたら古い順に消す
         SettingsRow(
-          icon: Icons.data_usage,
+          icon: Icons.vertical_align_top,
           title: '上限',
           subtitle: _mbLabel(MediaCache.limitMb),
           onTap: _pickCacheLimit,
@@ -407,14 +418,12 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
           future: WaveformCache.stats(),
           builder: (_, snap) {
             final (count, bytes) = snap.data ?? (0, 0);
-            return SettingsRow(
-              icon: Icons.graphic_eq,
-              title: '保存済み',
-              subtitle: snap.hasData
+            return _usageRow(
+              value: snap.hasData
                   ? '$count 曲 · ${(bytes / 1024).toStringAsFixed(0)} KB'
-                  : '計算中…',
-              trailing: _trash('保存済みの波形を削除',
-                  count == 0 ? null : _clearWaveformCache),
+                  : null,
+              clearLabel: '保存済みの波形を削除',
+              onClear: count == 0 ? null : _clearWaveformCache,
             );
           },
         ),

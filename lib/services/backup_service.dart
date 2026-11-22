@@ -111,6 +111,7 @@ class BackupService {
   //
   // サムネイル画像のパスやオフライン保存したファイルのパスは端末固有なので含めない
   // （復元後にサムネイルは再取得、オフライン動画は保存し直し）。
+  // 入るもの・入らないものは書き出す前のポップアップ（BackupExportDialog）にも出している。
 
   static Map<String, dynamic> itemToJson(LoopItem item) => {
         'id': item.id,
