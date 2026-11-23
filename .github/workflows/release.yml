@@ -96,14 +96,6 @@ jobs:
           channel: 'stable'
           cache: true
       - run: flutter pub get
-      # media_kit_video の画像バッファは IOSurface なしで作られ、Flutter の Metal 描画が
-      # 受け取れず動画が真っ黒になる（リリース版ではエラーも出ない）。上流に修正がないのでここで足す
-      - name: Patch media_kit_video (IOSurface)
-        run: |
-          pkg=$(python3 -c "import json,urllib.parse as u; print(next(u.unquote(p['rootUri'][7:]) for p in json.load(open('.dart_tool/package_config.json'))['packages'] if p['name']=='media_kit_video'))")
-          f="$pkg/ios/Classes/plugin/common/TextureSWContext.swift"
-          perl -0pi -e 's/kCVPixelBufferMetalCompatibilityKey: true\s*\]\s*as CFDictionary/kCVPixelBufferMetalCompatibilityKey: true,\n        kCVPixelBufferIOSurfacePropertiesKey: [String: Any](),\n      ] as [CFString: Any] as CFDictionary/' "$f"
-          grep -q kCVPixelBufferIOSurfacePropertiesKey "$f"
       - name: Generate iOS icons
         run: dart run flutter_launcher_icons
       - name: Build iOS (unsigned)

@@ -95,6 +95,9 @@ class MediaOpener {
     Duration? streamOpenTimeout,
     void Function(OpenedMedia media)? onOpened,
   }) async {
+    // 映像の出力先は開く前に作る。先に開くと iOS では起動して最初の曲の映像が
+    // 真っ黒のままになる（作った後は player.open が出力先の準備を待ってくれる）
+    if (player.platform is NativePlayer) _read(videoControllerProvider);
     // サムネイルが無ければ、列の先頭に入れて一緒に取る（再生は待たせない）
     _read(thumbnailQueueProvider.notifier).fetchIfMissing(item);
     // 作れない列のフィルタが付いたまま開くと、その曲の音声が無効になる
