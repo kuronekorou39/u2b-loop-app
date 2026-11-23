@@ -21,6 +21,7 @@ import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/time_utils.dart';
 import '../models/loop_item.dart';
+import '../models/loop_state.dart';
 import '../models/loop_region.dart';
 import '../models/playlist_track.dart';
 import '../models/video_source.dart';
@@ -205,6 +206,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 帯域の波形はデコードの少しあとで保存される。鳴っている曲・次の曲のができたら、
     // 低音でミックス点を探し直す
     _bandsSub = WaveformCache.bandsChanged.listen(_onBandsSaved);
+    ref.listenManual(loopProvider, (_, next) => _loopNewRegionWhenReady(next));
 
     // 画面表示中のネイティブからの呼び出し（PiP・通知のボタン、出力先、ヘッドホン抜き）
     PipBridge.listen(PipHandlers(
@@ -773,6 +775,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _loadItem() async {
     _transport.cancelFade();
     _progress.begin();
+    _awaitingNewRegionB = false;
     setState(() {
       _loading = true;
       _loadError = null;
@@ -927,6 +930,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _selectRegion(int index) {
     final regions = _currentItem.effectiveRegions;
     if (index < 0 || index >= regions.length) return;
+    _awaitingNewRegionB = false;
     _syncRegionFromLoop(); // 切替前に保存
     setState(() => _activeRegionIdx = index);
     _loadRegion(regions[index]);
@@ -940,6 +944,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _clearRegion() {
+    _awaitingNewRegionB = false;
     _syncRegionFromLoop(); // 切替前に保存
     setState(() {
       _activeRegionIdx = -1;
@@ -947,6 +952,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     final notifier = ref.read(loopProvider.notifier);
     notifier.reset();
+  }
+
+  /// 追加した区間の A・B がそろうのを待っている（そろったらループをオンにする）
+  bool _awaitingNewRegionB = false;
+
+  void _loopNewRegionWhenReady(LoopState loop) {
+    if (!_awaitingNewRegionB || !loop.hasBothPoints) return;
+    if (loop.pointA! >= loop.pointB!) return;
+    _awaitingNewRegionB = false;
+    if (loop.enabled) return;
+    // 値を変えている最中の通知なので、終わってから切り替える
+    scheduleMicrotask(() {
+      if (!mounted || ref.read(loopProvider).enabled) return;
+      ref.read(loopProvider.notifier).toggleEnabled();
+    });
   }
 
   /// 区間の連続再生の オン / オフ。オンにすると今の区間（無ければ最初の区間）から
@@ -1004,6 +1024,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     setState(() => _activeRegionIdx = editor.selected);
     _loadRegion(region);
+    _awaitingNewRegionB = true;
     _beginSingleEdit();
     _saveRegions();
   }
@@ -1026,6 +1047,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!ok || !mounted) return;
     final editor = _regionEditor;
     if (!editor.delete(index)) return;
+    _awaitingNewRegionB = false;
     setState(() {
       _activeRegionIdx = editor.selected;
       if (editor.current == null) _editMode = false;
@@ -1099,6 +1121,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 編集モード終了時にAB値を保存
   void _finishEdit() {
+    _awaitingNewRegionB = false;
     _syncRegionFromLoop();
     _saveRegions();
     _rememberFirstVerse();
