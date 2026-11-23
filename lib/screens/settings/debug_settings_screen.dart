@@ -31,6 +31,12 @@ class DebugSettingsScreen extends ConsumerWidget {
               value: ref.watch(perfOverlayProvider),
               onChanged: (_) => ref.read(perfOverlayProvider.notifier).toggle(),
             ),
+            SettingsSwitchRow(
+              icon: Icons.av_timer,
+              title: '拍ずれの表示',
+              value: ref.watch(showBeatErrorProvider),
+              onChanged: (v) => ref.read(showBeatErrorProvider.notifier).value = v,
+            ),
             // 高音質が付かない時に、端末だけで原因を追えるように
             SettingsRow(
               icon: Icons.receipt_long,

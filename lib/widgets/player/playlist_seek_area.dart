@@ -9,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../models/loop_item.dart';
 import '../../providers/data_provider.dart';
+import '../../providers/debug_mode_provider.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../services/playback/playlist_engine.dart';
@@ -424,8 +425,10 @@ class _PlaylistSeekAreaState extends ConsumerState<PlaylistSeekArea>
           ? inItem.beatLinesAt(pair.toInClock(pair.cut).inMicroseconds / 1000)
           : null,
       inRatio: pair.inRatio,
-      // 交差の間だけ測れる（切り替わった後・交差の前は出さない）
-      beatError: showBeats ? ref.watch(beatPhaseErrorProvider) : null,
+      // 交差の間だけ測れる（切り替わった後・交差の前は出さない）。デバッグのスイッチがオンのときだけ
+      beatError: showBeats && ref.watch(showBeatErrorProvider)
+          ? ref.watch(beatPhaseErrorProvider)
+          : null,
       sfxCues: pair.sfx?.cues ?? const [],
       showCurves: showCurves,
       linesOpacity: linesOpacity,

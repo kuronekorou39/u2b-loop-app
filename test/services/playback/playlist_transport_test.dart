@@ -253,7 +253,9 @@ void main() {
   });
 
   testWidgets('一覧で選んだ曲は先読みしてから、次の自動遷移でそこへ跳ぶ', (tester) async {
+    expect(t.upcomingIndex, 1);
     await t.selectTrack(2);
+    expect(t.upcomingIndex, 2, reason: '画面の「次」も選んだ曲になる');
     expect(deck.calls, contains('preparePreload c'));
     deck.preloadGate!.complete(null);
     await tester.pump();

@@ -1650,7 +1650,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final panelOpen = _panelOpen;
     if (_isPlaylist) {
       final plState = ref.watch(playlistPlayerProvider);
-      final nextIdx = plState.peekNextTrackIndex();
+      final nextIdx = _transport.upcomingIndex;
       // AB 編集（「その他」→「AB区間を編集」）用
       final plLoop = ref.watch(loopProvider);
       final plNotifier = ref.read(loopProvider.notifier);

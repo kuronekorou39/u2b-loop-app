@@ -89,4 +89,5 @@ class SettingsKeys {
   /// デバッグモード（設定のバージョン行を 5 回タップ）と、その中のテスト版の受け取り
   static const debugMode = 'debug_mode';
   static const betaUpdates = 'beta_updates';
+  static const showBeatError = 'show_beat_error';
 }

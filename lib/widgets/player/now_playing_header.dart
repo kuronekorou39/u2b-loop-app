@@ -8,11 +8,11 @@ import '../settings/hq_audio_log_dialog.dart';
 import '../marquee_text.dart';
 import 'track_row_parts.dart';
 
-/// 動画の下に出す「いま何を聴いているか」: 曲名（1 行目を幅いっぱい）、2 行目に補足（BPM・キーなど）と
-/// 右寄せのチップ。チップはモードごと（プレイリスト: 次の曲 [NextTrackChip]、単体: いまの区間
+/// 動画の下に出す「いま何を聴いているか」: 曲名（1 行目を幅いっぱい）、その下の左に補足（BPM・キーなど）と
+/// 音声の素性の 2 行、右にチップ。チップはモードごと（プレイリスト: 次の曲 [NextTrackChip]、単体: いまの区間
 /// [HeaderChip]）。以前は曲名の行の右にあり、曲名が短く切れていた。横画面ではチップを
 /// 右の列に出すので、ここには渡さない（PlayerShell.wideChip）。
-/// 補足の行末に、いま鳴っている音声の素性（高音質 / 標準 / オフライン / ローカル）も出す。
+/// 音声の素性は、いま鳴っている音声が高音質 / 標準 / オフライン / ローカルのどれか。
 /// 高音質は落とせないと黙って標準に戻るので、ここで気づけるようにしてある
 class NowPlayingHeader extends ConsumerWidget {
   const NowPlayingHeader({
@@ -43,18 +43,19 @@ class NowPlayingHeader extends ConsumerWidget {
           const SizedBox(height: 3),
           Row(
             children: [
+              // 補足と音質は 2 行に分ける（1 行だとチップに押されて補足がほとんど隠れていた）。
+              // 音質が決まる前も 2 行ぶんの高さを取り、読み込みの前後で下の段を動かさない
               Expanded(
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (subtitle.isNotEmpty)
-                      Flexible(
-                        child: Text(subtitle,
-                            style: sub,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                    if (quality != null) ...[
-                      if (subtitle.isNotEmpty) Text('  ·  ', style: sub),
+                    Text(subtitle.isEmpty ? ' ' : subtitle,
+                        style: sub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    if (quality == null)
+                      Text(' ', style: sub)
+                    else
                       // タップで高音質のログ（付かなかった理由をその場で読める）
                       GestureDetector(
                         onTap: () => HqAudioLogDialog.show(context),
@@ -65,9 +66,10 @@ class NowPlayingHeader extends ConsumerWidget {
                                 ? AppTheme.accentGreen
                                 : AppTheme.muted(context),
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ],
                   ],
                 ),
               ),

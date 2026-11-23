@@ -21,11 +21,16 @@ class DebugModeNotifier extends PersistedSetting<bool> {
   void disable() {
     value = false;
     _ref.read(betaUpdatesProvider.notifier).value = false;
+    _ref.read(showBeatErrorProvider.notifier).value = false;
     if (_ref.read(perfOverlayProvider)) {
       _ref.read(perfOverlayProvider.notifier).toggle();
     }
   }
 }
+
+/// 重ね表示に拍のずれ（ms）を出す。つなぎの調整用で、ふだんの画面には出さない
+final showBeatErrorProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.showBeatError, false));
 
 /// テスト版（GitHub のプレリリース）も更新として受け取る。読むのは UpdateService
 final betaUpdatesProvider = StateNotifierProvider<PersistedBool, bool>(

@@ -153,6 +153,15 @@ class PlaylistTransportController {
   /// 手動選択: 次の自動遷移でここへ跳ぶ
   int? _pendingJumpIndex;
 
+  /// 次に鳴る曲の番号。一覧で選んだ曲があればそれ、無ければ曲順の次（画面の「次」のチップ）
+  int? get upcomingIndex {
+    final ps = _playlist.currentState;
+    final pending = _pendingJumpIndex;
+    return pending != null && pending < ps.tracks.length
+        ? pending
+        : ps.peekNextTrackIndex();
+  }
+
   /// 重ね表示で前の曲に戻って聴き直す位置
   Duration? _pendingReplaySeek;
 
