@@ -134,6 +134,27 @@ class AppTheme {
     );
   }
 
+  /// 選択式のボタンの色。既定は secondary（エラーと同じ赤）になり、失敗の表示に見えていた
+  static SegmentedButtonThemeData _segmentedTheme(Color accent, Color ink) {
+    WidgetStateProperty<Color> content() =>
+        WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return ink.withValues(alpha: 0.38);
+          }
+          return states.contains(WidgetState.selected) ? accent : ink;
+        });
+    return SegmentedButtonThemeData(
+      style: ButtonStyle(
+        backgroundColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected)
+                ? accent.withValues(alpha: 0.22)
+                : Colors.transparent),
+        foregroundColor: content(),
+        iconColor: content(),
+      ),
+    );
+  }
+
   static ThemeData get dark {
     const bg = AppTheme.darkBackground;
     const bgSecondary = AppTheme.darkSurface;
@@ -155,6 +176,7 @@ class AppTheme {
         color: accent,
         linearTrackColor: Color(0x24FFFFFF),
       ),
+      segmentedButtonTheme: _segmentedTheme(accent, Colors.white),
       appBarTheme: const AppBarTheme(
         backgroundColor: bgSecondary,
         foregroundColor: Colors.white,
@@ -210,6 +232,7 @@ class AppTheme {
         color: accent,
         linearTrackColor: Color(0x1F000000),
       ),
+      segmentedButtonTheme: _segmentedTheme(accent, AppTheme.darkBackground),
       appBarTheme: const AppBarTheme(
         backgroundColor: bgSecondary,
         foregroundColor: AppTheme.darkBackground,

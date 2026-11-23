@@ -2096,6 +2096,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         .read(loopItemsProvider.notifier)
         .saveFirstVerse(track.item.id);
     if (!mounted) return;
+    // 自動では切る位置が無い曲（曲全体が 1 番）もあるので、手で決めた A/B を先に消す
+    if (!track.hasRegion && ref.read(playlistPlayerProvider).firstVerseMode) {
+      ref.read(loopProvider.notifier).reset();
+    }
     _applyFirstVerseCut(track);
     AppToast.instance
         .show(AppSnackBar.success('1番を自動に戻しました'));
