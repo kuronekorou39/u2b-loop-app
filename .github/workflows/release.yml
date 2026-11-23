@@ -116,6 +116,8 @@ jobs:
 
   release:
     needs: [build-android, build-ios]
+    # macOS のランナーが空かず iOS が取り消されても、APK ができていればリリースする
+    if: ${{ always() && needs.build-android.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Get version from tag

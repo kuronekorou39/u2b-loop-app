@@ -65,6 +65,32 @@ void main() {
     expect(menu.bottom, lessThanOrEqualTo(screen.height));
   });
 
+  testWidgets('横画面の端の余白でメニューの中身がずれない', (tester) async {
+    tester.view.physicalSize = const Size(850, 400);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(left: 60, right: 60);
+    addTearDown(tester.view.reset);
+    late EdgeInsets inner;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => Navigator.of(context).push(AnchoredMenuRoute<void>(
+            anchorRect: const Rect.fromLTWH(700, 8, 48, 48),
+            builder: (menu) {
+              inner = MediaQuery.paddingOf(menu);
+              return const SizedBox(height: 48);
+            },
+          )),
+          child: const Text('開く'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('開く'));
+    await tester.pumpAndSettle();
+    expect(inner.left, 0);
+    expect(inner.right, 0);
+  });
+
   testWidgets('ホームのリストは広い画面で幅を抑えて真ん中に置く', (tester) async {
     tester.view.physicalSize = const Size(1000, 400);
     tester.view.devicePixelRatio = 1;

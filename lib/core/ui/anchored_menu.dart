@@ -67,7 +67,14 @@ class AnchoredMenuRoute<T> extends PopupRoute<T> {
                     color: Theme.of(context).colorScheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(14),
                     clipBehavior: Clip.antiAlias,
-                    child: Builder(builder: builder),
+                    // 画面の端の余白はメニューの置き場所で避けてある。残すと横画面で
+                    // ListTile が中身をその分ずらし、文字が折り返す
+                    child: MediaQuery.removePadding(
+                      context: context,
+                      removeLeft: true,
+                      removeRight: true,
+                      child: Builder(builder: builder),
+                    ),
                   ),
                 ),
               ),
