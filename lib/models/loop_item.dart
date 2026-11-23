@@ -267,10 +267,24 @@ class LoopItem {
 
   /// 曲末で飛ばしてよい長さ: 無音・曲でない部分・ほかの曲と共通の終わりの一番長いもの。
   /// どれも未計測なら null
-  int? get outroSkipMs =>
+  int? get outroSkipMs {
+    final silence = trailingSilenceMs, tail = musicTailMs, shared = sharedTailMs;
+    if (silence == null && tail == null && shared == null) return null;
+    // 拍が取れなくなってから無音までが短いのは、伸ばして歌う最後の一節や余韻。曲の一部なので残す
+    final ringsOut =
+        silence != null && tail != null && tail - silence <= maxRingOutMs;
+    return max(max(silence ?? 0, ringsOut ? 0 : tail ?? 0), shared ?? 0);
+  }
+
+  /// 拍のある本体の後ろで飛ばす長さ（最後の一節も除く）。音量の比較やアウトロの判定はここまでで行う。
+  /// 伸ばして歌う最後の一節は音量が下がるので、入れると「静かなアウトロ」と間違えて手前で抜ける
+  int? get bodyOutroSkipMs =>
       trailingSilenceMs == null && musicTailMs == null && sharedTailMs == null
           ? null
           : max(max(trailingSilenceMs ?? 0, musicTailMs ?? 0), sharedTailMs ?? 0);
+
+  /// 曲の範囲の終わりから無音までがこの長さ以内なら、曲の終わりの一節とみなす（ミリ秒）
+  static const maxRingOutMs = 10000;
 
   /// ミックスイン点（ミリ秒）: 曲頭側で音量がぐっと上がる点（ドロップ）。
   /// クロスフェードで入るとき、ここが切り替わりに来るよう開始位置をずらす。

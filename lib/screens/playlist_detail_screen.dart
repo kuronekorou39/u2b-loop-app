@@ -927,11 +927,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       floatingActionButton:
           MediaQuery.viewInsetsOf(context).bottom > 0 || _reordering
           ? null
-          : GreenButton(
-              icon: Icons.playlist_add,
-              size: 56,
-              tooltip: '曲を追加',
-              onPressed: () => _showAddDialog(pl),
+          : ToastObstacle(
+              child: GreenButton(
+                icon: Icons.playlist_add,
+                size: 56,
+                tooltip: '曲を追加',
+                onPressed: () => _showAddDialog(pl),
+              ),
             ),
     ),
     );

@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'beat_grid.dart';
 import 'entry_planner.dart';
+import 'mix_point_detector.dart';
 
 /// 前の曲の出口を選ぶ（純 Dart・副作用なし。[EntryPlanner] の出口版）。
 ///
@@ -50,11 +51,32 @@ class ExitPlanner {
     if (last < 0 || curve[n - 1] > body - fadeDepthDb) return null;
     final startMs = (last + 1) * stepMs.toDouble();
     final durationMs = n * stepMs.toDouble();
-    final fadeMs = durationMs - startMs;
+    // 長さは音が消えるまで。曲の後の無音まで数えると、最後の音の余韻をフェードと間違える
+    var soundEnd = n;
+    while (soundEnd > last + 1 &&
+        curve[soundEnd - 1] <= MixPointDetector.silenceDb) {
+      soundEnd--;
+    }
+    final fadeMs = soundEnd * stepMs.toDouble() - startMs;
     if (fadeMs < minFadeMs || fadeMs > maxFadeMs || startMs < durationMs * searchFrom) {
       return null;
     }
     return startMs;
+  }
+
+  /// 検出したアウトロの始まり [mixOutMs] の後で、曲全体の音量も実際に下がっているか。
+  /// ベースが抜けるだけの間奏や落ちサビは、後ろにまだ歌があるのでアウトロではない
+  static bool outroIsQuiet(
+    List<double> curve, {
+    required int stepMs,
+    required double mixOutMs,
+    required double endMs,
+  }) {
+    double db(double from, double to) =>
+        EntryPlanner.meanDb(curve, from, to, stepMs: stepMs);
+    final before =
+        db(max(0, mixOutMs - MixPointDetector.beforeWindowMs), mixOutMs);
+    return before - db(mixOutMs, endMs) >= quietTailDb;
   }
 
   /// 出口（ミリ秒）。早めに切らなくてよければ null。

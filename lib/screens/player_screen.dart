@@ -626,13 +626,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         songWave,
         duration.inMilliseconds,
         leadingSilenceMs: item.introSkipMs,
-        trailingSilenceMs: item.outroSkipMs,
+        trailingSilenceMs: item.bodyOutroSkipMs,
       );
       if (bands != null) {
         points = MixPointDetector.withBass(bands, duration.inMilliseconds,
             fallback: points,
             leadingSilenceMs: item.introSkipMs,
-            trailingSilenceMs: item.outroSkipMs);
+            trailingSilenceMs: item.bodyOutroSkipMs);
       }
     } else {
       points = MixPoints(mixInMs: item.mixInMs, mixOutMs: item.mixOutMs);
@@ -642,7 +642,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             songWave,
             duration.inMilliseconds,
             leadingSilenceMs: item.introSkipMs,
-            trailingSilenceMs: item.outroSkipMs,
+            trailingSilenceMs: item.bodyOutroSkipMs,
             mixInMs: points.mixInMs,
           )
         : null;

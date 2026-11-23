@@ -1085,7 +1085,16 @@ class PlaylistEngine {
   /// [_cutPoint] の AB ループ以外: アウトロ点 → 曲末の無音の手前 → 曲の終端の少し手前
   ({Duration cut, bool advancesAtCut}) _plainCutPoint(LoopItem? item, Duration d) {
     final mixOut = item?.mixOutMs;
-    if (mixOut != null && _ref.read(mixPointAlignProvider)) {
+    final curve = item?.energyDb;
+    final quietOutro = mixOut != null &&
+        (curve == null ||
+            ExitPlanner.outroIsQuiet(
+              curve,
+              stepMs: EnergyProfile.curveStepMs,
+              mixOutMs: mixOut.toDouble(),
+              endMs: (d.inMilliseconds - (item?.bodyOutroSkipMs ?? 0)).toDouble(),
+            ));
+    if (mixOut != null && quietOutro && _ref.read(mixPointAlignProvider)) {
       final cut = Duration(milliseconds: mixOut);
       // すでに通り過ぎていたら曲末で切る
       if (cut < d - _minSilenceCut && activePlayer.state.position < cut) {
@@ -1117,10 +1126,13 @@ class PlaylistEngine {
     }
     final rawMs = raw.cut.inMicroseconds / 1000;
     final grid = item.beatGridAt(rawMs);
+    // 静かなアウトロかは本体の終わりまでで見る（最後の一節を「静かな残り」に数えない）
+    final bodyEndMs =
+        activePlayer.state.duration.inMilliseconds - (item.bodyOutroSkipMs ?? 0);
     final exit = ExitPlanner.exitMs(
       curve,
       stepMs: EnergyProfile.curveStepMs,
-      cutMs: rawMs,
+      cutMs: min(rawMs, bodyEndMs.toDouble()),
       grid: grid != null && grid.reliable ? grid : null,
       dropMs: item.barAnchorAt(rawMs),
       leadingSilenceMs: item.introSkipMs,

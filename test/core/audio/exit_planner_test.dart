@@ -29,6 +29,32 @@ void main() {
         closeTo(184320, 0.01));
   });
 
+  group('outroIsQuiet（検出したアウトロの後で音量が下がっているか）', () {
+    test('全体の音量が下がっていればアウトロ', () {
+      expect(
+          ExitPlanner.outroIsQuiet(curve(180, 240),
+              stepMs: step, mixOutMs: 180000, endMs: 240000),
+          isTrue);
+    });
+
+    test('ベースが抜けただけで音量が変わらなければアウトロではない', () {
+      expect(
+          ExitPlanner.outroIsQuiet(curve(180, 240, loud: -6, quiet: -7),
+              stepMs: step, mixOutMs: 180000, endMs: 240000),
+          isFalse);
+    });
+  });
+
+  test('曲の後の無音まではフェードの長さに数えない（最後の音の余韻）', () {
+    final c = [
+      for (var i = 0; i < 118; i++) -6.0,
+      -14.0,
+      -24.0,
+      for (var i = 0; i < 10; i++) -60.0,
+    ];
+    expect(ExitPlanner.fadeStartMs(c, stepMs: step), isNull);
+  });
+
   group('fadeStartMs（曲の終わりのフェードアウトの始まり）', () {
     /// [bodySec] 秒まで −5dB、そこから [fadeSec] 秒かけて −55dB へ
     List<double> fading(int bodySec, int fadeSec) => [

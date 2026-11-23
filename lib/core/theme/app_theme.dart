@@ -151,6 +151,10 @@ class AppTheme {
         secondary: accentRed,
         surfaceContainerHighest: bgSecondary,
       ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: accent,
+        linearTrackColor: Color(0x24FFFFFF),
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: bgSecondary,
         foregroundColor: Colors.white,
@@ -201,6 +205,10 @@ class AppTheme {
         primary: accent,
         secondary: accentRed,
         surfaceContainerHighest: bgSecondary,
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: accent,
+        linearTrackColor: Color(0x1F000000),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: bgSecondary,

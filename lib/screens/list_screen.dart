@@ -553,7 +553,7 @@ class _ListScreenState extends ConsumerState<ListScreen>
               // 選択中・並べ替えモード中は出さない
               _isSelecting || keyboardOpen || _reorderingTab != null
                   ? null
-                  : _buildFab(),
+                  : ToastObstacle(child: _buildFab()),
         ),
       ),
     );

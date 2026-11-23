@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -90,11 +91,15 @@ class AppToast {
 
   /// いま出ている通知（null = 出ていない）
   final current = ValueNotifier<AppToastMessage?>(null);
+
+  /// 通知の右端を画面の右からどれだけ空けるか（[ToastObstacle] を避ける分）
+  final rightInset = ValueNotifier<double>(0);
   Timer? _timer;
 
   /// [message] を出す（出ていたものは置き換える）
   void show(AppToastMessage message) {
     _timer?.cancel();
+    rightInset.value = ToastObstacle.rightInset();
     current.value = message;
     _timer = Timer(message.duration, () {
       if (identical(current.value, message)) current.value = null;
@@ -106,6 +111,50 @@ class AppToast {
     _timer?.cancel();
     current.value = null;
   }
+}
+
+/// 通知が重なってはいけない部品（画面右下の + ボタン）を包む。
+/// 今いる画面のものだけ避けるので、下に隠れた画面のボタンのぶんは詰めない
+class ToastObstacle extends StatefulWidget {
+  const ToastObstacle({super.key, required this.child});
+
+  final Widget child;
+
+  static final _mounted = <_ToastObstacleState>{};
+
+  /// 通知の右端を画面の右から空ける長さ（避けるものが無ければ 0）
+  static double rightInset() {
+    var inset = 0.0;
+    for (final o in _mounted) {
+      final box = o.context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize || !box.attached) continue;
+      if (ModalRoute.of(o.context)?.isCurrent == false) continue;
+      final screen = MediaQuery.sizeOf(o.context).width;
+      final left = box.localToGlobal(Offset.zero).dx;
+      inset = max(inset, screen - left + AppSpacing.sm);
+    }
+    return inset;
+  }
+
+  @override
+  State<ToastObstacle> createState() => _ToastObstacleState();
+}
+
+class _ToastObstacleState extends State<ToastObstacle> {
+  @override
+  void initState() {
+    super.initState();
+    ToastObstacle._mounted.add(this);
+  }
+
+  @override
+  void dispose() {
+    ToastObstacle._mounted.remove(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// 通知を出す場所。App の builder の Stack に 1 つ置く。[bottom] は画面の下からの位置
@@ -125,7 +174,7 @@ class AppToastHost extends StatelessWidget {
       builder: (context, message, _) {
         return Positioned(
           left: AppSpacing.lg,
-          right: AppSpacing.lg,
+          right: max(AppSpacing.lg, AppToast.instance.rightInset.value),
           bottom: bottom + AppSpacing.md,
           child: Align(
             alignment: Alignment.bottomCenter,
