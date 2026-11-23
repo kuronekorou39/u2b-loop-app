@@ -37,6 +37,31 @@ class LoopNotifier extends StateNotifier<LoopState> {
   /// クロスフェードの曲線はこの時点で 0 に着くように作る（PlaylistEngine）
   static const trackEndLead = Duration(milliseconds: 500);
 
+  /// これより短い曲末の無音は飛ばさない（曲の余韻や区切りのうち）
+  static const minSilenceSkip = Duration(seconds: 1);
+
+  /// 曲の後の無音が始まる位置。飛ばすほどの無音が無ければ null
+  static Duration? silenceSkipAt(Duration duration, int? trailingSilenceMs) {
+    if (trailingSilenceMs == null) return null;
+    final silence = Duration(milliseconds: trailingSilenceMs);
+    if (silence < minSilenceSkip || silence >= duration) return null;
+    return duration - silence;
+  }
+
+  /// 無音を飛ばして次へ進めた曲（読み込みの間に同じ曲でもう一度進めないように）
+  String? _silenceSkippedId;
+
+  /// DJ なしで「曲の後の無音を飛ばす」がオンのときの飛ばす位置
+  Duration? _silenceSkipPoint(Duration duration) {
+    final id = currentItemId;
+    if (id == null ||
+        !_ref.read(skipTrailingSilenceProvider) ||
+        _ref.read(crossfadeProvider) != 0) {
+      return null;
+    }
+    return silenceSkipAt(duration, AppBoxes.loopItems.get(id)?.trailingSilenceMs);
+  }
+
   /// 現在再生中のアイテムID（再生カウント用、外部からセット）
   String? currentItemId;
 
@@ -116,6 +141,17 @@ class LoopNotifier extends StateNotifier<LoopState> {
       if (duration > Duration.zero && position >= duration - trackEndLead) {
         onTrackEnd!();
         return;
+      }
+      final silentFrom =
+          duration > Duration.zero ? _silenceSkipPoint(duration) : null;
+      if (silentFrom != null) {
+        if (position < silentFrom) {
+          _silenceSkippedId = null;
+        } else if (_silenceSkippedId != currentItemId) {
+          _silenceSkippedId = currentItemId;
+          onTrackEnd!();
+          return;
+        }
       }
     }
 

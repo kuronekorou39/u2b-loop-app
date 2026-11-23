@@ -7,6 +7,7 @@ import '../../core/audio/band_swap.dart';
 import '../../core/audio/crossfade_curve.dart';
 import '../../core/audio/dj_level.dart';
 import '../../core/audio/transition_effect.dart';
+import '../../core/audio/transition_planner.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/player_provider.dart';
 import 'first_verse_sheet.dart';
@@ -50,11 +51,46 @@ class DjMixControls extends StatelessWidget {
   static const _leftMax = 360.0;
 
   /// 長いもの（32 拍から）は小節で数える（8 小節・16 小節・32 小節）
-  static String crossfadeLabel(int beats) => beats == 0
+  /// [auto] はおまかせ中。32 拍以下の長さは曲の組ごとに自動で決まるので「自動」と出す
+  static String crossfadeLabel(int beats, {bool auto = false}) => beats == 0
       ? 'オフ'
+      : auto && beats <= TransitionPlanner.stretchBaseBeats
+      ? '自動'
       : beats >= 32
       ? '${beats ~/ 4}小節'
       : '$beats拍';
+
+  /// つまみの段。おまかせ中は オフ / 自動 / 16小節 / 32小節（伸ばす長さだけ選べる）
+  static List<int> crossfadeSteps({required bool auto}) => auto
+      ? [
+          0,
+          CrossfadeNotifier.migratedBeats,
+          for (final b in CrossfadeNotifier.options)
+            if (b > TransitionPlanner.stretchBaseBeats) b,
+        ]
+      : CrossfadeNotifier.options;
+
+  /// 今の値のつまみの位置（候補に無い古い値はいちばん近い段に）
+  static int crossfadeStepIndex(int beats, {required bool auto}) {
+    final steps = crossfadeSteps(auto: auto);
+    if (auto && beats > 0 && beats <= TransitionPlanner.stretchBaseBeats) return 1;
+    var best = 0;
+    for (var i = 1; i < steps.length; i++) {
+      if ((steps[i] - beats).abs() < (steps[best] - beats).abs()) best = i;
+    }
+    return best;
+  }
+
+  /// つまみを [index] に動かしたときの値。おまかせの「自動」は、手で決めていた長さを残す
+  static int crossfadeAtStep(int index, int current, {required bool auto}) {
+    if (auto &&
+        index == 1 &&
+        current > 0 &&
+        current <= TransitionPlanner.stretchBaseBeats) {
+      return current;
+    }
+    return crossfadeSteps(auto: auto)[index];
+  }
 
   /// 段階の表示（どれとも一致しなければ「カスタム」）
   static String levelLabel(DjLevel? level) => level?.label ?? 'カスタム';
@@ -118,19 +154,8 @@ class _MainControls extends ConsumerWidget {
     final crossfade = ref.watch(crossfadeProvider);
     final on = crossfade != 0;
     final auto = ref.watch(autoMixProvider);
-    const options = CrossfadeNotifier.options;
-    // 候補に無い値（古い版で保存したもの）はいちばん近い段に
-    var index = options.indexOf(crossfade);
-    if (index < 0) {
-      var best = 0;
-      for (var i = 1; i < options.length; i++) {
-        if ((options[i] - crossfade).abs() <
-            (options[best] - crossfade).abs()) {
-          best = i;
-        }
-      }
-      index = best;
-    }
+    final steps = DjMixControls.crossfadeSteps(auto: auto);
+    final index = DjMixControls.crossfadeStepIndex(crossfade, auto: auto);
     // 2 曲の解析結果（テンポ・ビートの安定・ドロップ・音量の流れ）からレシピを選ぶ
     final autoToggle = _WideToggle(
       icon: Icons.auto_mode,
@@ -167,18 +192,18 @@ class _MainControls extends ConsumerWidget {
               child: Slider(
                 value: index.toDouble(),
                 min: 0,
-                max: (options.length - 1).toDouble(),
-                divisions: options.length - 1,
-                label: DjMixControls.crossfadeLabel(options[index]),
+                max: (steps.length - 1).toDouble(),
+                divisions: steps.length - 1,
+                label: DjMixControls.crossfadeLabel(steps[index], auto: auto),
                 onChanged: (v) => ref.read(crossfadeProvider.notifier).value =
-                    options[v.round()],
+                    DjMixControls.crossfadeAtStep(v.round(), crossfade, auto: auto),
               ),
             ),
             // 幅を固定してつまみの長さが値で変わらないように
             SizedBox(
               width: 64,
               child: Text(
-                DjMixControls.crossfadeLabel(crossfade),
+                DjMixControls.crossfadeLabel(crossfade, auto: auto),
                 textAlign: TextAlign.end,
                 style: textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,

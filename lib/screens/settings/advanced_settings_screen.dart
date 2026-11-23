@@ -55,6 +55,14 @@ class AdvancedSettingsScreen extends ConsumerWidget {
           value: ref.watch(volumeNormProvider),
           onChanged: (v) => ref.read(volumeNormProvider.notifier).value = v,
         ),
+        // DJ なしのとき。音が無くても映像を見せる動画があるので標準はオフ
+        SettingsSwitchRow(
+          icon: Icons.skip_next,
+          title: '曲の後の無音を飛ばす',
+          value: ref.watch(skipTrailingSilenceProvider),
+          onChanged: (v) =>
+              ref.read(skipTrailingSilenceProvider.notifier).value = v,
+        ),
       ],
     );
     return SettingsPage(

@@ -272,6 +272,11 @@ class CrossfadeNotifier extends PersistedSetting<int> {
   }
 }
 
+/// DJ なしのプレイリストで、曲の後の完全な無音を飛ばして次へ進むか（既定オフ）。
+/// 音が無くても映像を見せる動画があるので、標準では最後まで流す
+final skipTrailingSilenceProvider = StateNotifierProvider<PersistedBool, bool>(
+    (ref) => PersistedBool(SettingsKeys.skipTrailingSilence, false));
+
 /// YouTube を音声専用ストリーム（高音質）で鳴らすか（既定オン）。
 /// 一体型ストリームの音声は 96kbps しかない。仕組みは HqAudio を参照
 final hqAudioProvider = StateNotifierProvider<PersistedBool, bool>(

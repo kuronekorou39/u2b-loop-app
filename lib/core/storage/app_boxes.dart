@@ -90,4 +90,5 @@ class SettingsKeys {
   static const debugMode = 'debug_mode';
   static const betaUpdates = 'beta_updates';
   static const showBeatError = 'show_beat_error';
+  static const skipTrailingSilence = 'skip_trailing_silence';
 }

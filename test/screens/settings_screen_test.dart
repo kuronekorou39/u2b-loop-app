@@ -305,9 +305,9 @@ void main() {
     // オフの間は他は触れない
     expect(enabledOf(tester, 'テンポ'), isFalse);
     expect(enabledOf(tester, 'ドロップ'), isFalse);
-    slider.onChanged!(2);
+    slider.onChanged!(1);
     await tester.pumpAndSettle();
-    expect(find.text('8拍'), findsOneWidget);
+    expect(find.text('自動'), findsOneWidget, reason: 'おまかせ中は長さを曲ごとに決める');
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8,
         reason: 'PlaylistEngine が読む設定値に保存されること');
   });

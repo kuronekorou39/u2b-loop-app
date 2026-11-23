@@ -88,7 +88,8 @@ class _PlayerMoreSheetState extends ConsumerState<PlayerMoreSheet> {
               MoreTile(
                 icon: Icons.multitrack_audio,
                 label: 'DJ ミックス',
-                value: DjMixControls.crossfadeLabel(crossfade),
+                value: DjMixControls.crossfadeLabel(crossfade,
+                    auto: ref.watch(autoMixProvider)),
                 onTap: () {
                   Navigator.pop(context);
                   widget.onDjMix();

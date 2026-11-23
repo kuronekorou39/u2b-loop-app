@@ -96,10 +96,10 @@ void main() {
       (tester) async {
     await pumpSheet(tester);
 
-    tester.widget<Slider>(find.byType(Slider)).onChanged!(2);
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(1);
     await tester.pumpAndSettle();
     expect(AppBoxes.settings.get(SettingsKeys.crossfadeBeats), 8);
-    expect(find.text('8拍'), findsOneWidget);
+    expect(find.text('自動'), findsOneWidget);
     // 既定はおまかせ。手動の項目もおまかせ中に触れ、変えるとおまかせが切れてカスタムに
     expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
     expect(enabledOf(tester, 'つなぎ方'), isTrue);
