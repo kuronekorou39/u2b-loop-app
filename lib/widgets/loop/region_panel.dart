@@ -21,6 +21,8 @@ class RegionPanel extends StatelessWidget {
     this.onClose,
     this.showAll = false,
     this.onSelectAll,
+    this.chainOn = false,
+    this.onToggleChain,
   });
 
   final List<LoopRegion> regions;
@@ -41,6 +43,12 @@ class RegionPanel extends StatelessWidget {
   /// 先頭に「全体」の行を出す（再生画面）
   final bool showAll;
   final VoidCallback? onSelectAll;
+
+  /// 区間の連続再生中か
+  final bool chainOn;
+
+  /// 連続再生の切り替え。null なら押せない（使える区間が 2 つ未満）
+  final VoidCallback? onToggleChain;
 
   static String timeText(LoopRegion r) {
     if (r.pointAMs == null && r.pointBMs == null) return '未設定';
@@ -75,6 +83,34 @@ class RegionPanel extends StatelessWidget {
                 Text('${regions.length} 件', style: textTheme.labelSmall),
                 const Spacer(),
                 GlassPill(
+                  onTap: onToggleChain,
+                  active: chainOn,
+                  tooltip: '区間を順に連続再生',
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md + 2, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.playlist_play,
+                          size: AppIconSizes.s,
+                          color: onToggleChain == null
+                              ? dim
+                              : chainOn
+                                  ? AppTheme.accentGreen
+                                  : null),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text('連続',
+                          style: textTheme.labelMedium?.copyWith(
+                              color: onToggleChain == null
+                                  ? dim
+                                  : chainOn
+                                      ? AppTheme.accentGreen
+                                      : null)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                GlassPill(
                   onTap: onAdd,
                   tooltip: onAdd != null ? '区間を追加' : '区間は上限です',
                   padding: const EdgeInsets.symmetric(
@@ -102,29 +138,32 @@ class RegionPanel extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: ListView(
+            // 区間は 100 件まであるので、見えている行だけ作る
+            child: ListView.builder(
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              children: [
-                if (showAll)
-                  _RegionRow(
+              itemCount: regions.length + (showAll ? 1 : 0),
+              itemBuilder: (_, index) {
+                if (showAll && index == 0) {
+                  return _RegionRow(
                     name: '全体',
                     time: '',
                     isCurrent: selectedIndex == -1,
                     icon: Icons.all_inclusive,
                     onTap: onSelectAll ?? () {},
+                  );
+                }
+                final i = index - (showAll ? 1 : 0);
+                return Builder(
+                  builder: (row) => _RegionRow(
+                    name: regions[i].name,
+                    time: timeText(regions[i]),
+                    isCurrent: i == selectedIndex,
+                    icon: Icons.repeat,
+                    onTap: () => onSelect(i),
+                    onMenu: () => onMenu(i, row),
                   ),
-                for (var i = 0; i < regions.length; i++)
-                  Builder(
-                    builder: (row) => _RegionRow(
-                      name: regions[i].name,
-                      time: timeText(regions[i]),
-                      isCurrent: i == selectedIndex,
-                      icon: Icons.repeat,
-                      onTap: () => onSelect(i),
-                      onMenu: () => onMenu(i, row),
-                    ),
-                  ),
-              ],
+                );
+              },
             ),
           ),
         ],

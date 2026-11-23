@@ -15,12 +15,29 @@ class ExportResult {
   /// false の場合は呼び出し側で [shareExported] による共有が必要（Android 9以前）。
   final bool savedToGallery;
   final String? error;
+
+  /// 途中でやめた
+  final bool cancelled;
   const ExportResult({
     required this.success,
     this.outputPath,
     this.savedToGallery = false,
     this.error,
+    this.cancelled = false,
   });
+
+  factory ExportResult.fromNative(Map? result) {
+    if (result == null) {
+      return const ExportResult(success: false, error: '結果が返されませんでした');
+    }
+    return ExportResult(
+      success: result['success'] as bool? ?? false,
+      outputPath: result['outputPath'] as String?,
+      savedToGallery: result['savedToGallery'] as bool? ?? false,
+      error: result['error'] as String?,
+      cancelled: result['cancelled'] as bool? ?? false,
+    );
+  }
 }
 
 class ExportService {
@@ -42,19 +59,50 @@ class ExportService {
         'title': title,
       });
 
-      if (result == null) {
-        return const ExportResult(success: false, error: '結果が返されませんでした');
-      }
-
-      final success = result['success'] as bool? ?? false;
-      return ExportResult(
-        success: success,
-        outputPath: result['outputPath'] as String?,
-        savedToGallery: result['savedToGallery'] as bool? ?? false,
-        error: result['error'] as String?,
-      );
+      return ExportResult.fromNative(result);
     } on PlatformException catch (e) {
       return ExportResult(success: false, error: e.message);
+    }
+  }
+
+  /// 複数の区間を 1 本につないで書き出す。区間の端で正確に切るため再エンコードする
+  /// （[exportRegion] の無変換はキーフレームでしか切れない）。
+  /// [onProgress] は 0〜1
+  Future<ExportResult> exportRegions({
+    required String inputUri,
+    required List<(int, int)> ranges,
+    required ExportFormat format,
+    required String title,
+    void Function(double progress)? onProgress,
+  }) async {
+    final channel = NativeChannels.export;
+    channel.setMethodCallHandler((call) async {
+      if (call.method == 'exportProgress') {
+        onProgress?.call((call.arguments as num).toDouble() / 100);
+      }
+    });
+    try {
+      final result = await channel.invokeMethod<Map>('exportRegions', {
+        'inputUri': inputUri,
+        'startsMs': [for (final r in ranges) r.$1],
+        'endsMs': [for (final r in ranges) r.$2],
+        'audioOnly': format == ExportFormat.audioOnly,
+        'title': title,
+      });
+      return ExportResult.fromNative(result);
+    } on PlatformException catch (e) {
+      return ExportResult(success: false, error: e.message);
+    } finally {
+      channel.setMethodCallHandler(null);
+    }
+  }
+
+  /// [exportRegions] を途中でやめる
+  Future<void> cancelExportRegions() async {
+    try {
+      await NativeChannels.export.invokeMethod<void>('cancelExportRegions');
+    } on PlatformException {
+      // もう終わっている
     }
   }
 

@@ -387,26 +387,7 @@ class MainActivity : FlutterActivity() {
                             // アプリクラッシュではなくエラー結果として返す
                             try {
                                 val tempPath = trimMedia(inputUri, startMs.toLong(), endMs.toLong(), audioOnly, title)
-                                val tempFile = java.io.File(tempPath)
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                    // API 29+: MediaStoreで端末のギャラリー(フォト)/ミュージックへ直接保存
-                                    val location = saveToMediaStore(tempFile, audioOnly, tempFile.name)
-                                    try { tempFile.delete() } catch (_: Exception) {}
-                                    withContext(Dispatchers.Main) {
-                                        result.success(mapOf(
-                                            "success" to true,
-                                            "savedToGallery" to true,
-                                            "outputPath" to location))
-                                    }
-                                } else {
-                                    // API 28以下は書込権限が必要なため共有シートにフォールバック（Dart側で共有）
-                                    withContext(Dispatchers.Main) {
-                                        result.success(mapOf(
-                                            "success" to true,
-                                            "savedToGallery" to false,
-                                            "outputPath" to tempPath))
-                                    }
-                                }
+                                deliverExport(java.io.File(tempPath), audioOnly, result)
                             } catch (e: Throwable) {
                                 Log.e("Export", "Export failed", e)
                                 withContext(Dispatchers.Main) {
@@ -414,6 +395,31 @@ class MainActivity : FlutterActivity() {
                                 }
                             }
                         }
+                    }
+                    "exportRegions" -> {
+                        val inputUri = call.argument<String>("inputUri")
+                        val starts = call.argument<List<Number>>("startsMs")
+                        val ends = call.argument<List<Number>>("endsMs")
+                        val audioOnly = call.argument<Boolean>("audioOnly") ?: false
+                        val title = call.argument<String>("title") ?: "export"
+                        if (inputUri == null || starts == null || ends == null ||
+                            starts.isEmpty() || starts.size != ends.size) {
+                            result.error("INVALID", "Missing parameters", null)
+                            return@setMethodCallHandler
+                        }
+                        if (regionJoin != null) {
+                            result.success(mapOf("success" to false, "error" to "ほかの書き出しの途中です"))
+                            return@setMethodCallHandler
+                        }
+                        startRegionJoin(
+                            inputUri,
+                            starts.indices.map { starts[it].toLong() to ends[it].toLong() },
+                            audioOnly, title, result,
+                        )
+                    }
+                    "cancelExportRegions" -> {
+                        regionJoinCancel?.invoke()
+                        result.success(null)
                     }
                     "muxVideoAudio" -> {
                         // 別々にDLした映像専用/音声専用ファイルを1つのMP4へ結合（再エンコードなし）。
@@ -446,6 +452,104 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private var regionJoin: RegionJoinExporter? = null
+    private var regionJoinCancel: (() -> Unit)? = null
+
+    /// 区間をつないだ 1 本を作って端末へ保存する。[result] は終わったときに 1 度だけ返す
+    private fun startRegionJoin(
+        inputUri: String,
+        ranges: List<Pair<Long, Long>>,
+        audioOnly: Boolean,
+        title: String,
+        result: MethodChannel.Result,
+    ) {
+        val output = newExportFile(title, audioOnly)
+        val channel = MethodChannel(
+            flutterEngine!!.dartExecutor.binaryMessenger, EXPORT_CHANNEL)
+        fun fail(e: Throwable) {
+            Log.e("Export", "Region join failed", e)
+            try { output.delete() } catch (_: Exception) {}
+            result.success(mapOf("success" to false, "error" to (e.message ?: e.toString())))
+        }
+        val exporter = RegionJoinExporter(
+            applicationContext,
+            onProgress = { channel.invokeMethod("exportProgress", it) },
+            onFinished = { error ->
+                regionJoin = null
+                regionJoinCancel = null
+                if (error != null) {
+                    fail(error)
+                } else {
+                    scope.launch {
+                        try {
+                            deliverExport(output, audioOnly, result)
+                        } catch (e: Throwable) {
+                            withContext(Dispatchers.Main) { fail(e) }
+                        }
+                    }
+                }
+            },
+        )
+        regionJoin = exporter
+        regionJoinCancel = {
+            exporter.cancel()
+            regionJoin = null
+            regionJoinCancel = null
+            try { output.delete() } catch (_: Exception) {}
+            result.success(mapOf("success" to false, "cancelled" to true))
+        }
+        try {
+            exporter.start(inputUri, ranges, audioOnly, output)
+        } catch (e: Throwable) {
+            regionJoin = null
+            regionJoinCancel = null
+            fail(e)
+        }
+    }
+
+    /// 書き出した一時ファイルを端末へ置いて結果を返す
+    private suspend fun deliverExport(
+        tempFile: java.io.File, audioOnly: Boolean, result: MethodChannel.Result
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // API 29+: MediaStoreで端末のギャラリー(フォト)/ミュージックへ直接保存
+            val location = saveToMediaStore(tempFile, audioOnly, tempFile.name)
+            try { tempFile.delete() } catch (_: Exception) {}
+            withContext(Dispatchers.Main) {
+                result.success(mapOf(
+                    "success" to true,
+                    "savedToGallery" to true,
+                    "outputPath" to location))
+            }
+        } else {
+            // API 28以下は書込権限が必要なため共有シートにフォールバック（Dart側で共有）
+            withContext(Dispatchers.Main) {
+                result.success(mapOf(
+                    "success" to true,
+                    "savedToGallery" to false,
+                    "outputPath" to tempFile.absolutePath))
+            }
+        }
+    }
+
+    /// 書き出しの一時ファイルの場所を用意する
+    private fun newExportFile(title: String, audioOnly: Boolean): java.io.File {
+        val safeTitle = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(50)
+            .ifBlank { "export" }
+        val ext = if (audioOnly) "m4a" else "mp4"
+        // 書き出し専用ディレクトリ。共有ファイル名は basename がそのまま使われるため
+        // タイムスタンプを付けずクリーンな名前にする。
+        // 共有完了後の即時削除は受信側コピーとレースするため行わず、
+        // 前回までの一時ファイルをここ（次回書き出し開始時）でまとめて掃除する。
+        val exportDir = java.io.File(cacheDir, "exports")
+        if (exportDir.exists()) {
+            exportDir.listFiles()?.forEach { try { it.delete() } catch (_: Exception) {} }
+        } else {
+            exportDir.mkdirs()
+        }
+        return java.io.File(exportDir, "$safeTitle.$ext")
     }
 
     /// 映像専用ファイルと音声専用ファイルを1つのMP4に結合する（remux、再エンコードなし）。
@@ -643,20 +747,7 @@ class MainActivity : FlutterActivity() {
         inputUri: String, startMs: Long, endMs: Long,
         audioOnly: Boolean, title: String
     ): String {
-        val safeTitle = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(50)
-            .ifBlank { "export" }
-        val ext = if (audioOnly) "m4a" else "mp4"
-        // 書き出し専用ディレクトリ。共有ファイル名は basename がそのまま使われるため
-        // タイムスタンプを付けずクリーンな名前にする。
-        // 共有完了後の即時削除は受信側コピーとレースするため行わず、
-        // 前回までの一時ファイルをここ（次回書き出し開始時）でまとめて掃除する。
-        val exportDir = java.io.File(cacheDir, "exports")
-        if (exportDir.exists()) {
-            exportDir.listFiles()?.forEach { try { it.delete() } catch (_: Exception) {} }
-        } else {
-            exportDir.mkdirs()
-        }
-        val outputFile = java.io.File(exportDir, "$safeTitle.$ext")
+        val outputFile = newExportFile(title, audioOnly)
 
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null

@@ -562,6 +562,7 @@ class FullscreenRegionDrawer extends StatelessWidget {
     required this.loop,
     required this.bottomInset,
     required this.onToggleLoop,
+    this.onToggleChain,
     this.onEdit,
     required this.onExport,
     required this.onSelectAll,
@@ -579,6 +580,9 @@ class FullscreenRegionDrawer extends StatelessWidget {
 
   /// null ならループの切り替えは無効（ソースがまだ無い）
   final VoidCallback? onToggleLoop;
+
+  /// 区間の連続再生。null なら押せない（使える区間が 2 つ未満）
+  final VoidCallback? onToggleChain;
 
   /// 区間を選んでいるときだけ出る「編集」。null なら出さない（全画面では出さない）
   final VoidCallback? onEdit;
@@ -613,6 +617,12 @@ class FullscreenRegionDrawer extends StatelessWidget {
                 onPressed: onToggleLoop,
                 tooltip: loop.enabled ? 'ループ ON' : 'ループ OFF',
               ),
+              ToggleIconButton(
+                icon: Icons.playlist_play,
+                on: loop.chainRegions,
+                onPressed: onToggleChain,
+                tooltip: '区間を順に連続再生',
+              ),
               const Spacer(),
               if (activeIndex >= 0 && onEdit != null)
                 TextButton.icon(
@@ -632,47 +642,65 @@ class FullscreenRegionDrawer extends StatelessWidget {
         ),
         const Divider(height: 1),
         Expanded(
-          child: ListView(
+          // 区間は 100 件まであるので、見えている行だけ作る
+          child: ListView.builder(
             padding: EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md,
                 bottomInset + AppSpacing.xxl),
-            children: [
-              RegionTile(
-                name: '全体',
-                isActive: activeIndex == -1,
-                pointAMs: null,
-                pointBMs: null,
-                onTap: onSelectAll,
-              ),
-              divider,
-              for (var i = 0; i < regions.length; i++) ...[
-                Builder(
-                  builder: (row) => RegionTile(
-                    name: regions[i].name,
-                    isActive: i == activeIndex,
-                    pointAMs: regions[i].pointAMs,
-                    pointBMs: regions[i].pointBMs,
-                    onTap: () => onSelect(i),
-                    onLongPress: () => onMenu(i, row),
-                    onMenu: () => onMenu(i, row),
-                  ),
-                ),
-                if (i < regions.length - 1) divider,
-              ],
-              const SizedBox(height: AppSpacing.sm),
-              if (onAdd != null)
-                SizedBox(
-                  width: double.infinity,
-                  height: 36,
-                  child: OutlinedButton.icon(
-                    onPressed: onAdd,
-                    icon: const Icon(Icons.add, size: AppIconSizes.xs),
-                    label: const Text('区間追加'),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: theme.dividerColor),
+            itemCount: regions.length + 2,
+            itemBuilder: (_, index) {
+              if (index == 0) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    RegionTile(
+                      name: '全体',
+                      isActive: activeIndex == -1,
+                      pointAMs: null,
+                      pointBMs: null,
+                      onTap: onSelectAll,
+                    ),
+                    divider,
+                  ],
+                );
+              }
+              final i = index - 1;
+              if (i == regions.length) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: onAdd == null
+                      ? const SizedBox.shrink()
+                      : SizedBox(
+                          width: double.infinity,
+                          height: 36,
+                          child: OutlinedButton.icon(
+                            onPressed: onAdd,
+                            icon: const Icon(Icons.add, size: AppIconSizes.xs),
+                            label: const Text('区間追加'),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: theme.dividerColor),
+                            ),
+                          ),
+                        ),
+                );
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Builder(
+                    builder: (row) => RegionTile(
+                      name: regions[i].name,
+                      isActive: i == activeIndex,
+                      pointAMs: regions[i].pointAMs,
+                      pointBMs: regions[i].pointBMs,
+                      onTap: () => onSelect(i),
+                      onLongPress: () => onMenu(i, row),
+                      onMenu: () => onMenu(i, row),
                     ),
                   ),
-                ),
-            ],
+                  if (i < regions.length - 1) divider,
+                ],
+              );
+            },
           ),
         ),
       ],

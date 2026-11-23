@@ -1,11 +1,17 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/loop_item.dart';
 import '../models/loop_state.dart';
 import 'player_provider.dart';
+import '../core/loop/region_sequence.dart';
 import '../core/storage/app_boxes.dart';
 import 'data_provider.dart';
+
+/// 単体再生で選んでいる区間。-1 は「全体」。
+/// ミニプレイヤーの間は再生画面が無いので、画面ではなくここで持つ
+final activeRegionIndexProvider = StateProvider<int>((ref) => -1);
 
 final loopProvider = StateNotifierProvider<LoopNotifier, LoopState>((ref) {
   final notifier = LoopNotifier(ref);
@@ -99,6 +105,7 @@ class LoopNotifier extends StateNotifier<LoopState> {
     // ABループが有効ならA点にシーク。B 点が終端と同じで _checkLoop が間に合わなかった
     // ときも、プレイリストの判断（次へ進む・終わりで止める）を先に通す
     if (state.enabled && state.pointA != null) {
+      if (_advanceChain()) return;
       if (!_bPointHandled && onBPointReached != null && onBPointReached!()) {
         _bPointHandled = true;
         return;
@@ -164,12 +171,14 @@ class LoopNotifier extends StateNotifier<LoopState> {
     // A >= B の場合はループ不可（逆転・同一地点）
     if (a >= b) return;
 
-    // B地点の500ms以上手前ならガードをリセット
-    if (position < b - const Duration(milliseconds: 500)) {
+    // B地点の手前に戻ったらガードをリセット（短い区間は区間の半分まで）
+    final guardMs = min(500, (b - a).inMilliseconds ~/ 2);
+    if (position < b - Duration(milliseconds: guardMs)) {
       _bPointHandled = false;
     }
 
     if (position >= b) {
+      if (_advanceChain()) return;
       // プレイリストモードのコールバック（二重実行ガード付き）
       if (!_bPointHandled && onBPointReached != null && onBPointReached!()) {
         _bPointHandled = true;
@@ -177,23 +186,51 @@ class LoopNotifier extends StateNotifier<LoopState> {
       }
       if (_bPointHandled) return; // 既にコールバック処理済み
 
-      if (state.gapSeconds > 0) {
-        state = state.copyWith(isInGap: true);
-        player.pause();
-        Future.delayed(
-          Duration(milliseconds: (state.gapSeconds * 1000).round()),
-          () {
-            if (!mounted) return;
-            player.seek(a);
-            player.play();
-            state = state.copyWith(isInGap: false);
-          },
-        );
-      } else {
-        player.seek(a);
-      }
+      _jumpTo(a);
     }
   }
+
+  /// [a] へ戻る・進む（ループの間があれば止めて待ってから）
+  void _jumpTo(Duration a) {
+    final player = _ref.read(playerProvider);
+    if (state.gapSeconds > 0) {
+      state = state.copyWith(isInGap: true);
+      player.pause();
+      Future.delayed(
+        Duration(milliseconds: (state.gapSeconds * 1000).round()),
+        () {
+          if (!mounted) return;
+          player.seek(a);
+          player.play();
+          state = state.copyWith(isInGap: false);
+        },
+      );
+    } else {
+      player.seek(a);
+      player.play();
+    }
+  }
+
+  /// 連続再生: 次の区間へ進む。進んだら true（画面が無いミニプレイヤー中も同じ）
+  bool _advanceChain() {
+    if (!state.chainRegions || _bPointHandled) return false;
+    final id = currentItemId;
+    if (id == null) return false;
+    final regions = AppBoxes.loopItems.get(id)?.effectiveRegions;
+    if (regions == null) return false;
+    final current = _ref.read(activeRegionIndexProvider);
+    final next = RegionSequence.nextIndex(regions, current);
+    if (next == null || next == current) return false;
+    final a = Duration(milliseconds: regions[next].pointAMs!);
+    final b = Duration(milliseconds: regions[next].pointBMs!);
+    _bPointHandled = true;
+    _ref.read(activeRegionIndexProvider.notifier).state = next;
+    state = state.copyWith(pointA: () => a, pointB: () => b);
+    _jumpTo(a);
+    return true;
+  }
+
+  void setChainRegions(bool on) => state = state.copyWith(chainRegions: on);
 
   void setPointA(Duration? d) =>
       state = state.copyWith(pointA: () => d != null ? _clamp(d) : null);
@@ -210,7 +247,10 @@ class LoopNotifier extends StateNotifier<LoopState> {
     state = state.copyWith(pointB: () => pos);
   }
 
-  void toggleEnabled() => state = state.copyWith(enabled: !state.enabled);
+  /// ループを切ると連続再生も終わる（B で次へ進むのはループ中だけ）
+  void toggleEnabled() => state = state.copyWith(
+      enabled: !state.enabled,
+      chainRegions: state.enabled ? false : state.chainRegions);
 
   void setGap(double seconds) =>
       state = state.copyWith(gapSeconds: seconds.clamp(0, 10));

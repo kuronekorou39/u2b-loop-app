@@ -115,7 +115,16 @@ Future<void> runExportFlow(
   );
 
   messenger.hide();
+  await showExportResult(result, format: format, title: title);
+}
 
+/// 書き出しの結果を知らせる（Android 9 以前は共有シートへ）
+Future<void> showExportResult(
+  ExportResult result, {
+  required ExportFormat format,
+  required String title,
+}) async {
+  final messenger = AppToast.instance;
   if (!result.success) {
     messenger.show(
       AppSnackBar.error('書き出し失敗: ${result.error}',
@@ -139,7 +148,7 @@ Future<void> runExportFlow(
   // ファイルをDartのメモリに読み込まずパスで渡すため、長尺MP4でもOOMしない。
   final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
   try {
-    await service.shareExported(
+    await ExportService().shareExported(
       outputPath: result.outputPath!,
       format: format,
       subject: safeTitle,

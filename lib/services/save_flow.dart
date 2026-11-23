@@ -31,6 +31,7 @@ class SaveChoice {
     required this.quality,
     required this.hqAudio,
     this.wholeTrack = false,
+    this.joinRegions = false,
   });
 
   final SaveTarget target;
@@ -44,6 +45,9 @@ class SaveChoice {
 
   /// 区間があっても曲全体を書き出す
   final bool wholeTrack;
+
+  /// 全区間を 1 本につないで書き出す
+  final bool joinRegions;
 
   ExportChoice get exportChoice => ExportChoice(
     audioOnly ? ExportFormat.audioOnly : ExportFormat.mp4,
@@ -64,11 +68,13 @@ class SaveFlow {
 
   /// 保存シートを出す。キャンセルは null。
   /// [rangeText] があれば「区間 / 曲全体」を選べる（書き出しのとき）。
+  /// [joinedText] があれば「全区間」（区間をつないだ 1 本）も選べる。
   /// [offline] が false ならアプリ内保存は選べない（ローカル動画など）
   static Future<SaveChoice?> showSheet(
     BuildContext context, {
     required String title,
     String? rangeText,
+    String? joinedText,
     bool offline = true,
   }) {
     return AppSheets.show<SaveChoice>(
@@ -76,6 +82,7 @@ class SaveFlow {
       builder: (_) => _SaveSheet(
         title: title,
         rangeText: rangeText,
+        joinedText: joinedText,
         offlineAllowed: offline,
       ),
     );
@@ -137,6 +144,66 @@ class SaveFlow {
       choice: choice.exportChoice,
       title: exportTitle ?? item.title,
     );
+  }
+
+  /// 区間 [ranges] を順につないで端末に書き出す（進捗ダイアログ・キャンセル可）
+  static Future<void> runJoined(
+    BuildContext context, {
+    required LoopItem item,
+    required SaveChoice choice,
+    required List<(int, int)> ranges,
+    String? playingUri,
+  }) async {
+    final exportChoice = choice.exportChoice;
+    final title = '${item.title} (${ranges.length}区間)';
+    final service = ExportService();
+    final progress = _BulkProgress(total: 1)..label = title;
+    final dialog = _showProgress(context, '書き出し中...', progress);
+    ExportResult? result;
+    try {
+      final fallback = await _inputFor(
+        item,
+        exportChoice.format,
+        playingUri: playingUri,
+      );
+      if (fallback == null) {
+        result = const ExportResult(
+            success: false, error: '書き出せる動画ソースがありません');
+      } else if (!progress.cancelled) {
+        final input = await ExportSource.prepare(
+          item,
+          format: exportChoice.format,
+          quality: exportChoice.quality,
+          fallbackUri: fallback,
+          hqAudio: exportChoice.hqAudio,
+        );
+        try {
+          if (!progress.cancelled) {
+            progress.onCancel = service.cancelExportRegions;
+            result = await service.exportRegions(
+              inputUri: input.path,
+              ranges: ranges,
+              format: exportChoice.format,
+              title: title,
+              onProgress: (p) {
+                if (!progress.cancelled) progress.fraction = p;
+              },
+            );
+          }
+        } finally {
+          progress.onCancel = null;
+          await input.dispose();
+        }
+      }
+    } catch (e) {
+      result = ExportResult(success: false, error: AppErrors.describe(e));
+    }
+    final cancelled = progress.cancelled;
+    if (!cancelled && context.mounted) Navigator.of(context).pop();
+    await dialog;
+    progress.dispose();
+    if (cancelled || result == null || result.cancelled) return;
+    await showExportResult(result, format: exportChoice.format, title: title);
   }
 
   /// 書き出しの元にするもの: オフライン保存 → ローカルの元ファイル → 再生中のソース → ネット
@@ -448,18 +515,29 @@ class _BulkProgress extends ChangeNotifier {
     notifyListeners();
   }
 
-  void cancel() => cancelled = true;
+  /// やめたときに止めるもの（ネイティブの書き出しなど）
+  VoidCallback? onCancel;
+
+  void cancel() {
+    cancelled = true;
+    onCancel?.call();
+  }
 }
+
+/// 書き出す範囲
+enum _SaveRange { region, joined, whole }
 
 class _SaveSheet extends StatefulWidget {
   const _SaveSheet({
     required this.title,
     required this.rangeText,
+    required this.joinedText,
     required this.offlineAllowed,
   });
 
   final String title;
   final String? rangeText;
+  final String? joinedText;
   final bool offlineAllowed;
 
   @override
@@ -483,7 +561,8 @@ class _SaveSheetState extends State<_SaveSheet> {
   late bool _hqAudio =
       AppBoxes.settings.get(SettingsKeys.saveHqAudio, defaultValue: true)
           as bool;
-  bool _wholeTrack = false;
+  late _SaveRange _range =
+      widget.rangeText != null ? _SaveRange.region : _SaveRange.whole;
 
   void _submit() {
     AppBoxes.settings
@@ -498,7 +577,8 @@ class _SaveSheetState extends State<_SaveSheet> {
         audioOnly: _audioOnly,
         quality: _quality,
         hqAudio: _hqAudio,
-        wholeTrack: _wholeTrack,
+        wholeTrack: _range == _SaveRange.whole,
+        joinRegions: _target == SaveTarget.device && _range == _SaveRange.joined,
       ),
     );
   }
@@ -540,7 +620,9 @@ class _SaveSheetState extends State<_SaveSheet> {
               overflow: TextOverflow.ellipsis,
               style: textTheme.titleMedium,
             ),
-            if (widget.rangeText != null && !offline)
+            if (!offline && _range == _SaveRange.joined)
+              Text(widget.joinedText!, style: textTheme.labelSmall)
+            else if (widget.rangeText != null && !offline)
               Text('区間 ${widget.rangeText}', style: textTheme.labelSmall),
             const SizedBox(height: AppSpacing.md),
             if (widget.offlineAllowed)
@@ -606,18 +688,24 @@ class _SaveSheetState extends State<_SaveSheet> {
                   onChanged: (v) => setState(() => _hqAudio = v ?? _hqAudio),
                 ),
               ),
-            if (widget.rangeText != null && !offline)
+            if ((widget.rangeText != null || widget.joinedText != null) &&
+                !offline)
               row(
                 '範囲',
-                SegmentedButton<bool>(
+                SegmentedButton<_SaveRange>(
                   showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('区間')),
-                    ButtonSegment(value: true, label: Text('曲全体')),
+                  segments: [
+                    if (widget.rangeText != null)
+                      const ButtonSegment(
+                          value: _SaveRange.region, label: Text('区間')),
+                    if (widget.joinedText != null)
+                      const ButtonSegment(
+                          value: _SaveRange.joined, label: Text('全区間')),
+                    const ButtonSegment(
+                        value: _SaveRange.whole, label: Text('曲全体')),
                   ],
-                  selected: {_wholeTrack},
-                  onSelectionChanged: (s) =>
-                      setState(() => _wholeTrack = s.first),
+                  selected: {_range},
+                  onSelectionChanged: (s) => setState(() => _range = s.first),
                 ),
               ),
             const SizedBox(height: AppSpacing.lg),

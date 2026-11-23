@@ -15,6 +15,7 @@ import '../core/audio/loudness.dart';
 import '../core/audio/mix_point_detector.dart';
 import '../core/constants.dart';
 import '../core/loop/region_edit_controller.dart';
+import '../core/loop/region_sequence.dart';
 import '../core/utils/app_errors.dart';
 import '../core/utils/verse_detector.dart';
 import '../core/theme/app_theme.dart';
@@ -114,7 +115,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       PlayerLoader(ref, progress: _progress, isMounted: () => mounted);
   late final _waveform = WaveformLoader(ref, isMounted: () => mounted);
 
-  int _activeRegionIdx = -1;
+  /// 選んでいる区間（ミニプレイヤーから戻っても続くように provider が持つ）
+  int get _activeRegionIdx => ref.read(activeRegionIndexProvider);
+  set _activeRegionIdx(int index) =>
+      ref.read(activeRegionIndexProvider.notifier).state = index;
+
   bool _compactSeekbar = false;
 
   // 全画面（ボタンで入る。横画面のレイアウトとは別）
@@ -890,6 +895,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _beginSingleEdit() {
     final loop = ref.read(loopProvider);
     _singleEditStart = (loop.pointA, loop.pointB);
+    // 編集中に次の区間へ進むと、直している区間が変わってしまう
+    if (loop.chainRegions) {
+      ref.read(loopProvider.notifier).setChainRegions(false);
+    }
     setState(() => _editMode = true);
   }
 
@@ -938,6 +947,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
     final notifier = ref.read(loopProvider.notifier);
     notifier.reset();
+  }
+
+  /// 区間の連続再生の オン / オフ。オンにすると今の区間（無ければ最初の区間）から
+  void _toggleRegionChain() {
+    final notifier = ref.read(loopProvider.notifier);
+    if (ref.read(loopProvider).chainRegions) {
+      notifier.setChainRegions(false);
+      return;
+    }
+    _syncRegionFromLoop();
+    _saveRegions();
+    final regions = _currentItem.effectiveRegions;
+    final start = RegionSequence.startIndex(regions, _activeRegionIdx);
+    if (start == null || !RegionSequence.canJoin(regions)) return;
+    if (start == _activeRegionIdx) {
+      _loadRegion(regions[start]);
+    } else {
+      _selectRegion(start);
+    }
+    notifier.setChainRegions(true);
   }
 
   // --- Region editing (single mode) ---
@@ -1112,11 +1141,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ' - ${TimeUtils.formatShort(loop.pointB!)}'
           ' (${durationSec.toStringAsFixed(1)}s)';
     }
+    // 全区間をつなぐのは単体再生だけ
+    if (!_isPlaylist) _syncRegionFromLoop();
+    final regions = _isPlaylist ? const <LoopRegion>[] : item.effectiveRegions;
+    final joinedText = RegionSequence.canJoin(regions)
+        ? '${RegionSequence.ranges(regions).length} 区間をつなぐ'
+            '（${TimeUtils.formatShort(Duration(milliseconds: RegionSequence.totalMs(regions)))}）'
+        : null;
     final choice = await SaveFlow.showSheet(context,
         title: item.title,
         rangeText: rangeText,
+        joinedText: joinedText,
         offline: SaveFlow.canSaveOffline(item));
     if (choice == null || !mounted) return;
+    if (choice.joinRegions) {
+      await SaveFlow.runJoined(
+        context,
+        item: item,
+        choice: choice,
+        ranges: RegionSequence.ranges(regions),
+        playingUri: ref.read(videoSourceProvider)?.uri,
+      );
+      return;
+    }
     final duration = ref.read(playerProvider).state.duration.inMilliseconds;
     final whole = choice.wholeTrack || !hasRange;
     await SaveFlow.run(
@@ -1495,6 +1542,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     // 単体再生: ループ ON/OFF・編集・書出しの行 + 区間の一覧
+    ref.watch(activeRegionIndexProvider);
     final regions = _currentItem.effectiveRegions;
     final hasSource = ref.watch(videoSourceProvider) != null;
     return FullscreenRegionDrawer(
@@ -1504,6 +1552,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       bottomInset: bottomInset,
       onToggleLoop:
           hasSource ? ref.read(loopProvider.notifier).toggleEnabled : null,
+      onToggleChain: hasSource && RegionSequence.canJoin(regions)
+          ? _toggleRegionChain
+          : null,
       // 編集・区間追加は全画面では出さない（押すと全画面が解除されて編集の板が出ていた）
       onExport: ({required fullTrack}) => _showExportDialog(fullTrack: fullTrack),
       onSelectAll: _clearRegion,
@@ -1744,6 +1795,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
 
     // 単体再生: 区間チップ・区間パネル・単体用コントローラー
+    ref.watch(activeRegionIndexProvider);
     final loop = ref.watch(loopProvider);
     final notifier = ref.read(loopProvider.notifier);
     final hasSource = ref.watch(videoSourceProvider) != null;
@@ -1765,17 +1817,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } else if (_editMode) {
       regionText = '${activeRegion.name}（編集中）';
     } else {
+      final playable = RegionSequence.playableIndexes(regions);
+      final order = loop.chainRegions
+          ? '${playable.indexOf(_activeRegionIdx) + 1}/${playable.length}  '
+          : '';
       regionText =
-          '${activeRegion.name}  ${TimeUtils.formatShortNullable(loop.pointA)} - ${TimeUtils.formatShortNullable(loop.pointB)}';
+          '$order${activeRegion.name}  ${TimeUtils.formatShortNullable(loop.pointA)} - ${TimeUtils.formatShortNullable(loop.pointB)}';
     }
 
     final regionChip = HeaderChip(
       leading: Icon(
-        activeRegion == null ? Icons.all_inclusive : Icons.repeat,
+        activeRegion == null
+            ? Icons.all_inclusive
+            : loop.chainRegions
+                ? Icons.playlist_play
+                : Icons.repeat,
         size: AppIconSizes.s,
         color: AppTheme.accentGreen,
       ),
-      label: '区間',
+      label: loop.chainRegions ? '連続' : '区間',
       text: regionText,
       onTap: () => _setPanelOpen(true),
     );
@@ -1877,6 +1937,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onSelect: _selectRegion,
       onMenu: _showRegionMenu,
       onAdd: regions.length < _maxRegions ? _addRegion : null,
+      chainOn: ref.watch(loopProvider).chainRegions,
+      onToggleChain: ref.watch(videoSourceProvider) != null &&
+              RegionSequence.canJoin(regions)
+          ? _toggleRegionChain
+          : null,
     );
   }
 

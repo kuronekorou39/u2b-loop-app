@@ -58,6 +58,9 @@ android {
 
 dependencies {
     implementation("androidx.media:media:1.7.0")
+    // 区間をつないだ書き出し（区間の端で正確に切って再エンコードする）
+    implementation("androidx.media3:media3-common:1.5.1")
+    implementation("androidx.media3:media3-transformer:1.5.1")
 }
 
 flutter {

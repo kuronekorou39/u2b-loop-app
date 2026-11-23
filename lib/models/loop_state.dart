@@ -6,6 +6,9 @@ class LoopState {
   final bool isInGap;
   final double adjustStep;
 
+  /// B に着いたら同じ区間に戻らず、次の区間へ進む（単体再生の連続再生）
+  final bool chainRegions;
+
   const LoopState({
     this.pointA,
     this.pointB,
@@ -13,6 +16,7 @@ class LoopState {
     this.gapSeconds = 0,
     this.isInGap = false,
     this.adjustStep = 0.1,
+    this.chainRegions = false,
   });
 
   bool get hasA => pointA != null;
@@ -27,6 +31,7 @@ class LoopState {
     double? gapSeconds,
     bool? isInGap,
     double? adjustStep,
+    bool? chainRegions,
   }) {
     return LoopState(
       pointA: pointA != null ? pointA() : this.pointA,
@@ -35,6 +40,7 @@ class LoopState {
       gapSeconds: gapSeconds ?? this.gapSeconds,
       isInGap: isInGap ?? this.isInGap,
       adjustStep: adjustStep ?? this.adjustStep,
+      chainRegions: chainRegions ?? this.chainRegions,
     );
   }
 }
