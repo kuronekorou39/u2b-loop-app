@@ -677,40 +677,40 @@ class _ListScreenState extends ConsumerState<ListScreen>
         );
   }
 
-  /// 並び替えのメニュー（[child] を押すと開く。ボタンを隠さないよう下に出す）。
-  /// 上が項目、下が昇順・降順（値は項目なら [ItemSortField]、向きなら降順かの bool）
-  Widget _sortMenu(Widget child) {
-    PopupMenuItem<Object> row(Object value, String label, bool checked) =>
-        PopupMenuItem(
-          value: value,
-          child: Row(
-            children: [
-              if (checked)
-                const Icon(Icons.check, size: AppIconSizes.sm)
-              else
-                const SizedBox(width: AppIconSizes.sm),
-              const SizedBox(width: AppSpacing.md),
-              Text(label, style: Theme.of(context).textTheme.bodyLarge),
-            ],
+  /// 並び替えのメニュー（[child] を押すと開く。ボタンを隠さないよう脇に出す）。
+  /// 上が項目、下が昇順・降順
+  Widget _sortMenu(Widget child) => Builder(
+        builder: (button) => Tooltip(
+          message: '並び替え',
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => AppSheets.actions(
+              context,
+              anchor: button,
+              actions: [
+                for (final field in ItemSortField.values)
+                  SheetAction(
+                    label: field.label,
+                    selected: _sortField == field,
+                    onTap: () => setState(() => _sortField = field),
+                  ),
+                const SheetAction.heading('順序'),
+                SheetAction(
+                  label: '昇順',
+                  selected: !_sortDescending,
+                  onTap: () => setState(() => _sortDescending = false),
+                ),
+                SheetAction(
+                  label: '降順',
+                  selected: _sortDescending,
+                  onTap: () => setState(() => _sortDescending = true),
+                ),
+              ],
+            ),
+            child: child,
           ),
-        );
-    return PopupMenuButton<Object>(
-      tooltip: '並び替え',
-      position: PopupMenuPosition.under,
-      onSelected: (value) => setState(() {
-        if (value is ItemSortField) _sortField = value;
-        if (value is bool) _sortDescending = value;
-      }),
-      itemBuilder: (_) => [
-        for (final field in ItemSortField.values)
-          row(field, field.label, _sortField == field),
-        const PopupMenuDivider(),
-        row(false, '昇順', !_sortDescending),
-        row(true, '降順', _sortDescending),
-      ],
-      child: child,
-    );
-  }
+        ),
+      );
 
   /// 縦画面の検索の行の出し入れ。閉じるときは検索語を消す（タグの絞り込みは残す）
   void _toggleSearch() {

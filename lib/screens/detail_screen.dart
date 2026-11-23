@@ -422,29 +422,44 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           icon: const Icon(Icons.save, size: AppIconSizes.sm),
           label: const Text('保存'),
         ),
-      PopupMenuButton<String>(
-        onSelected: (v) {
-          if (v == 'duplicate') _duplicateItem(item);
-          if (v == 'playlist') _showAddToPlaylist(item);
-          if (v == 'offline_save') _saveItem(item);
-          if (v == 'offline_delete') _clearOffline(item);
-          if (v == 'delete') _deleteItem(item);
-        },
-        itemBuilder: (_) => [
-          const PopupMenuItem(
-              value: 'duplicate', child: Text('複製')),
-          const PopupMenuItem(
-              value: 'playlist', child: Text('プレイリストに追加')),
-          const PopupMenuItem(
-              value: 'offline_save', child: Text('保存・書き出し')),
-          if (item.isCached)
-            const PopupMenuItem(
-                value: 'offline_delete', child: Text('アプリ内の保存を削除')),
-          const PopupMenuItem(
-              value: 'delete',
-              child:
-                  Text('削除', style: TextStyle(color: Colors.red))),
-        ],
+      Builder(
+        builder: (button) => IconButton(
+          icon: const Icon(Icons.more_vert),
+          tooltip: 'その他',
+          onPressed: () => AppSheets.actions(
+            context,
+            anchor: button,
+            actions: [
+              SheetAction(
+                icon: Icons.copy_outlined,
+                label: '複製',
+                onTap: () => _duplicateItem(item),
+              ),
+              SheetAction(
+                icon: Icons.playlist_add,
+                label: 'プレイリストに追加',
+                onTap: () => _showAddToPlaylist(item),
+              ),
+              SheetAction(
+                icon: Icons.download_outlined,
+                label: '保存・書き出し',
+                onTap: () => _saveItem(item),
+              ),
+              if (item.isCached)
+                SheetAction(
+                  icon: Icons.delete_sweep_outlined,
+                  label: 'アプリ内の保存を削除',
+                  onTap: () => _clearOffline(item),
+                ),
+              SheetAction(
+                icon: Icons.delete_outline,
+                label: '削除',
+                destructive: true,
+                onTap: () => _deleteItem(item),
+              ),
+            ],
+          ),
+        ),
       ),
     ];
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_sheets.dart';
 import '../../providers/loop_provider.dart';
 import '../../providers/player_provider.dart';
 import 'player_glass_bar.dart';
@@ -214,27 +215,23 @@ class PlayerControls extends ConsumerWidget {
                   : null,
             ),
           ),
-          PopupMenuButton<double>(
-            initialValue: rate,
-            onSelected: (speed) => player.setRate(speed),
-            enabled: hasSource,
-            itemBuilder: (context) => speeds
-                .map(
-                  (s) => PopupMenuItem(
-                    value: s,
-                    child: Text(
-                      rateLabel(s),
-                      style: TextStyle(
-                        fontWeight:
-                            sameRate(s, rate) ? FontWeight.bold : FontWeight.normal,
-                        color: sameRate(s, rate)
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
+          Builder(
+            builder: (button) => InkWell(
+            borderRadius: AppRadius.borderSm,
+            onTap: !hasSource
+                ? null
+                : () => AppSheets.actions(
+                      context,
+                      anchor: button,
+                      actions: [
+                        for (final s in speeds)
+                          SheetAction(
+                            label: rateLabel(s),
+                            selected: sameRate(s, rate),
+                            onTap: () => player.setRate(s),
+                          ),
+                      ],
                     ),
-                  ),
-                )
-                .toList(),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
@@ -249,6 +246,7 @@ class PlayerControls extends ConsumerWidget {
                   color: hasSource ? null : AppTheme.muted(context),
                 ),
               ),
+            ),
             ),
           ),
         ],

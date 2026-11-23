@@ -109,7 +109,8 @@ class _CloseOnResizeState extends State<_CloseOnResize> {
   Widget build(BuildContext context) => widget.child;
 }
 
-/// 行の下（入らなければ上）、右端を行の右に寄せて置く
+/// 行の下（入らなければ上）、右端を行の右に寄せて置く。
+/// 横画面のボタン（メニューより幅の狭いもの）は高さが足りないので、左（入らなければ右）の脇に置く
 class _MenuLayout extends SingleChildLayoutDelegate {
   _MenuLayout({required this.anchor, required this.safe});
 
@@ -124,11 +125,32 @@ class _MenuLayout extends SingleChildLayoutDelegate {
 
   double _above() => anchor.top - _gap - safe.top - _margin;
 
+  double _leftRoom() => anchor.left - _gap - safe.left - _margin;
+
+  double _rightRoom(Size size) =>
+      size.width - safe.right - _margin - anchor.right - _gap;
+
+  double _menuWidth(Size size) => math.min(
+      AnchoredMenuRoute.menuWidth, size.width - safe.horizontal - _margin * 2);
+
+  bool _beside(Size size) {
+    if (size.width <= size.height) return false;
+    if (anchor.width > AnchoredMenuRoute.menuWidth) return false;
+    final width = _menuWidth(size);
+    return _leftRoom() >= width || _rightRoom(size) >= width;
+  }
+
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
     final size = constraints.biggest;
-    final width = math.min(AnchoredMenuRoute.menuWidth,
-        size.width - safe.horizontal - _margin * 2);
+    final width = _menuWidth(size);
+    if (_beside(size)) {
+      return BoxConstraints(
+        minWidth: width,
+        maxWidth: width,
+        maxHeight: math.max(48.0, size.height - safe.vertical - _margin * 2),
+      );
+    }
     return BoxConstraints(
       minWidth: width,
       maxWidth: width,
@@ -141,6 +163,15 @@ class _MenuLayout extends SingleChildLayoutDelegate {
   Offset getPositionForChild(Size size, Size childSize) {
     final minX = safe.left + _margin;
     final maxX = size.width - safe.right - _margin - childSize.width;
+    final minY = safe.top + _margin;
+    final maxY = size.height - safe.bottom - _margin - childSize.height;
+    if (_beside(size)) {
+      final sideX = _leftRoom() >= childSize.width
+          ? anchor.left - _gap - childSize.width
+          : anchor.right + _gap;
+      return Offset(
+          sideX, anchor.top.clamp(minY, math.max(minY, maxY)).toDouble());
+    }
     final x = (anchor.right - AppSpacing.sm - childSize.width)
         .clamp(minX, math.max(minX, maxX))
         .toDouble();
@@ -148,8 +179,6 @@ class _MenuLayout extends SingleChildLayoutDelegate {
     final y = below
         ? anchor.bottom + _gap
         : anchor.top - _gap - childSize.height;
-    final minY = safe.top + _margin;
-    final maxY = size.height - safe.bottom - _margin - childSize.height;
     return Offset(x, y.clamp(minY, math.max(minY, maxY)).toDouble());
   }
 

@@ -147,7 +147,7 @@ void main() {
     expect(find.byIcon(Icons.drag_handle), findsNothing);
   });
 
-  testWidgets('並べ替えモード中は写真・名前を暗くして触れず、再生・シャッフル・⋮・表示の切り替えは隠す（場所は残す）',
+  testWidgets('並べ替えモード中は写真・名前を暗くして触れず、再生・⋮・表示の切り替えは隠す（場所は残す）',
       (tester) async {
     await pump(tester);
     double opacityOf(Finder finder) {
@@ -166,7 +166,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(opacityOf(find.text('リスト')), lessThan(0.5), reason: 'プレイリストの名前は暗く');
     expect(opacityOf(find.text('再生')), 0);
-    expect(opacityOf(find.text('シャッフル')), 0);
     expect(opacityOf(find.byTooltip('その他')), 0);
     expect(opacityOf(find.byTooltip('名前を変更')), 0);
     expect(opacityOf(find.byTooltip('サムネイルを選ぶ')), 0);
@@ -197,11 +196,11 @@ void main() {
     final camera = tester.getRect(find.byTooltip('サムネイルを選ぶ'));
     expect(camera.right, lessThanOrEqualTo(cover.right));
     expect(camera.center.dx, greaterThan(cover.center.dx));
-    // 名前とタグは表紙の下、再生とシャッフルは表紙の右
+    // 名前とタグは表紙の下、再生は表紙の右。シャッフルのボタンは置かない
     expect(tester.getRect(find.text('リスト')).top, greaterThan(cover.bottom));
     expect(tester.getRect(find.text('タグを紐づける')).top, greaterThan(cover.bottom));
     expect(tester.getRect(find.text('再生')).left, greaterThan(cover.right));
-    expect(tester.getRect(find.text('シャッフル')).left, greaterThan(cover.right));
+    expect(find.text('シャッフル'), findsNothing);
   });
 
   testWidgets('並べ替えモードは行の長押しでも持ち上げて並べ替えられる', (tester) async {

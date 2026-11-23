@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_sheets.dart';
 import '../../models/loop_state.dart';
 import '../../providers/player_provider.dart';
 import '../glass_panel.dart';
@@ -229,26 +230,23 @@ class _SpeedPill extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    return PopupMenuButton<double>(
-      initialValue: rate,
-      tooltip: '速度',
-      enabled: enabled,
-      onSelected: (s) => ref.read(playerProvider).setRate(s),
-      itemBuilder: (context) => [
-        for (final s in PlayerControls.speeds)
-          PopupMenuItem(
-            value: s,
-            child: Text(
-              rateLabel(s),
-              style: TextStyle(
-                fontWeight: sameRate(s, rate) ? FontWeight.bold : null,
-                color: sameRate(s, rate) ? theme.colorScheme.primary : null,
-              ),
-            ),
-          ),
-      ],
-      child: GlassPill(
-        onTap: null,
+    return Builder(
+      builder: (button) => GlassPill(
+        tooltip: '速度',
+        onTap: !enabled
+            ? null
+            : () => AppSheets.actions(
+                  context,
+                  anchor: button,
+                  actions: [
+                    for (final s in PlayerControls.speeds)
+                      SheetAction(
+                        label: rateLabel(s),
+                        selected: sameRate(s, rate),
+                        onTap: () => ref.read(playerProvider).setRate(s),
+                      ),
+                  ],
+                ),
         active: rate != 1.0,
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.lg, vertical: 9),

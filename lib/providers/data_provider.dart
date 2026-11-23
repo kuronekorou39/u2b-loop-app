@@ -1038,7 +1038,6 @@ class PlaylistsNotifier extends StateNotifier<List<app.Playlist>> {
       ),
       disabledItemIds: Set.from(src.disabledItemIds),
       thumbnailItemId: src.thumbnailItemId,
-      defaultShuffle: src.defaultShuffle,
       tagIds: List.from(src.tagIds),
       tagItemIds: Set.from(src.tagItemIds),
       excludedItemIds: Set.from(src.excludedItemIds),

@@ -19,9 +19,6 @@ class Playlist {
   /// サムネイル用のアイテムID（nullなら最初のアイテムを使用）
   String? thumbnailItemId;
 
-  /// デフォルトでシャッフルON
-  bool defaultShuffle;
-
   /// 自動で入れるタグ（どれか 1 つが付いた曲を入れる = OR）。
   /// 後からタグを付けた曲も入り、タグを外した曲は抜ける（[syncTagItems]）
   List<String> tagIds;
@@ -43,7 +40,6 @@ class Playlist {
     Map<String, List<String>>? regionSelections,
     Set<String>? disabledItemIds,
     this.thumbnailItemId,
-    this.defaultShuffle = false,
     List<String>? tagIds,
     Set<String>? tagItemIds,
     Set<String>? excludedItemIds,
@@ -138,7 +134,6 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       regionSelections: regionSel,
       disabledItemIds: disabled,
       thumbnailItemId: thumbnailItemId,
-      defaultShuffle: fields[7] as bool? ?? false,
       tagIds: (fields[8] as List?)?.cast<String>(),
       tagItemIds: (fields[9] as List?)?.cast<String>().toSet(),
       excludedItemIds: (fields[10] as List?)?.cast<String>().toSet(),
@@ -156,7 +151,7 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       4: obj.regionSelections.isNotEmpty ? obj.regionSelections : null,
       5: obj.disabledItemIds.isNotEmpty ? obj.disabledItemIds.toList() : null,
       6: obj.thumbnailItemId,
-      7: obj.defaultShuffle ? true : null,
+      // 7 は欠番（旧 defaultShuffle。古いデータに残っていても読まない。別の用途に使わない）
       8: obj.tagIds.isNotEmpty ? obj.tagIds : null,
       9: obj.tagItemIds.isNotEmpty ? obj.tagItemIds.toList() : null,
       10: obj.excludedItemIds.isNotEmpty ? obj.excludedItemIds.toList() : null,

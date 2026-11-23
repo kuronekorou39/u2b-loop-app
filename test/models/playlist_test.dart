@@ -40,7 +40,6 @@ void main() {
       expect(pl.itemIds, isEmpty);
       expect(pl.regionSelections, isEmpty);
       expect(pl.disabledItemIds, isEmpty);
-      expect(pl.defaultShuffle, isFalse);
       expect(pl.createdAt, isNotNull);
     });
   });

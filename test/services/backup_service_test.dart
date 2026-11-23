@@ -103,17 +103,15 @@ void main() {
       expect(back.regionSelections['b'], isEmpty);
     });
 
-    test('無効化アイテムとシャッフル既定が保たれる', () {
+    test('無効化アイテムが保たれる', () {
       final pl = Playlist(
         id: 'p1',
         name: 'PL',
         itemIds: ['a', 'b'],
         disabledItemIds: {'b'},
-        defaultShuffle: true,
       );
       final back = _roundTrip(playlists: [pl]).playlists.single;
       expect(back.disabledItemIds, {'b'});
-      expect(back.defaultShuffle, isTrue);
     });
 
     test('タグが保たれる', () {
@@ -160,9 +158,20 @@ void main() {
       expect(item.hasSubtitles, isNull);
       final pl = data.playlists.single;
       expect(pl.thumbnailItemId, isNull);
-      expect(pl.defaultShuffle, isFalse);
       expect(pl.regionSelections, isEmpty);
       expect(data.tags.single.colorIndex, 0);
+    });
+
+    test('今は使わない項目（シャッフルの既定）が残っていても読める', () {
+      final data = BackupService.decode(jsonEncode({
+        'version': 1,
+        'playlists': [
+          {'id': 'p1', 'name': 'PL', 'itemIds': ['a'], 'defaultShuffle': true},
+        ],
+      }));
+      expect(data.playlists.single.name, 'PL');
+      expect(BackupService.playlistToJson(data.playlists.single),
+          isNot(contains('defaultShuffle')));
     });
 
     test('セクションごと無くても空として読める', () {
