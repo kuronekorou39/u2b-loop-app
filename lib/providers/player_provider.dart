@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import '../core/audio/loudness.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -132,18 +134,27 @@ final sfxPlayerProvider = Provider<Player>((ref) {
 final transitionSfxProvider =
     Provider<TransitionSfx>((ref) => TransitionSfx(ref.watch(sfxPlayerProvider)));
 
+/// iOS は GPU の描画経路（OpenGL ES）だと音と時間は進むのに映像が真っ黒になるので、
+/// CPU の描画経路を使う
+VideoController _videoControllerFor(Player player) => VideoController(
+      player,
+      configuration: VideoControllerConfiguration(
+        enableHardwareAcceleration: !Platform.isIOS,
+      ),
+    );
+
 final controllerAProvider = Provider<VideoController>((ref) {
-  return VideoController(ref.watch(playerAProvider));
+  return _videoControllerFor(ref.watch(playerAProvider));
 });
 
 final controllerBProvider = Provider<VideoController>((ref) {
-  return VideoController(ref.watch(playerBProvider));
+  return _videoControllerFor(ref.watch(playerBProvider));
 });
 
 /// C の映像。C を次の曲の読み込みに使う前（止まっている間）に作る。
 /// 鳴っているプレイヤーに初めて作ると頭に戻る（[videoControllerProvider] の注記）
 final controllerCProvider = Provider<VideoController>((ref) {
-  return VideoController(ref.watch(playerCProvider));
+  return _videoControllerFor(ref.watch(playerCProvider));
 });
 
 /// プレイヤーごとの「いま鳴っている音声の素性」。
