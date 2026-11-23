@@ -196,7 +196,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    playerScreenActive = true;
+    setPlayerScreenActive(true);
     // 帯域の波形はデコードの少しあとで保存される。鳴っている曲・次の曲のができたら、
     // 低音でミックス点を探し直す
     _bandsSub = WaveformCache.bandsChanged.listen(_onBandsSaved);
@@ -344,7 +344,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _bandsSub?.cancel();
-    playerScreenActive = false;
+    setPlayerScreenActive(false);
     _progress.dispose();
     _overlayHideTimer?.cancel();
     if (_isFullscreen) {

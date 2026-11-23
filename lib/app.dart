@@ -10,6 +10,7 @@ import 'providers/data_provider.dart';
 import 'providers/perf_overlay_provider.dart';
 import 'providers/mini_player_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/thumbnail_queue_provider.dart';
 import 'screens/list_screen.dart';
 import 'screens/player_screen.dart';
 import 'services/share_service.dart';
@@ -21,6 +22,7 @@ import 'providers/player_provider.dart';
 import 'widgets/perf_overlay.dart';
 import 'widgets/player/player_status_views.dart';
 import 'widgets/share_import_dialog.dart';
+import 'widgets/thumbnail_queue_bar.dart';
 import 'services/playback/pip_bridge.dart';
 
 class App extends ConsumerWidget {
@@ -69,44 +71,69 @@ class App extends ConsumerWidget {
         final miniActive =
             ref.watch(miniPlayerProvider.select((s) => s.active));
         final mq = MediaQuery.of(context);
-        final extra = miniActive ? MiniPlayerBar.reservedHeight : 0.0;
-        return Stack(
-          children: [
-            MediaQuery(
-              data: mq.copyWith(
-                padding: mq.padding.copyWith(bottom: mq.padding.bottom + extra),
-                viewPadding: mq.viewPadding
-                    .copyWith(bottom: mq.viewPadding.bottom + extra),
-              ),
-              child: child!,
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: MiniPlayerBar(
-                playerScreen: (r) => PlayerScreen(
-                  item: r.item,
-                  playlistItems: r.playlistItems,
-                  initialIndex: r.initialIndex,
-                  regionSelections: r.regionSelections,
-                  disabledItemIds: r.disabledItemIds,
-                  playlistName: r.playlistName,
-                  playlistId: r.playlistId,
+        final fetching = ref.watch(
+            thumbnailQueueProvider.select((s) => s?.running ?? false));
+        return ValueListenableBuilder<bool>(
+          valueListenable: playerScreenShown,
+          builder: (context, onPlayer, _) {
+            // 取得中の帯はミニプレイヤーの上。再生画面では操作の上に被せない
+            final showBar = fetching && !onPlayer;
+            final miniExtra = miniActive ? MiniPlayerBar.reservedHeight : 0.0;
+            final barBottom =
+                miniActive ? miniExtra : ThumbnailQueueBar.margin;
+            final extra = showBar
+                ? barBottom +
+                    ThumbnailQueueBar.height +
+                    ThumbnailQueueBar.margin
+                : miniExtra;
+            return Stack(
+              children: [
+                MediaQuery(
+                  data: mq.copyWith(
+                    padding:
+                        mq.padding.copyWith(bottom: mq.padding.bottom + extra),
+                    viewPadding: mq.viewPadding
+                        .copyWith(bottom: mq.viewPadding.bottom + extra),
+                  ),
+                  child: child!,
                 ),
-              ),
-            ),
-            // 通知はどの画面でもミニプレイヤーのすぐ上（キーボードが出ていればその上）
-            AppToastHost(
-              bottom: (mq.viewInsets.bottom > mq.viewPadding.bottom
-                      ? mq.viewInsets.bottom
-                      : mq.viewPadding.bottom) +
-                  extra,
-            ),
-            // 計測の表示はいちばん上に重ねる。ミニプレイヤーを隠さないよう、出ていればその上
-            if (showPerfOverlay)
-              PerfOverlay(bottom: mq.viewPadding.bottom + extra + AppSpacing.xs),
-          ],
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: MiniPlayerBar(
+                    playerScreen: (r) => PlayerScreen(
+                      item: r.item,
+                      playlistItems: r.playlistItems,
+                      initialIndex: r.initialIndex,
+                      regionSelections: r.regionSelections,
+                      disabledItemIds: r.disabledItemIds,
+                      playlistName: r.playlistName,
+                      playlistId: r.playlistId,
+                    ),
+                  ),
+                ),
+                if (showBar)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: mq.viewPadding.bottom + barBottom,
+                    child: const ThumbnailQueueBar(),
+                  ),
+                // 通知はどの画面でもミニプレイヤーのすぐ上（キーボードが出ていればその上）
+                AppToastHost(
+                  bottom: (mq.viewInsets.bottom > mq.viewPadding.bottom
+                          ? mq.viewInsets.bottom
+                          : mq.viewPadding.bottom) +
+                      extra,
+                ),
+                // 計測の表示はいちばん上に重ねる。ミニプレイヤーを隠さないよう、出ていればその上
+                if (showPerfOverlay)
+                  PerfOverlay(
+                      bottom: mq.viewPadding.bottom + extra + AppSpacing.xs),
+              ],
+            );
+          },
         );
       },
     );
@@ -136,6 +163,7 @@ class _HomeState extends ConsumerState<_Home> with WidgetsBindingObserver {
       UpdateService.checkForUpdate(context);
       _initDeepLinks();
       unawaited(SharedEdgeService.scanLibrary(ref.read(loopItemsProvider.notifier)));
+      unawaited(ref.read(thumbnailQueueProvider.notifier).restoreOnLaunch());
     });
   }
 

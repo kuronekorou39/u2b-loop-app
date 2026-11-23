@@ -11,6 +11,7 @@ class ThumbnailService {
     'i9.ytimg.com',
   ];
   static const _maxBytes = 2 * 1024 * 1024; // 2MB
+  static const _timeout = Duration(seconds: 20);
 
   Future<String?> save(String id, String? thumbnailUrl) async {
     if (thumbnailUrl == null) return null;
@@ -28,10 +29,10 @@ class ThumbnailService {
       }
       final file = File('${thumbDir.path}/$id.jpg');
 
-      final client = HttpClient();
+      final client = HttpClient()..connectionTimeout = _timeout;
       try {
-        final request = await client.getUrl(uri);
-        final response = await request.close();
+        final request = await client.getUrl(uri).timeout(_timeout);
+        final response = await request.close().timeout(_timeout);
         if (response.statusCode != 200) return null;
 
         var total = 0;
@@ -39,11 +40,11 @@ class ThumbnailService {
           total += chunk.length;
           if (total > _maxBytes) throw Exception('Too large');
           return prev..addAll(chunk);
-        });
+        }).timeout(_timeout);
         await file.writeAsBytes(bytes);
         return file.path;
       } finally {
-        client.close();
+        client.close(force: true);
       }
     } catch (_) {
       return null;

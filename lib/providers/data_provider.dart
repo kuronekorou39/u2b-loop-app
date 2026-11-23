@@ -26,6 +26,7 @@ import '../services/waveform_cache.dart';
 import '../services/youtube_http.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/utils/id_generator.dart';
+import '../core/utils/request_pacing.dart';
 
 // --- LoopItem ---
 
@@ -38,23 +39,10 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   final Box<LoopItem> _box;
   final Ref _ref;
 
-  // プログレッシブディレイ管理（時間経過でリセット）
-  int _requestCount = 0;
-  DateTime _lastRequestTime = DateTime.now();
-  static const _delayResetDuration = Duration(seconds: 30);
-  static const _delayMaxMs = 3000;
+  /// YouTube へ続けて取りに行くときの間隔。復元で一覧を作り直しても数えが戻らないよう共有する
+  static final requestPacing = RequestPacing();
 
-  /// リクエスト間のディレイを計算。30秒以上空いたらカウンタリセット。
-  Duration _nextDelay() {
-    final now = DateTime.now();
-    if (now.difference(_lastRequestTime) > _delayResetDuration) {
-      _requestCount = 0;
-    }
-    _lastRequestTime = now;
-    _requestCount++;
-    final ms = (300 + (_requestCount ~/ 10) * 200).clamp(300, _delayMaxMs);
-    return Duration(milliseconds: ms);
-  }
+  Duration _nextDelay() => requestPacing.next();
 
 
   LoopItemsNotifier(this._box, this._ref)
@@ -552,7 +540,17 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     await add(item);
   }
 
-  Future<void> _fetchYouTubeInfo(LoopItem item, {int retry = 0}) async {
+  /// 裏の取得が終わる前に曲が消された・復元で置き換わったときは書き戻さない
+  Future<void> _updateIfKept(LoopItem item) async {
+    if (identical(_box.get(item.id), item)) await update(item);
+  }
+
+  /// [saveThumbnail] が false なら画像は取らない（まとめて追加した曲は取得係の列に任せる）
+  Future<void> _fetchYouTubeInfo(
+    LoopItem item, {
+    int retry = 0,
+    bool saveThumbnail = true,
+  }) async {
     final yt = newYoutubeExplode();
     var shouldRetry = false;
     try {
@@ -561,33 +559,36 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
       item.title = video.title;
       item.thumbnailUrl = video.thumbnails.highResUrl;
 
-      final thumbPath =
-          await ThumbnailService().save(item.id, item.thumbnailUrl);
-      if (thumbPath != null) item.thumbnailPath = thumbPath;
+      if (saveThumbnail) {
+        final thumbPath =
+            await ThumbnailService().save(item.id, item.thumbnailUrl);
+        if (thumbPath != null) item.thumbnailPath = thumbPath;
+      }
 
       item.fetchStatus = null;
-      await update(item);
+      await _updateIfKept(item);
     } on RequestLimitExceededException {
       // レート制限: 最大3回リトライ（待機時間を増やす）
       if (retry < 3) {
         final waitSec = (retry + 1) * 10; // 10s, 20s, 30s
         item.fetchStatus = 'fetching';
-        await update(item);
+        await _updateIfKept(item);
         await Future.delayed(Duration(seconds: waitSec));
         shouldRetry = true;
       } else {
         item.fetchStatus = 'error:レート制限。しばらく待ってからリトライしてください';
-        await update(item);
+        await _updateIfKept(item);
       }
     } catch (e) {
       item.fetchStatus =
           'error:${e.toString().length > 80 ? e.toString().substring(0, 80) : e}';
-      await update(item);
+      await _updateIfKept(item);
     } finally {
       yt.close();
     }
     if (shouldRetry) {
-      await _fetchYouTubeInfo(item, retry: retry + 1);
+      await _fetchYouTubeInfo(item,
+          retry: retry + 1, saveThumbnail: saveThumbnail);
     }
   }
 
@@ -599,12 +600,12 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
   }
 
   /// 複数アイテムのYouTube情報をバックグラウンドで順次取得（ディレイ付き）
-  void fetchItemsInBackground(List<String> itemIds) async {
+  Future<void> fetchItemsInBackground(List<String> itemIds) async {
     try {
       for (final id in itemIds) {
         final item = _box.get(id);
         if (item == null || item.fetchStatus != 'fetching') continue;
-        await _fetchYouTubeInfo(item);
+        await _fetchYouTubeInfo(item, saveThumbnail: false);
         await Future.delayed(_nextDelay());
       }
     } catch (_) {}
@@ -635,24 +636,6 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     }
     if (addedIds.isNotEmpty) _refresh();
     return addedIds;
-  }
-
-  /// サムネイルをバックグラウンドでダウンロード
-  void downloadThumbnailsInBackground(List<String> itemIds) async {
-    for (final id in itemIds) {
-      final item = _box.get(id);
-      if (item == null || item.thumbnailPath != null || item.thumbnailUrl == null) {
-        continue;
-      }
-      try {
-        await Future.delayed(_nextDelay());
-        final thumbPath = await ThumbnailService().save(id, item.thumbnailUrl);
-        if (thumbPath != null) {
-          item.thumbnailPath = thumbPath;
-          await update(item);
-        }
-      } catch (_) {}
-    }
   }
 
   /// ローカルファイルを一括追加（即座にUI反映→サムネは順次バックグラウンド）
@@ -689,50 +672,36 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     if (items.isNotEmpty) _refresh();
   }
 
-  /// サムネイルが未取得のアイテムを一括で再取得
-  /// [onProgress] が指定された場合、(処理済み, 対象件数) で進捗を通知
-  Future<void> repairThumbnails({
-    void Function(int done, int total)? onProgress,
-  }) async {
-    final items = _box.values.toList();
-    // 対象件数を先にカウント
+  /// サムネイルの無い曲（画像の URL があるか、動画から作れるもの）
+  Future<List<LoopItem>> missingThumbnails() async {
     final targets = <LoopItem>[];
-    for (final item in items) {
-      if (item.thumbnailPath != null &&
-          await File(item.thumbnailPath!).exists()) {
-        continue;
-      }
+    for (final item in _box.values.toList()) {
+      final path = item.thumbnailPath;
+      if (path != null && await File(path).exists()) continue;
       if (item.thumbnailUrl != null ||
+          item.videoId != null ||
           (item.isLocal && item.uri.isNotEmpty)) {
         targets.add(item);
       }
     }
-    if (targets.isEmpty) return;
+    return targets;
+  }
 
-    var done = 0;
-    for (final item in targets) {
-      if (item.thumbnailUrl != null) {
-        final path =
-            await ThumbnailService().save(item.id, item.thumbnailUrl);
-        if (path != null) {
-          item.thumbnailPath = path;
-          await _box.put(item.id, item);
-        }
-        await Future.delayed(_nextDelay());
-      } else if (item.isLocal && item.uri.isNotEmpty) {
-        try {
-          final path =
-              await ThumbnailService().generateFromVideo(item.id, item.uri);
-          if (path != null) {
-            item.thumbnailPath = path;
-            await _box.put(item.id, item);
-          }
-        } catch (_) {}
+  /// 取得したサムネイルをまとめて保存する。並び順は変えない（updatedAt は触らない）。
+  /// 取得の間に消された曲は戻さず、画像も消す
+  Future<void> saveThumbnailPaths(Map<String, String> paths) async {
+    final kept = <String, LoopItem>{};
+    for (final MapEntry(key: id, value: path) in paths.entries) {
+      final item = _box.get(id);
+      if (item == null) {
+        await ThumbnailService().delete(id);
+        continue;
       }
-      done++;
-      onProgress?.call(done, targets.length);
-      if (done % 5 == 0) _refresh();
+      item.thumbnailPath = path;
+      kept[id] = item;
     }
+    if (kept.isEmpty) return;
+    await _box.putAll(kept);
     _refresh();
   }
 

@@ -5,6 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../providers/thumbnail_queue_provider.dart';
 import '../services/share_service.dart';
 import '../core/ui/app_snack_bar.dart';
 import '../core/storage/app_boxes.dart';
@@ -124,9 +125,10 @@ class _ShareImportDialog extends StatelessWidget {
           '「${data.name}」をインポートしました（${itemIds.length}曲）'),
     );
 
-    // バックグラウンドで各アイテムのYouTube情報を順次取得
+    // バックグラウンドで各アイテムのYouTube情報を順次取得し、サムネイルは取得係の列へ
     if (itemIds.isNotEmpty) {
-      notifier.fetchItemsInBackground(itemIds);
+      final queue = ref.read(thumbnailQueueProvider.notifier);
+      notifier.fetchItemsInBackground(itemIds).then((_) => queue.enqueue(itemIds));
     }
   }
 }

@@ -16,6 +16,7 @@ import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/bulk_analysis_provider.dart';
 import '../providers/data_provider.dart';
+import '../providers/thumbnail_queue_provider.dart';
 import '../providers/player_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/save_flow.dart';
@@ -51,6 +52,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   late TextEditingController _memoController;
   bool _initialized = false;
   bool _analyzing = false;
+  bool _fetchingThumb = false;
 
   void _initControllers(LoopItem item) {
     if (!_initialized) {
@@ -142,8 +144,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
+  /// この曲のサムネイルだけ取る（まとめて取得を一時停止していても通る）
+  Future<void> _fetchThumbnail(LoopItem item) async {
+    setState(() => _fetchingThumb = true);
+    final ok = await ref.read(thumbnailQueueProvider.notifier).fetchNow(item.id);
+    if (!mounted) return;
+    setState(() => _fetchingThumb = false);
+    if (!ok) {
+      AppToast.instance.show(AppSnackBar.error('サムネイルを取得できませんでした'));
+    }
+  }
+
   /// 音声を取得してテンポ/キーを解析する（再生せずに単独で）
   Future<void> _analyze(LoopItem item) async {
+    if (ref.read(thumbnailQueueProvider)?.running ?? false) {
+      AppToast.instance.show(AppSnackBar.info('サムネイルの取得が終わってから解析してください'));
+      return;
+    }
     // まとめて解析がちょうどこの曲を解析中なら、終わるのを待ってもらう（二重に落とさない）
     if (ref.read(bulkAnalysisProvider)?.currentId == item.id) {
       AppToast.instance.show(
@@ -197,6 +214,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final analyzed = item.bpm != null || item.musicalKey != null;
     // 長い曲（ミックス音源など）は解析しない。タップで手入力のシート
     final tooLong = unanalyzed && AudioAnalysisService.isTooLong(item);
+    final restoring =
+        ref.watch(thumbnailQueueProvider.select((s) => s?.running ?? false));
     final value = _analyzing
         ? '解析中…'
         : unanalyzed
@@ -213,7 +232,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             child: _MusicTile(
               icon: Icons.speed,
               text: value,
-              onTap: _analyzing
+              onTap: _analyzing || (restoring && unanalyzed && !tooLong)
                   ? null
                   : () => unanalyzed && !tooLong
                       ? _analyze(item)
@@ -458,10 +477,36 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 borderRadius: AppRadius.borderXl,
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: ItemThumbnail(
-                    item: item,
-                    heroTag: 'thumb_${item.id}',
-                    placeholder: ItemThumbnailPlaceholderLarge(item: item),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ItemThumbnail(
+                        item: item,
+                        heroTag: 'thumb_${item.id}',
+                        placeholder: ItemThumbnailPlaceholderLarge(item: item),
+                      ),
+                      if (item.thumbnailPath == null &&
+                          ThumbnailQueueNotifier.canFetch(item))
+                        Positioned(
+                          right: AppSpacing.md,
+                          bottom: AppSpacing.md,
+                          child: GlassPill(
+                            tooltip: 'サムネイルを取得',
+                            padding: const EdgeInsets.all(_pillPadding),
+                            onTap: _fetchingThumb
+                                ? null
+                                : () => _fetchThumbnail(item),
+                            child: _fetchingThumb
+                                ? const SizedBox.square(
+                                    dimension: AppIconSizes.lg,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.image_search,
+                                    size: AppIconSizes.lg),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               );

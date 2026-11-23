@@ -6,17 +6,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/app_boxes.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/ui/app_dialogs.dart';
 import '../../core/ui/app_snack_bar.dart';
 import '../../core/utils/app_errors.dart';
+import '../../providers/bulk_analysis_provider.dart';
 import '../../providers/data_provider.dart';
+import '../../providers/thumbnail_queue_provider.dart';
 import '../../services/backup_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/playback/media_cache.dart';
 import '../../services/waveform_cache.dart';
 import '../../widgets/settings/backup_export_dialog.dart';
 import '../../widgets/settings/settings_parts.dart';
+import '../../widgets/thumbnail_queue_bar.dart';
 
 /// 設定「データ」: バックアップ（曲・プレイリスト・タグ・AB 区間を 1 つのファイルに書き出す / 復元）と、
 /// 端末に残しているもの（オフライン動画・自動キャッシュ・保存済みの波形）とその削除。
@@ -39,9 +41,17 @@ class DataSettingsScreen extends ConsumerStatefulWidget {
 class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
   bool _busy = false;
 
+  /// サムネイルの無い曲の数（列が空になったら数え直す）
+  Future<int>? _missingThumbs;
+
   void _toast(AppToastMessage bar) {
     if (mounted) AppToast.instance.show(bar);
   }
+
+  /// 裏の取得・解析が動いている間は、一覧を丸ごと置き換える操作をしない
+  bool get _replaceLocked =>
+      (ref.read(thumbnailQueueProvider)?.running ?? false) ||
+      ref.read(bulkAnalysisProvider) != null;
 
   // ─── バックアップ ───
 
@@ -97,108 +107,26 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
       confirmLabel: '置き換える',
       destructive: true,
     );
-    if (!confirmed) return;
+    // 確認の間に裏の処理が始まっていたら置き換えない
+    if (!confirmed || !mounted || _replaceLocked) return;
 
     setState(() => _busy = true);
     try {
+      ref.read(thumbnailQueueProvider.notifier).clear();
       await BackupService.restore(data);
       ref.invalidate(loopItemsProvider);
       ref.invalidate(playlistsProvider);
       ref.invalidate(tagsProvider);
       _toast(AppSnackBar.success('復元しました'));
       if (mounted) setState(() {});
-      // サムネイル画像は端末固有なのでバックアップに含めていない。取り直す
-      _repairThumbnailsWithProgress();
+      // サムネイル画像は端末固有なのでバックアップに含めていない。裏で取り直す
+      _missingThumbs = null;
+      ref.read(thumbnailQueueProvider.notifier).startAll();
     } catch (e) {
       _toast(AppSnackBar.error('復元に失敗しました: ${AppErrors.describe(e)}'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  String _formatEta(Duration d) {
-    if (d.inHours > 0) return '約${d.inHours}時間${d.inMinutes % 60}分';
-    if (d.inMinutes > 0) return '約${d.inMinutes}分';
-    return '1分未満';
-  }
-
-  void _repairThumbnailsWithProgress() {
-    final textTheme = Theme.of(context).textTheme;
-    final doneNotifier = ValueNotifier<int>(0);
-    final totalNotifier = ValueNotifier<int>(0);
-    final etaNotifier = ValueNotifier<String>('');
-    final startTime = DateTime.now();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      // 戻るボタンで閉じられると、完了時のpopが設定画面自体を閉じてしまう
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: ValueListenableBuilder<int>(
-            valueListenable: totalNotifier,
-            builder: (_, total, _) => ValueListenableBuilder<int>(
-              valueListenable: doneNotifier,
-              builder: (_, done, _) => ValueListenableBuilder<String>(
-                valueListenable: etaNotifier,
-                builder: (_, eta, _) => Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        const SizedBox(width: AppSpacing.xl),
-                        Expanded(
-                          child: Text('サムネイルを復元中...',
-                              style: textTheme.bodyLarge),
-                        ),
-                      ],
-                    ),
-                    if (total > 0) ...[
-                      const SizedBox(height: AppSpacing.lg),
-                      LinearProgressIndicator(value: done / total),
-                      const SizedBox(height: AppSpacing.xs),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('$done / $total', style: textTheme.bodySmall),
-                          if (eta.isNotEmpty)
-                            Text('残り $eta', style: textTheme.bodySmall),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    ref.read(loopItemsProvider.notifier).repairThumbnails(
-      onProgress: (done, total) {
-        doneNotifier.value = done;
-        totalNotifier.value = total;
-        if (done >= 3) {
-          final elapsed = DateTime.now().difference(startTime);
-          final perItem = elapsed.inMilliseconds / done;
-          etaNotifier.value = _formatEta(
-              Duration(milliseconds: (perItem * (total - done)).round()));
-        }
-      },
-    ).whenComplete(() {
-      // 失敗時も必ずダイアログを閉じる
-      doneNotifier.dispose();
-      totalNotifier.dispose();
-      etaNotifier.dispose();
-      if (mounted) Navigator.pop(context);
-    }).catchError((_) {});
   }
 
   // ─── 端末に残しているもの ───
@@ -304,10 +232,12 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
       confirmLabel: '完全に削除',
       destructive: true,
     );
-    if (!really) return;
+    if (!really || !mounted || _replaceLocked) return;
 
     setState(() => _busy = true);
     try {
+      ref.read(thumbnailQueueProvider.notifier).clear();
+      _missingThumbs = null;
       await AppBoxes.loopItems.clear();
       await AppBoxes.playlists.clear();
       await AppBoxes.tags.clear();
@@ -343,12 +273,60 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
         trailing: _trash(clearLabel, onClear),
       );
 
+  /// まとめて取得の状況と、一時停止・再開・取得のボタン
+  Widget _thumbnailRow() {
+    final queue = ref.read(thumbnailQueueProvider.notifier);
+    final s = ref.watch(thumbnailQueueProvider);
+    if (s != null) {
+      return SettingsRow(
+        icon: Icons.image_outlined,
+        title: s.paused ? '一時停止中' : '取得中',
+        subtitle: s.paused
+            ? '残り ${s.total - s.done} 件'
+            : ThumbnailQueueBar.progressLabel(s),
+        trailing: IconButton(
+          icon: Icon(s.paused ? Icons.play_arrow : Icons.pause),
+          tooltip: s.paused ? '再開' : '一時停止',
+          onPressed: s.paused ? queue.resume : queue.pause,
+        ),
+      );
+    }
+    _missingThumbs ??= ref
+        .read(loopItemsProvider.notifier)
+        .missingThumbnails()
+        .then((items) => items.length);
+    return FutureBuilder<int>(
+      future: _missingThumbs,
+      builder: (_, snap) {
+        final count = snap.data;
+        return SettingsRow(
+          icon: Icons.image_outlined,
+          title: '未取得',
+          subtitle: count == null ? '計算中…' : '$count 件',
+          trailing: (count ?? 0) == 0
+              ? const SizedBox.shrink()
+              : IconButton(
+                  icon: const Icon(Icons.download),
+                  tooltip: 'サムネイルを取得',
+                  onPressed: queue.startAll,
+                ),
+        );
+      },
+    );
+  }
+
   static String _mb(int bytes, {int digits = 1}) =>
       '${(bytes / 1024 / 1024).toStringAsFixed(digits)} MB';
 
   @override
   Widget build(BuildContext context) {
     final keep = DataSettingsScreen.keepOfflineVideos;
+    final replaceLocked = ref.watch(
+            thumbnailQueueProvider.select((s) => s?.running ?? false)) ||
+        ref.watch(bulkAnalysisProvider.select((s) => s != null));
+    ref.listen(thumbnailQueueProvider.select((s) => s == null), (_, idle) {
+      if (idle) setState(() => _missingThumbs = null);
+    });
     final backup = SettingsGroup(
       title: 'バックアップ',
       children: [
@@ -360,7 +338,7 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
         SettingsRow(
           icon: Icons.download,
           title: 'バックアップから復元',
-          onTap: _busy ? null : _importData,
+          onTap: _busy || replaceLocked ? null : _importData,
         ),
       ],
     );
@@ -387,6 +365,10 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
           },
         ),
       ],
+    );
+    final thumbnails = SettingsGroup(
+      title: 'サムネイル',
+      children: [_thumbnailRow()],
     );
     // 一度聴いた曲の映像・高音質の音声（MediaCache）。消えてよい使い捨て。
     // 長い曲（MediaCache.maxDuration 超）は残さない
@@ -437,7 +419,7 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
           title: 'すべてのデータを削除',
           danger: true,
           showChevron: false,
-          onTap: _busy ? null : _clearAllData,
+          onTap: _busy || replaceLocked ? null : _clearAllData,
         ),
       ],
     );
@@ -449,10 +431,10 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
           // 消えてよい使い捨て（自動キャッシュ・波形）
           wideColumns: [
             [backup, deleteAll],
-            [offline],
+            [offline, thumbnails],
             [cache, waveform],
           ],
-          children: [backup, offline, cache, waveform, deleteAll],
+          children: [backup, offline, thumbnails, cache, waveform, deleteAll],
         ),
         if (_busy)
           Container(

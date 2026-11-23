@@ -60,6 +60,9 @@ class SettingsKeys {
   static const verseSearchEndSec = 'verse_search_end_sec';
   static const perfOverlay = 'perf_overlay';
   static const cacheToDocuments = 'cache_to_documents';
+  static const thumbnailQueuePending = 'thumbnail_queue_pending';
+  static const thumbnailQueuePaused = 'thumbnail_queue_paused';
+  static const thumbnailFailedIds = 'thumbnail_failed_ids';
   static const glassBlur = 'glass_blur';
   static const tagThumbs = 'tag_thumbs';
   static const hqAudio = 'hq_audio';

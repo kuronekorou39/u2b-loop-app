@@ -9,6 +9,7 @@ import '../../providers/data_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/playlist_player_provider.dart';
 import '../../providers/provider_reader.dart';
+import '../../providers/thumbnail_queue_provider.dart';
 import '../audio_filters.dart';
 import '../cache_service.dart';
 import '../deck_tricks.dart';
@@ -94,6 +95,8 @@ class MediaOpener {
     Duration? streamOpenTimeout,
     void Function(OpenedMedia media)? onOpened,
   }) async {
+    // サムネイルが無ければ、列の先頭に入れて一緒に取る（再生は待たせない）
+    _read(thumbnailQueueProvider.notifier).fetchIfMissing(item);
     // 作れない列のフィルタが付いたまま開くと、その曲の音声が無効になる
     await AudioFilters.detach(player);
     await DeckTricks.reset(player);

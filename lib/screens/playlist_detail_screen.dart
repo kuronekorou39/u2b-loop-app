@@ -16,6 +16,7 @@ import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/bulk_analysis_provider.dart';
 import '../providers/data_provider.dart';
+import '../providers/thumbnail_queue_provider.dart';
 import '../services/audio_analysis_service.dart';
 import '../services/save_flow.dart';
 import '../services/share_service.dart';
@@ -453,6 +454,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           itemBuilder: (_) {
             final unanalyzed = AudioAnalysisService.unanalyzed(items).length;
             final bulk = ref.read(bulkAnalysisProvider);
+            final restoring =
+                ref.read(thumbnailQueueProvider)?.running ?? false;
             return [
               if (items.isNotEmpty) ...[
               const PopupMenuItem(
@@ -475,14 +478,16 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               PopupMenuItem(
                 value: _PlaylistMenu.analyze,
                 // 動いている間は 2 つ目を始めない（音声のダウンロードが詰まる）
-                enabled: unanalyzed > 0 && bulk == null,
+                enabled: unanalyzed > 0 && bulk == null && !restoring,
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.music_note),
                   title: const Text('テンポ/キーをまとめて解析'),
                   subtitle: Text(bulk != null
                       ? '解析中 ${bulk.index} / ${bulk.total}'
-                      : unanalyzed > 0
+                      : restoring
+                          ? 'サムネイルの取得中は使えません'
+                          : unanalyzed > 0
                           ? '未解析・要更新 $unanalyzed 曲を順に解析'
                           : 'すべて解析済み'),
                 ),

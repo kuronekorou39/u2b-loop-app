@@ -9,6 +9,7 @@ import '../../core/ui/app_snack_bar.dart';
 import '../../core/utils/add_input.dart';
 import '../../core/utils/app_errors.dart';
 import '../../providers/data_provider.dart';
+import '../../providers/thumbnail_queue_provider.dart';
 import '../../services/playlist_service.dart';
 import '../../services/share_service.dart';
 import '../../widgets/share_import_dialog.dart';
@@ -405,9 +406,9 @@ class YouTubeImportFlow {
     _snack(AppSnackBar.success(
         '「$playlistTitle」から${addedIds.length}曲を追加しました'));
 
-    // サムネイルをバックグラウンドでダウンロード
+    // サムネイルは取得係の列へ（下の帯に進み具合。一時停止・再開もできる）
     if (addedIds.isNotEmpty) {
-      notifier.downloadThumbnailsInBackground(addedIds);
+      ref.read(thumbnailQueueProvider.notifier).enqueue(addedIds);
     }
   }
 
