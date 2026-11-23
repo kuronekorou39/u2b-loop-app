@@ -72,11 +72,19 @@ class ExitPlanner {
     required double mixOutMs,
     required double endMs,
   }) {
-    double db(double from, double to) =>
-        EntryPlanner.meanDb(curve, from, to, stepMs: stepMs);
-    final before =
-        db(max(0, mixOutMs - MixPointDetector.beforeWindowMs), mixOutMs);
-    return before - db(mixOutMs, endMs) >= quietTailDb;
+    final before = EntryPlanner.meanDb(
+        curve, max(0, mixOutMs - MixPointDetector.beforeWindowMs), mixOutMs,
+        stepMs: stepMs);
+    // 残りは鳴っている所の中央値で見る。平均だと、曲の後の無音に引っぱられて
+    // 最後まで同じ音量で鳴る曲も「静か」になる（インソムニアは 3:41 まで鳴り、後ろ 20 秒が無音）
+    final from = (mixOutMs / stepMs).floor().clamp(0, curve.length);
+    final to = (endMs / stepMs).ceil().clamp(from, curve.length);
+    final sounding = [
+      for (final v in curve.sublist(from, to))
+        if (v > MixPointDetector.silenceDb) v,
+    ]..sort();
+    if (sounding.isEmpty) return true;
+    return before - sounding[sounding.length ~/ 2] >= quietTailDb;
   }
 
   /// 出口（ミリ秒）。早めに切らなくてよければ null。

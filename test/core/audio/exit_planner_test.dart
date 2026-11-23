@@ -37,6 +37,17 @@ void main() {
           isTrue);
     });
 
+    test('最後まで同じ音量で鳴り、曲の後が無音なだけならアウトロではない', () {
+      final c = [
+        for (var i = 0; i < 110; i++) -9.0,
+        for (var i = 0; i < 10; i++) -60.0,
+      ];
+      expect(
+          ExitPlanner.outroIsQuiet(c,
+              stepMs: step, mixOutMs: 180000, endMs: 240000),
+          isFalse);
+    });
+
     test('ベースが抜けただけで音量が変わらなければアウトロではない', () {
       expect(
           ExitPlanner.outroIsQuiet(curve(180, 240, loud: -6, quiet: -7),
