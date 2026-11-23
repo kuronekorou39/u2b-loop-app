@@ -1081,14 +1081,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _enterPiP() async {
     _updatePiPPlayState();
     try {
-      await PipBridge.enterPiP(_currentItem);
+      if (await PipBridge.enterPiP(_currentItem)) return;
     } catch (e) {
       debugPrint('enterPiP failed: $e');
-      if (mounted) {
-        AppToast.instance.show(
-          AppSnackBar.info('PiPに入れませんでした'),
-        );
-      }
+    }
+    if (mounted) {
+      AppToast.instance.show(
+        AppSnackBar.info('PiPに入れませんでした'),
+      );
     }
   }
 

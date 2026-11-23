@@ -65,6 +65,11 @@ class MainActivity : FlutterActivity() {
     private var noisyReceiver: BroadcastReceiver? = null
     private var audioDeviceCallback: android.media.AudioDeviceCallback? = null
     private var pipEnteredByHint = false
+
+    // PiP の × の見分け: 元の画面に戻るなら onResume が来る、閉じたなら onStop だけが来る
+    private var activityResumed = false
+    private var activityStopped = false
+    private var closingFromPip = false
     private var notificationPermissionAsked = false
 
     /// Android 13以降は POST_NOTIFICATIONS が未許可だと前景サービスの通知が
@@ -528,7 +533,34 @@ class MainActivity : FlutterActivity() {
         pipChannel?.invokeMethod("onPiPChanged", isInPictureInPictureMode)
         // PiP突入直後に再生状態を再同期（autoEnter時の状態揺れを補正）
         if (isInPictureInPictureMode) {
+            closingFromPip = false
             syncPlayState()
+        } else if (activityStopped) {
+            finishAndRemoveTask()
+        } else {
+            // 端末によって onStop がこの後に来る。onResume が先に来れば取り消す
+            closingFromPip = !activityResumed
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        activityStopped = false
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
+        closingFromPip = false
+    }
+
+    override fun onStop() {
+        super.onStop()
+        activityStopped = true
+        // PiP の × で閉じられた。裏で鳴り続けないようアプリごと終える
+        if (closingFromPip && !isInPictureInPictureMode) {
+            closingFromPip = false
+            finishAndRemoveTask()
         }
     }
 
@@ -552,6 +584,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onPause() {
         super.onPause()
+        activityResumed = false
         // API 31+: setAutoEnterEnabled が全てのバックグラウンド遷移を処理
         // API 26-30: onUserLeaveHintで処理済みならスキップ、そうでなければ手動PiP
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
@@ -1094,10 +1127,10 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        // アプリを閉じた（Backで抜けた・タスクを消した）ときは、Flutter側の
-        // プレイヤーごと落ちるので前景サービスも一緒に止める。
+        // アプリを閉じた（Backで抜けた・タスクを消した・PiP の ×）ときは前景サービスも止める。
         // 残すと再生していないのに「再生中」通知だけが居座る。
-        if (isFinishing) {
+        val closing = !isChangingConfigurations
+        if (closing) {
             try { stopService(Intent(this, PlaybackService::class.java)) } catch (_: Exception) {}
         }
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) {}
@@ -1117,5 +1150,8 @@ class MainActivity : FlutterActivity() {
         cancelCurrentExtraction()
         scope.cancel()
         super.onDestroy()
+        // Flutter が消えてもプロセスと mpv は残り、消えた Dart の通知先を呼んで落ちる。
+        // 裏で鳴り続けもするので、画面を閉じたらプロセスごと終える
+        if (closing) android.os.Process.killProcess(android.os.Process.myPid())
     }
 }

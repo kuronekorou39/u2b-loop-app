@@ -14,6 +14,9 @@ import '../models/loop_item.dart';
 import '../models/playlist.dart';
 import '../models/tag.dart';
 import '../providers/data_provider.dart';
+import '../providers/mini_player_provider.dart';
+import '../providers/player_provider.dart';
+import '../services/playback/pip_bridge.dart';
 import '../widgets/bulk_tag_sheet.dart';
 import '../widgets/empty_hint.dart';
 import '../widgets/glass_controls.dart';
@@ -478,13 +481,17 @@ class _ListScreenState extends ConsumerState<ListScreen>
       ],
     );
     return PopScope(
-      canPop: !_isSelecting && _reorderingTab == null,
+      canPop: !_isSelecting &&
+          _reorderingTab == null &&
+          !ref.watch(miniPlayerProvider.select((s) => s.active)),
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (_isSelecting) {
           _clearSelection();
         } else if (_reorderingTab != null) {
           setState(() => _reorderingTab = null);
+        } else {
+          _leaveWhilePlaying();
         }
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -557,6 +564,22 @@ class _ListScreenState extends ConsumerState<ListScreen>
         ),
       ),
     );
+  }
+
+  /// ミニプレイヤーが出ているホームで「戻る」: 鳴っていれば PiP で続ける。
+  /// 止まっている・PiP に入れないならアプリを閉じる
+  Future<void> _leaveWhilePlaying() async {
+    final item = ref.read(miniPlayerProvider).item;
+    final playing = ref.read(playerProvider).state.playing;
+    if (playing && item != null) {
+      try {
+        await PipBridge.updatePlayState(true);
+        if (await PipBridge.enterPiP(item)) return;
+      } catch (e) {
+        debugPrint('[ListScreen] PiP に入れない: $e');
+      }
+    }
+    await SystemNavigator.pop();
   }
 
   Widget _buildFab() {

@@ -105,11 +105,13 @@ class PipBridge {
 
   static Future<void> stopPlaybackService() => _send('stopPlaybackService');
 
-  /// いま PiP に入る。入れなければ例外
-  static Future<void> enterPiP(LoopItem item) => _channel.invokeMethod('enterPiP', {
+  /// いま PiP に入る。入れなければ false か例外（端末が非対応・設定でオフ）
+  static Future<bool> enterPiP(LoopItem item) async =>
+      await _channel.invokeMethod<bool>('enterPiP', {
         'thumbnailUrl': item.thumbnailUrl,
         'thumbnailPath': item.thumbnailPath,
-      });
+      }) ??
+      false;
 
   /// ネイティブからの呼び出しを受ける。前のハンドラは置き換わる
   static void listen(PipHandlers handlers) {
