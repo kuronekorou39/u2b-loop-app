@@ -89,7 +89,14 @@ enum AdvanceReadiness {
 /// ここに置き、画面固有の演出（ローディング表示・波形・字幕・フェード）だけを
 /// 呼び出し側に残す。
 class PlaylistEngine {
-  PlaylistEngine(this._ref);
+  PlaylistEngine(this._ref) {
+    // 先読みした次曲は、開いたときの設定の位置で待っている。長さを変えたら置き直す
+    // （DJ をオフにしても、つなぎ用の入り口のまま次の曲の頭が飛んでいた）
+    _ref.listen(crossfadeProvider, (_, _) {
+      final armed = _armedTrack;
+      if (armed != null) unawaited(realignPreload(armed));
+    });
+  }
 
   final Ref _ref;
 
@@ -322,7 +329,10 @@ class PlaylistEngine {
       return;
     }
     try {
-      final target = plannedInStart(track, inRate: _preloadInRate(track));
+      // オフならつながないので拍合わせも見ず、曲の頭（区間があれば A 点）で待つ
+      final target = crossfadeDuration == Duration.zero
+          ? effectiveStart(track)
+          : plannedInStart(track, inRate: _preloadInRate(track));
       if ((preloadPlayer.state.position - target).abs() < _seekSlack) return;
       await preloadPlayer.seek(target);
     } catch (e) {

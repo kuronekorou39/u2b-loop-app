@@ -217,6 +217,16 @@ void main() {
     });
   });
 
+  test('先読み済みのまま DJ をオフにしたら、次の曲は頭で待つ', () async {
+    await setUpEngine(ending: null, firstVerse: false);
+    engine.armCrossfade(next);
+    addTearDown(engine.disarmCrossfade);
+    await inP.seek(const Duration(seconds: 28));
+    container.read(crossfadeProvider.notifier).value = 0;
+    await Future<void>.delayed(Duration.zero);
+    expect(inP.state.position, Duration.zero);
+  });
+
   testWidgets('切替点までは次の曲を鳴らさず、前の曲は 100% のまま。切替点で次の曲が鳴る', (tester) async {
     await tester.runAsync(() => setUpEngine());
     renderTail(TransitionEffect.echoTail);
