@@ -317,26 +317,16 @@ import AVKit
           at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.removeItem(at: output)
 
-        let composition = try await buildMuxComposition(
-          video: URL(fileURLWithPath: videoPath), audio: URL(fileURLWithPath: audioPath))
-        guard let session = AVAssetExportSession(
-          asset: composition, presetName: AVAssetExportPresetPassthrough) else {
-          failed("エクスポートセッションを作成できません")
-          return
-        }
         // 出力先の拡張子が .mp4 とは限らないので、いったん .mp4 に書いてから移す
         let working = output.deletingLastPathComponent()
           .appendingPathComponent("mux_\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: working) }
-        session.outputURL = working
-        session.outputFileType = .mp4
-        await runExport(session)
-        if session.status == .completed {
-          try FileManager.default.moveItem(at: working, to: output)
-          result(["success": true, "outputPath": outputPath])
-        } else {
-          failed(session.error?.localizedDescription ?? "結合に失敗しました")
-        }
+        try await remuxVideoAudio(
+          video: URL(fileURLWithPath: videoPath),
+          audio: URL(fileURLWithPath: audioPath),
+          output: working)
+        try FileManager.default.moveItem(at: working, to: output)
+        result(["success": true, "outputPath": outputPath])
       } catch {
         failed(error.localizedDescription)
       }
@@ -545,34 +535,157 @@ private func buildRegionComposition(
   return composition
 }
 
-/// 映像ファイルの映像と音声ファイルの音声を重ねたコンポジション
-private func buildMuxComposition(video: URL, audio: URL) async throws -> AVMutableComposition {
-  let videoAsset = AVURLAsset(url: video)
-  guard let sourceVideo = try await videoAsset.loadTracks(withMediaType: .video).first else {
-    throw MediaError.noTrack
-  }
-  let composition = AVMutableComposition()
-  guard let videoTrack = composition.addMutableTrack(
-    withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
-    throw MediaError.noTrack
-  }
-  videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
-  var videoRange = try await sourceVideo.load(.timeRange)
+/// 1 トラック分のサンプルを読み手から書き手へそのまま流す
+private final class SamplePump {
+  private let input: AVAssetWriterInput
+  private let output: AVAssetReaderTrackOutput
+  private let queue: DispatchQueue
+  private var usualDuration = CMTime.invalid
+  private var finished = false
 
-  let audioAsset = AVURLAsset(url: audio)
-  if let sourceAudio = try await audioAsset.loadTracks(withMediaType: .audio).first,
-     let audioTrack = composition.addMutableTrack(
-       withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-    let audioRange = try await sourceAudio.load(.timeRange)
-    try audioTrack.insertTimeRange(audioRange, of: sourceAudio, at: .zero)
-    // YouTube の映像専用ファイルは長さが実際より長く報告されることがあり（2 倍だった）、
-    // そのまま入れると最後の 1 フレームが余りの時間ぶん引き伸ばされる。音声の長さに揃える
-    if videoRange.duration > audioRange.duration + CMTime(value: 1, timescale: 1) {
-      videoRange = CMTimeRange(start: videoRange.start, duration: audioRange.duration)
+  /// 書いたサンプルの終わりの時刻
+  private(set) var end = CMTime.zero
+  private(set) var failed = false
+
+  init(input: AVAssetWriterInput, output: AVAssetReaderTrackOutput, label: String) {
+    self.input = input
+    self.output = output
+    queue = DispatchQueue(label: "com.u2bloop.mux.\(label)")
+  }
+
+  func run() async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      input.requestMediaDataWhenReady(on: queue) { [self] in
+        guard !finished else { return }
+        while input.isReadyForMoreMediaData {
+          guard let sample = output.copyNextSampleBuffer() else {
+            stop(continuation)
+            return
+          }
+          guard let fixed = withSaneTiming(sample), input.append(fixed) else {
+            failed = true
+            stop(continuation)
+            return
+          }
+        }
+      }
     }
   }
-  try videoTrack.insertTimeRange(videoRange, of: sourceVideo, at: .zero)
-  return composition
+
+  private func stop(_ continuation: CheckedContinuation<Void, Never>) {
+    finished = true
+    input.markAsFinished()
+    continuation.resume()
+  }
+
+  /// YouTube の映像専用ファイルは最後のフレームの長さが曲全体ぶんになっていることがあり、
+  /// そのまま書くと動画の長さが 2 倍になる。1 秒を超える長さは、ふつうのフレームの長さに直す
+  private func withSaneTiming(_ sample: CMSampleBuffer) -> CMSampleBuffer? {
+    var count = 0
+    CMSampleBufferGetSampleTimingInfoArray(
+      sample, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count)
+    guard count > 0 else { return sample }
+    var timing = [CMSampleTimingInfo](repeating: .invalid, count: count)
+    guard CMSampleBufferGetSampleTimingInfoArray(
+      sample, entryCount: count, arrayToFill: &timing, entriesNeededOut: &count) == noErr else {
+      return sample
+    }
+    var changed = false
+    for i in timing.indices {
+      let duration = timing[i].duration
+      if duration.isValid, duration > .zero, duration.seconds <= 1 {
+        usualDuration = duration
+      } else if duration.isValid, duration.seconds > 1, usualDuration.isValid {
+        timing[i].duration = usualDuration
+        changed = true
+      }
+    }
+    var result = sample
+    if changed {
+      var copy: CMSampleBuffer?
+      guard CMSampleBufferCreateCopyWithNewTiming(
+        allocator: kCFAllocatorDefault, sampleBuffer: sample,
+        sampleTimingEntryCount: count, sampleTimingArray: &timing,
+        sampleBufferOut: &copy) == noErr, let copied = copy else { return nil }
+      result = copied
+    }
+    let sampleCount = CMSampleBufferGetNumSamples(result)
+    if let last = timing.last, last.presentationTimeStamp.isValid, last.duration.isValid {
+      // 1 つの時刻情報を複数サンプルで共有しているときは、その分だけ進める
+      let span = count == 1 && sampleCount > 1
+        ? CMTimeMultiply(last.duration, multiplier: Int32(sampleCount))
+        : last.duration
+      end = max(end, last.presentationTimeStamp + span)
+    }
+    return result
+  }
+}
+
+/// 映像ファイルの映像と音声ファイルの音声を再エンコードせずに 1 つの MP4 にする
+private func remuxVideoAudio(video: URL, audio: URL, output: URL) async throws {
+  let videoAsset = AVURLAsset(url: video)
+  guard let videoTrack = try await videoAsset.loadTracks(withMediaType: .video).first,
+        let videoFormat = try await videoTrack.load(.formatDescriptions).first else {
+    throw MediaError.noTrack
+  }
+  let transform = try await videoTrack.load(.preferredTransform)
+  let audioAsset = AVURLAsset(url: audio)
+  let audioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first
+  let audioFormat = try await audioTrack?.load(.formatDescriptions).first
+
+  let writer = try AVAssetWriter(outputURL: output, fileType: .mp4)
+  writer.shouldOptimizeForNetworkUse = true
+
+  let videoReader = try AVAssetReader(asset: videoAsset)
+  let videoOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: nil)
+  videoOutput.alwaysCopiesSampleData = false
+  videoReader.add(videoOutput)
+  let videoInput = AVAssetWriterInput(
+    mediaType: .video, outputSettings: nil, sourceFormatHint: videoFormat)
+  videoInput.expectsMediaDataInRealTime = false
+  videoInput.transform = transform
+  writer.add(videoInput)
+  var pumps = [SamplePump(input: videoInput, output: videoOutput, label: "video")]
+
+  var audioReader: AVAssetReader?
+  if let audioTrack = audioTrack, let audioFormat = audioFormat {
+    let reader = try AVAssetReader(asset: audioAsset)
+    let trackOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: nil)
+    trackOutput.alwaysCopiesSampleData = false
+    reader.add(trackOutput)
+    let audioInput = AVAssetWriterInput(
+      mediaType: .audio, outputSettings: nil, sourceFormatHint: audioFormat)
+    audioInput.expectsMediaDataInRealTime = false
+    writer.add(audioInput)
+    pumps.append(SamplePump(input: audioInput, output: trackOutput, label: "audio"))
+    audioReader = reader
+  }
+
+  guard videoReader.startReading() else { throw videoReader.error ?? MediaError.noTrack }
+  defer { videoReader.cancelReading() }
+  if let reader = audioReader, !reader.startReading() {
+    throw reader.error ?? MediaError.noTrack
+  }
+  defer { audioReader?.cancelReading() }
+  guard writer.startWriting() else { throw writer.error ?? MediaError.noTrack }
+  writer.startSession(atSourceTime: .zero)
+
+  // 書き手は映像と音声を交互に受け取るので、同時に流す
+  await withTaskGroup(of: Void.self) { group in
+    for pump in pumps {
+      group.addTask { await pump.run() }
+    }
+  }
+
+  if pumps.contains(where: { $0.failed }) || videoReader.status == .failed
+    || audioReader?.status == .failed {
+    let cause = writer.error ?? videoReader.error ?? audioReader?.error
+    writer.cancelWriting()
+    throw cause ?? MediaError.noTrack
+  }
+  writer.endSession(atSourceTime: pumps.map(\.end).max() ?? .zero)
+  await writer.finishWriting()
+  if writer.status != .completed { throw writer.error ?? MediaError.noTrack }
 }
 
 /// 曲の [startMs, endMs) を、元のサンプルレート・チャンネル数の 16bit PCM で返す
