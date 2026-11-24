@@ -540,20 +540,15 @@ private final class SamplePump {
   private let input: AVAssetWriterInput
   private let output: AVAssetReaderTrackOutput
   private let queue: DispatchQueue
-  private var usualDuration: CMTime
   private var finished = false
 
   /// 書いたサンプルの終わりの時刻
   private(set) var end = CMTime.zero
   private(set) var failed = false
 
-  /// fallbackDuration: 1 フレームの長さ（フレームレートから）。読み手が長さを付けて
-  /// こないときや、最初のサンプルから長さが壊れているときに使う
-  init(input: AVAssetWriterInput, output: AVAssetReaderTrackOutput, label: String,
-       fallbackDuration: CMTime = .invalid) {
+  init(input: AVAssetWriterInput, output: AVAssetReaderTrackOutput, label: String) {
     self.input = input
     self.output = output
-    usualDuration = fallbackDuration
     queue = DispatchQueue(label: "com.u2bloop.mux.\(label)")
   }
 
@@ -566,7 +561,11 @@ private final class SamplePump {
             stop(continuation)
             return
           }
-          guard let fixed = withSaneTiming(sample), input.append(fixed) else {
+          // 読み手は最後にサンプルを含まない印（時刻が元の長さの 2 倍のことがある）を渡してくる。
+          // そのまま書くとトラックがそこまで伸びて動画の長さが 2 倍になるので書かない
+          guard CMSampleBufferGetNumSamples(sample) > 0 else { continue }
+          track(sample)
+          guard input.append(sample) else {
             failed = true
             stop(continuation)
             return
@@ -582,73 +581,13 @@ private final class SamplePump {
     continuation.resume()
   }
 
-  /// YouTube の映像専用ファイルは最後のフレームの長さが曲全体ぶんになっていることがあり、
-  /// そのまま書くと動画の長さが 2 倍になる。1 秒を超える長さは、ふつうのフレームの長さに直す
-  private func withSaneTiming(_ sample: CMSampleBuffer) -> CMSampleBuffer? {
-    samples += 1
-    remember(sample)
-    guard var timing = try? sample.sampleTimingInfos(), !timing.isEmpty else {
-      // 時刻情報が読めないときは、表示時刻だけで終わりを見積もる
-      timingMisses += 1
-      let pts = CMSampleBufferGetPresentationTimeStamp(sample)
-      if pts.isValid {
-        end = max(end, pts + (usualDuration.isValid ? usualDuration : .zero))
-      }
-      return sample
-    }
-    var changed = false
-    for i in timing.indices {
-      let duration = timing[i].duration
-      if duration.isValid, duration > .zero, duration.seconds <= 1 {
-        usualDuration = duration
-      } else if duration.isValid, duration.seconds > 1 {
-        // 直す長さが分からなければ長さを外し、書き手に前後の時刻から決めさせる
-        timing[i].duration = usualDuration.isValid ? usualDuration : .invalid
-        changed = true
-        fixed += 1
-      }
-    }
-    var result = sample
-    if changed {
-      guard let copied = try? CMSampleBuffer(copying: sample, withNewTiming: timing) else {
-        return nil
-      }
-      result = copied
-    }
-    // 1 つの時刻情報を複数サンプルで共有しているときは、その分だけ進める
-    let shared = timing.count == 1 ? max(CMSampleBufferGetNumSamples(result), 1) : 1
-    for t in timing where t.presentationTimeStamp.isValid {
-      let duration = t.duration.isValid
-        ? CMTimeMultiply(t.duration, multiplier: Int32(shared))
-        : (usualDuration.isValid ? usualDuration : .zero)
-      end = max(end, t.presentationTimeStamp + duration)
-    }
-    return result
+  /// 書いたサンプルの終わりの時刻を進める
+  private func track(_ sample: CMSampleBuffer) {
+    let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+    let duration = CMSampleBufferGetDuration(sample)
+    guard pts.isValid else { return }
+    end = max(end, duration.isValid ? pts + duration : pts)
   }
-
-  /// 確かめるための数（mux_debug.txt に書く。一時的）
-  var summary: String {
-    "samples=\(samples) fixed=\(fixed) timingMisses=\(timingMisses) end=\(end.seconds)\n"
-      + recent.joined(separator: "\n")
-  }
-  private var recent: [String] = []
-
-  private func remember(_ sample: CMSampleBuffer) {
-    let n = CMSampleBufferGetNumSamples(sample)
-    let timing = (try? sample.sampleTimingInfos()) ?? []
-    let parts = timing.map {
-      "pts=\($0.presentationTimeStamp.seconds) dts=\($0.decodeTimeStamp.seconds) dur=\($0.duration.seconds)"
-    }
-    let line = "#\(samples) n=\(n) entries=\(timing.count) "
-      + "bufPts=\(CMSampleBufferGetPresentationTimeStamp(sample).seconds) "
-      + "bufDur=\(CMSampleBufferGetDuration(sample).seconds) "
-      + parts.joined(separator: " | ")
-    recent.append(line)
-    if recent.count > 6 { recent.removeFirst() }
-  }
-  private var samples = 0
-  private var fixed = 0
-  private var timingMisses = 0
 }
 
 /// 映像ファイルの映像と音声ファイルの音声を再エンコードせずに 1 つの MP4 にする
@@ -675,12 +614,7 @@ private func remuxVideoAudio(video: URL, audio: URL, output: URL) async throws {
   videoInput.expectsMediaDataInRealTime = false
   videoInput.transform = transform
   writer.add(videoInput)
-  let frameRate = try await videoTrack.load(.nominalFrameRate)
-  let frameDuration = frameRate > 0
-    ? CMTime(value: 1000, timescale: CMTimeScale((frameRate * 1000).rounded()))
-    : CMTime(value: 1, timescale: 30)
-  var pumps = [SamplePump(
-    input: videoInput, output: videoOutput, label: "video", fallbackDuration: frameDuration)]
+  var pumps = [SamplePump(input: videoInput, output: videoOutput, label: "video")]
 
   var audioReader: AVAssetReader?
   if let audioTrack = audioTrack, let audioFormat = audioFormat {
@@ -718,27 +652,11 @@ private func remuxVideoAudio(video: URL, audio: URL, output: URL) async throws {
     writer.cancelWriting()
     throw cause ?? MediaError.noTrack
   }
-  var debug = pumps.enumerated().map { "track\($0.offset): \($0.element.summary)" }
-  // 0 で閉じると書き手は元の長さのまま書くので、終わりが分からないときは呼ばない
   if let sessionEnd = pumps.map(\.end).max(), sessionEnd > .zero {
     writer.endSession(atSourceTime: sessionEnd)
-    debug.append("endSession=\(sessionEnd.seconds)")
   }
   await writer.finishWriting()
   if writer.status != .completed { throw writer.error ?? MediaError.noTrack }
-  if let written = try? await AVURLAsset(url: output).loadTracks(withMediaType: .video).first,
-     let range = try? await written.load(.timeRange) {
-    debug.append("written video range=\(range.start.seconds)+\(range.duration.seconds)")
-  }
-  writeMuxDebug(debug.joined(separator: "\n"))
-}
-
-/// 結合の中身を Documents/mux_debug.txt に残す（実機で確かめるための一時的なもの）
-private func writeMuxDebug(_ text: String) {
-  guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-  else { return }
-  try? (text + "\n").write(
-    to: dir.appendingPathComponent("mux_debug.txt"), atomically: true, encoding: .utf8)
 }
 
 /// 曲の [startMs, endMs) を、元のサンプルレート・チャンネル数の 16bit PCM で返す
