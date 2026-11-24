@@ -61,6 +61,15 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
           ),
         ),
       );
+    } else if (source.isAudioOnly) {
+      // 音楽ファイルは映像が無いので、黒い枠のままにせず音符を出す
+      videoWidget = Container(
+        color: Colors.black,
+        child: Center(
+          child: Icon(Icons.music_note_outlined,
+              size: AppIconSizes.xxl, color: AppTheme.muted(context)),
+        ),
+      );
     } else {
       videoWidget = Video(
         key: ValueKey(slot),

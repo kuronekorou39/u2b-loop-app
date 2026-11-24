@@ -7,6 +7,7 @@ import '../core/audio/musical_key.dart';
 import '../core/audio/shared_edges.dart';
 import '../core/audio/tempo_sections.dart';
 import '../core/audio/verse_ending.dart';
+import '../core/utils/media_kind.dart';
 import '../core/utils/time_utils.dart';
 import 'loop_region.dart';
 
@@ -539,6 +540,9 @@ class LoopItem {
 
   /// ローカルファイル由来か
   bool get isLocal => sourceType == SourceTypes.local;
+
+  /// 映像の無いローカルの音楽ファイルか
+  bool get isLocalAudio => isLocal && MediaKind.isAudio([uri, title]);
 
   bool get isFetching => fetchStatus == 'fetching';
   bool get hasError => fetchStatus != null && fetchStatus!.startsWith('error');

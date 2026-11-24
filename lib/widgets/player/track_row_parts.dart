@@ -42,9 +42,7 @@ class TrackThumb extends StatelessWidget {
     return Container(
       color: ItemThumbnail.placeholderColor(context),
       child: Icon(
-        track.item.isYouTube
-            ? Icons.play_circle_outline
-            : Icons.video_file_outlined,
+        ItemThumbnail.placeholderIcon(track.item),
         size: AppIconSizes.s,
         color: AppTheme.muted(context),
       ),

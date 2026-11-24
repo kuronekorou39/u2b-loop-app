@@ -1,3 +1,5 @@
+import '../core/utils/media_kind.dart';
+
 enum VideoSourceType { youtube, local }
 
 class VideoSource {
@@ -16,4 +18,8 @@ class VideoSource {
     this.thumbnailUrl,
     this.audioUri,
   });
+
+  /// 映像の無いローカルの音楽ファイル
+  bool get isAudioOnly =>
+      type == VideoSourceType.local && MediaKind.isAudio([uri, title]);
 }

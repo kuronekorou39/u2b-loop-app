@@ -136,10 +136,10 @@ class YouTubeImportFlow {
             ? Row(
                 mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
                 children: [
-                  fill(localPick(Icons.photo_library_outlined, '写真から',
+                  fill(localPick(Icons.photo_library_outlined, '写真',
                       fromPhotos: true)),
                   const SizedBox(width: AppSpacing.sm),
-                  fill(localPick(Icons.folder_open, 'ファイルから')),
+                  fill(localPick(Icons.folder_open, 'ファイル')),
                 ],
               )
             : localPick(Icons.folder_open, 'ローカルファイルを選択');

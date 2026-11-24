@@ -34,6 +34,12 @@ class ItemThumbnail extends StatelessWidget {
 
   /// サムネが無いときの地。ライトは白い面の上でも見えるよう薄い灰色にする
   /// （白のままだと、白い面に置いたとき枠ごと消えていた）
+  /// サムネが無いときのアイコン（YouTube / ローカルの音楽 / ローカルの動画）
+  static IconData placeholderIcon(LoopItem item) {
+    if (item.isYouTube) return Icons.play_circle_outline;
+    return item.isLocalAudio ? Icons.music_note_outlined : Icons.video_file_outlined;
+  }
+
   static Color placeholderColor(BuildContext context) {
     final theme = Theme.of(context);
     return theme.brightness == Brightness.dark
@@ -61,9 +67,7 @@ class ItemThumbnail extends StatelessWidget {
       color: placeholderColor(context),
       child: Center(
         child: Icon(
-          item.isYouTube
-              ? Icons.play_circle_outline
-              : Icons.video_file_outlined,
+          ItemThumbnail.placeholderIcon(item),
           color: AppTheme.muted(context),
           size: iconSize,
         ),
@@ -86,9 +90,7 @@ class ItemThumbnailPlaceholderLarge extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            item.isYouTube
-                ? Icons.play_circle_outline
-                : Icons.video_file_outlined,
+            ItemThumbnail.placeholderIcon(item),
             size: AppIconSizes.xxl,
             color: AppTheme.muted(context),
           ),
