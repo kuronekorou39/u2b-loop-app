@@ -557,16 +557,21 @@ private func buildMuxComposition(video: URL, audio: URL) async throws -> AVMutab
     throw MediaError.noTrack
   }
   videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
-  try videoTrack.insertTimeRange(
-    try await sourceVideo.load(.timeRange), of: sourceVideo, at: .zero)
+  var videoRange = try await sourceVideo.load(.timeRange)
 
   let audioAsset = AVURLAsset(url: audio)
   if let sourceAudio = try await audioAsset.loadTracks(withMediaType: .audio).first,
      let audioTrack = composition.addMutableTrack(
        withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-    try audioTrack.insertTimeRange(
-      try await sourceAudio.load(.timeRange), of: sourceAudio, at: .zero)
+    let audioRange = try await sourceAudio.load(.timeRange)
+    try audioTrack.insertTimeRange(audioRange, of: sourceAudio, at: .zero)
+    // YouTube の映像専用ファイルは長さが実際より長く報告されることがあり（2 倍だった）、
+    // そのまま入れると最後の 1 フレームが余りの時間ぶん引き伸ばされる。音声の長さに揃える
+    if videoRange.duration > audioRange.duration + CMTime(value: 1, timescale: 1) {
+      videoRange = CMTimeRange(start: videoRange.start, duration: audioRange.duration)
+    }
   }
+  try videoTrack.insertTimeRange(videoRange, of: sourceVideo, at: .zero)
   return composition
 }
 
