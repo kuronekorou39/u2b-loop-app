@@ -586,6 +586,7 @@ private final class SamplePump {
   /// そのまま書くと動画の長さが 2 倍になる。1 秒を超える長さは、ふつうのフレームの長さに直す
   private func withSaneTiming(_ sample: CMSampleBuffer) -> CMSampleBuffer? {
     samples += 1
+    remember(sample)
     guard var timing = try? sample.sampleTimingInfos(), !timing.isEmpty else {
       // 時刻情報が読めないときは、表示時刻だけで終わりを見積もる
       timingMisses += 1
@@ -625,9 +626,25 @@ private final class SamplePump {
     return result
   }
 
-  /// 端末のログで確かめるための数
+  /// 確かめるための数（mux_debug.txt に書く。一時的）
   var summary: String {
-    "samples=\(samples) fixed=\(fixed) timingMisses=\(timingMisses) end=\(end.seconds)"
+    "samples=\(samples) fixed=\(fixed) timingMisses=\(timingMisses) end=\(end.seconds)\n"
+      + recent.joined(separator: "\n")
+  }
+  private var recent: [String] = []
+
+  private func remember(_ sample: CMSampleBuffer) {
+    let n = CMSampleBufferGetNumSamples(sample)
+    let timing = (try? sample.sampleTimingInfos()) ?? []
+    let parts = timing.map {
+      "pts=\($0.presentationTimeStamp.seconds) dts=\($0.decodeTimeStamp.seconds) dur=\($0.duration.seconds)"
+    }
+    let line = "#\(samples) n=\(n) entries=\(timing.count) "
+      + "bufPts=\(CMSampleBufferGetPresentationTimeStamp(sample).seconds) "
+      + "bufDur=\(CMSampleBufferGetDuration(sample).seconds) "
+      + parts.joined(separator: " | ")
+    recent.append(line)
+    if recent.count > 6 { recent.removeFirst() }
   }
   private var samples = 0
   private var fixed = 0
@@ -701,15 +718,27 @@ private func remuxVideoAudio(video: URL, audio: URL, output: URL) async throws {
     writer.cancelWriting()
     throw cause ?? MediaError.noTrack
   }
-  for (i, pump) in pumps.enumerated() {
-    NSLog("[U2BLoop mux] track%d %@", i, pump.summary)
-  }
+  var debug = pumps.enumerated().map { "track\($0.offset): \($0.element.summary)" }
   // 0 で閉じると書き手は元の長さのまま書くので、終わりが分からないときは呼ばない
   if let sessionEnd = pumps.map(\.end).max(), sessionEnd > .zero {
     writer.endSession(atSourceTime: sessionEnd)
+    debug.append("endSession=\(sessionEnd.seconds)")
   }
   await writer.finishWriting()
   if writer.status != .completed { throw writer.error ?? MediaError.noTrack }
+  if let written = try? await AVURLAsset(url: output).loadTracks(withMediaType: .video).first,
+     let range = try? await written.load(.timeRange) {
+    debug.append("written video range=\(range.start.seconds)+\(range.duration.seconds)")
+  }
+  writeMuxDebug(debug.joined(separator: "\n"))
+}
+
+/// 結合の中身を Documents/mux_debug.txt に残す（実機で確かめるための一時的なもの）
+private func writeMuxDebug(_ text: String) {
+  guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+  else { return }
+  try? (text + "\n").write(
+    to: dir.appendingPathComponent("mux_debug.txt"), atomically: true, encoding: .utf8)
 }
 
 /// 曲の [startMs, endMs) を、元のサンプルレート・チャンネル数の 16bit PCM で返す
