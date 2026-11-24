@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +12,7 @@ import '../../core/utils/add_input.dart';
 import '../../core/utils/app_errors.dart';
 import '../../providers/data_provider.dart';
 import '../../providers/thumbnail_queue_provider.dart';
+import '../../services/local_media_import.dart';
 import '../../services/playlist_service.dart';
 import '../../services/share_service.dart';
 import '../../widgets/share_import_dialog.dart';
@@ -118,14 +121,28 @@ class YouTubeImportFlow {
           color: Theme.of(ctx).colorScheme.primary,
           tooltip: '追加',
         );
-        final localButton = OutlinedButton.icon(
-          onPressed: () {
-            Navigator.pop(ctx);
-            addLocalFile();
-          },
-          icon: const Icon(Icons.folder_open, size: AppIconSizes.sm),
-          label: const Text('ローカルファイルを選択'),
-        );
+        Widget localPick(IconData icon, String label, {bool fromPhotos = false}) =>
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                addLocalFile(fromPhotos: fromPhotos);
+              },
+              icon: Icon(icon, size: AppIconSizes.sm),
+              label: Text(label),
+            );
+        // iOS は写真ライブラリと「ファイル」が別の画面なので入口を 2 つ出す
+        Widget fill(Widget child) => compact ? child : Expanded(child: child);
+        final Widget localButton = Platform.isIOS
+            ? Row(
+                mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+                children: [
+                  fill(localPick(Icons.photo_library_outlined, '写真から',
+                      fromPhotos: true)),
+                  const SizedBox(width: AppSpacing.sm),
+                  fill(localPick(Icons.folder_open, 'ファイルから')),
+                ],
+              )
+            : localPick(Icons.folder_open, 'ローカルファイルを選択');
         return AppFormDialog(
           title: '追加',
           actions: [
@@ -188,7 +205,8 @@ class YouTubeImportFlow {
 
   // --- ローカルファイル ---
 
-  Future<void> addLocalFile() async {
+  /// [fromPhotos] は iOS の写真ライブラリから選ぶとき（それ以外は動画・音楽のファイル）
+  Future<void> addLocalFile({bool fromPhotos = false}) async {
     // file_picker はAndroidで選択ファイルをキャッシュへコピーしてから返すため、
     // 大きい動画だとコピー完了まで待たされる。その間ローディングを表示する。
     var loadingShown = false;
@@ -232,9 +250,8 @@ class YouTubeImportFlow {
 
     FilePickerResult? result;
     try {
-      result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: true,
+      result = await LocalMediaImport.pick(
+        fromPhotos: fromPhotos,
         onFileLoading: (status) {
           if (status == FilePickerStatus.picking) {
             showCopyLoading();
@@ -253,7 +270,7 @@ class YouTubeImportFlow {
     for (final f in result.files) {
       final uri = f.path ?? f.identifier;
       if (uri == null || uri.isEmpty) continue;
-      files.add((path: uri, name: f.name));
+      files.add((path: await LocalMediaImport.persist(uri, f.name), name: f.name));
     }
     if (files.isEmpty) return;
 
