@@ -50,6 +50,28 @@ class LocalMediaImport {
     }
   }
 
+  /// [persist] で移したファイルか（Files や写真の元のファイルは消さないために見分ける）
+  static bool isOwned(String path) => path.contains('/Documents/$_dirName/');
+
+  /// 曲を消したときに、アプリが移したファイルも消す
+  static Future<void> deleteOwned(String path) async {
+    if (!isOwned(path)) return;
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  /// 「すべてのデータを削除」で、移したファイルをまとめて消す
+  static Future<void> clearAll() async {
+    if (!Platform.isIOS) return;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/$_dirName');
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (_) {}
+  }
+
   /// 同じ名前のファイルを何度選んでもぶつからない名前（拡張子は残す。AVFoundation が形式を見分けるため）
   static String uniqueName(String name, DateTime now) {
     final safe = name.replaceAll(RegExp(r'[/\\:]'), '_');

@@ -17,4 +17,10 @@ void main() {
   test('音楽の形式も選べる', () {
     expect(LocalMediaImport.extensions, containsAll(['flac', 'mp3', 'm4a', 'mp4']));
   });
+
+  test('アプリが移したファイルだけを自分のものとみなす', () {
+    expect(LocalMediaImport.isOwned('/var/mobile/Containers/Data/Application/X/Documents/local/1_a.flac'), isTrue);
+    expect(LocalMediaImport.isOwned('/private/var/mobile/Library/Mobile Documents/a.flac'), isFalse);
+    expect(LocalMediaImport.isOwned('content://media/external/audio/1'), isFalse);
+  });
 }

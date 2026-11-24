@@ -20,6 +20,7 @@ import '../models/loop_region.dart';
 import '../models/playlist.dart' as app;
 import '../models/tag.dart';
 import '../services/cache_service.dart';
+import '../services/local_media_import.dart';
 import '../services/share_service.dart';
 import '../services/thumbnail_service.dart';
 import '../services/waveform_cache.dart';
@@ -404,6 +405,10 @@ class LoopItemsNotifier extends StateNotifier<List<LoopItem>> {
     if (item != null) {
       await CacheService()
           .deletePaths(item.cachedVideoPath, item.cachedSubtitlePath);
+      // 複製した曲が同じファイルを使っていれば残す
+      if (item.isLocal && !_box.values.any((o) => o.uri == item.uri)) {
+        await LocalMediaImport.deleteOwned(item.uri);
+      }
     }
     // プレイリストから孤立参照を除去
     final plBox = AppBoxes.playlists;

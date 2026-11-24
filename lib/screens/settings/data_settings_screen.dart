@@ -14,6 +14,7 @@ import '../../providers/data_provider.dart';
 import '../../providers/thumbnail_queue_provider.dart';
 import '../../services/backup_service.dart';
 import '../../services/cache_service.dart';
+import '../../services/local_media_import.dart';
 import '../../services/playback/media_cache.dart';
 import '../../services/waveform_cache.dart';
 import '../../widgets/settings/backup_export_dialog.dart';
@@ -241,6 +242,7 @@ class _DataSettingsScreenState extends ConsumerState<DataSettingsScreen> {
       await AppBoxes.loopItems.clear();
       await AppBoxes.playlists.clear();
       await AppBoxes.tags.clear();
+      await LocalMediaImport.clearAll();
       ref.invalidate(loopItemsProvider);
       ref.invalidate(playlistsProvider);
       ref.invalidate(tagsProvider);
