@@ -540,16 +540,20 @@ private final class SamplePump {
   private let input: AVAssetWriterInput
   private let output: AVAssetReaderTrackOutput
   private let queue: DispatchQueue
-  private var usualDuration = CMTime.invalid
+  private var usualDuration: CMTime
   private var finished = false
 
   /// 書いたサンプルの終わりの時刻
   private(set) var end = CMTime.zero
   private(set) var failed = false
 
-  init(input: AVAssetWriterInput, output: AVAssetReaderTrackOutput, label: String) {
+  /// fallbackDuration: 1 フレームの長さ（フレームレートから）。読み手が長さを付けて
+  /// こないときや、最初のサンプルから長さが壊れているときに使う
+  init(input: AVAssetWriterInput, output: AVAssetReaderTrackOutput, label: String,
+       fallbackDuration: CMTime = .invalid) {
     self.input = input
     self.output = output
+    usualDuration = fallbackDuration
     queue = DispatchQueue(label: "com.u2bloop.mux.\(label)")
   }
 
@@ -595,8 +599,9 @@ private final class SamplePump {
       let duration = timing[i].duration
       if duration.isValid, duration > .zero, duration.seconds <= 1 {
         usualDuration = duration
-      } else if duration.isValid, duration.seconds > 1, usualDuration.isValid {
-        timing[i].duration = usualDuration
+      } else if duration.isValid, duration.seconds > 1 {
+        // 直す長さが分からなければ長さを外し、書き手に前後の時刻から決めさせる
+        timing[i].duration = usualDuration.isValid ? usualDuration : .invalid
         changed = true
       }
     }
@@ -610,7 +615,11 @@ private final class SamplePump {
       result = copied
     }
     let sampleCount = CMSampleBufferGetNumSamples(result)
-    if let last = timing.last, last.presentationTimeStamp.isValid, last.duration.isValid {
+    if let last = timing.last, last.presentationTimeStamp.isValid {
+      if !last.duration.isValid {
+        end = max(end, last.presentationTimeStamp)
+        return result
+      }
       // 1 つの時刻情報を複数サンプルで共有しているときは、その分だけ進める
       let span = count == 1 && sampleCount > 1
         ? CMTimeMultiply(last.duration, multiplier: Int32(sampleCount))
@@ -645,7 +654,12 @@ private func remuxVideoAudio(video: URL, audio: URL, output: URL) async throws {
   videoInput.expectsMediaDataInRealTime = false
   videoInput.transform = transform
   writer.add(videoInput)
-  var pumps = [SamplePump(input: videoInput, output: videoOutput, label: "video")]
+  let frameRate = try await videoTrack.load(.nominalFrameRate)
+  let frameDuration = frameRate > 0
+    ? CMTime(value: 1000, timescale: CMTimeScale((frameRate * 1000).rounded()))
+    : CMTime(value: 1, timescale: 30)
+  var pumps = [SamplePump(
+    input: videoInput, output: videoOutput, label: "video", fallbackDuration: frameDuration)]
 
   var audioReader: AVAssetReader?
   if let audioTrack = audioTrack, let audioFormat = audioFormat {
