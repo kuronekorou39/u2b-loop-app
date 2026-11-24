@@ -99,7 +99,7 @@ jobs:
       - name: Generate iOS icons
         run: dart run flutter_launcher_icons
       - name: Build iOS (unsigned)
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --dart-define=APP_VERSION=${GITHUB_REF_NAME#v}
       - name: Get version from tag
         id: version
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"

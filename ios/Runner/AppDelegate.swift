@@ -11,6 +11,7 @@ import AVKit
   private var exportChannel: FlutterMethodChannel?
   private var waveformChannel: FlutterMethodChannel?
   private var pipChannel: FlutterMethodChannel?
+  private weak var pipWindow: UIWindow?
 
   override func application(
     _ application: UIApplication,
@@ -50,7 +51,8 @@ import AVKit
           result(FlutterError(code: "INVALID", message: "URL is null", details: nil))
           return
         }
-        self?.startExtraction(url: url, result: result)
+        self?.startExtraction(
+          url: url, withPcm: args["withPcm"] as? Bool ?? false, result: result)
       case "cancelExtraction":
         self?.cancelExtraction()
         result(nil as Any?)
@@ -64,7 +66,7 @@ import AVKit
     self.pipChannel = pc
     pc.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard let manager = self?.pipManager else {
-        result(["error": "pipManager is nil", "hasWindow": self?.window != nil] as [String: Any])
+        result(false)
         return
       }
       switch call.method {
@@ -74,8 +76,8 @@ import AVKit
           url: args?["thumbnailUrl"] as? String,
           localPath: args?["thumbnailPath"] as? String
         )
-        let diag = manager.enterPiPWithDiag()
-        result(diag)
+        // Dart 側は入れたかどうかの bool を受け取る
+        result(manager.enterPiPWithDiag()["ok"] as? Bool ?? false)
       case "setAutoPiP":
         let args = call.arguments as? [String: Any] ?? [:]
         let enabled = args["enabled"] as? Bool ?? false
@@ -96,13 +98,25 @@ import AVKit
       }
     }
 
-    // PiPManager のセットアップ（window が利用可能になった後）
     DispatchQueue.main.async { [weak self] in
-      guard let self = self, let window = self.window else { return }
-      let manager = PiPManager()
-      manager.setup(in: window, channel: pc)
-      self.pipManager = manager
+      self?.setupPiPIfReady()
     }
+  }
+
+  /// SceneDelegate から: シーンの window ができた
+  func attachPiP(window: UIWindow) {
+    pipWindow = window
+    setupPiPIfReady()
+  }
+
+  /// Scene ベースのアプリでは AppDelegate の window が nil なので、シーンの window を使う。
+  /// チャネルと window のどちらが先にそろっても動くよう、両方の経路から呼ぶ
+  private func setupPiPIfReady() {
+    guard pipManager == nil, let window = pipWindow, let channel = pipChannel,
+          window.rootViewController != nil else { return }
+    let manager = PiPManager()
+    manager.setup(in: window, channel: channel)
+    pipManager = manager
   }
 
   // MARK: - Export Region
@@ -188,12 +202,25 @@ import AVKit
 
   // MARK: - Waveform Extraction
 
-  private func startExtraction(url: String, result: @escaping FlutterResult) {
+  private func startExtraction(url: String, withPcm: Bool, result: @escaping FlutterResult) {
     waveformTask?.cancel()
     waveformTask = Task.detached { [weak self] in
       do {
-        let amplitudes = try await self?.extractAudioAmplitudes(url: url) ?? []
-        await MainActor.run { result(amplitudes) }
+        let decimator = withPcm ? MonoDecimator() : nil
+        let amplitudes =
+          try await self?.extractAudioAmplitudes(url: url, decimator: decimator) ?? []
+        await MainActor.run {
+          if let decimator = decimator {
+            // テンポ・キーの解析には間引いたモノラル PCM も要る（Android と同じ形）
+            result([
+              "amplitudes": amplitudes,
+              "pcm": FlutterStandardTypedData(bytes: decimator.littleEndianBytes()),
+              "sampleRate": MonoDecimator.outRate,
+            ] as [String: Any])
+          } else {
+            result(amplitudes)
+          }
+        }
       } catch is CancellationError {
         await MainActor.run { result([Int]()) }
       } catch {
@@ -209,7 +236,7 @@ import AVKit
     waveformTask = nil
   }
 
-  private func extractAudioAmplitudes(url: String) async throws -> [Int] {
+  private func extractAudioAmplitudes(url: String, decimator: MonoDecimator?) async throws -> [Int] {
     let assetURL: URL
     if url.hasPrefix("http://") || url.hasPrefix("https://") {
       guard let u = URL(string: url) else { return [] }
@@ -254,6 +281,12 @@ import AVKit
       let totalSamples = length / 2
       guard totalSamples > 0 else { continue }
 
+      if let decimator = decimator,
+         let format = CMSampleBufferGetFormatDescription(sampleBuffer),
+         let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee {
+        decimator.configure(inRate: asbd.mSampleRate, channels: Int(asbd.mChannelsPerFrame))
+      }
+
       var data = Data(count: length)
       data.withUnsafeMutableBytes { ptr in
         CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length,
@@ -262,6 +295,9 @@ import AVKit
 
       data.withUnsafeBytes { rawBuffer in
         let samples = rawBuffer.bindMemory(to: Int16.self)
+        if let decimator = decimator {
+          for i in 0..<totalSamples { decimator.push(samples[i]) }
+        }
         var offset = 0
         while offset < totalSamples && amplitudes.count < maxAmplitudes {
           let windowEnd = min(offset + samplesPerWindow, totalSamples)
@@ -282,6 +318,58 @@ import AVKit
   }
 }
 
+// MARK: - Analysis PCM
+
+/// テンポ・キー解析用に、インターリーブの PCM をモノラル 11025Hz に間引く
+/// （Android の MainActivity.MonoDecimator と同じ手順）
+private final class MonoDecimator {
+  static let outRate = 11025
+  private static let maxSeconds = 480
+
+  private var out = [Int16]()
+  private var channels = 0
+  private var ratio = 1.0
+  private var next = 1.0
+  private var frameSum = 0
+  private var ch = 0
+  private var acc = 0.0
+  private var count = 0
+  private var pos = 0
+
+  /// 最初のバッファの形式で一度だけ決める
+  func configure(inRate: Double, channels: Int) {
+    guard self.channels == 0, channels > 0, inRate > 0 else { return }
+    self.channels = channels
+    ratio = inRate / Double(Self.outRate)
+    next = ratio
+    out.reserveCapacity(Self.outRate * Self.maxSeconds)
+  }
+
+  func push(_ sample: Int16) {
+    guard channels > 0 else { return }
+    frameSum += Int(sample)
+    ch += 1
+    if ch < channels { return }
+    acc += Double(frameSum) / Double(channels)
+    frameSum = 0
+    ch = 0
+    count += 1
+    pos += 1
+    if Double(pos) >= next {
+      if out.count < Self.outRate * Self.maxSeconds {
+        out.append(Int16(max(-32768, min(32767, Int(acc / Double(count))))))
+      }
+      acc = 0
+      count = 0
+      next += ratio
+    }
+  }
+
+  func littleEndianBytes() -> Data {
+    out.withUnsafeBufferPointer { Data(buffer: $0) }
+  }
+}
+
 // MARK: - PiP Manager
 
 class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
@@ -299,10 +387,9 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     self.channel = channel
     guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
 
-    // PiP にはアクティブな .playback オーディオセッションが必要
-    let session = AVAudioSession.sharedInstance()
-    try? session.setCategory(.playback, mode: .moviePlayback)
-    try? session.setActive(true)
+    // PiP には .playback のオーディオセッションが要る。
+    // 起動しただけで他のアプリの音を止めないよう、有効にするのは PiP に入るときだけ
+    try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
 
     let layer = AVSampleBufferDisplayLayer()
     layer.videoGravity = .resizeAspect
@@ -338,6 +425,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
 
   /// 診断情報付き enterPiP（デバッグ用）
   func enterPiPWithDiag() -> [String: Any] {
+    try? AVAudioSession.sharedInstance().setActive(true)
     let supported = AVPictureInPictureController.isPictureInPictureSupported()
     let hasController = pipController != nil
     let hasLayer = displayLayer != nil
@@ -423,6 +511,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
           let pip = pipController,
           !pip.isPictureInPictureActive,
           AVPictureInPictureController.isPictureInPictureSupported() else { return }
+    try? AVAudioSession.sharedInstance().setActive(true)
     pip.startPictureInPicture()
   }
 

@@ -32,9 +32,20 @@ class UpdateService {
       AppBoxes.settings.get(SettingsKeys.betaUpdates, defaultValue: false)
           as bool;
 
+  /// アプリ内の更新は APK を配る仕組みなので Android だけ（iOS は手動で入れ直す）
+  static bool get supported => !Platform.isIOS;
+
+  /// CI が iOS のビルドに渡す本当の版（iOS の版番号には `-beta.N` を入れられない）
+  static const _buildVersion = String.fromEnvironment('APP_VERSION');
+
+  /// 画面に出す版
+  static String displayVersion(String platformVersion) =>
+      _buildVersion.isNotEmpty ? _buildVersion : platformVersion;
+
   /// 更新があればダイアログを出す。[manual]（設定から押したとき）は、無いときも結果を知らせる
   static Future<void> checkForUpdate(BuildContext context,
       {bool manual = false}) async {
+    if (!supported) return;
     try {
       final info = await PackageInfo.fromPlatform();
       final current = AppVersion.tryParse(info.version);

@@ -207,7 +207,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () {
-            if (_onVersionTap()) return;
+            if (_onVersionTap() || !UpdateService.supported) return;
             _toast(AppSnackBar.info('最新版を確認中...'));
             UpdateService.checkForUpdate(context, manual: true);
           },
@@ -226,12 +226,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Text(
-                  'v${snap.data?.version ?? '…'}',
+                  'v${UpdateService.displayVersion(snap.data?.version ?? '…')}',
                   style: textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Text('  ·  更新を確認', style: textTheme.labelMedium),
+                if (UpdateService.supported)
+                  Text('  ·  更新を確認', style: textTheme.labelMedium),
               ],
             ),
           ),

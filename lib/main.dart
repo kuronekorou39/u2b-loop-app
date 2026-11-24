@@ -9,6 +9,7 @@ import 'models/loop_item.dart';
 import 'models/playlist.dart' as app;
 import 'models/tag.dart';
 import 'core/storage/app_boxes.dart';
+import 'core/storage/container_paths.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,7 @@ void main() async {
   Hive.registerAdapter(app.PlaylistAdapter());
   Hive.registerAdapter(TagAdapter());
   await AppBoxes.openAll();
+  await ContainerPaths.repair();
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
