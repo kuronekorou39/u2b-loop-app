@@ -107,6 +107,9 @@ class ExportService {
     }
   }
 
+  /// 直前の [muxVideoAudio] が失敗した理由
+  String? lastMuxError;
+
   /// 別々にダウンロードした映像専用/音声専用ファイルを1つのMP4へ結合する
   /// （ネイティブMediaMuxerでremux、再エンコードなし）。高解像度オフライン保存用。
   /// 成功時は true。
@@ -121,8 +124,10 @@ class ExportService {
         'audioPath': audioPath,
         'outputPath': outputPath,
       });
+      lastMuxError = result?['error'] as String?;
       return result?['success'] as bool? ?? false;
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      lastMuxError = e.message;
       return false;
     }
   }

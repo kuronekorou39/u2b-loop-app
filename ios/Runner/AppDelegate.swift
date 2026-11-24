@@ -324,10 +324,15 @@ import AVKit
           failed("エクスポートセッションを作成できません")
           return
         }
-        session.outputURL = output
+        // 出力先の拡張子が .mp4 とは限らないので、いったん .mp4 に書いてから移す
+        let working = output.deletingLastPathComponent()
+          .appendingPathComponent("mux_\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: working) }
+        session.outputURL = working
         session.outputFileType = .mp4
         await runExport(session)
         if session.status == .completed {
+          try FileManager.default.moveItem(at: working, to: output)
           result(["success": true, "outputPath": outputPath])
         } else {
           failed(session.error?.localizedDescription ?? "結合に失敗しました")

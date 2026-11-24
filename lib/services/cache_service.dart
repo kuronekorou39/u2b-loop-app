@@ -206,8 +206,9 @@ class CacheService {
         resolution = vInfo.qualityLabel;
 
         final tmpDir = await getTemporaryDirectory();
-        final tmpV = File('${tmpDir.path}/${id}_v.tmp');
-        final tmpA = File('${tmpDir.path}/${id}_a.tmp');
+        // iOS の AVFoundation は拡張子で形式を見分けるので .mp4 にする
+        final tmpV = File('${tmpDir.path}/${id}_v.mp4');
+        final tmpA = File('${tmpDir.path}/${id}_a.mp4');
         final vBytes = vInfo.size.totalBytes;
         final aBytes = aInfo.size.totalBytes;
         final total = (vBytes + aBytes) > 0 ? (vBytes + aBytes) : 1;
@@ -240,7 +241,8 @@ class CacheService {
               : const OfflineCacheResult(error: '音声のダウンロードに失敗しました');
         }
 
-        final muxOk = await ExportService().muxVideoAudio(
+        final exporter = ExportService();
+        final muxOk = await exporter.muxVideoAudio(
           videoPath: tmpV.path,
           audioPath: audioPath,
           outputPath: videoFile.path,
@@ -249,7 +251,9 @@ class CacheService {
         await _safeDelete(tmpA);
         if (!muxOk) {
           await _safeDelete(videoFile);
-          return const OfflineCacheResult(error: '映像と音声の結合に失敗しました');
+          final reason = exporter.lastMuxError;
+          return OfflineCacheResult(
+              error: '映像と音声の結合に失敗しました${reason == null ? '' : '（$reason）'}');
         }
         onProgress?.call(1.0);
       } else {
