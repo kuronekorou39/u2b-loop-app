@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/loop_item.dart';
 import '../models/loop_state.dart';
 import 'player_provider.dart';
+import '../core/loop/playback_stall_watch.dart';
 import '../core/loop/region_sequence.dart';
 import '../core/storage/app_boxes.dart';
 import 'data_provider.dart';
@@ -82,9 +84,27 @@ class LoopNotifier extends StateNotifier<LoopState> {
       (_) {
         _checkLoop();
         _trackPlayTime();
+        _recoverStall();
       },
     );
     _listenCompleted();
+  }
+
+  final _stallWatch = PlaybackStallWatch();
+
+  /// iOS で再生中のまま止まったら、一時停止と再開で動かし直す
+  void _recoverStall() {
+    if (!Platform.isIOS) return;
+    final player = _ref.read(playerProvider);
+    final s = player.state;
+    if (_stallWatch.shouldKick(
+      position: s.position,
+      active: s.playing && !s.buffering && !s.completed,
+      now: DateTime.now(),
+    )) {
+      debugPrint('[LoopNotifier] 再生が止まっていたので動かし直す');
+      unawaited(player.pause().then((_) => player.play()));
+    }
   }
 
   /// player.stream.completed を直接listenして曲終了を確実に検知

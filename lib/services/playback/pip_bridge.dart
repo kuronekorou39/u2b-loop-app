@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -118,7 +120,11 @@ class PipBridge {
     _channel.setMethodCallHandler((call) async {
       switch (call.method) {
         case 'onPiPChanged':
-          handlers.onPiPChanged?.call(call.arguments as bool);
+          // 映像だけの画面に切り替えるのは、アプリの画面がそのまま小窓に映る Android の都合。
+          // iOS の小窓は別物なので、アプリの画面はそのままにする
+          if (!Platform.isIOS) {
+            handlers.onPiPChanged?.call(call.arguments as bool);
+          }
         case 'onPiPAction':
           final action = PipAction.parse(call.arguments);
           if (action != null) await handlers.onAction?.call(action);

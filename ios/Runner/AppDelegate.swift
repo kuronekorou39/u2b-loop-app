@@ -382,6 +382,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   private var autoPipEnabled = false
   private(set) var isPlaying = false
   private var isPlaylist = false
+  private var lastPoster: UIImage?
 
   func setup(in window: UIWindow, channel: FlutterMethodChannel) {
     self.channel = channel
@@ -462,8 +463,10 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   private func enqueueBlackFrame(width: Int, height: Int) {
     guard let layer = displayLayer else { return }
     var pixelBuffer: CVPixelBuffer?
+    // 小窓の表示層は IOSurface 付きのバッファでないと真っ黒になる
+    let attrs: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any]()]
     CVPixelBufferCreate(kCFAllocatorDefault, width, height,
-                        kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+                        kCVPixelFormatType_32BGRA, attrs as CFDictionary, &pixelBuffer)
     guard let pb = pixelBuffer else { return }
 
     // ゼロクリア（黒）
@@ -491,6 +494,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
       sampleBufferOut: &sampleBuffer
     )
     guard let buffer = sampleBuffer else { return }
+    markDisplayImmediately(buffer)
     layer.flush()
     layer.enqueue(buffer)
   }
@@ -528,7 +532,20 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     }
   }
 
+  /// 時刻を待たずにすぐ表示させる（静止画なので再生の時計が無い）
+  private func markDisplayImmediately(_ buffer: CMSampleBuffer) {
+    guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
+      buffer, createIfNecessary: true), CFArrayGetCount(attachments) > 0 else { return }
+    let dict = unsafeBitCast(
+      CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+    CFDictionarySetValue(
+      dict,
+      Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+      Unmanaged.passUnretained(kCFBooleanTrue!).toOpaque())
+  }
+
   private func enqueuePosterFrame(_ image: UIImage) {
+    lastPoster = image
     guard let layer = displayLayer,
           let pixelBuffer = pixelBufferFromImage(image) else { return }
 
@@ -558,6 +575,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     )
     guard let buffer = sampleBuffer else { return }
 
+    markDisplayImmediately(buffer)
     layer.flush()
     layer.enqueue(buffer)
   }
@@ -571,6 +589,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     let attrs: [String: Any] = [
       kCVPixelBufferCGImageCompatibilityKey as String: true,
       kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+      kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
     ]
     let status = CVPixelBufferCreate(
       kCFAllocatorDefault, width, height,
@@ -601,6 +620,12 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     _ controller: AVPictureInPictureController
   ) {
     channel?.invokeMethod("onPiPChanged", arguments: true)
+  }
+
+  func pictureInPictureControllerDidStartPictureInPicture(
+    _ controller: AVPictureInPictureController
+  ) {
+    if let image = lastPoster { enqueuePosterFrame(image) }
   }
 
   func pictureInPictureControllerDidStopPictureInPicture(
