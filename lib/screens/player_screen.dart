@@ -1571,7 +1571,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? _toggleRegionChain
           : null,
       // 編集・区間追加は全画面では出さない（押すと全画面が解除されて編集の板が出ていた）
-      onExport: ({required fullTrack}) => _showExportDialog(fullTrack: fullTrack),
+      onExport: SaveFlow.canSave(_currentItem)
+          ? ({required fullTrack}) => _showExportDialog(fullTrack: fullTrack)
+          : null,
       onSelectAll: _clearRegion,
       onSelect: _selectRegion,
       onMenu: _showRegionMenu,
@@ -1933,8 +1935,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     SingleMoreSheet.show(
       context,
       SingleMoreSheet(
-        onExport: () => _showExportDialog(
-            fullTrack: !ref.read(loopProvider).hasBothPoints),
+        onExport: SaveFlow.canSave(_currentItem)
+            ? () => _showExportDialog(
+                fullTrack: !ref.read(loopProvider).hasBothPoints)
+            : null,
         hideVideo: _hideVideo,
         onHideVideoChanged: (v) => setState(() => _hideVideo = v),
       ),
@@ -1989,7 +1993,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _startPlaylistAbEdit();
         },
         onDjMix: () => DjMixSheet.show(context),
-        onSave: _showExportDialog,
+        onSave: SaveFlow.canSave(_currentItem) ? _showExportDialog : null,
         hideVideo: _hideVideo,
         onHideVideoChanged: (v) => setState(() => _hideVideo = v),
       ),

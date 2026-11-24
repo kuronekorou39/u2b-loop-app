@@ -588,7 +588,8 @@ class FullscreenRegionDrawer extends StatelessWidget {
   final VoidCallback? onEdit;
 
   /// 書き出し。A・B が揃っていなければ全体として呼ぶ
-  final void Function({required bool fullTrack}) onExport;
+  /// null なら書き出しボタンを出さない（ストア用の YouTube の曲）
+  final void Function({required bool fullTrack})? onExport;
   final VoidCallback onSelectAll;
   final void Function(int index) onSelect;
 
@@ -631,12 +632,13 @@ class FullscreenRegionDrawer extends StatelessWidget {
                       size: AppIconSizes.sm, color: dim),
                   label: const Text('編集'),
                 ),
-              IconButton(
-                onPressed: () => onExport(fullTrack: !loop.hasBothPoints),
-                icon: const Icon(Icons.file_download_outlined,
-                    size: AppIconSizes.ml),
-                tooltip: '書き出し',
-              ),
+              if (onExport case final export?)
+                IconButton(
+                  onPressed: () => export(fullTrack: !loop.hasBothPoints),
+                  icon: const Icon(Icons.file_download_outlined,
+                      size: AppIconSizes.ml),
+                  tooltip: '書き出し',
+                ),
             ],
           ),
         ),

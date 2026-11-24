@@ -108,11 +108,20 @@ jobs:
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r u2b-loop-ios-${{ steps.version.outputs.tag }}.ipa Payload
+      # ストア用（YouTube の曲の保存・書き出しとデバッグモードを外した版。lib/core/build_flavor.dart）
+      - name: Build iOS store variant (unsigned)
+        run: |
+          flutter build ios --release --no-codesign --dart-define=APP_VERSION=${GITHUB_REF_NAME#v} --dart-define=STORE_BUILD=true
+          rm -rf Payload && mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r u2b-loop-ios-store-${{ steps.version.outputs.tag }}.ipa Payload
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: u2b-loop-ios-${{ steps.version.outputs.tag }}.ipa
+          path: |
+            u2b-loop-ios-${{ steps.version.outputs.tag }}.ipa
+            u2b-loop-ios-store-${{ steps.version.outputs.tag }}.ipa
 
   release:
     needs: [build-android, build-ios]
@@ -149,3 +158,4 @@ jobs:
           files: |
             u2b-loop-${{ steps.version.outputs.tag }}.apk
             u2b-loop-ios-${{ steps.version.outputs.tag }}.ipa
+            u2b-loop-ios-store-${{ steps.version.outputs.tag }}.ipa

@@ -440,11 +440,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 label: 'プレイリストに追加',
                 onTap: () => _showAddToPlaylist(item),
               ),
-              SheetAction(
-                icon: Icons.download_outlined,
-                label: '保存・書き出し',
-                onTap: () => _saveItem(item),
-              ),
+              if (SaveFlow.canSave(item))
+                SheetAction(
+                  icon: Icons.download_outlined,
+                  label: '保存・書き出し',
+                  onTap: () => _saveItem(item),
+                ),
               if (item.isCached)
                 SheetAction(
                   icon: Icons.delete_sweep_outlined,
@@ -537,6 +538,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       onPressed: () => _openPlayer(item),
                     ),
                   ),
+                  if (SaveFlow.canSave(item) || item.isCached) ...[
                   const SizedBox(width: AppSpacing.md),
                   GlassPill(
                     active: item.isCached,
@@ -552,6 +554,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       color: item.isCached ? AppTheme.accentGreen : null,
                     ),
                   ),
+                  ],
                   if (ytUrl != null) ...[
                     const SizedBox(width: AppSpacing.md),
                     GlassPill(
@@ -796,12 +799,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               '  B ${TimeUtils.formatShortMs(region.pointBMs)}',
           onTap: () => _editRegionTimes(item, index),
         ),
-        SheetAction(
-          icon: Icons.file_download_outlined,
-          label: '保存・書き出し',
-          subtitle: 'この区間を音声 / 動画で端末に書き出す',
-          onTap: () => _exportRegion(item, index),
-        ),
+        if (SaveFlow.canSave(item))
+          SheetAction(
+            icon: Icons.file_download_outlined,
+            label: '保存・書き出し',
+            subtitle: 'この区間を音声 / 動画で端末に書き出す',
+            onTap: () => _exportRegion(item, index),
+          ),
         SheetAction(
           icon: Icons.delete_outline,
           label: '削除',

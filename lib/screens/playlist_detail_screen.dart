@@ -310,8 +310,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
   /// 再生に含める曲をまとめて保存（曲全体）。アプリ内に保存済みの曲は飛ばす
   Future<void> _saveAll(Playlist pl, List<LoopItem> items) async {
-    final targets =
-        items.where((i) => !pl.disabledItemIds.contains(i.id)).toList();
+    final targets = items
+        .where((i) => !pl.disabledItemIds.contains(i.id) && SaveFlow.canSave(i))
+        .toList();
     final choice = await SaveFlow.showSheet(context,
         title: '${pl.name}（${targets.length} 曲）を保存',
         offline: targets.any(SaveFlow.canSaveOffline));
@@ -459,12 +460,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         label: '共有',
                         onTap: () => _sharePlaylist(pl, items),
                       ),
-                      SheetAction(
-                        icon: Icons.download_outlined,
-                        label: 'まとめて保存',
-                        subtitle: 'アプリ内に保存 / 端末に書き出し',
-                        onTap: () => _saveAll(pl, items),
-                      ),
+                      if (items.any(SaveFlow.canSave))
+                        SheetAction(
+                          icon: Icons.download_outlined,
+                          label: 'まとめて保存',
+                          subtitle: 'アプリ内に保存 / 端末に書き出し',
+                          onTap: () => _saveAll(pl, items),
+                        ),
                       SheetAction(
                         icon: Icons.music_note,
                         label: 'テンポ/キーをまとめて解析',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../core/build_flavor.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_snack_bar.dart';
@@ -73,6 +74,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// アップデートの札を続けて 5 回押すとデバッグモード（トップに「デバッグ」のボタンが出る）
   /// 戻り値はデバッグモードに入ったか（その回は更新確認の通知で上書きしない）
   bool _onVersionTap() {
+    // ストア用にはデバッグモードを入れない（隠れた操作で開く画面を残さない）
+    if (BuildFlavor.store) return false;
     _versionTapCount++;
     if (_versionTapCount < 5) return false;
     _versionTapCount = 0;
@@ -107,7 +110,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         label: DataSettingsScreen.title,
         onTap: () => _push(const DataSettingsScreen()),
       ),
-      if (ref.watch(debugModeProvider))
+      if (!BuildFlavor.store && ref.watch(debugModeProvider))
         MoreTile(
           icon: Icons.bug_report_outlined,
           label: 'デバッグ',

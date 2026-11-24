@@ -15,13 +15,13 @@ import 'player_more_sheet.dart';
 class SingleMoreSheet extends ConsumerStatefulWidget {
   const SingleMoreSheet({
     super.key,
-    required this.onExport,
+    this.onExport,
     required this.hideVideo,
     required this.onHideVideoChanged,
   });
 
-  /// 書き出し（区間があれば区間、無ければ全体）
-  final VoidCallback onExport;
+  /// 書き出し（区間があれば区間、無ければ全体）。null ならタイルを出さない（ストア用の YouTube の曲）
+  final VoidCallback? onExport;
   final bool hideVideo;
   final ValueChanged<bool> onHideVideoChanged;
 
@@ -85,15 +85,16 @@ class _SingleMoreSheetState extends ConsumerState<SingleMoreSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
             MoreTileGrid(tiles: [
-              MoreTile(
-                icon: Icons.file_download_outlined,
-                label: loop.hasBothPoints ? '区間を書き出し' : '全体を書き出し',
-                enabled: hasSource,
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onExport();
-                },
-              ),
+              if (widget.onExport case final export?)
+                MoreTile(
+                  icon: Icons.file_download_outlined,
+                  label: loop.hasBothPoints ? '区間を書き出し' : '全体を書き出し',
+                  enabled: hasSource,
+                  onTap: () {
+                    Navigator.pop(context);
+                    export();
+                  },
+                ),
               MoreTile(
                 icon: _hideVideo
                     ? Icons.videocam_off_outlined

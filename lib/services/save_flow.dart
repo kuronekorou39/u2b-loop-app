@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/build_flavor.dart';
 import '../core/storage/app_boxes.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_sheets.dart';
@@ -62,6 +63,9 @@ class SaveChoice {
 /// （音声/MP4・固定 4 段）で、入口も選べることも画面ごとに違っていた
 class SaveFlow {
   SaveFlow._();
+
+  /// この曲で保存・書き出しの入口を出すか（ストア用の YouTube の曲は出さない。[BuildFlavor]）
+  static bool canSave(LoopItem item) => !(BuildFlavor.store && item.isYouTube);
 
   /// 曲全体を書き出すときの終点（長さが分からない曲。ネイティブは末尾で止まる）
   static const _unknownEndMs = 24 * 60 * 60 * 1000;
