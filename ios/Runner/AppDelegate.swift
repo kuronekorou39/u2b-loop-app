@@ -585,13 +585,14 @@ private final class SamplePump {
   /// YouTube の映像専用ファイルは最後のフレームの長さが曲全体ぶんになっていることがあり、
   /// そのまま書くと動画の長さが 2 倍になる。1 秒を超える長さは、ふつうのフレームの長さに直す
   private func withSaneTiming(_ sample: CMSampleBuffer) -> CMSampleBuffer? {
-    var count = 0
-    CMSampleBufferGetSampleTimingInfoArray(
-      sample, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count)
-    guard count > 0 else { return sample }
-    var timing = [CMSampleTimingInfo](repeating: .invalid, count: count)
-    guard CMSampleBufferGetSampleTimingInfoArray(
-      sample, entryCount: count, arrayToFill: &timing, entriesNeededOut: &count) == noErr else {
+    samples += 1
+    guard var timing = try? sample.sampleTimingInfos(), !timing.isEmpty else {
+      // 時刻情報が読めないときは、表示時刻だけで終わりを見積もる
+      timingMisses += 1
+      let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+      if pts.isValid {
+        end = max(end, pts + (usualDuration.isValid ? usualDuration : .zero))
+      }
       return sample
     }
     var changed = false
@@ -603,31 +604,34 @@ private final class SamplePump {
         // 直す長さが分からなければ長さを外し、書き手に前後の時刻から決めさせる
         timing[i].duration = usualDuration.isValid ? usualDuration : .invalid
         changed = true
+        fixed += 1
       }
     }
     var result = sample
     if changed {
-      var copy: CMSampleBuffer?
-      guard CMSampleBufferCreateCopyWithNewTiming(
-        allocator: kCFAllocatorDefault, sampleBuffer: sample,
-        sampleTimingEntryCount: count, sampleTimingArray: &timing,
-        sampleBufferOut: &copy) == noErr, let copied = copy else { return nil }
+      guard let copied = try? CMSampleBuffer(copying: sample, withNewTiming: timing) else {
+        return nil
+      }
       result = copied
     }
-    let sampleCount = CMSampleBufferGetNumSamples(result)
-    if let last = timing.last, last.presentationTimeStamp.isValid {
-      if !last.duration.isValid {
-        end = max(end, last.presentationTimeStamp)
-        return result
-      }
-      // 1 つの時刻情報を複数サンプルで共有しているときは、その分だけ進める
-      let span = count == 1 && sampleCount > 1
-        ? CMTimeMultiply(last.duration, multiplier: Int32(sampleCount))
-        : last.duration
-      end = max(end, last.presentationTimeStamp + span)
+    // 1 つの時刻情報を複数サンプルで共有しているときは、その分だけ進める
+    let shared = timing.count == 1 ? max(CMSampleBufferGetNumSamples(result), 1) : 1
+    for t in timing where t.presentationTimeStamp.isValid {
+      let duration = t.duration.isValid
+        ? CMTimeMultiply(t.duration, multiplier: Int32(shared))
+        : (usualDuration.isValid ? usualDuration : .zero)
+      end = max(end, t.presentationTimeStamp + duration)
     }
     return result
   }
+
+  /// 端末のログで確かめるための数
+  var summary: String {
+    "samples=\(samples) fixed=\(fixed) timingMisses=\(timingMisses) end=\(end.seconds)"
+  }
+  private var samples = 0
+  private var fixed = 0
+  private var timingMisses = 0
 }
 
 /// 映像ファイルの映像と音声ファイルの音声を再エンコードせずに 1 つの MP4 にする
@@ -697,7 +701,13 @@ private func remuxVideoAudio(video: URL, audio: URL, output: URL) async throws {
     writer.cancelWriting()
     throw cause ?? MediaError.noTrack
   }
-  writer.endSession(atSourceTime: pumps.map(\.end).max() ?? .zero)
+  for (i, pump) in pumps.enumerated() {
+    NSLog("[U2BLoop mux] track%d %@", i, pump.summary)
+  }
+  // 0 で閉じると書き手は元の長さのまま書くので、終わりが分からないときは呼ばない
+  if let sessionEnd = pumps.map(\.end).max(), sessionEnd > .zero {
+    writer.endSession(atSourceTime: sessionEnd)
+  }
   await writer.finishWriting()
   if writer.status != .completed { throw writer.error ?? MediaError.noTrack }
 }
