@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../core/native_channels.dart';
+import '../core/ui/share_origin.dart';
 
 enum ExportFormat { mp4, audioOnly }
 
@@ -143,6 +144,7 @@ class ExportService {
     await Share.shareXFiles(
       [XFile(outputPath, mimeType: mime)],
       subject: subject,
+      sharePositionOrigin: shareOrigin(),
     );
   }
 }

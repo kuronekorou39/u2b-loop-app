@@ -12,6 +12,9 @@ import AVKit
   private var waveformChannel: FlutterMethodChannel?
   private var pipChannel: FlutterMethodChannel?
   private weak var pipWindow: UIWindow?
+  private var regionExport: AVAssetExportSession?
+  private var regionExportBusy = false
+  private var regionExportCancelled = false
 
   override func application(
     _ application: UIApplication,
@@ -33,9 +36,17 @@ import AVKit
     let ec = FlutterMethodChannel(name: "com.u2bloop/export", binaryMessenger: messenger)
     self.exportChannel = ec
     ec.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
-      if call.method == "exportRegion" {
+      switch call.method {
+      case "exportRegion":
         self?.handleExportRegion(call: call, result: result)
-      } else {
+      case "exportRegions":
+        self?.handleExportRegions(call: call, result: result)
+      case "cancelExportRegions":
+        self?.cancelRegionExport()
+        result(nil)
+      case "muxVideoAudio":
+        self?.handleMuxVideoAudio(call: call, result: result)
+      default:
         result(FlutterMethodNotImplemented)
       }
     }
@@ -56,6 +67,27 @@ import AVKit
       case "cancelExtraction":
         self?.cancelExtraction()
         result(nil as Any?)
+      case "decodeSegment":
+        // DJ の演出の材料。波形の抽出とは別に動く（中止しない）
+        guard let args = call.arguments as? [String: Any],
+              let url = args["url"] as? String,
+              let startMs = (args["startMs"] as? NSNumber)?.int64Value,
+              let endMs = (args["endMs"] as? NSNumber)?.int64Value,
+              startMs >= 0, endMs > startMs, endMs - startMs <= segmentMaxMs else {
+          result(FlutterError(code: "INVALID", message: "bad segment", details: nil))
+          return
+        }
+        Task.detached {
+          do {
+            let segment = try await decodeAudioSegment(url: url, startMs: startMs, endMs: endMs)
+            await MainActor.run { result(segment) }
+          } catch {
+            await MainActor.run {
+              result(FlutterError(
+                code: "DECODE_ERROR", message: error.localizedDescription, details: nil))
+            }
+          }
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -133,35 +165,10 @@ import AVKit
     let audioOnly = args["audioOnly"] as? Bool ?? false
     let title = args["title"] as? String ?? "export"
 
-    // Sanitize filename
-    let safeTitle = String(
-      title.replacingOccurrences(of: "[^a-zA-Z0-9\\p{Han}\\p{Hiragana}\\p{Katakana}_ -]",
-                                  with: "",
-                                  options: .regularExpression)
-        .prefix(50)
-    )
-    let ext = audioOnly ? "m4a" : "mp4"
-    let outputPath = NSTemporaryDirectory() + "\(safeTitle).\(ext)"
-
-    // Remove existing output file
-    try? FileManager.default.removeItem(atPath: outputPath)
-
-    // Build asset URL
-    let assetURL: URL
-    if inputUri.hasPrefix("http://") || inputUri.hasPrefix("https://") {
-      guard let url = URL(string: inputUri) else {
-        result(["success": false, "error": "無効なURLです"])
-        return
-      }
-      assetURL = url
-    } else if inputUri.hasPrefix("file://") {
-      guard let url = URL(string: inputUri) else {
-        result(["success": false, "error": "無効なファイルパスです"])
-        return
-      }
-      assetURL = url
-    } else {
-      assetURL = URL(fileURLWithPath: inputUri)
+    let outputPath = exportOutputPath(title: title, audioOnly: audioOnly)
+    guard let assetURL = mediaURL(inputUri) else {
+      result(["success": false, "error": "無効な入力です"])
+      return
     }
 
     let asset = AVURLAsset(url: assetURL)
@@ -196,6 +203,137 @@ import AVKit
         default:
           result(["success": false, "error": "エクスポート失敗 (status: \(exportSession.status.rawValue))"])
         }
+      }
+    }
+  }
+
+  // MARK: - Export Regions / Mux
+
+  /// 書き出し先（同じ名前の前回の分は消す）
+  private func exportOutputPath(title: String, audioOnly: Bool) -> String {
+    let cleaned = String(
+      title.replacingOccurrences(of: "[^a-zA-Z0-9\\p{Han}\\p{Hiragana}\\p{Katakana}_ -]",
+                                  with: "",
+                                  options: .regularExpression)
+        .prefix(50)
+    )
+    let name = cleaned.trimmingCharacters(in: .whitespaces).isEmpty ? "export" : cleaned
+    let path = NSTemporaryDirectory() + "\(name).\(audioOnly ? "m4a" : "mp4")"
+    try? FileManager.default.removeItem(atPath: path)
+    return path
+  }
+
+  /// 複数の区間を 1 本につなぐ。区間の端で正確に切るため再エンコードする
+  private func handleExportRegions(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let inputUri = args["inputUri"] as? String,
+          let url = mediaURL(inputUri),
+          let starts = args["startsMs"] as? [NSNumber],
+          let ends = args["endsMs"] as? [NSNumber],
+          !starts.isEmpty, starts.count == ends.count else {
+      result(FlutterError(code: "INVALID", message: "Missing parameters", details: nil))
+      return
+    }
+    guard !regionExportBusy else {
+      result(["success": false, "error": "ほかの書き出しの途中です"])
+      return
+    }
+    regionExportBusy = true
+    regionExportCancelled = false
+    let audioOnly = args["audioOnly"] as? Bool ?? false
+    let outputPath = exportOutputPath(
+      title: args["title"] as? String ?? "export", audioOnly: audioOnly)
+    let ranges = zip(starts, ends).map { ($0.int64Value, $1.int64Value) }
+
+    Task { @MainActor [weak self] in
+      let finish: ([String: Any]) -> Void = { value in
+        self?.regionExport = nil
+        self?.regionExportBusy = false
+        result(value)
+      }
+      do {
+        let composition = try await buildRegionComposition(
+          url: url, ranges: ranges, audioOnly: audioOnly)
+        if self?.regionExportCancelled ?? true {
+          finish(["success": false, "cancelled": true])
+          return
+        }
+        let preset = audioOnly ? AVAssetExportPresetAppleM4A : AVAssetExportPresetHighestQuality
+        guard let session = AVAssetExportSession(asset: composition, presetName: preset) else {
+          finish(["success": false, "error": "エクスポートセッションを作成できません"])
+          return
+        }
+        session.outputURL = URL(fileURLWithPath: outputPath)
+        session.outputFileType = audioOnly ? .m4a : .mp4
+        self?.regionExport = session
+
+        let progress = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+          DispatchQueue.main.async {
+            self?.exportChannel?.invokeMethod(
+              "exportProgress", arguments: Int(session.progress * 100))
+          }
+        }
+        await runExport(session)
+        progress.invalidate()
+
+        switch session.status {
+        case .completed:
+          finish(["success": true, "outputPath": outputPath])
+        case .cancelled:
+          try? FileManager.default.removeItem(atPath: outputPath)
+          finish(["success": false, "cancelled": true])
+        default:
+          try? FileManager.default.removeItem(atPath: outputPath)
+          finish(["success": false, "error": session.error?.localizedDescription ?? "不明なエラー"])
+        }
+      } catch {
+        finish(["success": false, "error": error.localizedDescription])
+      }
+    }
+  }
+
+  private func cancelRegionExport() {
+    regionExportCancelled = true
+    regionExport?.cancelExport()
+  }
+
+  /// 別々に落とした映像専用・音声専用のファイルを 1 つの MP4 にする（再エンコードなし）
+  private func handleMuxVideoAudio(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let videoPath = args["videoPath"] as? String,
+          let audioPath = args["audioPath"] as? String,
+          let outputPath = args["outputPath"] as? String else {
+      result(FlutterError(code: "INVALID", message: "Missing parameters", details: nil))
+      return
+    }
+    Task { @MainActor in
+      let failed: (String) -> Void = { message in
+        try? FileManager.default.removeItem(atPath: outputPath)
+        result(["success": false, "error": message])
+      }
+      do {
+        let output = URL(fileURLWithPath: outputPath)
+        try FileManager.default.createDirectory(
+          at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: output)
+
+        let composition = try await buildMuxComposition(
+          video: URL(fileURLWithPath: videoPath), audio: URL(fileURLWithPath: audioPath))
+        guard let session = AVAssetExportSession(
+          asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+          failed("エクスポートセッションを作成できません")
+          return
+        }
+        session.outputURL = output
+        session.outputFileType = .mp4
+        await runExport(session)
+        if session.status == .completed {
+          result(["success": true, "outputPath": outputPath])
+        } else {
+          failed(session.error?.localizedDescription ?? "結合に失敗しました")
+        }
+      } catch {
+        failed(error.localizedDescription)
       }
     }
   }
@@ -318,6 +456,167 @@ import AVKit
   }
 }
 
+// MARK: - Media helpers
+
+/// decodeSegment で一度に取り出せる長さ（Android と同じ）
+private let segmentMaxMs: Int64 = 15_000
+
+private enum MediaError: LocalizedError {
+  case noTrack
+  case emptyRange
+
+  var errorDescription: String? {
+    switch self {
+    case .noTrack: return "書き出せるトラックがありません"
+    case .emptyRange: return "書き出す区間がありません"
+    }
+  }
+}
+
+/// パス・file:// ・http(s) のどれでも URL にする
+private func mediaURL(_ uri: String) -> URL? {
+  if uri.hasPrefix("http://") || uri.hasPrefix("https://") || uri.hasPrefix("file://") {
+    return URL(string: uri)
+  }
+  return URL(fileURLWithPath: uri)
+}
+
+private func milliseconds(_ ms: Int64) -> CMTime {
+  CMTime(value: CMTimeValue(ms), timescale: 1000)
+}
+
+private func runExport(_ session: AVAssetExportSession) async {
+  await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    session.exportAsynchronously { continuation.resume() }
+  }
+}
+
+/// [ranges] を順につないだコンポジション
+private func buildRegionComposition(
+  url: URL, ranges: [(Int64, Int64)], audioOnly: Bool
+) async throws -> AVMutableComposition {
+  let asset = AVURLAsset(url: url)
+  var sourceVideo: AVAssetTrack?
+  if !audioOnly { sourceVideo = try await asset.loadTracks(withMediaType: .video).first }
+  let sourceAudio = try await asset.loadTracks(withMediaType: .audio).first
+  guard sourceVideo != nil || sourceAudio != nil else { throw MediaError.noTrack }
+
+  let composition = AVMutableComposition()
+  var video: AVMutableCompositionTrack?
+  var videoRange = CMTimeRange.zero
+  if let source = sourceVideo {
+    video = composition.addMutableTrack(
+      withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+    video?.preferredTransform = try await source.load(.preferredTransform)
+    videoRange = try await source.load(.timeRange)
+  }
+  var audio: AVMutableCompositionTrack?
+  var audioRange = CMTimeRange.zero
+  if let source = sourceAudio {
+    audio = composition.addMutableTrack(
+      withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+    audioRange = try await source.load(.timeRange)
+  }
+
+  let whole = try await asset.load(.duration)
+  var cursor = CMTime.zero
+  for (startMs, endMs) in ranges {
+    let range = CMTimeRange(start: milliseconds(startMs), end: min(milliseconds(endMs), whole))
+    guard range.duration > .zero else { continue }
+    if let source = sourceVideo, let track = video {
+      let part = range.intersection(videoRange)
+      if part.duration > .zero { try track.insertTimeRange(part, of: source, at: cursor) }
+    }
+    if let source = sourceAudio, let track = audio {
+      let part = range.intersection(audioRange)
+      if part.duration > .zero {
+        try track.insertTimeRange(
+          part, of: source, at: cursor + (part.start - range.start))
+      }
+    }
+    cursor = cursor + range.duration
+  }
+  guard cursor > .zero else { throw MediaError.emptyRange }
+  return composition
+}
+
+/// 映像ファイルの映像と音声ファイルの音声を重ねたコンポジション
+private func buildMuxComposition(video: URL, audio: URL) async throws -> AVMutableComposition {
+  let videoAsset = AVURLAsset(url: video)
+  guard let sourceVideo = try await videoAsset.loadTracks(withMediaType: .video).first else {
+    throw MediaError.noTrack
+  }
+  let composition = AVMutableComposition()
+  guard let videoTrack = composition.addMutableTrack(
+    withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+    throw MediaError.noTrack
+  }
+  videoTrack.preferredTransform = try await sourceVideo.load(.preferredTransform)
+  try videoTrack.insertTimeRange(
+    try await sourceVideo.load(.timeRange), of: sourceVideo, at: .zero)
+
+  let audioAsset = AVURLAsset(url: audio)
+  if let sourceAudio = try await audioAsset.loadTracks(withMediaType: .audio).first,
+     let audioTrack = composition.addMutableTrack(
+       withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+    try audioTrack.insertTimeRange(
+      try await sourceAudio.load(.timeRange), of: sourceAudio, at: .zero)
+  }
+  return composition
+}
+
+/// 曲の [startMs, endMs) を、元のサンプルレート・チャンネル数の 16bit PCM で返す
+private func decodeAudioSegment(url: String, startMs: Int64, endMs: Int64) async throws
+  -> [String: Any] {
+  guard let assetURL = mediaURL(url) else { return ["pcm": NSNull()] }
+  let asset = AVURLAsset(url: assetURL)
+  guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
+    return ["pcm": NSNull()]
+  }
+  let reader = try AVAssetReader(asset: asset)
+  reader.timeRange = CMTimeRange(start: milliseconds(startMs), end: milliseconds(endMs))
+  let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+    AVFormatIDKey: kAudioFormatLinearPCM,
+    AVLinearPCMBitDepthKey: 16,
+    AVLinearPCMIsFloatKey: false,
+    AVLinearPCMIsBigEndianKey: false,
+    AVLinearPCMIsNonInterleaved: false,
+  ])
+  reader.add(output)
+  guard reader.startReading() else {
+    throw reader.error ?? MediaError.noTrack
+  }
+  defer { reader.cancelReading() }
+
+  var pcm = Data()
+  var sampleRate = 0
+  var channels = 0
+  while reader.status == .reading, let buffer = output.copyNextSampleBuffer() {
+    if sampleRate == 0,
+       let format = CMSampleBufferGetFormatDescription(buffer),
+       let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee {
+      sampleRate = Int(asbd.mSampleRate)
+      channels = Int(asbd.mChannelsPerFrame)
+    }
+    guard let block = CMSampleBufferGetDataBuffer(buffer) else { continue }
+    let length = CMBlockBufferGetDataLength(block)
+    guard length > 0 else { continue }
+    var chunk = Data(count: length)
+    let status = chunk.withUnsafeMutableBytes { ptr in
+      CMBlockBufferCopyDataBytes(
+        block, atOffset: 0, dataLength: length, destination: ptr.baseAddress!)
+    }
+    if status == kCMBlockBufferNoErr { pcm.append(chunk) }
+  }
+  if reader.status == .failed { throw reader.error ?? MediaError.noTrack }
+  guard !pcm.isEmpty, sampleRate > 0, channels > 0 else { return ["pcm": NSNull()] }
+  return [
+    "pcm": FlutterStandardTypedData(bytes: pcm),
+    "sampleRate": sampleRate,
+    "channels": channels,
+  ]
+}
+
 // MARK: - Analysis PCM
 
 /// テンポ・キー解析用に、インターリーブの PCM をモノラル 11025Hz に間引く
@@ -398,6 +697,8 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
 
     // PiP には view hierarchy に追加された layer が必要（非表示でOKだがサイズは必要）
     let view = UIView(frame: CGRect(x: -1, y: -1, width: 1, height: 1))
+    // 切り抜かないと、小窓を閉じた後も絵がアプリの左上に残る
+    view.clipsToBounds = true
     view.layer.addSublayer(layer)
     layer.frame = CGRect(x: 0, y: 0, width: 300, height: 169)
     window.rootViewController?.view.addSubview(view)

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/ui/share_origin.dart';
 import '../core/constants.dart';
 import '../core/theme/app_theme.dart';
 import '../core/ui/app_sheets.dart';
@@ -84,7 +85,7 @@ class SharePlaylistPopup extends StatelessWidget {
               label: '送る',
               onTap: () {
                 Navigator.pop(context);
-                Share.share(url);
+                Share.share(url, sharePositionOrigin: shareOrigin());
               },
             ),
             MoreTile(
