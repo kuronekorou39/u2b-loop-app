@@ -25,6 +25,10 @@ import AVKit
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    // media_kit が映像のテクスチャを登録する前に、登録を見張る（PiP の小窓に映像を流すため）
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "U2BLoopTextures") {
+      PiPFrameSource.hook(registry: registrar.textures())
+    }
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     // Scene ベースのライフサイクルでは didFinishLaunchingWithOptions 時点で
@@ -98,6 +102,25 @@ import AVKit
     let pc = FlutterMethodChannel(name: "com.u2bloop/pip", binaryMessenger: messenger)
     self.pipChannel = pc
     pc.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
+      let args = call.arguments as? [String: Any] ?? [:]
+      // 映像の出どころと位置は、PiP の準備より先に届いても覚えておく
+      switch call.method {
+      case "setPiPVideoTexture":
+        PiPFrameSource.activeTextureId = (args["textureId"] as? NSNumber)?.int64Value
+        result(true)
+        return
+      case "setPiPSourceRect":
+        PiPFrameSource.sourceRect = CGRect(
+          x: (args["x"] as? NSNumber)?.doubleValue ?? 0,
+          y: (args["y"] as? NSNumber)?.doubleValue ?? 0,
+          width: (args["width"] as? NSNumber)?.doubleValue ?? 0,
+          height: (args["height"] as? NSNumber)?.doubleValue ?? 0)
+        self?.pipManager?.applySourceRect()
+        result(true)
+        return
+      default:
+        break
+      }
       guard let manager = self?.pipManager else {
         result(false)
         return
@@ -790,14 +813,22 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     layer.videoGravity = .resizeAspect
     self.displayLayer = layer
 
-    // PiP には view hierarchy に追加された layer が必要（非表示でOKだがサイズは必要）
+    // PiP には view hierarchy に追加された layer が要る。iOS はこの layer の位置から小窓へ縮め、
+    // 戻るときはこの位置へ広げるので、再生画面の動画と同じ位置・大きさに置く（applySourceRect）。
+    // アプリの画面（Flutter）の裏に置くので、ふだんは見えない
     let view = UIView(frame: CGRect(x: -1, y: -1, width: 1, height: 1))
     // 切り抜かないと、小窓を閉じた後も絵がアプリの左上に残る
     view.clipsToBounds = true
+    view.isUserInteractionEnabled = false
     view.layer.addSublayer(layer)
     layer.frame = CGRect(x: 0, y: 0, width: 300, height: 169)
-    window.rootViewController?.view.addSubview(view)
+    if let root = window.rootViewController?.view {
+      window.insertSubview(view, belowSubview: root)
+    } else {
+      window.addSubview(view)
+    }
     self.pipView = view
+    applySourceRect()
 
     // デフォルトの黒フレームを投入（サムネイル未ロード時のフォールバック）
     enqueueBlackFrame(width: 300, height: 169)
@@ -892,6 +923,50 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     guard let buffer = sampleBuffer else { return }
     markDisplayImmediately(buffer)
     layer.flush()
+    layer.enqueue(buffer)
+  }
+
+  /// 再生画面の動画の位置に合わせる（まだ届いていなければ今のまま）
+  func applySourceRect() {
+    guard let rect = PiPFrameSource.sourceRect, rect.width > 1, rect.height > 1,
+          let view = pipView, let layer = displayLayer else { return }
+    view.frame = rect
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layer.frame = view.bounds
+    CATransaction.commit()
+  }
+
+  // MARK: - 小窓に映像を流す（試作）
+
+  private var frameTimer: DispatchSourceTimer?
+  private var lastFrame: CVPixelBuffer?
+
+  /// PiP の間、鳴っているプレイヤーの映像を 30fps で小窓に流す。取れなければサムネのまま
+  private func startFramePump() {
+    stopFramePump()
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(deadline: .now(), repeating: .milliseconds(33))
+    timer.setEventHandler { [weak self] in self?.pumpFrame() }
+    timer.resume()
+    frameTimer = timer
+  }
+
+  private func stopFramePump() {
+    frameTimer?.cancel()
+    frameTimer = nil
+    lastFrame = nil
+  }
+
+  private func pumpFrame() {
+    guard let layer = displayLayer,
+          let frame = PiPFrameSource.currentFrame() else { return }
+    // 止まっている間は同じバッファが返る。積み直さない
+    if let last = lastFrame, last === frame { return }
+    guard let buffer = PiPFrameSource.sampleBuffer(for: frame) else { return }
+    lastFrame = frame
+    markDisplayImmediately(buffer)
+    if layer.status == .failed { layer.flush() }
     layer.enqueue(buffer)
   }
 
@@ -1021,12 +1096,23 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   func pictureInPictureControllerDidStartPictureInPicture(
     _ controller: AVPictureInPictureController
   ) {
-    if let image = lastPoster { enqueuePosterFrame(image) }
+    // 映像が取れるまでの間はサムネ
+    if PiPFrameSource.currentFrame() == nil, let image = lastPoster {
+      enqueuePosterFrame(image)
+    }
+    startFramePump()
+  }
+
+  func pictureInPictureControllerWillStopPictureInPicture(
+    _ controller: AVPictureInPictureController
+  ) {
+    applySourceRect()
   }
 
   func pictureInPictureControllerDidStopPictureInPicture(
     _ controller: AVPictureInPictureController
   ) {
+    stopFramePump()
     channel?.invokeMethod("onPiPChanged", arguments: false)
   }
 
@@ -1036,6 +1122,9 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     _ controller: AVPictureInPictureController,
     setPlaying playing: Bool
   ) {
+    // 小窓に入る・戻るときにも iOS が呼んでくる。切り替えとして扱うと再生が止まるので、
+    // 今と違うときだけ送る
+    guard playing != isPlaying else { return }
     channel?.invokeMethod("onPiPAction", arguments: "playPause")
   }
 
@@ -1096,5 +1185,103 @@ extension AVAudioSession {
     guard active else { return }
     // 入れ替え済みなので、これは元の setActive(_:options:) を呼ぶ
     try u2b_setActive(active, options: options)
+  }
+}
+
+// MARK: - PiP の小窓に流す映像の出どころ
+
+/// media_kit_video が登録する映像のテクスチャ（FlutterTexture）を番号ごとに覚えておき、
+/// いま鳴っているプレイヤーのコマを取り出す。
+/// PiP の間はアプリが裏に回って Flutter が描かないので、テクスチャから直接コマを読む（試作）
+enum PiPFrameSource {
+  /// 鳴っているプレイヤーの映像のテクスチャ番号（Dart から届く）
+  static var activeTextureId: Int64?
+  /// 再生画面の動画の位置と大きさ（Dart から届く、論理座標）
+  static var sourceRect: CGRect?
+
+  private final class WeakTexture {
+    weak var texture: NSObject?
+    init(_ texture: NSObject) { self.texture = texture }
+  }
+
+  private static var textures: [Int64: WeakTexture] = [:]
+  private static let lock = NSLock()
+  private static var hookedClasses = Set<ObjectIdentifier>()
+
+  /// テクスチャの登録（registerTexture:）を見張る。登録した番号とテクスチャを覚える
+  static func hook(registry: FlutterTextureRegistry) {
+    guard let cls: AnyClass = object_getClass(registry as AnyObject) else { return }
+    let key = ObjectIdentifier(cls)
+    guard !hookedClasses.contains(key) else { return }
+    let selector = NSSelectorFromString("registerTexture:")
+    guard let method = class_getInstanceMethod(cls, selector) else { return }
+    hookedClasses.insert(key)
+    typealias Register = @convention(c) (AnyObject, Selector, AnyObject) -> Int64
+    let original = unsafeBitCast(method_getImplementation(method), to: Register.self)
+    let replacement: @convention(block) (AnyObject, AnyObject) -> Int64 = { me, texture in
+      let id = original(me, selector, texture)
+      if let object = texture as? NSObject {
+        lock.lock()
+        textures[id] = WeakTexture(object)
+        lock.unlock()
+      }
+      return id
+    }
+    method_setImplementation(method, imp_implementationWithBlock(replacement))
+  }
+
+  /// 鳴っているプレイヤーの今のコマ
+  static func currentFrame() -> CVPixelBuffer? {
+    guard let id = activeTextureId else { return nil }
+    lock.lock()
+    let texture = textures[id]?.texture as? FlutterTexture
+    lock.unlock()
+    guard let buffer = texture?.copyPixelBuffer() else { return nil }
+    return buffer.takeRetainedValue()
+  }
+
+  /// 小窓の表示層は IOSurface 付きのバッファでないと真っ黒になるので、無ければ写し替える
+  static func sampleBuffer(for frame: CVPixelBuffer) -> CMSampleBuffer? {
+    let pixelBuffer = CVPixelBufferGetIOSurface(frame) != nil ? frame : surfaceCopy(of: frame)
+    guard let pb = pixelBuffer else { return nil }
+    var format: CMVideoFormatDescription?
+    CMVideoFormatDescriptionCreateForImageBuffer(
+      allocator: kCFAllocatorDefault, imageBuffer: pb, formatDescriptionOut: &format)
+    guard let format = format else { return nil }
+    var timing = CMSampleTimingInfo(
+      duration: CMTime(value: 1, timescale: 30),
+      presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
+      decodeTimeStamp: .invalid)
+    var sample: CMSampleBuffer?
+    CMSampleBufferCreateForImageBuffer(
+      allocator: kCFAllocatorDefault, imageBuffer: pb, dataReady: true,
+      makeDataReadyCallback: nil, refcon: nil, formatDescription: format,
+      sampleTiming: &timing, sampleBufferOut: &sample)
+    return sample
+  }
+
+  private static func surfaceCopy(of source: CVPixelBuffer) -> CVPixelBuffer? {
+    let width = CVPixelBufferGetWidth(source)
+    let height = CVPixelBufferGetHeight(source)
+    let attrs: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any]()]
+    var copy: CVPixelBuffer?
+    CVPixelBufferCreate(kCFAllocatorDefault, width, height,
+                        CVPixelBufferGetPixelFormatType(source), attrs as CFDictionary, &copy)
+    guard let target = copy else { return nil }
+    CVPixelBufferLockBaseAddress(source, .readOnly)
+    CVPixelBufferLockBaseAddress(target, [])
+    defer {
+      CVPixelBufferUnlockBaseAddress(target, [])
+      CVPixelBufferUnlockBaseAddress(source, .readOnly)
+    }
+    guard let src = CVPixelBufferGetBaseAddress(source),
+          let dst = CVPixelBufferGetBaseAddress(target) else { return nil }
+    let srcRow = CVPixelBufferGetBytesPerRow(source)
+    let dstRow = CVPixelBufferGetBytesPerRow(target)
+    let rowBytes = min(srcRow, dstRow)
+    for y in 0..<height {
+      memcpy(dst.advanced(by: y * dstRow), src.advanced(by: y * srcRow), rowBytes)
+    }
+    return target
   }
 }

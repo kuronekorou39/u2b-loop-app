@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/player_provider.dart';
+import '../../services/playback/pip_bridge.dart';
 
 class VideoPlayerWidget extends ConsumerStatefulWidget {
   final bool useAspectRatio;
@@ -22,6 +24,19 @@ class VideoPlayerWidget extends ConsumerStatefulWidget {
 class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   bool _showOverlay = false;
   Timer? _hideTimer;
+  Rect? _reportedRect;
+
+  /// iOS: 動画の位置と大きさを PiP に伝える（小窓に入る・戻るときの動きの起点になる）。
+  /// 変わったときだけ送る
+  void _reportRect() {
+    if (!mounted) return;
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    if (rect == _reportedRect) return;
+    _reportedRect = rect;
+    PipBridge.setSourceRect(rect);
+  }
 
   void _toggleOverlay() {
     setState(() => _showOverlay = !_showOverlay);
@@ -41,6 +56,9 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (Platform.isIOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportRect());
+    }
     final source = ref.watch(videoSourceProvider);
     final controller = ref.watch(videoControllerProvider);
     final slot = ref.watch(activeSlotProvider);

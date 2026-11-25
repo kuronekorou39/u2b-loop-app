@@ -70,6 +70,18 @@ class PipBridge {
         if (enabled) 'thumbnailPath': item?.thumbnailPath,
       });
 
+  /// iOS: PiP の小窓に流す映像の出どころ（いま鳴っているプレイヤーの映像のテクスチャ番号）
+  static Future<void> setVideoTexture(int textureId) =>
+      _send('setPiPVideoTexture', {'textureId': textureId});
+
+  /// iOS: 再生画面の動画の位置と大きさ（論理座標）。PiP に入るとき・戻るとき、ここから縮む・ここへ戻る
+  static Future<void> setSourceRect(Rect rect) => _send('setPiPSourceRect', {
+        'x': rect.left,
+        'y': rect.top,
+        'width': rect.width,
+        'height': rect.height,
+      });
+
   /// PiP ウィンドウの再生/一時停止ボタンの見た目を合わせる
   static Future<void> updatePlayState(bool playing) =>
       _send('updatePiPPlayState', {'playing': playing});

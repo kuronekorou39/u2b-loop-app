@@ -12,6 +12,7 @@ import '../core/audio/dj_level.dart';
 import '../core/audio/transition_effect.dart';
 import '../models/video_source.dart';
 import '../services/audio_filters.dart';
+import '../services/playback/pip_bridge.dart';
 import '../services/transition_sfx.dart';
 import '../services/youtube_service.dart';
 import '../core/storage/app_boxes.dart';
@@ -192,13 +193,34 @@ final videoControllerProvider = Provider<VideoController>((ref) {
   // 先に作っておけば、出力先が付くのは裏で次の曲を読み込んでいる（止まっている）間になる
   final a = ref.read(controllerAProvider);
   final b = ref.read(controllerBProvider);
-  return switch (slot) {
+  final controller = switch (slot) {
     ActiveSlot.a => a,
     ActiveSlot.b => b,
     // C は読み込みに使う前に PlaylistEngine が作っている
     ActiveSlot.c => ref.read(controllerCProvider),
   };
+  _publishPiPTexture(controller);
+  return controller;
 });
+
+/// iOS の PiP は小窓に映像を自分で流す。鳴っている側が替わるたびに、その映像の出どころを伝える
+void _publishPiPTexture(VideoController controller) {
+  if (!Platform.isIOS) return;
+  final id = controller.id;
+  if (id.value case final textureId?) {
+    PipBridge.setVideoTexture(textureId);
+    return;
+  }
+  // 出力がまだ作られていなければ、できたときに 1 回だけ伝える
+  void onReady() {
+    final textureId = id.value;
+    if (textureId == null) return;
+    id.removeListener(onReady);
+    PipBridge.setVideoTexture(textureId);
+  }
+
+  id.addListener(onReady);
+}
 
 // --- Preload (inactive) player ---
 
