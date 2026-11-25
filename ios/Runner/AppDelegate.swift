@@ -20,6 +20,7 @@ import AVKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    AVAudioSession.ignoreDeactivation()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -1066,5 +1067,34 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     didTransitionToRenderSize newRenderSize: CMVideoDimensions
   ) {
     // no-op
+  }
+}
+
+// MARK: - 音声セッションの無効化を無視する
+
+extension AVAudioSession {
+  /// mpv（media_kit）の iOS の音声出力は、プレイヤーを止めるたびに音声セッションを無効にする
+  /// （ao_audiounit.m の uninit が setActive:NO を無条件に呼ぶ）。セッションはアプリで 1 つなので、
+  /// プレイヤーを 3 台使い回すこのアプリでは、前の曲を止めた瞬間に鳴っている曲の音まで止まっていた。
+  /// アプリ自身は無効にする必要が無いので、無効化だけ握りつぶす（有効化はそのまま通す）
+  static func ignoreDeactivation() {
+    guard !deactivationIgnored,
+          let original = class_getInstanceMethod(
+            AVAudioSession.self, #selector(AVAudioSession.setActive(_:options:))),
+          let replacement = class_getInstanceMethod(
+            AVAudioSession.self, #selector(AVAudioSession.u2b_setActive(_:options:)))
+    else { return }
+    method_exchangeImplementations(original, replacement)
+    deactivationIgnored = true
+  }
+
+  private static var deactivationIgnored = false
+
+  @objc dynamic func u2b_setActive(
+    _ active: Bool, options: AVAudioSession.SetActiveOptions
+  ) throws {
+    guard active else { return }
+    // 入れ替え済みなので、これは元の setActive(_:options:) を呼ぶ
+    try u2b_setActive(active, options: options)
   }
 }
