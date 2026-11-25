@@ -500,6 +500,7 @@ class PlaylistTab extends ConsumerWidget {
               pl.disabledItemIds.isNotEmpty ? pl.disabledItemIds : null,
           playlistName: pl.name,
           playlistId: pl.id,
+          restartIfChanged: true,
         ),
       ),
     );

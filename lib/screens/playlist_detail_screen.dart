@@ -628,6 +628,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           : null,
                   playlistName: pl.name,
                   playlistId: pl.id,
+                  restartIfChanged: true,
                 ),
               ),
             ),

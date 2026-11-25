@@ -159,6 +159,42 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
       {int initialItemIndex = 0,
       Map<String, List<String>>? regionSelections,
       Set<String>? disabledItemIds}) {
+    final (tracks, initialTrackIndex) = buildTracks(items,
+        initialItemIndex: initialItemIndex,
+        regionSelections: regionSelections,
+        disabledItemIds: disabledItemIds);
+    final order = List.generate(tracks.length, (i) => i);
+    state = PlaylistPlayerState(
+      tracks: tracks,
+      playOrder: order,
+      currentOrderIndex: order.indexOf(initialTrackIndex),
+    );
+  }
+
+  /// 今のトラックの並びが、この内容で作り直したものと同じか。
+  /// ミニプレイヤーから戻るとき、プレイリストのスキップや区間の選び方が変わっていたら
+  /// 続きから再生せずに作り直す（スキップした曲が前の曲として残っていた）
+  bool matchesSource(List<LoopItem> items,
+      {Map<String, List<String>>? regionSelections,
+      Set<String>? disabledItemIds}) {
+    final (tracks, _) = buildTracks(items,
+        regionSelections: regionSelections, disabledItemIds: disabledItemIds);
+    final current = state.tracks;
+    if (tracks.length != current.length) return false;
+    for (var i = 0; i < tracks.length; i++) {
+      if (tracks[i].item.id != current[i].item.id ||
+          tracks[i].region?.id != current[i].region?.id) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// プレイリストのアイテムからトラックの並びと、[initialItemIndex] の曲の位置を作る
+  static (List<PlaylistTrack>, int) buildTracks(List<LoopItem> items,
+      {int initialItemIndex = 0,
+      Map<String, List<String>>? regionSelections,
+      Set<String>? disabledItemIds}) {
     final tracks = <PlaylistTrack>[];
     int initialTrackIndex = 0;
 
@@ -212,13 +248,7 @@ class PlaylistPlayerNotifier extends StateNotifier<PlaylistPlayerState> {
         }
       }
     }
-
-    final order = List.generate(tracks.length, (i) => i);
-    state = PlaylistPlayerState(
-      tracks: tracks,
-      playOrder: order,
-      currentOrderIndex: order.indexOf(initialTrackIndex),
-    );
+    return (tracks, initialTrackIndex);
   }
 
   /// 次のトラックへ。戻り値: トラックが変わったか

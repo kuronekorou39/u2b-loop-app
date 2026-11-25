@@ -87,6 +87,11 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? playlistName;
   final String? playlistId;
 
+  /// プレイリストの「再生」から開いたとき true。ミニプレイヤーで同じプレイリストが続いていても、
+  /// スキップや区間の選び方が変わっていれば続きからではなく作り直す
+  /// （ミニプレイヤーを広げたときは、途中で設定を変えていても続きのまま）
+  final bool restartIfChanged;
+
   const PlayerScreen({
     super.key,
     required this.item,
@@ -96,6 +101,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.disabledItemIds,
     this.playlistName,
     this.playlistId,
+    this.restartIfChanged = false,
   });
 
   @override
@@ -243,7 +249,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final miniState = ref.read(miniPlayerProvider);
       final isSameContext = miniState.item != null
           && miniState.item!.id == _currentItem.id
-          && miniState.playlistId == widget.playlistId;
+          && miniState.playlistId == widget.playlistId
+          // スキップや区間の選び方を変えてから再生したら、続きではなく作り直す
+          && (!_isPlaylist ||
+              !widget.restartIfChanged ||
+              ref.read(playlistPlayerProvider.notifier).matchesSource(
+                  widget.playlistItems!,
+                  regionSelections: widget.regionSelections,
+                  disabledItemIds: widget.disabledItemIds));
 
       if (isSameContext) {
         // 同一コンテキスト: ロードスキップ、再生状態を復元

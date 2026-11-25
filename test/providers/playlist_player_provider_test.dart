@@ -20,6 +20,29 @@ LoopItem _itemWithRegions(String id) => _item(id, regions: [
     ]);
 
 void main() {
+  group('matchesSource', () {
+    test('同じ内容なら一致する', () {
+      final items = [_item('a'), _item('b'), _item('c')];
+      final n = PlaylistPlayerNotifier()..loadPlaylist(items);
+      expect(n.matchesSource(items), isTrue);
+    });
+
+    test('スキップを増やしたら一致しない（続きから再生せず作り直す）', () {
+      final items = [_item('a'), _item('b'), _item('c')];
+      final n = PlaylistPlayerNotifier()..loadPlaylist(items);
+      expect(n.matchesSource(items, disabledItemIds: {'a'}), isFalse);
+    });
+
+    test('区間の選び方が変わったら一致しない', () {
+      final items = [_itemWithRegions('a')];
+      final n = PlaylistPlayerNotifier()..loadPlaylist(items);
+      final firstRegion = items.first.effectiveRegions.first.id;
+      expect(
+          n.matchesSource(items, regionSelections: {'a': [firstRegion]}),
+          n.currentState.tracks.length == 1);
+    });
+  });
+
   group('loadPlaylist', () {
     test('区間なしのアイテムは1トラックになる', () {
       final n = PlaylistPlayerNotifier()
