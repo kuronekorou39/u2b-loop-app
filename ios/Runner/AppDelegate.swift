@@ -796,6 +796,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   private var pipController: AVPictureInPictureController?
   private var displayLayer: AVSampleBufferDisplayLayer?
   private var pipView: UIView?
+  private weak var pipWindowRef: UIWindow?
   private weak var channel: FlutterMethodChannel?
 
   private var autoPipEnabled = false
@@ -824,10 +825,12 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     view.isUserInteractionEnabled = false
     view.layer.addSublayer(layer)
     layer.frame = CGRect(x: 0, y: 0, width: 300, height: 169)
-    if let root = window.rootViewController?.view {
-      window.insertSubview(view, belowSubview: root)
+    pipWindowRef = window
+    if let root = window.rootViewController?.view, let parent = root.superview {
+      parent.insertSubview(view, belowSubview: root)
     } else {
-      window.addSubview(view)
+      // アプリの画面がまだ window に付いていなければ、いちばん奥に置く（後から付く画面が手前になる）
+      window.insertSubview(view, at: 0)
     }
     self.pipView = view
     applySourceRect()
@@ -1010,6 +1013,26 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     layer.enqueue(buffer)
   }
 
+  /// 小窓から戻ると、iOS が置いた絵の層がアプリの画面（Flutter）より手前に残り、
+  /// シートが動画の下に潜ったり、画面を移っても動画が残ったりする。アプリの画面の裏へ置き直す
+  private func sendBehindApp() {
+    guard let view = pipView, let window = view.window ?? pipWindowRef,
+          let root = window.rootViewController?.view else { return }
+    let before = window.subviews.firstIndex(of: view) ?? -1
+    let rootBefore = window.subviews.firstIndex(of: root) ?? -1
+    view.removeFromSuperview()
+    if let parent = root.superview {
+      parent.insertSubview(view, belowSubview: root)
+    } else {
+      window.insertSubview(view, at: 0)
+    }
+    PiPFrameSource.note(
+      "sendBehind: pip \(before) root \(rootBefore) of \(window.subviews.count) -> "
+        + "pip \(window.subviews.firstIndex(of: view) ?? -1) "
+        + "root \(window.subviews.firstIndex(of: root) ?? -1) "
+        + "rootParentIsWindow \(root.superview === window)")
+  }
+
   private func dumpPumpState(_ label: String) {
     let layer = displayLayer
     PiPFrameSource.dump(
@@ -1160,9 +1183,16 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   func pictureInPictureControllerDidStopPictureInPicture(
     _ controller: AVPictureInPictureController
   ) {
-    dumpPumpState("stop")
     stopFramePump()
     displayLayer?.controlTimebase = nil
+    sendBehindApp()
+    // 最後のコマが残らないよう、サムネに戻しておく（次の PiP の入りもサムネから）
+    if let image = lastPoster {
+      enqueuePosterFrame(image)
+    } else {
+      displayLayer?.flushAndRemoveImage()
+    }
+    dumpPumpState("stop")
     channel?.invokeMethod("onPiPChanged", arguments: false)
   }
 

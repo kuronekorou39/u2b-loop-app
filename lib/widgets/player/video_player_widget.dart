@@ -25,11 +25,32 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   bool _showOverlay = false;
   Timer? _hideTimer;
   Rect? _reportedRect;
+  bool _waitingRoute = false;
 
   /// iOS: 動画の位置と大きさを PiP に伝える（小窓に入る・戻るときの動きの起点になる）。
   /// 変わったときだけ送る
   void _reportRect() {
     if (!mounted) return;
+    // 画面が開く・閉じる途中（横へ滑っている間）の位置は送らない。
+    // 閉じる途中の位置を送ると、PiP の絵の層が画面の端に取り残される
+    final route = ModalRoute.of(context);
+    final animation = route?.animation;
+    if (animation != null && animation.status != AnimationStatus.completed) {
+      // 開き終わったら送る（閉じる途中なら完了は来ないので送らない）
+      if (!_waitingRoute) {
+        _waitingRoute = true;
+        void onStatus(AnimationStatus status) {
+          if (status == AnimationStatus.forward) return;
+          animation.removeStatusListener(onStatus);
+          _waitingRoute = false;
+          if (status == AnimationStatus.completed) _reportRect();
+        }
+
+        animation.addStatusListener(onStatus);
+      }
+      return;
+    }
+    if (route != null && !route.isCurrent) return;
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.attached || !box.hasSize) return;
     final rect = box.localToGlobal(Offset.zero) & box.size;
