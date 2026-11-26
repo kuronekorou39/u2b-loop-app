@@ -1061,6 +1061,9 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   }
 
   func updatePlayState(playing: Bool) {
+    if playing != isPlaying {
+      PiPFrameSource.note("playState from app \(playing) pipActive \(pipController?.isPictureInPictureActive ?? false)")
+    }
     self.isPlaying = playing
     pipController?.invalidatePlaybackState()
   }
@@ -1177,6 +1180,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     _ controller: AVPictureInPictureController
   ) {
     // ほかの経路（iOS が自分で始めたときなど）でも、縮み始める前にコマを流し始める
+    PiPFrameSource.note("willStart")
     beginFrames()
     channel?.invokeMethod("onPiPChanged", arguments: true)
   }
@@ -1184,6 +1188,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   func pictureInPictureControllerDidStartPictureInPicture(
     _ controller: AVPictureInPictureController
   ) {
+    PiPFrameSource.note("didStart")
     beginFrames()
   }
 
@@ -1225,6 +1230,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   ) {
     // 小窓に入る・戻るときにも iOS が呼んでくる。切り替えとして扱うと再生が止まるので、
     // 今と違うときだけ送る
+    PiPFrameSource.note("setPlaying from iOS \(playing) (app \(isPlaying))")
     guard playing != isPlaying else { return }
     channel?.invokeMethod("onPiPAction", arguments: "playPause")
   }
