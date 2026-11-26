@@ -9,7 +9,6 @@ import 'player_provider.dart';
 import '../core/loop/playback_stall_watch.dart';
 import '../core/loop/region_sequence.dart';
 import '../core/storage/app_boxes.dart';
-import '../services/playback/pip_bridge.dart';
 import 'data_provider.dart';
 
 /// 単体再生で選んでいる区間。-1 は「全体」。
@@ -104,7 +103,6 @@ class LoopNotifier extends StateNotifier<LoopState> {
       now: DateTime.now(),
     )) {
       debugPrint('[LoopNotifier] 再生が止まっていたので動かし直す');
-      unawaited(PipBridge.debugNote('stall kick at ${s.position.inMilliseconds}ms'));
       unawaited(player.pause().then((_) => player.play()));
     }
   }
