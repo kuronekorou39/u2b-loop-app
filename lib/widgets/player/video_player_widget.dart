@@ -114,6 +114,9 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         key: ValueKey(slot),
         controller: controller,
         controls: NoVideoControls,
+        // 既定ではアプリが裏に回ると一時停止する。このアプリは裏でも鳴らすので切る
+        // （iOS で PiP に入るたびに一瞬止まっていた。止まってから 0.5 秒後の再開で戻っていた）
+        pauseUponEnteringBackgroundMode: false,
       );
     }
 

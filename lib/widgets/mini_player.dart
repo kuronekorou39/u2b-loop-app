@@ -75,7 +75,12 @@ class MiniPlayerBar extends ConsumerWidget {
                 borderRadius: AppRadius.borderMd,
                 child: SizedBox(
                   width: 72,
-                  child: Video(controller: controller, controls: NoVideoControls),
+                  child: Video(
+                    controller: controller,
+                    controls: NoVideoControls,
+                    // 裏に回っても止めない（既定では一時停止する）
+                    pauseUponEnteringBackgroundMode: false,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.lg),
