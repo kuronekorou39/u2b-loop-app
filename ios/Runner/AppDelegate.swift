@@ -886,6 +886,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     } else if !possible {
       diag["error"] = "PiP not possible (isPictureInPicturePossible=false)"
     } else {
+      beginFrames()
       pipController!.startPictureInPicture()
       diag["ok"] = true
     }
@@ -951,12 +952,19 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   private var pumpTicks = 0
 
   /// PiP の間、鳴っているプレイヤーの映像を 30fps で小窓に流す。取れなければサムネのまま
+  /// 小窓に縮み始める前から今のコマを映しておく（入りの間サムネが映ってから動画に切り替わると、
+  /// サムネ → カクッ → 動画 に見える）。流れていれば何もしない
+  func beginFrames() {
+    guard frameTimer == nil else { return }
+    startFramePump()
+  }
+
   private func startFramePump() {
     stopFramePump()
     pumped = 0
     pumpTicks = 0
-    // コマの時刻はホストの時計で付けるので、表示層の時計もそれに合わせる
-    if let layer = displayLayer {
+    // コマの時刻はホストの時計で付けるので、表示層の時計もそれに合わせる（1 度だけ。付け直すとちらつく）
+    if let layer = displayLayer, layer.controlTimebase == nil {
       var timebase: CMTimebase?
       CMTimebaseCreateWithSourceClock(
         allocator: kCFAllocatorDefault, sourceClock: CMClockGetHostTimeClock(),
@@ -970,8 +978,10 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     let timer = DispatchSource.makeTimerSource(queue: .main)
     timer.schedule(deadline: .now(), repeating: .milliseconds(33))
     timer.setEventHandler { [weak self] in self?.pumpFrame() }
-    timer.resume()
     frameTimer = timer
+    // 最初のコマはタイマーを待たずに今すぐ積む
+    pumpFrame()
+    timer.resume()
   }
 
   private func stopFramePump() {
@@ -983,6 +993,11 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   private func pumpFrame() {
     pumpTicks += 1
     if pumpTicks == 60 { dumpPumpState("after 2s") }
+    // 流し始めて 3 秒たっても小窓に入っていなければ止める（入れなかったとき裏で回り続けない）
+    if pumpTicks > 90, pipController?.isPictureInPictureActive != true {
+      stopFramePump()
+      return
+    }
     guard let layer = displayLayer,
           let frame = PiPFrameSource.currentFrame() else { return }
     // mpv は同じバッファに描き直すので、バッファが同じでも中身（IOSurface の seed）が
@@ -1000,7 +1015,6 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
         "first frame \(CVPixelBufferGetWidth(frame))x\(CVPixelBufferGetHeight(frame)) "
           + "fmt \(CVPixelBufferGetPixelFormatType(frame)) "
           + "surface \(CVPixelBufferGetIOSurface(frame) != nil)")
-      layer.flush()
     }
     lastFrame = frame
     lastSeed = seed
@@ -1058,6 +1072,7 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
           !pip.isPictureInPictureActive,
           AVPictureInPictureController.isPictureInPictureSupported() else { return }
     try? AVAudioSession.sharedInstance().setActive(true)
+    beginFrames()
     pip.startPictureInPicture()
   }
 
@@ -1161,17 +1176,24 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   func pictureInPictureControllerWillStartPictureInPicture(
     _ controller: AVPictureInPictureController
   ) {
+    // ほかの経路（iOS が自分で始めたときなど）でも、縮み始める前にコマを流し始める
+    beginFrames()
     channel?.invokeMethod("onPiPChanged", arguments: true)
   }
 
   func pictureInPictureControllerDidStartPictureInPicture(
     _ controller: AVPictureInPictureController
   ) {
-    // 映像が取れるまでの間はサムネ
-    if PiPFrameSource.currentFrame() == nil, let image = lastPoster {
-      enqueuePosterFrame(image)
-    }
-    startFramePump()
+    beginFrames()
+  }
+
+  func pictureInPictureController(
+    _ controller: AVPictureInPictureController,
+    failedToStartPictureInPictureWithError error: Error
+  ) {
+    // 始める前に流し始めたコマを止める（入れなかったのに裏で回り続けないように）
+    stopFramePump()
+    PiPFrameSource.note("failed to start: \(error.localizedDescription)")
   }
 
   func pictureInPictureControllerWillStopPictureInPicture(
@@ -1184,7 +1206,6 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
     _ controller: AVPictureInPictureController
   ) {
     stopFramePump()
-    displayLayer?.controlTimebase = nil
     sendBehindApp()
     // 最後のコマが残らないよう、サムネに戻しておく（次の PiP の入りもサムネから）
     if let image = lastPoster {
