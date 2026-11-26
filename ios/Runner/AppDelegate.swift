@@ -2,6 +2,7 @@ import Flutter
 import UIKit
 import AVFoundation
 import AVKit
+import IOSurface
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -107,6 +108,7 @@ import AVKit
       switch call.method {
       case "setPiPVideoTexture":
         PiPFrameSource.activeTextureId = (args["textureId"] as? NSNumber)?.int64Value
+        PiPFrameSource.note("active texture \(String(describing: PiPFrameSource.activeTextureId))")
         result(true)
         return
       case "setPiPSourceRect":
@@ -941,10 +943,27 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
 
   private var frameTimer: DispatchSourceTimer?
   private var lastFrame: CVPixelBuffer?
+  private var lastSeed: UInt32 = 0
+  private var pumped = 0
+  private var pumpTicks = 0
 
   /// PiP の間、鳴っているプレイヤーの映像を 30fps で小窓に流す。取れなければサムネのまま
   private func startFramePump() {
     stopFramePump()
+    pumped = 0
+    pumpTicks = 0
+    // コマの時刻はホストの時計で付けるので、表示層の時計もそれに合わせる
+    if let layer = displayLayer {
+      var timebase: CMTimebase?
+      CMTimebaseCreateWithSourceClock(
+        allocator: kCFAllocatorDefault, sourceClock: CMClockGetHostTimeClock(),
+        timebaseOut: &timebase)
+      if let tb = timebase {
+        CMTimebaseSetTime(tb, time: CMClockGetTime(CMClockGetHostTimeClock()))
+        CMTimebaseSetRate(tb, rate: 1)
+        layer.controlTimebase = tb
+      }
+    }
     let timer = DispatchSource.makeTimerSource(queue: .main)
     timer.schedule(deadline: .now(), repeating: .milliseconds(33))
     timer.setEventHandler { [weak self] in self?.pumpFrame() }
@@ -959,15 +978,44 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   }
 
   private func pumpFrame() {
+    pumpTicks += 1
+    if pumpTicks == 60 { dumpPumpState("after 2s") }
     guard let layer = displayLayer,
           let frame = PiPFrameSource.currentFrame() else { return }
-    // 止まっている間は同じバッファが返る。積み直さない
-    if let last = lastFrame, last === frame { return }
-    guard let buffer = PiPFrameSource.sampleBuffer(for: frame) else { return }
+    // mpv は同じバッファに描き直すので、バッファが同じでも中身（IOSurface の seed）が
+    // 変わっていれば積む。止まっている間は積み直さない
+    let seed = CVPixelBufferGetIOSurface(frame).map {
+      IOSurfaceGetSeed($0.takeUnretainedValue())
+    } ?? 0
+    if let last = lastFrame, last === frame, seed != 0, seed == lastSeed { return }
+    guard let buffer = PiPFrameSource.sampleBuffer(for: frame) else {
+      PiPFrameSource.note("sampleBuffer failed")
+      return
+    }
+    if pumped == 0 {
+      PiPFrameSource.note(
+        "first frame \(CVPixelBufferGetWidth(frame))x\(CVPixelBufferGetHeight(frame)) "
+          + "fmt \(CVPixelBufferGetPixelFormatType(frame)) "
+          + "surface \(CVPixelBufferGetIOSurface(frame) != nil)")
+      layer.flush()
+    }
     lastFrame = frame
+    lastSeed = seed
+    pumped += 1
     markDisplayImmediately(buffer)
-    if layer.status == .failed { layer.flush() }
+    if layer.status == .failed {
+      PiPFrameSource.note("layer failed: \(String(describing: layer.error))")
+      layer.flush()
+    }
     layer.enqueue(buffer)
+  }
+
+  private func dumpPumpState(_ label: String) {
+    let layer = displayLayer
+    PiPFrameSource.dump(
+      "\(label): active \(String(describing: PiPFrameSource.activeTextureId)) "
+        + "pumped \(pumped)/\(pumpTicks) layerStatus \(layer?.status.rawValue ?? -1) "
+        + "error \(String(describing: layer?.error))")
   }
 
   func setAutoPiP(enabled: Bool, isPlaylist: Bool) {
@@ -1112,7 +1160,9 @@ class PiPManager: NSObject, AVPictureInPictureControllerDelegate,
   func pictureInPictureControllerDidStopPictureInPicture(
     _ controller: AVPictureInPictureController
   ) {
+    dumpPumpState("stop")
     stopFramePump()
+    displayLayer?.controlTimebase = nil
     channel?.invokeMethod("onPiPChanged", arguments: false)
   }
 
@@ -1210,11 +1260,18 @@ enum PiPFrameSource {
 
   /// テクスチャの登録（registerTexture:）を見張る。登録した番号とテクスチャを覚える
   static func hook(registry: FlutterTextureRegistry) {
-    guard let cls: AnyClass = object_getClass(registry as AnyObject) else { return }
+    guard let cls: AnyClass = object_getClass(registry as AnyObject) else {
+      note("hook: no class")
+      return
+    }
+    note("hook: registry class \(NSStringFromClass(cls))")
     let key = ObjectIdentifier(cls)
     guard !hookedClasses.contains(key) else { return }
     let selector = NSSelectorFromString("registerTexture:")
-    guard let method = class_getInstanceMethod(cls, selector) else { return }
+    guard let method = class_getInstanceMethod(cls, selector) else {
+      note("hook: registerTexture: not found")
+      return
+    }
     hookedClasses.insert(key)
     typealias Register = @convention(c) (AnyObject, Selector, AnyObject) -> Int64
     let original = unsafeBitCast(method_getImplementation(method), to: Register.self)
@@ -1225,19 +1282,63 @@ enum PiPFrameSource {
         textures[id] = WeakTexture(object)
         lock.unlock()
       }
+      note("registered \(id) \(NSStringFromClass(type(of: texture as AnyObject)))")
       return id
     }
     method_setImplementation(method, imp_implementationWithBlock(replacement))
+    note("hook: ok")
   }
 
   /// 鳴っているプレイヤーの今のコマ
   static func currentFrame() -> CVPixelBuffer? {
-    guard let id = activeTextureId else { return nil }
+    guard let id = activeTextureId else {
+      miss("no active id")
+      return nil
+    }
     lock.lock()
-    let texture = textures[id]?.texture as? FlutterTexture
+    let entry = textures[id]
     lock.unlock()
-    guard let buffer = texture?.copyPixelBuffer() else { return nil }
+    guard let object = entry?.texture else {
+      miss("texture \(id) unknown (known: \(textures.keys.sorted()))")
+      return nil
+    }
+    guard let texture = object as? FlutterTexture else {
+      miss("texture \(id) not FlutterTexture")
+      return nil
+    }
+    guard let buffer = texture.copyPixelBuffer() else {
+      miss("texture \(id) gave no buffer")
+      return nil
+    }
     return buffer.takeRetainedValue()
+  }
+
+  // MARK: 試作の調べ（Documents/pip_debug.txt に書き出す。映像が出たら消す）
+
+  private static var lines: [String] = []
+  private static var misses: [String: Int] = [:]
+
+  static func note(_ line: String) {
+    lock.lock()
+    lines.append("\(Date().timeIntervalSince1970) \(line)")
+    if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+    lock.unlock()
+  }
+
+  private static func miss(_ reason: String) {
+    lock.lock()
+    misses[reason, default: 0] += 1
+    lock.unlock()
+  }
+
+  static func dump(_ extra: String) {
+    note(extra)
+    lock.lock()
+    let text = (lines + misses.map { "miss x\($0.value): \($0.key)" }).joined(separator: "\n")
+    lock.unlock()
+    guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    else { return }
+    try? text.write(to: dir.appendingPathComponent("pip_debug.txt"), atomically: true, encoding: .utf8)
   }
 
   /// 小窓の表示層は IOSurface 付きのバッファでないと真っ黒になるので、無ければ写し替える
