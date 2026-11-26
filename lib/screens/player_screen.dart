@@ -328,6 +328,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final p = ref.read(playerProvider).state;
+    PipBridge.debugNote('lifecycle ${state.name} playing ${p.playing} '
+        'pos ${p.position.inMilliseconds}ms');
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       // 画面オフ/バックグラウンド: 再生中だったら記録
@@ -339,6 +342,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted && _wasPlayingBeforePause &&
               !ref.read(playerProvider).state.playing) {
+            PipBridge.debugNote('lifecycle resume after 500ms');
             ref.read(playerProvider).play();
           }
         });
@@ -1344,6 +1348,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Widget build(BuildContext context) {
     // 再生状態の同期: PiP + 通知コントローラー
     ref.listen(playingProvider, (_, next) {
+      PipBridge.debugNote('playing ${next.valueOrNull} pos '
+          '${ref.read(playerProvider).state.position.inMilliseconds}ms');
       PipBridge.notifyPlayState(
           playing: next.valueOrNull ?? false, item: _currentItem);
     });

@@ -151,6 +151,10 @@ import IOSurface
         let playing = args["playing"] as? Bool ?? false
         manager.updatePlayState(playing: playing)
         result(true)
+      case "pipDebugNote":
+        let args = call.arguments as? [String: Any] ?? [:]
+        PiPFrameSource.note("dart: \(args["line"] as? String ?? "")")
+        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }

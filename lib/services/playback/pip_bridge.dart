@@ -82,6 +82,11 @@ class PipBridge {
         'height': rect.height,
       });
 
+  /// iOS: PiP の調べ用の書き出し（Documents/pip_debug.txt）に 1 行足す。調べが済んだら消す
+  static Future<void> debugNote(String line) async {
+    if (Platform.isIOS) await _send('pipDebugNote', {'line': line});
+  }
+
   /// PiP ウィンドウの再生/一時停止ボタンの見た目を合わせる
   static Future<void> updatePlayState(bool playing) =>
       _send('updatePiPPlayState', {'playing': playing});
